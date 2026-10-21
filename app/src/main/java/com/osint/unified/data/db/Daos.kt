@@ -1,0 +1,41 @@
+package com.osint.unified.data.db
+
+import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.Query
+import androidx.room.Update
+import kotlinx.coroutines.flow.Flow
+
+@Dao
+interface InvestigationDao {
+    @Query("SELECT * FROM investigations ORDER BY updatedAt DESC")
+    fun observeAll(): Flow<List<Investigation>>
+
+    @Query("SELECT * FROM investigations WHERE id = :id")
+    suspend fun getById(id: Long): Investigation?
+
+    @Insert
+    suspend fun insert(investigation: Investigation): Long
+
+    @Update
+    suspend fun update(investigation: Investigation)
+
+    @Query("DELETE FROM investigations WHERE id = :id")
+    suspend fun delete(id: Long)
+}
+
+@Dao
+interface ResultDao {
+    @Query("SELECT * FROM results WHERE investigationId = :investigationId ORDER BY startedAt DESC")
+    fun observeForInvestigation(investigationId: Long): Flow<List<Result>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(result: Result): Long
+
+    @Update
+    suspend fun update(result: Result)
+
+    @Query("DELETE FROM results WHERE investigationId = :investigationId")
+    suspend fun deleteForInvestigation(investigationId: Long)
+}
