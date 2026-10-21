@@ -13,10 +13,19 @@
   <style>
     html, body, #cesiumContainer { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background: #0b0e11; }
     .cesium-widget-credits { display: none !important; }
+    #layerbar { position: absolute; top: 8px; left: 8px; z-index: 10; display: flex; gap: 6px; flex-wrap: wrap; }
+    #layerbar button { font: 11px sans-serif; color: #e2e2e6; background: rgba(16,20,24,0.85); border: 1px solid #333; border-radius: 6px; padding: 5px 9px; }
+    #layerbar button.off { opacity: 0.45; text-decoration: line-through; }
   </style>
 </head>
 <body>
   <div id="cesiumContainer"></div>
+  <div id="layerbar">
+    <button data-layer="aircraft">Aircraft</button>
+    <button data-layer="vessels">Vessels</button>
+    <button data-layer="quakes">Quakes</button>
+    <button data-layer="sats">Satellites</button>
+  </div>
   <script>
     // Keyless: no Cesium Ion token. Use OpenStreetMap imagery and the
     // default ellipsoid (no terrain) so the globe renders without an account.
@@ -43,6 +52,9 @@
     viewer.scene.globe.enableLighting = false;
     viewer.scene.skyAtmosphere.show = true;
 
+    // Per-layer visibility flags, toggled from the on-screen layer bar.
+    const layers = { aircraft: true, vessels: true, quakes: true, sats: true };
+
     const aircraftEntities = new Map();
 
     function colorForAltitude(alt) {
@@ -62,6 +74,7 @@
           entity = viewer.entities.add({
             id: ac.icao,
             position: position,
+            show: layers.aircraft,
             point: {
               pixelSize: 8,
               color: colorForAltitude(ac.altitude),
@@ -108,6 +121,7 @@
           entity = viewer.entities.add({
             id: "ship-" + v.mmsi,
             position: position,
+            show: layers.vessels,
             point: {
               pixelSize: 7,
               color: Cesium.Color.fromCssColorString("#1D9E75"),
@@ -177,6 +191,7 @@
             const mag = f.properties && f.properties.mag ? f.properties.mag : 0;
             const e = viewer.entities.add({
               position: Cesium.Cartesian3.fromDegrees(c[0], c[1]),
+              show: layers.quakes,
               point: {
                 pixelSize: Math.max(4, mag * 3),
                 color: Cesium.Color.fromHsl(Math.max(0, (1 - mag / 8)) * 0.15, 0.9, 0.5).withAlpha(0.85),
@@ -235,6 +250,7 @@
           if (!e) {
             e = viewer.entities.add({
               position: pos,
+              show: layers.sats,
               point: {
                 pixelSize: 4,
                 color: Cesium.Color.fromCssColorString("#C0A8FF"),
@@ -253,6 +269,23 @@
     loadSats();
     setInterval(loadSats, 3600000);
     setInterval(updateSats, 3000);
+
+    // ---- Layer toggle bar ----
+    function applyLayer(name) {
+      const f = layers[name];
+      if (name === "aircraft") aircraftEntities.forEach(function (e) { e.show = f; });
+      else if (name === "vessels") vesselEntities.forEach(function (e) { e.show = f; });
+      else if (name === "quakes") quakeEntities.forEach(function (e) { e.show = f; });
+      else if (name === "sats") satEntities.forEach(function (e) { e.show = f; });
+    }
+    document.querySelectorAll("#layerbar button").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        const n = btn.getAttribute("data-layer");
+        layers[n] = !layers[n];
+        btn.classList.toggle("off", !layers[n]);
+        applyLayer(n);
+      });
+    });
 
     // Start zoomed out on the whole globe.
     viewer.camera.flyHome(0);

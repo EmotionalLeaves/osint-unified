@@ -54,8 +54,8 @@ class ObservableRouter {
     fun suggestTools(observable: Observable): List<Tool> {
         val ids = when (observable) {
             is Observable.Email -> listOf("holehe", "gravatar", "dorks", "ghunt", "h8mail")
-            is Observable.Username -> listOf("sherlock", "maigret", "dorks")
-            is Observable.Domain -> listOf("subfinder", "crtsh", "dns", "httpx", "shodan", "wayback", "dorks", "amass", "nuclei")
+            is Observable.Username -> listOf("sherlock", "maigret", "blackbird", "dorks")
+            is Observable.Domain -> listOf("subfinder", "crtsh", "dns", "httpx", "shodan", "webcrawl", "wayback", "archive", "dorks", "amass", "nuclei")
             is Observable.IpAddress -> listOf("ipinfo", "shodan", "httpx", "nuclei")
             is Observable.PhoneNumber -> listOf("phoneinfoga")
             is Observable.Coordinate -> listOf("overpass_turbo", "revgeo")

@@ -157,6 +157,35 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
         }
     }
 
+    /** Photon-style crawl: fetch a page and extract emails, links and JS files. */
+    fun webcrawl(input: String): Result<String> = runCatching {
+        val url = if (input.startsWith("http")) input else "https://$input"
+        val html = getBody(url)
+        val emails = Regex("""[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}""")
+            .findAll(html).map { it.value }.distinct().take(30).toList()
+        val links = Regex("""href=["']([^"']+)["']""")
+            .findAll(html).map { it.groupValues[1] }.filter { it.startsWith("http") }.distinct().take(40).toList()
+        val scripts = Regex("""src=["']([^"']+\.js[^"']*)["']""")
+            .findAll(html).map { it.groupValues[1] }.distinct().take(20).toList()
+        buildString {
+            append("Crawled: $url\n")
+            append("\nEmails (${emails.size}):\n").append(emails.joinToString("\n"))
+            append("\n\nLinks (${links.size}):\n").append(links.joinToString("\n"))
+            if (scripts.isNotEmpty()) append("\n\nJS files (${scripts.size}):\n").append(scripts.joinToString("\n"))
+        }
+    }
+
+    /** Preserve a URL via the Wayback Machine's Save Page Now. */
+    fun archive(input: String): Result<String> = runCatching {
+        val target = if (input.startsWith("http")) input else "https://$input"
+        val request = Request.Builder().url("https://web.archive.org/save/$target").header("User-Agent", ua).build()
+        client.newCall(request).execute().use { resp ->
+            val loc = resp.header("Content-Location") ?: resp.header("Location")
+            if (loc != null && loc.startsWith("/web/")) "Archived snapshot:\nhttps://web.archive.org$loc"
+            else "Archive requested for $target (HTTP ${resp.code}).\nView: https://web.archive.org/web/2/$target"
+        }
+    }
+
     private val ipRegex = Regex("""^(?:\d{1,3}\.){3}\d{1,3}$""")
 
     private fun resolveA(domain: String): String? = runCatching {

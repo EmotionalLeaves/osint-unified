@@ -156,8 +156,10 @@ class DirectToolExecutor(
         withContext(Dispatchers.IO) {
             when (tool.id) {
                 "overpass_turbo" -> overpass(input)
-                "sherlock", "maigret" -> runCatching { usernameChecker.check(input) }
+                "sherlock", "maigret", "blackbird" -> runCatching { usernameChecker.check(input) }
                 "phoneinfoga" -> phoneInfo(input)
+                "webcrawl" -> apis.webcrawl(input)
+                "archive" -> apis.archive(input)
                 "crtsh" -> apis.crtsh(input)
                 "dns" -> apis.dns(input)
                 "ipinfo" -> apis.ipinfo(input)

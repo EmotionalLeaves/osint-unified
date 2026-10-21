@@ -96,6 +96,15 @@ object ToolRegistry {
         Tool("dorks", "Google Dorks", NETINT, "any", "text", DIRECT,
             "Generates search-operator URLs for exposed files, directories and mentions.",
             "https://www.exploit-db.com/google-hacking-database"),
+        Tool("blackbird", "Blackbird", SOCMINT, "username", "json", DIRECT,
+            "Username enumeration across many sites (native on-device check).",
+            "https://github.com/p1ngul1n0/blackbird"),
+        Tool("webcrawl", "Web crawl (Photon)", NETINT, "domain", "text", DIRECT,
+            "Crawls a page for emails, links and JS files.",
+            "https://github.com/s0md3v/photon"),
+        Tool("archive", "Archive (Wayback)", FORENSICS, "domain", "text", DIRECT,
+            "Preserves a URL as a Wayback Machine snapshot.",
+            "https://github.com/bellingcat/auto-archiver"),
     )
 
     private val byId: Map<String, Tool> = all.associateBy { it.id }
