@@ -1,35 +1,22 @@
 package com.osint.unified.ui.godeye
 
 import android.annotation.SuppressLint
-import android.content.Context
-import android.content.Intent
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -42,7 +29,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -51,20 +37,15 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.osint.unified.R
-import com.osint.unified.data.ExportFormat
-import com.osint.unified.data.db.Result as ResultRow
-import com.osint.unified.domain.GraphBuilder
-import com.osint.unified.domain.Tool
-import com.osint.unified.ui.common.GraphDialog
-import com.osint.unified.ui.common.ResultCard
-import kotlinx.coroutines.launch
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import java.io.File
 
+/**
+ * The default "god view": the 3D globe plus the search entry point. Running a
+ * search (or tapping the globe) routes to the Investigation screen.
+ */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun GodEyeViewScreen(
@@ -74,10 +55,7 @@ fun GodEyeViewScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     var showSettings by remember { mutableStateOf(false) }
-    var showGraph by remember { mutableStateOf(false) }
-    var graphJson by remember { mutableStateOf("") }
 
     val webView = remember {
         WebView(context).apply {
@@ -104,7 +82,6 @@ fun GodEyeViewScreen(
             webView.evaluateJavascript("window.updateAircraft(${Json.encodeToString(state.aircraft)});", null)
         }
     }
-
     LaunchedEffect(state.vessels) {
         if (state.vessels.isNotEmpty()) {
             webView.evaluateJavascript("window.updateVessels(${Json.encodeToString(state.vessels)});", null)
@@ -116,46 +93,13 @@ fun GodEyeViewScreen(
             query = state.query,
             onQueryChange = viewModel::onQueryChange,
             onSearch = viewModel::onSearch,
-            onOpenHistory = onOpenHistory,
             onOpenForensics = onOpenForensics,
+            onOpenHistory = onOpenHistory,
             onOpenSettings = { showSettings = true }
         )
-
         Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
             AndroidView(factory = { webView }, modifier = Modifier.fillMaxSize())
         }
-
-        state.observable?.let { observable ->
-            ResultPanel(
-                typeLabel = observable.typeLabel,
-                tools = state.suggestedTools,
-                results = state.results,
-                runningToolIds = state.runningToolIds,
-                workflowName = state.workflowName,
-                workflowRunning = state.workflowRunning,
-                onRunWorkflow = viewModel::onRunWorkflow,
-                onRunAll = viewModel::onRunAll,
-                onPivot = { value ->
-                    viewModel.onQueryChange(value)
-                    viewModel.onSearch()
-                },
-                onToolClick = viewModel::onToolClick,
-                onExport = { format ->
-                    scope.launch {
-                        val file = viewModel.buildExport(format)
-                        if (file != null) shareFile(context, file, format)
-                    }
-                },
-                onShowGraph = {
-                    graphJson = Json.encodeToString(GraphBuilder.build(observable.raw, state.results))
-                    showGraph = true
-                }
-            )
-        }
-    }
-
-    if (showGraph) {
-        GraphDialog(graphJson = graphJson, onDismiss = { showGraph = false })
     }
 
     if (showSettings) {
@@ -172,23 +116,13 @@ fun GodEyeViewScreen(
     }
 }
 
-private fun shareFile(context: Context, file: File, format: ExportFormat) {
-    val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-    val intent = Intent(Intent.ACTION_SEND).apply {
-        type = format.mime
-        putExtra(Intent.EXTRA_STREAM, uri)
-        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-    }
-    context.startActivity(Intent.createChooser(intent, "Export results"))
-}
-
 @Composable
 private fun SearchBar(
     query: String,
     onQueryChange: (String) -> Unit,
     onSearch: () -> Unit,
-    onOpenHistory: () -> Unit,
     onOpenForensics: () -> Unit,
+    onOpenHistory: () -> Unit,
     onOpenSettings: () -> Unit
 ) {
     Surface(tonalElevation = 3.dp) {
@@ -224,104 +158,6 @@ private fun SearchBar(
 }
 
 @Composable
-private fun ResultPanel(
-    typeLabel: String,
-    tools: List<Tool>,
-    results: List<ResultRow>,
-    runningToolIds: Set<String>,
-    workflowName: String?,
-    workflowRunning: Boolean,
-    onRunWorkflow: () -> Unit,
-    onRunAll: () -> Unit,
-    onPivot: (String) -> Unit,
-    onToolClick: (Tool) -> Unit,
-    onExport: (ExportFormat) -> Unit,
-    onShowGraph: () -> Unit
-) {
-    Surface(tonalElevation = 3.dp) {
-        Column(
-            modifier = Modifier.fillMaxWidth().heightIn(max = 360.dp).padding(12.dp)
-        ) {
-            Text("Detected: $typeLabel", style = MaterialTheme.typography.titleSmall)
-
-            if (tools.isEmpty()) {
-                Text(
-                    "No tools matched. Try an email, username, domain, IP, phone, or coordinate.",
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(top = 4.dp)
-                )
-                return@Column
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                tools.forEach { tool ->
-                    val running = tool.id in runningToolIds
-                    AssistChip(
-                        onClick = { if (!running) onToolClick(tool) },
-                        label = { Text(tool.name) },
-                        leadingIcon = if (running) {
-                            {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(AssistChipDefaults.IconSize),
-                                    strokeWidth = 2.dp
-                                )
-                            }
-                        } else null
-                    )
-                }
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .padding(top = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                FilledTonalButton(onClick = onRunAll, enabled = !workflowRunning) {
-                    Text("Run all")
-                }
-                if (workflowName != null) {
-                    FilledTonalButton(onClick = onRunWorkflow, enabled = !workflowRunning) {
-                        if (workflowRunning) {
-                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                            Spacer(Modifier.size(8.dp))
-                        }
-                        Text(if (workflowRunning) "Running $workflowName…" else "Run $workflowName")
-                    }
-                }
-            }
-
-            if (results.isNotEmpty()) {
-                Row(
-                    modifier = Modifier.fillMaxWidth()
-                        .horizontalScroll(rememberScrollState())
-                        .padding(top = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Export:", style = MaterialTheme.typography.labelMedium)
-                    ExportFormat.values().forEach { format ->
-                        TextButton(onClick = { onExport(format) }) { Text(format.name) }
-                    }
-                    TextButton(onClick = onShowGraph) { Text("Graph") }
-                }
-
-                Column(
-                    modifier = Modifier.fillMaxWidth().heightIn(max = 220.dp)
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    results.forEach { row -> ResultCard(row, onPivot = onPivot) }
-                }
-            }
-        }
-    }
-}
-
-@Composable
 private fun SettingsDialog(
     backendUrl: String,
     tar1090Url: String,
@@ -337,7 +173,7 @@ private fun SettingsDialog(
         onDismissRequest = onDismiss,
         title = { Text("Settings") },
         text = {
-            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+            Column {
                 OutlinedTextField(
                     value = backend,
                     onValueChange = { backend = it },

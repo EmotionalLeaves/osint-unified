@@ -35,6 +35,7 @@ data class GodEyeUiState(
     val runningToolIds: Set<String> = emptySet(),
     val workflowName: String? = null,
     val workflowRunning: Boolean = false,
+    val navSignal: Long = 0,
     val backendUrl: String = "",
     val tar1090Url: String = "",
     val aisUrl: String = ""
@@ -96,7 +97,8 @@ class GodEyeViewModel(
                 suggestedTools = router.suggestTools(observable),
                 workflowName = Workflows.forObservable(observable)?.name,
                 results = emptyList(),
-                runningToolIds = emptySet()
+                runningToolIds = emptySet(),
+                navSignal = it.navSignal + 1
             )
         }
     }

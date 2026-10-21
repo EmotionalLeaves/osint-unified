@@ -6,16 +6,19 @@ import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.osint.unified.ui.forensics.ForensicsScreen
 import com.osint.unified.ui.godeye.GodEyeViewModel
 import com.osint.unified.ui.godeye.GodEyeViewScreen
 import com.osint.unified.ui.history.HistoryScreen
 import com.osint.unified.ui.history.HistoryViewModel
+import com.osint.unified.ui.investigation.InvestigationScreen
 import com.osint.unified.ui.theme.OsintTheme
 
 class MainActivity : ComponentActivity() {
@@ -35,7 +38,15 @@ class MainActivity : ComponentActivity() {
             OsintTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     var screen by rememberSaveable { mutableStateOf("godeye") }
+                    val godState by godEyeViewModel.state.collectAsStateWithLifecycle()
+
+                    // A new search (from the bar or a globe tap) opens the investigation.
+                    LaunchedEffect(godState.navSignal) {
+                        if (godState.navSignal > 0L) screen = "investigation"
+                    }
+
                     when (screen) {
+                        "investigation" -> InvestigationScreen(godEyeViewModel, onBack = { screen = "godeye" })
                         "history" -> HistoryScreen(historyViewModel, onBack = { screen = "godeye" })
                         "forensics" -> ForensicsScreen(
                             (application as OsintApplication).exifReader,
