@@ -79,7 +79,7 @@ object ResultFormatter {
         return Summary("${lines.size} lines", lines)
     }
 
-    private inline fun ndjson(raw: String, transform: (JsonObject) -> String): List<String> =
+    private inline fun ndjson(raw: String, crossinline transform: (JsonObject) -> String): List<String> =
         raw.lineSequence()
             .map { it.trim() }
             .filter { it.startsWith("{") }
