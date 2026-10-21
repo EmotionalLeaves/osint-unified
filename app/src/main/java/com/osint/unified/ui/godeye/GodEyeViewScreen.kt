@@ -73,7 +73,7 @@ fun GodEyeViewScreen(
                     viewModel.onMapClick(lat, lon)
                 }
             }, "AndroidBridge")
-            loadUrl("file:///android_asset/cesium.html")
+            loadUrl("file:///android_asset/map.html")
         }
     }
 

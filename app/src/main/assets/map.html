@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>God's Eye View</title>
+  <link href="https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.css" rel="stylesheet" />
+  <script src="https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/satellite.js/5.0.0/satellite.min.js"></script>
+  <style>
+    html, body, #map { margin: 0; padding: 0; width: 100%; height: 100%; background: #0b0e11; }
+    #layerbar { position: absolute; top: 8px; left: 8px; z-index: 10; display: flex; gap: 6px; flex-wrap: wrap; }
+    #layerbar button { font: 11px sans-serif; color: #e2e2e6; background: rgba(16,20,24,0.85); border: 1px solid #333; border-radius: 6px; padding: 5px 9px; }
+    #layerbar button.off { opacity: 0.45; text-decoration: line-through; }
+    .maplibregl-ctrl-attrib { font-size: 9px; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <div id="layerbar">
+    <button data-layer="aircraft">Aircraft</button>
+    <button data-layer="vessels">Vessels</button>
+    <button data-layer="quakes">Quakes</button>
+    <button data-layer="sats">Satellites</button>
+  </div>
+  <script>
+    const EMPTY = { type: "FeatureCollection", features: [] };
+    const layers = { aircraft: true, vessels: true, quakes: true, sats: true };
+
+    const map = new maplibregl.Map({
+      container: "map",
+      style: {
+        version: 8,
+        glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
+        sources: {
+          osm: {
+            type: "raster",
+            tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+            tileSize: 256,
+            attribution: "© OpenStreetMap"
+          }
+        },
+        layers: [{ id: "osm", type: "raster", source: "osm" }]
+      },
+      center: [0, 20],
+      zoom: 1.3
+    });
+
+    function fc(list, coord, label, extra) {
+      return {
+        type: "FeatureCollection",
+        features: (list || []).map(function (x) {
+          const props = { label: label(x) };
+          if (extra) extra(x, props);
+          return { type: "Feature", geometry: { type: "Point", coordinates: coord(x) }, properties: props };
+        })
+      };
+    }
+
+    // Called from Kotlin.
+    window.updateAircraft = function (list) {
+      const s = map.getSource("aircraft");
+      if (s) s.setData(fc(list, function (a) { return [a.lon, a.lat]; }, function (a) { return a.callsign || a.icao; }));
+    };
+    window.updateVessels = function (list) {
+      const s = map.getSource("vessels");
+      if (s) s.setData(fc(list, function (v) { return [v.lon, v.lat]; }, function (v) { return v.name || v.mmsi; }));
+    };
+
+    function loadQuakes() {
+      fetch("https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson")
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          const feats = (d.features || []).map(function (f) {
+            const mag = (f.properties && f.properties.mag) || 0;
+            return { type: "Feature", geometry: f.geometry, properties: { mag: mag, label: "M" + mag.toFixed(1) } };
+          });
+          const s = map.getSource("quakes");
+          if (s) s.setData({ type: "FeatureCollection", features: feats });
+        })
+        .catch(function () {});
+    }
+
+    let satrecs = [];
+    function loadSats() {
+      fetch("https://celestrak.org/NORAD/elements/gp.php?GROUP=visual&FORMAT=tle")
+        .then(function (r) { return r.text(); })
+        .then(function (t) {
+          const lines = t.split(/\r?\n/).filter(function (l) { return l.trim().length; });
+          satrecs = [];
+          for (let i = 0; i + 2 < lines.length; i += 3) {
+            try { satrecs.push({ name: lines[i].trim(), rec: satellite.twoline2satrec(lines[i + 1], lines[i + 2]) }); } catch (e) {}
+          }
+          updateSats();
+        })
+        .catch(function () {});
+    }
+    function updateSats() {
+      if (!window.satellite || !satrecs.length || !map.getSource("sats")) return;
+      const now = new Date(), gmst = satellite.gstime(now), feats = [];
+      satrecs.forEach(function (s) {
+        try {
+          const pv = satellite.propagate(s.rec, now);
+          if (!pv.position) return;
+          const gd = satellite.eciToGeodetic(pv.position, gmst);
+          feats.push({ type: "Feature", geometry: { type: "Point", coordinates: [satellite.degreesLong(gd.longitude), satellite.degreesLat(gd.latitude)] }, properties: { label: s.name } });
+        } catch (e) {}
+      });
+      map.getSource("sats").setData({ type: "FeatureCollection", features: feats });
+    }
+
+    map.on("load", function () {
+      try { map.setProjection({ type: "globe" }); } catch (e) {}
+
+      ["aircraft", "vessels", "quakes", "sats"].forEach(function (id) {
+        map.addSource(id, { type: "geojson", data: EMPTY });
+      });
+
+      map.addLayer({ id: "quakes", type: "circle", source: "quakes", paint: { "circle-radius": ["max", 4, ["*", ["coalesce", ["get", "mag"], 0], 2]], "circle-color": "#F0997B", "circle-stroke-color": "#000", "circle-stroke-width": 1, "circle-opacity": 0.85 } });
+      map.addLayer({ id: "sats", type: "circle", source: "sats", paint: { "circle-radius": 3, "circle-color": "#C0A8FF" } });
+      map.addLayer({ id: "vessels", type: "circle", source: "vessels", paint: { "circle-radius": 5, "circle-color": "#1D9E75", "circle-stroke-color": "#000", "circle-stroke-width": 1 } });
+      map.addLayer({ id: "aircraft", type: "circle", source: "aircraft", paint: { "circle-radius": 5, "circle-color": "#4FC3F7", "circle-stroke-color": "#000", "circle-stroke-width": 1 } });
+      map.addLayer({ id: "aircraft-lbl", type: "symbol", source: "aircraft", layout: { "text-field": ["get", "label"], "text-size": 10, "text-offset": [0, 1.1] }, paint: { "text-color": "#ffffff", "text-halo-color": "#000000", "text-halo-width": 1 } });
+      map.addLayer({ id: "vessels-lbl", type: "symbol", source: "vessels", layout: { "text-field": ["get", "label"], "text-size": 10, "text-offset": [0, 1.1] }, paint: { "text-color": "#ffffff", "text-halo-color": "#000000", "text-halo-width": 1 } });
+
+      loadQuakes(); setInterval(loadQuakes, 300000);
+      loadSats(); setInterval(loadSats, 3600000); setInterval(updateSats, 3000);
+
+      document.querySelectorAll("#layerbar button").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          const n = btn.getAttribute("data-layer");
+          layers[n] = !layers[n];
+          btn.classList.toggle("off", !layers[n]);
+          const vis = layers[n] ? "visible" : "none";
+          if (map.getLayer(n)) map.setLayoutProperty(n, "visibility", vis);
+          if (map.getLayer(n + "-lbl")) map.setLayoutProperty(n + "-lbl", "visibility", vis);
+        });
+      });
+    });
+
+    // Tap a plane/ship -> investigate it; tap empty map -> investigate the coordinate.
+    map.on("click", function (e) {
+      let f = [];
+      try { f = map.queryRenderedFeatures(e.point, { layers: ["aircraft", "vessels"] }); } catch (err) {}
+      if (f && f.length && f[0].properties && f[0].properties.label) {
+        if (window.AndroidBridge && window.AndroidBridge.onAircraftClick) window.AndroidBridge.onAircraftClick(f[0].properties.label);
+        return;
+      }
+      if (window.AndroidBridge && window.AndroidBridge.onMapClick) window.AndroidBridge.onMapClick(e.lngLat.lat, e.lngLat.lng);
+    });
+  </script>
+</body>
+</html>
