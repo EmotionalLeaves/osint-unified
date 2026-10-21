@@ -12,6 +12,7 @@ import com.osint.unified.domain.executor.CloudToolExecutor
 import com.osint.unified.domain.executor.DirectToolExecutor
 import com.osint.unified.domain.executor.ExecutorFactory
 import com.osint.unified.domain.executor.LocalToolExecutor
+import com.osint.unified.domain.executor.UsernameChecker
 
 /**
  * Minimal manual DI container. Hilt can replace this later; for now a
@@ -28,7 +29,7 @@ class OsintApplication : Application() {
         ExecutorFactory(
             cloud = CloudToolExecutor(settings),
             local = LocalToolExecutor(applicationInfo.nativeLibraryDir, filesDir.absolutePath),
-            direct = DirectToolExecutor()
+            direct = DirectToolExecutor(UsernameChecker(this))
         )
     }
 

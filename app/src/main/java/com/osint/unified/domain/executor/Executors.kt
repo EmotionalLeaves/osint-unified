@@ -1,5 +1,6 @@
 package com.osint.unified.domain.executor
 
+import com.google.i18n.phonenumbers.PhoneNumberUtil
 import com.osint.unified.data.AppSettings
 import com.osint.unified.domain.ExecutionMode
 import com.osint.unified.domain.Tool
@@ -134,7 +135,6 @@ class LocalToolExecutor(
         "subfinder" -> listOf("-d", input, "-silent", "-json")
         "amass" -> listOf("enum", "-passive", "-d", input, "-json", "/dev/stdout")
         "httpx" -> listOf("-u", input, "-json", "-silent", "-title", "-tech-detect", "-status-code")
-        "nuclei" -> listOf("-u", input, "-jsonl", "-silent", "-duc")
         "exiftool" -> listOf("-j", "-a", "-u", "-g1", input)
         else -> listOf(input)
     }
@@ -145,6 +145,7 @@ class LocalToolExecutor(
  * that is Overpass (OpenStreetMap infrastructure near a coordinate).
  */
 class DirectToolExecutor(
+    private val usernameChecker: UsernameChecker,
     private val client: OkHttpClient = Http.client
 ) : ToolExecutor {
 
@@ -154,9 +155,33 @@ class DirectToolExecutor(
         withContext(Dispatchers.IO) {
             when (tool.id) {
                 "overpass_turbo" -> overpass(input)
+                "sherlock", "maigret" -> runCatching { usernameChecker.check(input) }
+                "phoneinfoga" -> phoneInfo(input)
                 else -> Result.failure(IllegalStateException("${tool.name} has no direct implementation."))
             }
         }
+
+    private fun phoneInfo(input: String): Result<String> = try {
+        val util = PhoneNumberUtil.getInstance()
+        val number = util.parse(input, null)
+        val region = util.getRegionCodeForNumber(number) ?: "?"
+        val intl = util.format(number, PhoneNumberUtil.PhoneNumberFormat.INTERNATIONAL)
+        val countryName = java.util.Locale("", region).displayCountry.ifBlank { region }
+        val sb = StringBuilder()
+        sb.append("Valid: ${util.isValidNumber(number)}\n")
+        sb.append("Country: $countryName ($region)\n")
+        sb.append("Country code: +${number.countryCode}\n")
+        sb.append("Line type: ${util.getNumberType(number)}\n")
+        sb.append("International: $intl\n")
+        sb.append("National: ${util.format(number, PhoneNumberUtil.PhoneNumberFormat.NATIONAL)}\n")
+        val enc = java.net.URLEncoder.encode("\"$intl\"", "UTF-8")
+        sb.append("\nSearch dorks:\n")
+        sb.append("https://www.google.com/search?q=$enc\n")
+        sb.append("https://www.google.com/search?q=${java.net.URLEncoder.encode(input, "UTF-8")}\n")
+        Result.success(sb.toString())
+    } catch (e: Exception) {
+        Result.failure(IllegalArgumentException("Could not parse number (use E.164, e.g. +14155551234): ${e.message}"))
+    }
 
     private fun overpass(input: String): Result<String> {
         val parts = input.split(",").map { it.trim().toDoubleOrNull() }

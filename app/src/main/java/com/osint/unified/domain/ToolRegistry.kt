@@ -17,17 +17,17 @@ object ToolRegistry {
 
     val all: List<Tool> = listOf(
         // ---- SOCMINT ----
-        Tool("sherlock", "Sherlock", SOCMINT, "username", "json", LOCAL,
-            "Verifies public account existence across 400+ social networks.",
+        Tool("sherlock", "Sherlock", SOCMINT, "username", "json", DIRECT,
+            "Verifies public account existence across hundreds of sites (native on-device check).",
             "https://github.com/sherlock-project/sherlock"),
-        Tool("maigret", "Maigret", SOCMINT, "username", "json", LOCAL,
-            "Checks 6,000+ sites and parses profiles for secondary identifiers.",
+        Tool("maigret", "Maigret", SOCMINT, "username", "json", DIRECT,
+            "Checks a large site ruleset for public accounts (native on-device check).",
             "https://github.com/soxoj/maigret"),
         Tool("holehe", "Holehe", SOCMINT, "email", "json", LOCAL,
             "Confirms where an email is registered without notifying the user.",
             "https://github.com/megadose/holehe"),
-        Tool("phoneinfoga", "PhoneInfoga", SOCMINT, "phone", "json", LOCAL,
-            "Identifies country, carrier, line type and generates search dorks.",
+        Tool("phoneinfoga", "PhoneInfoga", SOCMINT, "phone", "json", DIRECT,
+            "Phone number intelligence: country, line type, validity and search dorks (native on-device).",
             "https://github.com/sundowndev/phoneinfoga"),
         Tool("ghunt", "GHunt", SOCMINT, "email", "json", CLOUD,
             "Extracts Google account metadata, Maps reviews and public calendar.",
@@ -46,9 +46,9 @@ object ToolRegistry {
         Tool("httpx", "httpx", NETINT, "domain", "json", LOCAL,
             "Probes HTTP services for status, title, banners, TLS and tech stack.",
             "https://github.com/projectdiscovery/httpx"),
-        Tool("nuclei", "Nuclei", NETINT, "domain", "json", LOCAL,
-            "Template-based scanning for exposed panels, misconfigs and CVEs. Downloads templates on first run.",
-            "https://github.com/projectdiscovery/nuclei", timeoutMs = 180_000L),
+        Tool("nuclei", "Nuclei", NETINT, "domain", "json", CLOUD,
+            "Template-based scanning for exposed panels, misconfigs and CVEs.",
+            "https://github.com/projectdiscovery/nuclei", timeoutMs = 120_000L),
 
         // ---- GEOINT ----
         Tool("tar1090", "tar1090", GEOINT, "coordinate", "json", LOCAL,

@@ -44,10 +44,12 @@ jobs:
           BIN="$(go env GOPATH)/bin/android_arm64"
           # Tools with a known cmd path, built via `go install`. Each failure is
           # non-fatal so one bad tool can't drop the others.
+          # Self-contained pure-Go tools (no embedded frontend). nuclei and
+          # phoneinfoga are handled natively in-app instead, since they embed a
+          # web UI that a plain cross-build can't satisfy.
           for spec in \
             "subfinder=github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest" \
-            "httpx=github.com/projectdiscovery/httpx/cmd/httpx@latest" \
-            "nuclei=github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest"; do
+            "httpx=github.com/projectdiscovery/httpx/cmd/httpx@latest"; do
             name="${spec%%=*}"; path="${spec#*=}"
             if go install "$path"; then
               cp "$BIN/$name" "$OUT/lib$name.so" && echo "BUILT $name"
@@ -55,10 +57,6 @@ jobs:
               echo "WARN build failed: $name"
             fi
           done
-          # phoneinfoga: main package is at the repo root, so clone + build.
-          if git clone --depth 1 https://github.com/sundowndev/phoneinfoga /tmp/phoneinfoga; then
-            (cd /tmp/phoneinfoga && go build -o "$OUT/libphoneinfoga.so" .) && echo "BUILT phoneinfoga" || echo "WARN build failed: phoneinfoga"
-          fi
           chmod +x "$OUT"/*.so || true
           ls -la "$OUT"
 
