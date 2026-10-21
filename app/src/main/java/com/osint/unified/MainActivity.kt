@@ -11,6 +11,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import com.osint.unified.ui.forensics.ForensicsScreen
 import com.osint.unified.ui.godeye.GodEyeViewModel
 import com.osint.unified.ui.godeye.GodEyeViewScreen
 import com.osint.unified.ui.history.HistoryScreen
@@ -33,11 +34,18 @@ class MainActivity : ComponentActivity() {
         setContent {
             OsintTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    var showHistory by rememberSaveable { mutableStateOf(false) }
-                    if (showHistory) {
-                        HistoryScreen(historyViewModel, onBack = { showHistory = false })
-                    } else {
-                        GodEyeViewScreen(godEyeViewModel, onOpenHistory = { showHistory = true })
+                    var screen by rememberSaveable { mutableStateOf("godeye") }
+                    when (screen) {
+                        "history" -> HistoryScreen(historyViewModel, onBack = { screen = "godeye" })
+                        "forensics" -> ForensicsScreen(
+                            (application as OsintApplication).exifReader,
+                            onBack = { screen = "godeye" }
+                        )
+                        else -> GodEyeViewScreen(
+                            godEyeViewModel,
+                            onOpenHistory = { screen = "history" },
+                            onOpenForensics = { screen = "forensics" }
+                        )
                     }
                 }
             }

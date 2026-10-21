@@ -21,6 +21,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -66,7 +67,11 @@ import java.io.File
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-fun GodEyeViewScreen(viewModel: GodEyeViewModel, onOpenHistory: () -> Unit) {
+fun GodEyeViewScreen(
+    viewModel: GodEyeViewModel,
+    onOpenHistory: () -> Unit,
+    onOpenForensics: () -> Unit
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -112,6 +117,7 @@ fun GodEyeViewScreen(viewModel: GodEyeViewModel, onOpenHistory: () -> Unit) {
             onQueryChange = viewModel::onQueryChange,
             onSearch = viewModel::onSearch,
             onOpenHistory = onOpenHistory,
+            onOpenForensics = onOpenForensics,
             onOpenSettings = { showSettings = true }
         )
 
@@ -182,11 +188,12 @@ private fun SearchBar(
     onQueryChange: (String) -> Unit,
     onSearch: () -> Unit,
     onOpenHistory: () -> Unit,
+    onOpenForensics: () -> Unit,
     onOpenSettings: () -> Unit
 ) {
     Surface(tonalElevation = 3.dp) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(8.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             OutlinedTextField(
@@ -203,6 +210,9 @@ private fun SearchBar(
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 modifier = Modifier.weight(1f)
             )
+            IconButton(onClick = onOpenForensics) {
+                Icon(Icons.Filled.Build, contentDescription = "Forensics & decoders")
+            }
             IconButton(onClick = onOpenHistory) {
                 Icon(Icons.Filled.History, contentDescription = "History")
             }

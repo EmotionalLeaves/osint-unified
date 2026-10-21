@@ -4,6 +4,7 @@ import android.app.Application
 import com.osint.unified.data.AircraftDataSource
 import com.osint.unified.data.AisDataSource
 import com.osint.unified.data.AppSettings
+import com.osint.unified.data.ExifReader
 import com.osint.unified.data.InvestigationExporter
 import com.osint.unified.data.InvestigationRepository
 import com.osint.unified.data.db.AppDatabase
@@ -38,4 +39,5 @@ class OsintApplication : Application() {
     }
 
     val exporter: InvestigationExporter by lazy { InvestigationExporter(this) }
+    val exifReader: ExifReader by lazy { ExifReader(this) }
 }
