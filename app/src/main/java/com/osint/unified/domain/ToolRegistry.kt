@@ -105,6 +105,15 @@ object ToolRegistry {
         Tool("archive", "Archive (Wayback)", FORENSICS, "domain", "text", DIRECT,
             "Preserves a URL as a Wayback Machine snapshot.",
             "https://github.com/bellingcat/auto-archiver"),
+        Tool("geocode", "Geocode (place)", GEOINT, "place", "json", DIRECT,
+            "Resolves a place name to coordinates and a map (OSM Nominatim).",
+            "https://nominatim.openstreetmap.org"),
+        Tool("reverseimage", "Reverse image", FORENSICS, "image", "text", DIRECT,
+            "Reverse image search links (Google Lens, Yandex, Bing, TinEye).",
+            "https://lens.google.com"),
+        Tool("exif", "EXIF / GPS", FORENSICS, "image", "text", DIRECT,
+            "Extracts EXIF GPS and camera metadata from an image URL (native).",
+            "https://github.com/exiftool/exiftool"),
     )
 
     private val byId: Map<String, Tool> = all.associateBy { it.id }

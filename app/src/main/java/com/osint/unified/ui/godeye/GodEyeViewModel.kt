@@ -11,6 +11,7 @@ import com.osint.unified.data.InvestigationExporter
 import com.osint.unified.data.InvestigationRepository
 import com.osint.unified.data.db.Result as ResultRow
 import java.io.File
+import com.osint.unified.domain.ExecutionMode
 import com.osint.unified.domain.Observable
 import com.osint.unified.domain.ObservableRouter
 import com.osint.unified.domain.Tool
@@ -100,6 +101,32 @@ class GodEyeViewModel(
                 runningToolIds = emptySet(),
                 navSignal = it.navSignal + 1
             )
+        }
+        autoRun()
+    }
+
+    /**
+     * Fans out automatically: runs every suggested tool that needs no backend
+     * (DIRECT + on-device LOCAL), so a search immediately returns a broad
+     * picture. Cloud tools and redundant username checks are left to tap.
+     */
+    private fun autoRun() {
+        val observable = _state.value.observable ?: return
+        val redundant = setOf("maigret", "blackbird")
+        val tools = _state.value.suggestedTools.filter {
+            it.executionMode != ExecutionMode.CLOUD && it.id !in redundant
+        }
+        if (tools.isEmpty()) return
+        viewModelScope.launch {
+            val investigationId = ensureInvestigation(observable)
+            for (tool in tools) {
+                _state.update { it.copy(runningToolIds = it.runningToolIds + tool.id) }
+                try {
+                    repository.runTool(investigationId, tool, observable.raw)
+                } finally {
+                    _state.update { it.copy(runningToolIds = it.runningToolIds - tool.id) }
+                }
+            }
         }
     }
 

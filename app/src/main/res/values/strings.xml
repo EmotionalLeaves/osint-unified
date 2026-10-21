@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">OSINT Unified</string>
-    <string name="search_hint">Enter email, username, domain, IP, phone, or coordinates</string>
+    <string name="search_hint">Name, email, username, domain, IP, phone, place, coordinates, or image URL</string>
 </resources>

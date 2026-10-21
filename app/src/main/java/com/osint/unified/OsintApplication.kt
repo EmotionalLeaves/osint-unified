@@ -30,7 +30,7 @@ class OsintApplication : Application() {
         ExecutorFactory(
             cloud = CloudToolExecutor(settings),
             local = LocalToolExecutor(applicationInfo.nativeLibraryDir, filesDir.absolutePath),
-            direct = DirectToolExecutor(UsernameChecker(this))
+            direct = DirectToolExecutor(UsernameChecker(this), exifReader)
         )
     }
 

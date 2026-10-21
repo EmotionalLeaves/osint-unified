@@ -3,9 +3,10 @@ package com.osint.unified.domain
 /**
  * Classifies raw user input into an [Observable] and recommends tools.
  *
- * Ordering matters: coordinate and IP are checked before the more permissive
- * domain/username patterns so that "40.7,-74.0" or "8.8.8.8" are never
- * misread as usernames or domains.
+ * Almost any non-empty input resolves to something useful: technical types
+ * (email, IP, domain, phone, coordinate, URL, image URL) route to their
+ * specialist tools, and everything else is treated as a [Observable.Name]
+ * (person / place / free query) that fans out to dorks and geocoding.
  */
 class ObservableRouter {
 
@@ -16,6 +17,7 @@ class ObservableRouter {
     private val phoneRegex = Regex("""^\+\d{8,15}$""")
     private val domainRegex = Regex("""^(?=.{1,253}$)(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$""")
     private val usernameRegex = Regex("""^[a-zA-Z0-9_.-]{3,30}$""")
+    private val imageExtRegex = Regex(""".*\.(?:jpe?g|png|gif|webp|bmp|tiff?)(?:\?.*)?$""", RegexOption.IGNORE_CASE)
 
     fun classify(rawInput: String): Observable {
         val input = rawInput.trim()
@@ -31,11 +33,14 @@ class ObservableRouter {
                 if (lat != null && lon != null && lat in -90.0..90.0 && lon in -180.0..180.0) {
                     Observable.Coordinate(input, lat, lon)
                 } else {
-                    Observable.Unknown(input)
+                    Observable.Name(input)
                 }
             }
 
             phoneRegex.matches(input) -> Observable.PhoneNumber(input)
+
+            input.startsWith("http://", true) || input.startsWith("https://", true) ->
+                if (imageExtRegex.matches(input)) Observable.ImageUrl(input) else Observable.Url(input)
 
             ipv4Regex.matches(input) || ipv6Regex.matches(input) -> Observable.IpAddress(input)
 
@@ -43,7 +48,7 @@ class ObservableRouter {
 
             usernameRegex.matches(input) -> Observable.Username(input)
 
-            else -> Observable.Unknown(input)
+            else -> Observable.Name(input)
         }
     }
 
@@ -57,8 +62,11 @@ class ObservableRouter {
             is Observable.Username -> listOf("sherlock", "maigret", "blackbird", "dorks")
             is Observable.Domain -> listOf("subfinder", "crtsh", "dns", "httpx", "shodan", "webcrawl", "wayback", "archive", "dorks", "amass", "nuclei")
             is Observable.IpAddress -> listOf("ipinfo", "shodan", "httpx", "nuclei")
-            is Observable.PhoneNumber -> listOf("phoneinfoga")
+            is Observable.PhoneNumber -> listOf("phoneinfoga", "dorks")
             is Observable.Coordinate -> listOf("overpass_turbo", "revgeo")
+            is Observable.Url -> listOf("webcrawl", "wayback", "archive", "dorks")
+            is Observable.ImageUrl -> listOf("exif", "reverseimage", "archive")
+            is Observable.Name -> listOf("dorks", "geocode")
             is Observable.Unknown -> emptyList()
         }
         return ids.mapNotNull { ToolRegistry.byId(it) }

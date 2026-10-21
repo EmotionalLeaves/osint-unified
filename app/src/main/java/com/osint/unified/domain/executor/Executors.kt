@@ -146,6 +146,7 @@ class LocalToolExecutor(
  */
 class DirectToolExecutor(
     private val usernameChecker: UsernameChecker,
+    private val exifReader: com.osint.unified.data.ExifReader,
     private val apis: OsintApis = OsintApis(),
     private val client: OkHttpClient = Http.client
 ) : ToolExecutor {
@@ -168,6 +169,9 @@ class DirectToolExecutor(
                 "revgeo" -> apis.revgeo(input)
                 "shodan" -> apis.shodan(input)
                 "dorks" -> apis.dorks(input)
+                "geocode" -> apis.geocode(input)
+                "reverseimage" -> apis.reverseImage(input)
+                "exif" -> runCatching { exifReader.fromUrl(input) }
                 else -> Result.failure(IllegalStateException("${tool.name} has no direct implementation."))
             }
         }

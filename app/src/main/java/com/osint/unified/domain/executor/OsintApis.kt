@@ -147,6 +147,12 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
             queries.add("Login / admin" to "site:$v (inurl:login OR inurl:admin OR inurl:dashboard)")
             queries.add("Config / backups" to "site:$v (ext:env OR ext:bak OR ext:sql OR ext:log OR ext:conf)")
         } else {
+            if (v.contains(' ')) {
+                queries.add("LinkedIn" to "site:linkedin.com/in \"$v\"")
+                queries.add("Facebook" to "site:facebook.com \"$v\"")
+                queries.add("X / Twitter" to "(site:twitter.com OR site:x.com) \"$v\"")
+                queries.add("Instagram" to "site:instagram.com \"$v\"")
+            }
             queries.add("In URLs" to "inurl:$v")
             queries.add("In titles" to "intitle:$v")
             queries.add("Paste / code sites" to "\"$v\" (site:pastebin.com OR site:github.com OR site:gist.github.com)")
@@ -184,6 +190,32 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
             if (loc != null && loc.startsWith("/web/")) "Archived snapshot:\nhttps://web.archive.org$loc"
             else "Archive requested for $target (HTTP ${resp.code}).\nView: https://web.archive.org/web/2/$target"
         }
+    }
+
+    /** Forward geocoding: a place name -> matching locations with coordinates. */
+    fun geocode(place: String): Result<String> = runCatching {
+        val url = "https://nominatim.openstreetmap.org/search?q=" +
+            URLEncoder.encode(place, "UTF-8") + "&format=jsonv2&limit=5"
+        val arr = json.parseToJsonElement(getBody(url)).jsonArray
+        if (arr.isEmpty()) "No places matched \"$place\"." else
+            "Matched ${arr.size} place(s):\n\n" + arr.joinToString("\n\n") { el ->
+                val o = el.jsonObject
+                fun s(k: String) = (o[k] as? JsonPrimitive)?.contentOrNull
+                val name = s("display_name") ?: "?"
+                val lat = s("lat").orEmpty()
+                val lon = s("lon").orEmpty()
+                "$name\nCoords: $lat, $lon\nMap: https://www.openstreetmap.org/?mlat=$lat&mlon=$lon#map=14/$lat/$lon"
+            }
+    }
+
+    /** Reverse image search links across the major engines. */
+    fun reverseImage(url: String): Result<String> = runCatching {
+        val e = URLEncoder.encode(url, "UTF-8")
+        "Reverse image search:\n" +
+            "Google Lens: https://lens.google.com/uploadbyurl?url=$e\n" +
+            "Yandex: https://yandex.com/images/search?rpt=imageview&url=$e\n" +
+            "Bing: https://www.bing.com/images/search?view=detailv2&iss=sbi&q=imgurl:$e\n" +
+            "TinEye: https://tineye.com/search?url=$e"
     }
 
     private val ipRegex = Regex("""^(?:\d{1,3}\.){3}\d{1,3}$""")
