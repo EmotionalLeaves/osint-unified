@@ -6,6 +6,7 @@ import com.osint.unified.domain.Observable
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -67,7 +68,7 @@ class InvestigationExporter(private val appContext: Context) {
                 }
             }
         }
-        return prettyJson.encodeToString(JsonObject.serializer(), doc)
+        return prettyJson.encodeToString(JsonElement.serializer(), doc)
     }
 
     private fun toCsv(results: List<ResultRow>): String {

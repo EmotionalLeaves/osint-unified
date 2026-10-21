@@ -53,6 +53,21 @@ jobs:
         with:
           gradle-version: '8.9'
 
+      - name: Compile (surface Kotlin errors as annotations)
+        run: |
+          set +e
+          gradle compileDebugKotlin --no-daemon --console=plain > compile.log 2>&1
+          code=$?
+          if [ $code -ne 0 ]; then
+            grep -E "^e: " compile.log | head -40 | while IFS= read -r line; do
+              clean="${line//$'\r'/}"
+              echo "::error::${clean}"
+            done
+            echo "----- tail of compile log -----"
+            tail -80 compile.log
+            exit 1
+          fi
+
       - name: Run unit tests
         run: gradle test --no-daemon --stacktrace
 
