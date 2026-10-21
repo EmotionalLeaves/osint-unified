@@ -141,6 +141,24 @@ class GodEyeViewModel(
         }
     }
 
+    /** Runs every suggested tool for the current observable, in sequence. */
+    fun onRunAll() {
+        val observable = _state.value.observable ?: return
+        val tools = _state.value.suggestedTools
+        if (tools.isEmpty()) return
+        viewModelScope.launch {
+            val investigationId = ensureInvestigation(observable)
+            for (tool in tools) {
+                _state.update { it.copy(runningToolIds = it.runningToolIds + tool.id) }
+                try {
+                    repository.runTool(investigationId, tool, observable.raw)
+                } finally {
+                    _state.update { it.copy(runningToolIds = it.runningToolIds - tool.id) }
+                }
+            }
+        }
+    }
+
     private suspend fun ensureInvestigation(observable: Observable): Long {
         currentInvestigationId?.let { return it }
         val id = repository.createInvestigation(observable)

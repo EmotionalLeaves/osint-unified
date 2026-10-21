@@ -1,9 +1,13 @@
 package com.osint.unified.ui.common
 
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -15,12 +19,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.osint.unified.data.db.Result as ResultRow
+import com.osint.unified.domain.ObservableExtractor
 import com.osint.unified.domain.ResultFormatter
 
 /** Renders a single tool result: tool name, status, parsed summary. Shared by
  *  the live results panel and the history detail view. */
 @Composable
-fun ResultCard(row: ResultRow) {
+fun ResultCard(row: ResultRow, onPivot: ((String) -> Unit)? = null) {
     val statusColor = when (row.status) {
         "success" -> Color(0xFF2E7D32)
         "error" -> Color(0xFFC62828)
@@ -50,6 +55,27 @@ fun ResultCard(row: ResultRow) {
                 fontFamily = FontFamily.Monospace,
                 modifier = Modifier.padding(top = 4.dp)
             )
+
+            if (onPivot != null && row.status == "success") {
+                val pivots = remember(row.id, row.rawOutput) {
+                    ObservableExtractor.extract(row.rawOutput, row.input)
+                }
+                if (pivots.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth()
+                            .horizontalScroll(rememberScrollState())
+                            .padding(top = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        pivots.forEach { value ->
+                            AssistChip(
+                                onClick = { onPivot(value) },
+                                label = { Text(value, maxLines = 1) }
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }

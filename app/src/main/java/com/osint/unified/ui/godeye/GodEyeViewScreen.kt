@@ -128,6 +128,11 @@ fun GodEyeViewScreen(viewModel: GodEyeViewModel, onOpenHistory: () -> Unit) {
                 workflowName = state.workflowName,
                 workflowRunning = state.workflowRunning,
                 onRunWorkflow = viewModel::onRunWorkflow,
+                onRunAll = viewModel::onRunAll,
+                onPivot = { value ->
+                    viewModel.onQueryChange(value)
+                    viewModel.onSearch()
+                },
                 onToolClick = viewModel::onToolClick,
                 onExport = { format ->
                     scope.launch {
@@ -217,6 +222,8 @@ private fun ResultPanel(
     workflowName: String?,
     workflowRunning: Boolean,
     onRunWorkflow: () -> Unit,
+    onRunAll: () -> Unit,
+    onPivot: (String) -> Unit,
     onToolClick: (Tool) -> Unit,
     onExport: (ExportFormat) -> Unit,
     onShowGraph: () -> Unit
@@ -257,17 +264,24 @@ private fun ResultPanel(
                 }
             }
 
-            if (workflowName != null) {
-                FilledTonalButton(
-                    onClick = onRunWorkflow,
-                    enabled = !workflowRunning,
-                    modifier = Modifier.padding(top = 8.dp)
-                ) {
-                    if (workflowRunning) {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                        Spacer(Modifier.size(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(top = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                FilledTonalButton(onClick = onRunAll, enabled = !workflowRunning) {
+                    Text("Run all")
+                }
+                if (workflowName != null) {
+                    FilledTonalButton(onClick = onRunWorkflow, enabled = !workflowRunning) {
+                        if (workflowRunning) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.size(8.dp))
+                        }
+                        Text(if (workflowRunning) "Running $workflowName…" else "Run $workflowName")
                     }
-                    Text(if (workflowRunning) "Running $workflowName…" else "Run $workflowName")
                 }
             }
 
@@ -290,7 +304,7 @@ private fun ResultPanel(
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    results.forEach { row -> ResultCard(row) }
+                    results.forEach { row -> ResultCard(row, onPivot = onPivot) }
                 }
             }
         }
