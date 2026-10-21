@@ -53,12 +53,12 @@ class ObservableRouter {
      */
     fun suggestTools(observable: Observable): List<Tool> {
         val ids = when (observable) {
-            is Observable.Email -> listOf("holehe", "ghunt", "h8mail")
-            is Observable.Username -> listOf("sherlock", "maigret")
-            is Observable.Domain -> listOf("subfinder", "amass", "httpx", "nuclei")
-            is Observable.IpAddress -> listOf("nuclei", "httpx")
+            is Observable.Email -> listOf("holehe", "gravatar", "dorks", "ghunt", "h8mail")
+            is Observable.Username -> listOf("sherlock", "maigret", "dorks")
+            is Observable.Domain -> listOf("subfinder", "crtsh", "dns", "httpx", "shodan", "wayback", "dorks", "amass", "nuclei")
+            is Observable.IpAddress -> listOf("ipinfo", "shodan", "httpx", "nuclei")
             is Observable.PhoneNumber -> listOf("phoneinfoga")
-            is Observable.Coordinate -> listOf("overpass_turbo")
+            is Observable.Coordinate -> listOf("overpass_turbo", "revgeo")
             is Observable.Unknown -> emptyList()
         }
         return ids.mapNotNull { ToolRegistry.byId(it) }

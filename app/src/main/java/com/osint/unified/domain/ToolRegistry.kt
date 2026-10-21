@@ -70,6 +70,32 @@ object ToolRegistry {
         Tool("exiftool", "ExifTool", FORENSICS, "media", "json", LOCAL,
             "Reads EXIF/GPS/IPTC/XMP metadata across hundreds of file formats.",
             "https://github.com/exiftool/exiftool"),
+
+        // ---- Keyless public OSINT data sources (DIRECT, no backend) ----
+        Tool("crtsh", "crt.sh (CT logs)", NETINT, "domain", "json", DIRECT,
+            "Certificate-transparency subdomain discovery via crt.sh.",
+            "https://crt.sh"),
+        Tool("dns", "DNS records", NETINT, "domain", "text", DIRECT,
+            "A/AAAA/MX/NS/TXT records via DNS-over-HTTPS.",
+            "https://dns.google"),
+        Tool("ipinfo", "IP geo / ASN", NETINT, "ip", "json", DIRECT,
+            "IP geolocation, ISP, organization and ASN.",
+            "https://ipwho.is"),
+        Tool("gravatar", "Gravatar", SOCMINT, "email", "json", DIRECT,
+            "Finds a public Gravatar profile and avatar for an email.",
+            "https://gravatar.com"),
+        Tool("wayback", "Wayback Machine", FORENSICS, "domain", "json", DIRECT,
+            "Historical archived snapshots of a site.",
+            "https://web.archive.org"),
+        Tool("revgeo", "Reverse geocode", GEOINT, "coordinate", "json", DIRECT,
+            "Resolves coordinates to a street address (OSM Nominatim).",
+            "https://nominatim.openstreetmap.org"),
+        Tool("shodan", "Shodan (InternetDB)", NETINT, "ip", "json", DIRECT,
+            "Open ports, hostnames, CPEs and CVEs for an IP or domain (keyless Shodan InternetDB).",
+            "https://internetdb.shodan.io"),
+        Tool("dorks", "Google Dorks", NETINT, "any", "text", DIRECT,
+            "Generates search-operator URLs for exposed files, directories and mentions.",
+            "https://www.exploit-db.com/google-hacking-database"),
     )
 
     private val byId: Map<String, Tool> = all.associateBy { it.id }

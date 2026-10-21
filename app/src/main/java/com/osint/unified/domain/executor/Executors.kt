@@ -146,6 +146,7 @@ class LocalToolExecutor(
  */
 class DirectToolExecutor(
     private val usernameChecker: UsernameChecker,
+    private val apis: OsintApis = OsintApis(),
     private val client: OkHttpClient = Http.client
 ) : ToolExecutor {
 
@@ -157,6 +158,14 @@ class DirectToolExecutor(
                 "overpass_turbo" -> overpass(input)
                 "sherlock", "maigret" -> runCatching { usernameChecker.check(input) }
                 "phoneinfoga" -> phoneInfo(input)
+                "crtsh" -> apis.crtsh(input)
+                "dns" -> apis.dns(input)
+                "ipinfo" -> apis.ipinfo(input)
+                "gravatar" -> apis.gravatar(input)
+                "wayback" -> apis.wayback(input)
+                "revgeo" -> apis.revgeo(input)
+                "shodan" -> apis.shodan(input)
+                "dorks" -> apis.dorks(input)
                 else -> Result.failure(IllegalStateException("${tool.name} has no direct implementation."))
             }
         }

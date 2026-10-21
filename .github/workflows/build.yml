@@ -49,7 +49,8 @@ jobs:
           # web UI that a plain cross-build can't satisfy.
           for spec in \
             "subfinder=github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest" \
-            "httpx=github.com/projectdiscovery/httpx/cmd/httpx@latest"; do
+            "httpx=github.com/projectdiscovery/httpx/cmd/httpx@latest" \
+            "amass=github.com/owasp-amass/amass/v4/...@master"; do
             name="${spec%%=*}"; path="${spec#*=}"
             if go install "$path"; then
               cp "$BIN/$name" "$OUT/lib$name.so" && echo "BUILT $name"
