@@ -40,8 +40,9 @@ class InvestigationRepository(
 
     suspend fun deleteInvestigation(id: Long) = investigationDao.delete(id)
 
-    /** Runs one tool and persists its lifecycle (running -> success/error). */
-    suspend fun runTool(investigationId: Long, tool: Tool, input: String) {
+    /** Runs one tool, persists its lifecycle (running -> success/error), and
+     *  returns the final stored row (so a workflow can chain on its output). */
+    suspend fun runTool(investigationId: Long, tool: Tool, input: String): ResultRow {
         val started = System.currentTimeMillis()
         val rowId = resultDao.insert(
             ResultRow(
@@ -88,5 +89,6 @@ class InvestigationRepository(
             }
         )
         resultDao.update(updated)
+        return updated
     }
 }

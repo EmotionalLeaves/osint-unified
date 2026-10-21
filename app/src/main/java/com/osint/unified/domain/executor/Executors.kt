@@ -87,7 +87,7 @@ class LocalToolExecutor(
                 )
             }
             try {
-                val command = listOf(binary.absolutePath) + argsFor(tool, input)
+                val command = buildCommand(tool, input, binary.absolutePath)
                 val process = ProcessBuilder(command)
                     .redirectErrorStream(true)
                     .apply {
@@ -109,6 +109,22 @@ class LocalToolExecutor(
                 Result.failure(e)
             }
         }
+
+    /**
+     * Builds the command line. When a workflow passes a multi-line host list
+     * (e.g. subfinder output into httpx), it's written to a file and fed via
+     * `-l` instead of `-u`.
+     */
+    private fun buildCommand(tool: Tool, input: String, binPath: String): List<String> {
+        val cmd = mutableListOf(binPath)
+        if (tool.id == "httpx" && input.contains('\n')) {
+            val listFile = File(workDir, "httpx_targets.txt").apply { writeText(input) }
+            cmd += listOf("-l", listFile.absolutePath, "-json", "-silent", "-title", "-tech-detect", "-status-code")
+        } else {
+            cmd += argsFor(tool, input)
+        }
+        return cmd
+    }
 
     private fun argsFor(tool: Tool, input: String): List<String> = when (tool.id) {
         "sherlock" -> listOf(input, "--print-found", "--no-color")

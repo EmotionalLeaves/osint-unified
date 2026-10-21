@@ -14,6 +14,8 @@ import java.io.File
 import com.osint.unified.domain.Observable
 import com.osint.unified.domain.ObservableRouter
 import com.osint.unified.domain.Tool
+import com.osint.unified.domain.ToolRegistry
+import com.osint.unified.domain.workflow.Workflows
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -31,6 +33,8 @@ data class GodEyeUiState(
     val vessels: List<Vessel> = emptyList(),
     val results: List<ResultRow> = emptyList(),
     val runningToolIds: Set<String> = emptySet(),
+    val workflowName: String? = null,
+    val workflowRunning: Boolean = false,
     val backendUrl: String = "",
     val tar1090Url: String = "",
     val aisUrl: String = ""
@@ -90,9 +94,37 @@ class GodEyeViewModel(
             it.copy(
                 observable = observable,
                 suggestedTools = router.suggestTools(observable),
+                workflowName = Workflows.forObservable(observable)?.name,
                 results = emptyList(),
                 runningToolIds = emptySet()
             )
+        }
+    }
+
+    /** Runs the chained workflow for the current observable, piping each
+     *  step's hosts into the next, persisting every step. */
+    fun onRunWorkflow() {
+        val observable = _state.value.observable ?: return
+        val workflow = Workflows.forObservable(observable) ?: return
+        viewModelScope.launch {
+            val investigationId = ensureInvestigation(observable)
+            _state.update { it.copy(workflowRunning = true) }
+            try {
+                var previousHosts = emptyList<String>()
+                for (step in workflow.steps) {
+                    val tool = ToolRegistry.byId(step.toolId) ?: continue
+                    val input = if (step.fromPreviousHosts) previousHosts.joinToString("\n") else observable.raw
+                    if (step.fromPreviousHosts && previousHosts.isEmpty()) continue
+                    _state.update { it.copy(runningToolIds = it.runningToolIds + tool.id) }
+                    val row = repository.runTool(investigationId, tool, input)
+                    _state.update { it.copy(runningToolIds = it.runningToolIds - tool.id) }
+                    if (row.status == "success") {
+                        previousHosts = Workflows.extractHosts(tool.id, row.rawOutput)
+                    }
+                }
+            } finally {
+                _state.update { it.copy(workflowRunning = false) }
+            }
         }
     }
 

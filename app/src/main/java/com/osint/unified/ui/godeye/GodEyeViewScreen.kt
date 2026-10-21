@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -27,6 +28,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -119,6 +121,9 @@ fun GodEyeViewScreen(viewModel: GodEyeViewModel, onOpenHistory: () -> Unit) {
                 tools = state.suggestedTools,
                 results = state.results,
                 runningToolIds = state.runningToolIds,
+                workflowName = state.workflowName,
+                workflowRunning = state.workflowRunning,
+                onRunWorkflow = viewModel::onRunWorkflow,
                 onToolClick = viewModel::onToolClick,
                 onExport = { format ->
                     scope.launch {
@@ -197,6 +202,9 @@ private fun ResultPanel(
     tools: List<Tool>,
     results: List<ResultRow>,
     runningToolIds: Set<String>,
+    workflowName: String?,
+    workflowRunning: Boolean,
+    onRunWorkflow: () -> Unit,
     onToolClick: (Tool) -> Unit,
     onExport: (ExportFormat) -> Unit
 ) {
@@ -233,6 +241,20 @@ private fun ResultPanel(
                             }
                         } else null
                     )
+                }
+            }
+
+            if (workflowName != null) {
+                FilledTonalButton(
+                    onClick = onRunWorkflow,
+                    enabled = !workflowRunning,
+                    modifier = Modifier.padding(top = 8.dp)
+                ) {
+                    if (workflowRunning) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.size(8.dp))
+                    }
+                    Text(if (workflowRunning) "Running $workflowName…" else "Run $workflowName")
                 }
             }
 
