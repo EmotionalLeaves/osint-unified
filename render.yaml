@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: osint-unified-backend
+    runtime: docker
+    plan: free
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /health
+    envVars:
+      - key: RATE_LIMIT
+        value: "100"

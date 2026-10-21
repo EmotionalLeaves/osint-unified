@@ -14,7 +14,8 @@ import com.osint.unified.ui.theme.OsintTheme
 class MainActivity : ComponentActivity() {
 
     private val viewModel: GodEyeViewModel by viewModels {
-        GodEyeViewModel.Factory((application as OsintApplication).router)
+        val app = application as OsintApplication
+        GodEyeViewModel.Factory(app.router, app.repository, app.aircraftDataSource, app.settings)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

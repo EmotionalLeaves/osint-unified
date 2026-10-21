@@ -1,0 +1,129 @@
+package com.osint.unified.domain.executor
+
+import com.osint.unified.data.AppSettings
+import com.osint.unified.domain.ExecutionMode
+import com.osint.unified.domain.Tool
+import com.osint.unified.network.Http
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import java.io.File
+import java.io.IOException
+import java.util.concurrent.TimeUnit
+
+/**
+ * Executes a single tool against an input and returns its raw output text.
+ * Raw output is intentionally preserved verbatim so nothing is lost before
+ * parsing or export.
+ */
+interface ToolExecutor {
+    suspend fun execute(tool: Tool, input: String): Result<String>
+}
+
+/**
+ * Runs CLOUD tools via the deployed backend: POST {baseUrl}/{toolId} with a
+ * JSON body {"input": "..."} and returns the response body text.
+ */
+class CloudToolExecutor(
+    private val settings: AppSettings,
+    private val client: OkHttpClient = Http.client
+) : ToolExecutor {
+
+    private val jsonMedia = "application/json; charset=utf-8".toMediaType()
+
+    override suspend fun execute(tool: Tool, input: String): Result<String> =
+        withContext(Dispatchers.IO) {
+            val base = settings.backendBaseUrl.trimEnd('/')
+            if (base.isBlank()) {
+                return@withContext Result.failure(
+                    IllegalStateException(
+                        "No backend URL set. Open settings (gear icon) and enter your deployed backend URL."
+                    )
+                )
+            }
+            try {
+                val payload = buildJsonObject { put("input", input) }.toString()
+                val request = Request.Builder()
+                    .url("$base/${tool.id}")
+                    .post(payload.toRequestBody(jsonMedia))
+                    .build()
+                client.newCall(request).execute().use { resp ->
+                    val text = resp.body?.string().orEmpty()
+                    if (resp.isSuccessful) Result.success(text)
+                    else Result.failure(IOException("HTTP ${resp.code}: ${text.take(300)}"))
+                }
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+}
+
+/**
+ * Runs LOCAL tools shipped as native libraries. On Android 10+ you cannot exec
+ * a binary from app-writable storage (W^X), but files in the app's
+ * nativeLibraryDir ARE executable. The convention: ship tool <id> as
+ * "lib<id>.so" in jniLibs/arm64-v8a. Until a binary is bundled, this returns a
+ * clear, honest error rather than pretending it ran.
+ */
+class LocalToolExecutor(
+    private val nativeLibraryDir: String
+) : ToolExecutor {
+
+    override suspend fun execute(tool: Tool, input: String): Result<String> =
+        withContext(Dispatchers.IO) {
+            val binary = File(nativeLibraryDir, "lib${tool.id}.so")
+            if (!binary.exists()) {
+                return@withContext Result.failure(
+                    IllegalStateException(
+                        "${tool.name} is a local tool but its binary isn't bundled yet. " +
+                            "Ship it as jniLibs/arm64-v8a/lib${tool.id}.so to enable on-device execution."
+                    )
+                )
+            }
+            try {
+                val command = listOf(binary.absolutePath) + argsFor(tool, input)
+                val process = ProcessBuilder(command)
+                    .redirectErrorStream(true)
+                    .start()
+                val output = process.inputStream.bufferedReader().readText()
+                val finished = process.waitFor(tool.timeoutMs, TimeUnit.MILLISECONDS)
+                if (!finished) {
+                    process.destroyForcibly()
+                    Result.failure(IOException("${tool.name} timed out after ${tool.timeoutMs} ms"))
+                } else {
+                    Result.success(output)
+                }
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
+    private fun argsFor(tool: Tool, input: String): List<String> = when (tool.id) {
+        "sherlock" -> listOf(input, "--print-found", "--no-color")
+        "maigret" -> listOf(input, "--json", "simple")
+        "holehe" -> listOf(input, "--only-used")
+        "phoneinfoga" -> listOf("scan", "-n", input)
+        "subfinder" -> listOf("-d", input, "-silent", "-json")
+        "amass" -> listOf("enum", "-passive", "-d", input, "-json", "/dev/stdout")
+        "httpx" -> listOf("-u", input, "-json", "-silent", "-title", "-tech-detect", "-status-code")
+        "exiftool" -> listOf("-j", "-a", "-u", "-g1", input)
+        else -> listOf(input)
+    }
+}
+
+/** Picks the right executor for a tool based on its [ExecutionMode]. */
+class ExecutorFactory(
+    private val cloud: ToolExecutor,
+    private val local: ToolExecutor
+) {
+    fun forTool(tool: Tool): ToolExecutor =
+        when (tool.executionMode) {
+            ExecutionMode.CLOUD -> cloud
+            ExecutionMode.LOCAL -> local
+        }
+}
