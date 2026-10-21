@@ -134,6 +134,7 @@ class LocalToolExecutor(
         "subfinder" -> listOf("-d", input, "-silent", "-json")
         "amass" -> listOf("enum", "-passive", "-d", input, "-json", "/dev/stdout")
         "httpx" -> listOf("-u", input, "-json", "-silent", "-title", "-tech-detect", "-status-code")
+        "nuclei" -> listOf("-u", input, "-jsonl", "-silent", "-duc")
         "exiftool" -> listOf("-j", "-a", "-u", "-g1", input)
         else -> listOf(input)
     }

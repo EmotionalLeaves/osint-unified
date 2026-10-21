@@ -35,18 +35,31 @@ jobs:
       # jniLibs (the one place Android lets an app execute binaries from).
       - name: Cross-compile Go tools into jniLibs
         run: |
-          set -eux
+          set -ux
           NDK="${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_ROOT}"
           CC_BIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
-          OUT="app/src/main/jniLibs/arm64-v8a"
+          OUT="$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a"
           mkdir -p "$OUT"
           export GOOS=android GOARCH=arm64 CGO_ENABLED=1 CC="$CC_BIN"
-          go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
-          go install github.com/projectdiscovery/httpx/cmd/httpx@latest
           BIN="$(go env GOPATH)/bin/android_arm64"
-          cp "$BIN/subfinder" "$OUT/libsubfinder.so"
-          cp "$BIN/httpx" "$OUT/libhttpx.so"
-          chmod +x "$OUT"/*.so
+          # Tools with a known cmd path, built via `go install`. Each failure is
+          # non-fatal so one bad tool can't drop the others.
+          for spec in \
+            "subfinder=github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest" \
+            "httpx=github.com/projectdiscovery/httpx/cmd/httpx@latest" \
+            "nuclei=github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest"; do
+            name="${spec%%=*}"; path="${spec#*=}"
+            if go install "$path"; then
+              cp "$BIN/$name" "$OUT/lib$name.so" && echo "BUILT $name"
+            else
+              echo "WARN build failed: $name"
+            fi
+          done
+          # phoneinfoga: main package is at the repo root, so clone + build.
+          if git clone --depth 1 https://github.com/sundowndev/phoneinfoga /tmp/phoneinfoga; then
+            (cd /tmp/phoneinfoga && go build -o "$OUT/libphoneinfoga.so" .) && echo "BUILT phoneinfoga" || echo "WARN build failed: phoneinfoga"
+          fi
+          chmod +x "$OUT"/*.so || true
           ls -la "$OUT"
 
       - name: Set up Gradle

@@ -46,9 +46,9 @@ object ToolRegistry {
         Tool("httpx", "httpx", NETINT, "domain", "json", LOCAL,
             "Probes HTTP services for status, title, banners, TLS and tech stack.",
             "https://github.com/projectdiscovery/httpx"),
-        Tool("nuclei", "Nuclei", NETINT, "domain", "json", CLOUD,
-            "Template-based scanning for exposed panels, misconfigs and CVEs.",
-            "https://github.com/projectdiscovery/nuclei", timeoutMs = 120_000L),
+        Tool("nuclei", "Nuclei", NETINT, "domain", "json", LOCAL,
+            "Template-based scanning for exposed panels, misconfigs and CVEs. Downloads templates on first run.",
+            "https://github.com/projectdiscovery/nuclei", timeoutMs = 180_000L),
 
         // ---- GEOINT ----
         Tool("tar1090", "tar1090", GEOINT, "coordinate", "json", LOCAL,
