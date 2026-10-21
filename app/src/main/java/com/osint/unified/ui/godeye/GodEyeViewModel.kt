@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.osint.unified.data.AircraftDataSource
+import com.osint.unified.data.AisDataSource
 import com.osint.unified.data.AppSettings
 import com.osint.unified.data.ExportFormat
 import com.osint.unified.data.InvestigationExporter
@@ -27,22 +28,29 @@ data class GodEyeUiState(
     val observable: Observable? = null,
     val suggestedTools: List<Tool> = emptyList(),
     val aircraft: List<Aircraft> = emptyList(),
+    val vessels: List<Vessel> = emptyList(),
     val results: List<ResultRow> = emptyList(),
     val runningToolIds: Set<String> = emptySet(),
     val backendUrl: String = "",
-    val tar1090Url: String = ""
+    val tar1090Url: String = "",
+    val aisUrl: String = ""
 )
 
 class GodEyeViewModel(
     private val router: ObservableRouter,
     private val repository: InvestigationRepository,
     private val aircraftDataSource: AircraftDataSource,
+    private val aisDataSource: AisDataSource,
     private val settings: AppSettings,
     private val exporter: InvestigationExporter
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(
-        GodEyeUiState(backendUrl = settings.backendBaseUrl, tar1090Url = settings.tar1090Url)
+        GodEyeUiState(
+            backendUrl = settings.backendBaseUrl,
+            tar1090Url = settings.tar1090Url,
+            aisUrl = settings.aisUrl
+        )
     )
     val state: StateFlow<GodEyeUiState> = _state.asStateFlow()
 
@@ -52,11 +60,21 @@ class GodEyeViewModel(
     init {
         viewModelScope.launch {
             while (isActive) {
-                val feed = aircraftDataSource.fetch()
-                _state.update { it.copy(aircraft = feed) }
+                _state.update { it.copy(aircraft = aircraftDataSource.fetch()) }
                 delay(5_000)
             }
         }
+        viewModelScope.launch {
+            while (isActive) {
+                _state.update { it.copy(vessels = aisDataSource.fetch()) }
+                delay(10_000)
+            }
+        }
+    }
+
+    fun onMapClick(lat: Double, lon: Double) {
+        onQueryChange("$lat, $lon")
+        onSearch()
     }
 
     fun onQueryChange(value: String) {
@@ -112,11 +130,16 @@ class GodEyeViewModel(
         return exporter.export(observable, results, format)
     }
 
-    fun saveSettings(backendUrl: String, tar1090Url: String) {
+    fun saveSettings(backendUrl: String, tar1090Url: String, aisUrl: String) {
         settings.backendBaseUrl = backendUrl
         settings.tar1090Url = tar1090Url
+        settings.aisUrl = aisUrl
         _state.update {
-            it.copy(backendUrl = settings.backendBaseUrl, tar1090Url = settings.tar1090Url)
+            it.copy(
+                backendUrl = settings.backendBaseUrl,
+                tar1090Url = settings.tar1090Url,
+                aisUrl = settings.aisUrl
+            )
         }
     }
 
@@ -124,11 +147,12 @@ class GodEyeViewModel(
         private val router: ObservableRouter,
         private val repository: InvestigationRepository,
         private val aircraftDataSource: AircraftDataSource,
+        private val aisDataSource: AisDataSource,
         private val settings: AppSettings,
         private val exporter: InvestigationExporter
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            GodEyeViewModel(router, repository, aircraftDataSource, settings, exporter) as T
+            GodEyeViewModel(router, repository, aircraftDataSource, aisDataSource, settings, exporter) as T
     }
 }

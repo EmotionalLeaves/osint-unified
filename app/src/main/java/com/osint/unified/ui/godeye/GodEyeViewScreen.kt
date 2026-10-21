@@ -78,6 +78,11 @@ fun GodEyeViewScreen(viewModel: GodEyeViewModel, onOpenHistory: () -> Unit) {
                     viewModel.onQueryChange(callsign)
                     viewModel.onSearch()
                 }
+
+                @JavascriptInterface
+                fun onMapClick(lat: Double, lon: Double) {
+                    viewModel.onMapClick(lat, lon)
+                }
             }, "AndroidBridge")
             loadUrl("file:///android_asset/cesium.html")
         }
@@ -86,6 +91,12 @@ fun GodEyeViewScreen(viewModel: GodEyeViewModel, onOpenHistory: () -> Unit) {
     LaunchedEffect(state.aircraft) {
         if (state.aircraft.isNotEmpty()) {
             webView.evaluateJavascript("window.updateAircraft(${Json.encodeToString(state.aircraft)});", null)
+        }
+    }
+
+    LaunchedEffect(state.vessels) {
+        if (state.vessels.isNotEmpty()) {
+            webView.evaluateJavascript("window.updateVessels(${Json.encodeToString(state.vessels)});", null)
         }
     }
 
@@ -123,8 +134,9 @@ fun GodEyeViewScreen(viewModel: GodEyeViewModel, onOpenHistory: () -> Unit) {
         SettingsDialog(
             backendUrl = state.backendUrl,
             tar1090Url = state.tar1090Url,
-            onSave = { backend, tar ->
-                viewModel.saveSettings(backend, tar)
+            aisUrl = state.aisUrl,
+            onSave = { backend, tar, ais ->
+                viewModel.saveSettings(backend, tar, ais)
                 showSettings = false
             },
             onDismiss = { showSettings = false }
@@ -251,17 +263,19 @@ private fun ResultPanel(
 private fun SettingsDialog(
     backendUrl: String,
     tar1090Url: String,
-    onSave: (String, String) -> Unit,
+    aisUrl: String,
+    onSave: (String, String, String) -> Unit,
     onDismiss: () -> Unit
 ) {
     var backend by remember { mutableStateOf(backendUrl) }
     var tar by remember { mutableStateOf(tar1090Url) }
+    var ais by remember { mutableStateOf(aisUrl) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Settings") },
         text = {
-            Column {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 OutlinedTextField(
                     value = backend,
                     onValueChange = { backend = it },
@@ -278,14 +292,22 @@ private fun SettingsDialog(
                     placeholder = { Text("http://host:8080/data/aircraft.json") },
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                 )
+                OutlinedTextField(
+                    value = ais,
+                    onValueChange = { ais = it },
+                    singleLine = true,
+                    label = { Text("AIS vessel feed URL") },
+                    placeholder = { Text("https://host/vessels.json") },
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                )
                 Text(
-                    "Leave tar1090 blank to use demo aircraft.",
+                    "Leave feeds blank to use demo aircraft and vessels.",
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(top = 8.dp)
                 )
             }
         },
-        confirmButton = { TextButton(onClick = { onSave(backend, tar) }) { Text("Save") } },
+        confirmButton = { TextButton(onClick = { onSave(backend, tar, ais) }) { Text("Save") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }

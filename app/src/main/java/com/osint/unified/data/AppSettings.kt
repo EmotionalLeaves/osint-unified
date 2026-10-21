@@ -17,8 +17,13 @@ class AppSettings(context: Context) {
         get() = prefs.getString(KEY_TAR1090, "").orEmpty()
         set(value) = prefs.edit().putString(KEY_TAR1090, value.trim()).apply()
 
+    var aisUrl: String
+        get() = prefs.getString(KEY_AIS, "").orEmpty()
+        set(value) = prefs.edit().putString(KEY_AIS, value.trim()).apply()
+
     private companion object {
         const val KEY_BACKEND = "backend_base_url"
         const val KEY_TAR1090 = "tar1090_url"
+        const val KEY_AIS = "ais_url"
     }
 }

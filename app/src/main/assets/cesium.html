@@ -94,14 +94,71 @@
       }
     };
 
-    // Tap an aircraft -> hand the callsign back to the app for investigation.
+    const vesselEntities = new Map();
+
+    // Called from Kotlin: window.updateVessels([{mmsi, name, lat, lon, ...}])
+    window.updateVessels = function (list) {
+      const seen = new Set();
+      list.forEach(function (v) {
+        seen.add(v.mmsi);
+        const position = Cesium.Cartesian3.fromDegrees(v.lon, v.lat);
+        let entity = vesselEntities.get(v.mmsi);
+        if (!entity) {
+          entity = viewer.entities.add({
+            id: "ship-" + v.mmsi,
+            position: position,
+            point: {
+              pixelSize: 7,
+              color: Cesium.Color.fromCssColorString("#1D9E75"),
+              outlineColor: Cesium.Color.BLACK,
+              outlineWidth: 1
+            },
+            label: {
+              text: v.name || v.mmsi,
+              font: "11px sans-serif",
+              fillColor: Cesium.Color.WHITE,
+              showBackground: true,
+              backgroundColor: new Cesium.Color(0, 0, 0, 0.5),
+              pixelOffset: new Cesium.Cartesian2(0, -16),
+              scaleByDistance: new Cesium.NearFarScalar(1.5e5, 1.0, 2.0e7, 0.3)
+            }
+          });
+          entity.vesselName = v.name || v.mmsi;
+          vesselEntities.set(v.mmsi, entity);
+        } else {
+          entity.position = position;
+        }
+      });
+      for (const [mmsi, entity] of vesselEntities) {
+        if (!seen.has(mmsi)) {
+          viewer.entities.remove(entity);
+          vesselEntities.delete(mmsi);
+        }
+      }
+    };
+
+    // Tap handling: an aircraft/vessel hands its id to the app; tapping empty
+    // ocean/land hands back the coordinate for a GEOINT investigation.
     const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
     handler.setInputAction(function (click) {
       const picked = viewer.scene.pick(click.position);
       if (Cesium.defined(picked) && picked.id && picked.id.callsign) {
-        if (window.AndroidBridge && window.AndroidBridge.onAircraftClick) {
+        window.AndroidBridge && window.AndroidBridge.onAircraftClick &&
           window.AndroidBridge.onAircraftClick(picked.id.callsign);
-        }
+        return;
+      }
+      if (Cesium.defined(picked) && picked.id && picked.id.vesselName) {
+        window.AndroidBridge && window.AndroidBridge.onAircraftClick &&
+          window.AndroidBridge.onAircraftClick(picked.id.vesselName);
+        return;
+      }
+      const cartesian = viewer.camera.pickEllipsoid(click.position, viewer.scene.globe.ellipsoid);
+      if (cartesian) {
+        const carto = Cesium.Cartographic.fromCartesian(cartesian);
+        const lat = Cesium.Math.toDegrees(carto.latitude).toFixed(5);
+        const lon = Cesium.Math.toDegrees(carto.longitude).toFixed(5);
+        window.AndroidBridge && window.AndroidBridge.onMapClick &&
+          window.AndroidBridge.onMapClick(parseFloat(lat), parseFloat(lon));
       }
     }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 

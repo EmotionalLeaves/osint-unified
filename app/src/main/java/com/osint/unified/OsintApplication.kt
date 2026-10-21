@@ -2,6 +2,7 @@ package com.osint.unified
 
 import android.app.Application
 import com.osint.unified.data.AircraftDataSource
+import com.osint.unified.data.AisDataSource
 import com.osint.unified.data.AppSettings
 import com.osint.unified.data.InvestigationExporter
 import com.osint.unified.data.InvestigationRepository
@@ -21,6 +22,7 @@ class OsintApplication : Application() {
     val router: ObservableRouter by lazy { ObservableRouter() }
     val settings: AppSettings by lazy { AppSettings(this) }
     val aircraftDataSource: AircraftDataSource by lazy { AircraftDataSource(settings) }
+    val aisDataSource: AisDataSource by lazy { AisDataSource(settings) }
 
     private val executorFactory: ExecutorFactory by lazy {
         ExecutorFactory(
