@@ -105,6 +105,48 @@ Four execution modes (see `domain/ExecutionMode`):
 - **CesiumJS** loads from its CDN and uses OpenStreetMap imagery (no Cesium
   Ion account/token needed).
 
+## Full tool coverage (the 48)
+
+Every tool below is either implemented, has a functional native/keyless
+equivalent, or is documented as infeasible on a stock phone with the reason.
+
+**Functional now — on-device or keyless direct APIs (no backend):**
+
+- GEOINT: God's Eye View (3D globe), tar1090 (aircraft), AIS-catcher
+  (vessels — data feed), satellite tracking (satellite.js/Celestrak, the
+  Gpredict capability), Overpass Turbo, reverse geocoding
+- SOCMINT: Sherlock, Maigret, Blackbird, WhatsMyName (all native username
+  checks), PhoneInfoga (native, libphonenumber), Gravatar
+- NETINT: Subfinder + httpx (bundled Go binaries), crt.sh (CT logs),
+  DNS-over-HTTPS, IP geo/ASN, Shodan InternetDB (ports/CVEs — the
+  Masscan/ZMap/Shodan capability, keyless), Photon-style web crawl,
+  theHarvester (subdomains/hosts), Google Dorks, Wayback Machine
+- FORENSICS: CyberChef (native decoder/hash/JWT bench), ExifTool (native EXIF),
+  Auto Archiver / ArchiveBox (Wayback Save)
+- Analysis capabilities: Maltego → link graph + pivot transforms;
+  SpiderFoot / Recon-ng → Run-all + workflows + history workspace
+
+**Attempted on-device (may bundle, CI-dependent):** OWASP Amass.
+
+**Functional once the backend is deployed (code ready):** Nuclei (templates),
+GHunt (needs Google cookie), h8mail (breach keys), TruffleHog, OpenSanctions.
+
+**Not feasible on a stock, unrooted phone — capability covered where noted:**
+
+- readsb, SatDump — need SDR radio hardware (aircraft/satellite shown via
+  feeds/tracking instead)
+- Masscan, ZMap — raw-socket mass scanning needs root (covered by Shodan
+  InternetDB + httpx)
+- OnionSearch, TorBot — need Tor/Orbot
+- Instaloader, Toutatis, Ignorant — Instagram/phone sessions + anti-bot
+- Holehe — Python per-site logic (email partly covered by Gravatar + crawl)
+- OpenCTI, MISP, Yeti, IntelOwl, OCCRP Aleph — server platforms/databases,
+  not an app feature
+- Gitleaks, FinalRecon — need a local repo / covered by httpx + DNS
+- Kepler.gl — heavy geospatial viz (the 3D globe is the in-app equivalent)
+- Bellingcat Toolkit, OSINT Framework, Monitoring-The-Situation — reference
+  directories, represented by the tool suite itself
+
 ## Legal & ethical
 
 This app orchestrates publicly available OSINT tools against public data.
