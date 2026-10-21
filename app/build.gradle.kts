@@ -45,6 +45,11 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
+        // Keep bundled tool binaries uncompressed + extracted so they can be
+        // executed from the app's nativeLibraryDir at runtime.
+        jniLibs {
+            useLegacyPackaging = true
+        }
     }
 }
 

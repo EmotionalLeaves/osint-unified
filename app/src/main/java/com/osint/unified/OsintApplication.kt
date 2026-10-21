@@ -25,7 +25,7 @@ class OsintApplication : Application() {
     private val executorFactory: ExecutorFactory by lazy {
         ExecutorFactory(
             cloud = CloudToolExecutor(settings),
-            local = LocalToolExecutor(applicationInfo.nativeLibraryDir),
+            local = LocalToolExecutor(applicationInfo.nativeLibraryDir, filesDir.absolutePath),
             direct = DirectToolExecutor()
         )
     }

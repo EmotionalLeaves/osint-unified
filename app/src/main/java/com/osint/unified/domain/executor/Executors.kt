@@ -71,7 +71,8 @@ class CloudToolExecutor(
  * clear, honest error rather than pretending it ran.
  */
 class LocalToolExecutor(
-    private val nativeLibraryDir: String
+    private val nativeLibraryDir: String,
+    private val workDir: String
 ) : ToolExecutor {
 
     override suspend fun execute(tool: Tool, input: String): Result<String> =
@@ -80,8 +81,8 @@ class LocalToolExecutor(
             if (!binary.exists()) {
                 return@withContext Result.failure(
                     IllegalStateException(
-                        "${tool.name} is a local tool but its binary isn't bundled yet. " +
-                            "Ship it as jniLibs/arm64-v8a/lib${tool.id}.so to enable on-device execution."
+                        "${tool.name} is a local tool but its binary isn't bundled in this build. " +
+                            "It ships as jniLibs/arm64-v8a/lib${tool.id}.so once added to the CI build step."
                     )
                 )
             }
@@ -89,6 +90,12 @@ class LocalToolExecutor(
                 val command = listOf(binary.absolutePath) + argsFor(tool, input)
                 val process = ProcessBuilder(command)
                     .redirectErrorStream(true)
+                    .apply {
+                        directory(File(workDir))
+                        // Tools expect a writable HOME/TMP for config + caches.
+                        environment()["HOME"] = workDir
+                        environment()["TMPDIR"] = workDir
+                    }
                     .start()
                 val output = process.inputStream.bufferedReader().readText()
                 val finished = process.waitFor(tool.timeoutMs, TimeUnit.MILLISECONDS)

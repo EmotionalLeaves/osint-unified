@@ -53,14 +53,25 @@ God's Eye View (CesiumJS WebView)           ▼  (Phase 2)
   (Nuclei, GHunt, TruffleHog). Real tar1090 aircraft feed. Link graph.
 - **Phase 3:** PDF dossier export, case management, dark-mode polish, release.
 
+## How each tool runs
+
+- **On-device (bundled):** Subfinder and httpx are cross-compiled for
+  Android/arm64 in CI (with the NDK, so system DNS works) and shipped inside
+  the APK as `jniLibs` — the one place Android lets an app execute binaries.
+  No backend needed.
+- **Direct:** Overpass calls the public OpenStreetMap API straight from the
+  app. No backend needed.
+- **Cloud:** Nuclei, TruffleHog, GHunt, etc. run on the `backend/` server you
+  deploy, because they're heavy or need credentials/templates.
+- **Not yet bundled:** Amass and the Python tools (Maigret, Holehe, …) still
+  show a "binary not bundled" message until added to the build.
+
 ## Notes & honest limitations
 
-- **Live aircraft** are currently mock points so the globe is populated.
-  Phase 2 swaps in a real tar1090 JSON feed.
-- **Local tool execution** on modern Android (API 29+) cannot simply `exec`
-  binaries from app storage due to W^X restrictions. Phase 2 will use the
-  `jniLibs` mechanism (executable by design) or cloud execution — this is
-  flagged now rather than discovered later.
+- **Live aircraft** fall back to demo points until you set a tar1090 feed URL
+  in settings; with a URL, it parses the real `aircraft.json`.
+- **arm64 only:** bundled binaries target arm64-v8a (essentially all modern
+  phones). A 32-bit-only device wouldn't get the on-device tools.
 - **CesiumJS** loads from its CDN and uses OpenStreetMap imagery (no Cesium
   Ion account/token needed).
 

@@ -20,6 +20,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
@@ -42,10 +43,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -54,8 +53,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.osint.unified.R
 import com.osint.unified.data.ExportFormat
 import com.osint.unified.data.db.Result as ResultRow
-import com.osint.unified.domain.ResultFormatter
 import com.osint.unified.domain.Tool
+import com.osint.unified.ui.common.ResultCard
 import kotlinx.coroutines.launch
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -63,7 +62,7 @@ import java.io.File
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-fun GodEyeViewScreen(viewModel: GodEyeViewModel) {
+fun GodEyeViewScreen(viewModel: GodEyeViewModel, onOpenHistory: () -> Unit) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -95,6 +94,7 @@ fun GodEyeViewScreen(viewModel: GodEyeViewModel) {
             query = state.query,
             onQueryChange = viewModel::onQueryChange,
             onSearch = viewModel::onSearch,
+            onOpenHistory = onOpenHistory,
             onOpenSettings = { showSettings = true }
         )
 
@@ -147,6 +147,7 @@ private fun SearchBar(
     query: String,
     onQueryChange: (String) -> Unit,
     onSearch: () -> Unit,
+    onOpenHistory: () -> Unit,
     onOpenSettings: () -> Unit
 ) {
     Surface(tonalElevation = 3.dp) {
@@ -168,6 +169,9 @@ private fun SearchBar(
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 modifier = Modifier.weight(1f)
             )
+            IconButton(onClick = onOpenHistory) {
+                Icon(Icons.Filled.History, contentDescription = "History")
+            }
             IconButton(onClick = onOpenSettings) {
                 Icon(Icons.Filled.Settings, contentDescription = "Settings")
             }
@@ -239,41 +243,6 @@ private fun ResultPanel(
                     results.forEach { row -> ResultCard(row) }
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun ResultCard(row: ResultRow) {
-    val statusColor = when (row.status) {
-        "success" -> Color(0xFF2E7D32)
-        "error" -> Color(0xFFC62828)
-        else -> MaterialTheme.colorScheme.onSurface
-    }
-    val summary = if (row.status == "success") {
-        remember(row.id, row.rawOutput) { ResultFormatter.format(row.toolId, row.rawOutput) }
-    } else null
-
-    Surface(tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.fillMaxWidth().padding(10.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(row.toolName, style = MaterialTheme.typography.labelLarge)
-                Text("  ·  ${row.status}", style = MaterialTheme.typography.labelMedium, color = statusColor)
-                summary?.let {
-                    Text("  ·  ${it.headline}", style = MaterialTheme.typography.labelMedium)
-                }
-            }
-            val body = when (row.status) {
-                "success" -> summary?.lines?.take(15)?.joinToString("\n")?.ifBlank { "(no output)" } ?: "(no output)"
-                "error" -> row.errorMessage ?: "Unknown error"
-                else -> "Running…"
-            }
-            Text(
-                text = body,
-                style = MaterialTheme.typography.bodySmall,
-                fontFamily = FontFamily.Monospace,
-                modifier = Modifier.padding(top = 4.dp)
-            )
         }
     }
 }

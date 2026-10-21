@@ -35,6 +35,11 @@ class InvestigationRepository(
     fun observeResults(investigationId: Long): Flow<List<ResultRow>> =
         resultDao.observeForInvestigation(investigationId)
 
+    fun observeInvestigations(): Flow<List<Investigation>> =
+        investigationDao.observeAll()
+
+    suspend fun deleteInvestigation(id: Long) = investigationDao.delete(id)
+
     /** Runs one tool and persists its lifecycle (running -> success/error). */
     suspend fun runTool(investigationId: Long, tool: Tool, input: String) {
         val started = System.currentTimeMillis()

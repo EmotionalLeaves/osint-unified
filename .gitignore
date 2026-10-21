@@ -11,3 +11,6 @@ app/build/
 *.apk
 *.keystore
 !debug.keystore
+
+# CI-built native tool binaries (bundled at build time, not committed)
+app/src/main/jniLibs/

@@ -11,6 +11,7 @@
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.OsintUnified"
+        android:extractNativeLibs="true"
         android:usesCleartextTraffic="true">
 
         <activity
