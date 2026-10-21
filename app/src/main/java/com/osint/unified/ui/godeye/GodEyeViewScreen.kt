@@ -3,9 +3,11 @@ package com.osint.unified.ui.godeye
 import android.annotation.SuppressLint
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -18,13 +20,17 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -40,15 +46,15 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.osint.unified.BuildConfig
 import com.osint.unified.R
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
-/**
- * The default "god view": the 3D globe plus the search entry point. Running a
- * search (or tapping the globe) routes to the Investigation screen.
- */
+private val EXAMPLES = listOf("example.com", "8.8.8.8", "40.7128,-74.0060", "+14155550123", "John Smith")
+
 @SuppressLint("SetJavaScriptEnabled")
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun GodEyeViewScreen(
     viewModel: GodEyeViewModel,
@@ -90,28 +96,69 @@ fun GodEyeViewScreen(
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        SearchBar(
-            query = state.query,
-            onQueryChange = viewModel::onQueryChange,
-            onSearch = viewModel::onSearch,
-            onOpenForensics = onOpenForensics,
-            onOpenHistory = onOpenHistory,
-            onOpenSettings = { showSettings = true }
-        )
-        Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
-            AndroidView(factory = { webView }, modifier = Modifier.fillMaxSize())
-            Surface(
-                color = Color(0xCC000000),
-                shape = RoundedCornerShape(6.dp),
-                modifier = Modifier.align(Alignment.BottomEnd).padding(6.dp)
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("OSINT Unified") },
+                actions = {
+                    IconButton(onClick = onOpenForensics) {
+                        Icon(Icons.Filled.Build, contentDescription = "Forensics & decoders")
+                    }
+                    IconButton(onClick = onOpenHistory) {
+                        Icon(Icons.Filled.History, contentDescription = "History")
+                    }
+                    IconButton(onClick = { showSettings = true }) {
+                        Icon(Icons.Filled.Settings, contentDescription = "Settings")
+                    }
+                }
+            )
+        }
+    ) { pad ->
+        Column(modifier = Modifier.padding(pad).fillMaxSize()) {
+            OutlinedTextField(
+                value = state.query,
+                onValueChange = viewModel::onQueryChange,
+                singleLine = true,
+                placeholder = { Text(stringResource(R.string.search_hint)) },
+                trailingIcon = {
+                    IconButton(onClick = viewModel::onSearch) {
+                        Icon(Icons.Filled.Search, contentDescription = "Search")
+                    }
+                },
+                keyboardActions = KeyboardActions(onSearch = { viewModel.onSearch() }),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)
+            )
+
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)
             ) {
-                Text(
-                    "build ${com.osint.unified.BuildConfig.VERSION_NAME}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color.White,
-                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                )
+                EXAMPLES.forEach { example ->
+                    SuggestionChip(
+                        onClick = {
+                            viewModel.onQueryChange(example)
+                            viewModel.onSearch()
+                        },
+                        label = { Text(example) }
+                    )
+                }
+            }
+
+            Box(modifier = Modifier.fillMaxWidth().weight(1f).padding(top = 6.dp)) {
+                AndroidView(factory = { webView }, modifier = Modifier.fillMaxSize())
+                Surface(
+                    color = Color(0xCC000000),
+                    shape = RoundedCornerShape(6.dp),
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(6.dp)
+                ) {
+                    Text(
+                        "build ${BuildConfig.VERSION_NAME}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
             }
         }
     }
@@ -127,47 +174,6 @@ fun GodEyeViewScreen(
             },
             onDismiss = { showSettings = false }
         )
-    }
-}
-
-@Composable
-private fun SearchBar(
-    query: String,
-    onQueryChange: (String) -> Unit,
-    onSearch: () -> Unit,
-    onOpenForensics: () -> Unit,
-    onOpenHistory: () -> Unit,
-    onOpenSettings: () -> Unit
-) {
-    Surface(tonalElevation = 3.dp) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            OutlinedTextField(
-                value = query,
-                onValueChange = onQueryChange,
-                singleLine = true,
-                placeholder = { Text(stringResource(R.string.search_hint)) },
-                trailingIcon = {
-                    IconButton(onClick = onSearch) {
-                        Icon(Icons.Filled.Search, contentDescription = "Search")
-                    }
-                },
-                keyboardActions = KeyboardActions(onSearch = { onSearch() }),
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                modifier = Modifier.weight(1f)
-            )
-            IconButton(onClick = onOpenForensics) {
-                Icon(Icons.Filled.Build, contentDescription = "Forensics & decoders")
-            }
-            IconButton(onClick = onOpenHistory) {
-                Icon(Icons.Filled.History, contentDescription = "History")
-            }
-            IconButton(onClick = onOpenSettings) {
-                Icon(Icons.Filled.Settings, contentDescription = "Settings")
-            }
-        }
     }
 }
 

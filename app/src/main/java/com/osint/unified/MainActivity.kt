@@ -2,6 +2,7 @@ package com.osint.unified
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
@@ -44,6 +45,9 @@ class MainActivity : ComponentActivity() {
                     LaunchedEffect(godState.navSignal) {
                         if (godState.navSignal > 0L) screen = "investigation"
                     }
+
+                    // System back returns to the globe from any sub-screen.
+                    BackHandler(enabled = screen != "godeye") { screen = "godeye" }
 
                     when (screen) {
                         "investigation" -> InvestigationScreen(godEyeViewModel, onBack = { screen = "godeye" })
