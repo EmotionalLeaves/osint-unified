@@ -85,7 +85,7 @@ jobs:
         run: gradle test --no-daemon --stacktrace
 
       - name: Build debug APK
-        run: gradle assembleDebug --no-daemon --stacktrace
+        run: gradle assembleDebug --no-daemon --stacktrace -PosintVersionCode=${{ github.run_number }} -PosintVersionName=r${{ github.run_number }}
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

@@ -9,12 +9,17 @@ android {
     namespace = "com.osint.unified"
     compileSdk = 34
 
+    // CI passes -PosintVersionCode / -PosintVersionName so every build is a
+    // distinct, installable version (same versionCode blocks updates).
+    val verCode = (project.findProperty("osintVersionCode") as String?)?.toIntOrNull() ?: 1
+    val verName = (project.findProperty("osintVersionName") as String?) ?: "dev"
+
     defaultConfig {
         applicationId = "com.osint.unified"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.1.0-phase1"
+        versionCode = verCode
+        versionName = verName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -37,6 +42,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.14"
