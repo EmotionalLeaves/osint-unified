@@ -1,6 +1,8 @@
 package com.osint.unified.ui.godeye
 
 import android.annotation.SuppressLint
+import android.content.Context
+import android.content.Intent
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import androidx.compose.foundation.horizontalScroll
@@ -32,30 +34,39 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.osint.unified.R
+import com.osint.unified.data.ExportFormat
 import com.osint.unified.data.db.Result as ResultRow
+import com.osint.unified.domain.ResultFormatter
 import com.osint.unified.domain.Tool
+import kotlinx.coroutines.launch
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import java.io.File
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun GodEyeViewScreen(viewModel: GodEyeViewModel) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var showSettings by remember { mutableStateOf(false) }
 
     val webView = remember {
@@ -73,7 +84,11 @@ fun GodEyeViewScreen(viewModel: GodEyeViewModel) {
         }
     }
 
-    LaunchedEffectAircraft(webView, state.aircraft)
+    LaunchedEffect(state.aircraft) {
+        if (state.aircraft.isNotEmpty()) {
+            webView.evaluateJavascript("window.updateAircraft(${Json.encodeToString(state.aircraft)});", null)
+        }
+    }
 
     Column(modifier = Modifier.fillMaxSize()) {
         SearchBar(
@@ -93,7 +108,13 @@ fun GodEyeViewScreen(viewModel: GodEyeViewModel) {
                 tools = state.suggestedTools,
                 results = state.results,
                 runningToolIds = state.runningToolIds,
-                onToolClick = viewModel::onToolClick
+                onToolClick = viewModel::onToolClick,
+                onExport = { format ->
+                    scope.launch {
+                        val file = viewModel.buildExport(format)
+                        if (file != null) shareFile(context, file, format)
+                    }
+                }
             )
         }
     }
@@ -111,14 +132,14 @@ fun GodEyeViewScreen(viewModel: GodEyeViewModel) {
     }
 }
 
-@Composable
-private fun LaunchedEffectAircraft(webView: WebView, aircraft: List<Aircraft>) {
-    androidx.compose.runtime.LaunchedEffect(aircraft) {
-        if (aircraft.isNotEmpty()) {
-            val json = Json.encodeToString(aircraft)
-            webView.evaluateJavascript("window.updateAircraft($json);", null)
-        }
+private fun shareFile(context: Context, file: File, format: ExportFormat) {
+    val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+    val intent = Intent(Intent.ACTION_SEND).apply {
+        type = format.mime
+        putExtra(Intent.EXTRA_STREAM, uri)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
+    context.startActivity(Intent.createChooser(intent, "Export results"))
 }
 
 @Composable
@@ -137,7 +158,7 @@ private fun SearchBar(
                 value = query,
                 onValueChange = onQueryChange,
                 singleLine = true,
-                placeholder = { Text(androidx.compose.ui.res.stringResource(R.string.search_hint)) },
+                placeholder = { Text(stringResource(R.string.search_hint)) },
                 trailingIcon = {
                     IconButton(onClick = onSearch) {
                         Icon(Icons.Filled.Search, contentDescription = "Search")
@@ -160,14 +181,12 @@ private fun ResultPanel(
     tools: List<Tool>,
     results: List<ResultRow>,
     runningToolIds: Set<String>,
-    onToolClick: (Tool) -> Unit
+    onToolClick: (Tool) -> Unit,
+    onExport: (ExportFormat) -> Unit
 ) {
     Surface(tonalElevation = 3.dp) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(max = 300.dp)
-                .padding(12.dp)
+            modifier = Modifier.fillMaxWidth().heightIn(max = 360.dp).padding(12.dp)
         ) {
             Text("Detected: $typeLabel", style = MaterialTheme.typography.titleSmall)
 
@@ -181,10 +200,7 @@ private fun ResultPanel(
             }
 
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .padding(top = 8.dp),
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 tools.forEach { tool ->
@@ -205,11 +221,19 @@ private fun ResultPanel(
             }
 
             if (results.isNotEmpty()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Export:", style = MaterialTheme.typography.labelMedium)
+                    ExportFormat.values().forEach { format ->
+                        TextButton(onClick = { onExport(format) }) { Text(format.name) }
+                    }
+                }
+
                 Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .verticalScroll(rememberScrollState())
-                        .padding(top = 12.dp),
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 220.dp)
+                        .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     results.forEach { row -> ResultCard(row) }
@@ -226,23 +250,26 @@ private fun ResultCard(row: ResultRow) {
         "error" -> Color(0xFFC62828)
         else -> MaterialTheme.colorScheme.onSurface
     }
+    val summary = if (row.status == "success") {
+        remember(row.id, row.rawOutput) { ResultFormatter.format(row.toolId, row.rawOutput) }
+    } else null
+
     Surface(tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.fillMaxWidth().padding(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(row.toolName, style = MaterialTheme.typography.labelLarge)
-                Text(
-                    "  ·  ${row.status}",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = statusColor
-                )
+                Text("  ·  ${row.status}", style = MaterialTheme.typography.labelMedium, color = statusColor)
+                summary?.let {
+                    Text("  ·  ${it.headline}", style = MaterialTheme.typography.labelMedium)
+                }
             }
             val body = when (row.status) {
-                "success" -> row.rawOutput.ifBlank { "(empty output)" }
+                "success" -> summary?.lines?.take(15)?.joinToString("\n")?.ifBlank { "(no output)" } ?: "(no output)"
                 "error" -> row.errorMessage ?: "Unknown error"
                 else -> "Running…"
             }
             Text(
-                text = body.take(600),
+                text = body,
                 style = MaterialTheme.typography.bodySmall,
                 fontFamily = FontFamily.Monospace,
                 modifier = Modifier.padding(top = 4.dp)

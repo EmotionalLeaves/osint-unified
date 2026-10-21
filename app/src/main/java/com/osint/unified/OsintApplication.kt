@@ -3,6 +3,7 @@ package com.osint.unified
 import android.app.Application
 import com.osint.unified.data.AircraftDataSource
 import com.osint.unified.data.AppSettings
+import com.osint.unified.data.InvestigationExporter
 import com.osint.unified.data.InvestigationRepository
 import com.osint.unified.data.db.AppDatabase
 import com.osint.unified.domain.ObservableRouter
@@ -30,4 +31,6 @@ class OsintApplication : Application() {
     val repository: InvestigationRepository by lazy {
         InvestigationRepository(database, executorFactory)
     }
+
+    val exporter: InvestigationExporter by lazy { InvestigationExporter(this) }
 }

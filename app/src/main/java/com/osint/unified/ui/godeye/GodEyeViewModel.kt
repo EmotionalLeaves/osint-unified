@@ -5,8 +5,11 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.osint.unified.data.AircraftDataSource
 import com.osint.unified.data.AppSettings
+import com.osint.unified.data.ExportFormat
+import com.osint.unified.data.InvestigationExporter
 import com.osint.unified.data.InvestigationRepository
 import com.osint.unified.data.db.Result as ResultRow
+import java.io.File
 import com.osint.unified.domain.Observable
 import com.osint.unified.domain.ObservableRouter
 import com.osint.unified.domain.Tool
@@ -34,7 +37,8 @@ class GodEyeViewModel(
     private val router: ObservableRouter,
     private val repository: InvestigationRepository,
     private val aircraftDataSource: AircraftDataSource,
-    private val settings: AppSettings
+    private val settings: AppSettings,
+    private val exporter: InvestigationExporter
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(
@@ -100,6 +104,14 @@ class GodEyeViewModel(
         return id
     }
 
+    /** Builds an export file for the current observable + results, or null. */
+    suspend fun buildExport(format: ExportFormat): File? {
+        val observable = _state.value.observable ?: return null
+        val results = _state.value.results
+        if (results.isEmpty()) return null
+        return exporter.export(observable, results, format)
+    }
+
     fun saveSettings(backendUrl: String, tar1090Url: String) {
         settings.backendBaseUrl = backendUrl
         settings.tar1090Url = tar1090Url
@@ -112,10 +124,11 @@ class GodEyeViewModel(
         private val router: ObservableRouter,
         private val repository: InvestigationRepository,
         private val aircraftDataSource: AircraftDataSource,
-        private val settings: AppSettings
+        private val settings: AppSettings,
+        private val exporter: InvestigationExporter
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            GodEyeViewModel(router, repository, aircraftDataSource, settings) as T
+            GodEyeViewModel(router, repository, aircraftDataSource, settings, exporter) as T
     }
 }

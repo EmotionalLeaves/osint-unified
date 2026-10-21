@@ -15,7 +15,7 @@ class MainActivity : ComponentActivity() {
 
     private val viewModel: GodEyeViewModel by viewModels {
         val app = application as OsintApplication
-        GodEyeViewModel.Factory(app.router, app.repository, app.aircraftDataSource, app.settings)
+        GodEyeViewModel.Factory(app.router, app.repository, app.aircraftDataSource, app.settings, app.exporter)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
