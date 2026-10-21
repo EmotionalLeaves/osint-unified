@@ -69,6 +69,7 @@ fun GodEyeViewScreen(
         WebView(context).apply {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
+            setBackgroundColor(0xFF0B0E11.toInt())
             addJavascriptInterface(object {
                 @JavascriptInterface
                 fun onAircraftClick(callsign: String) {
