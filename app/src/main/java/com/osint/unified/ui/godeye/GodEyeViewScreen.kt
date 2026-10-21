@@ -55,7 +55,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.osint.unified.R
 import com.osint.unified.data.ExportFormat
 import com.osint.unified.data.db.Result as ResultRow
+import com.osint.unified.domain.GraphBuilder
 import com.osint.unified.domain.Tool
+import com.osint.unified.ui.common.GraphDialog
 import com.osint.unified.ui.common.ResultCard
 import kotlinx.coroutines.launch
 import kotlinx.serialization.encodeToString
@@ -69,6 +71,8 @@ fun GodEyeViewScreen(viewModel: GodEyeViewModel, onOpenHistory: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var showSettings by remember { mutableStateOf(false) }
+    var showGraph by remember { mutableStateOf(false) }
+    var graphJson by remember { mutableStateOf("") }
 
     val webView = remember {
         WebView(context).apply {
@@ -130,9 +134,17 @@ fun GodEyeViewScreen(viewModel: GodEyeViewModel, onOpenHistory: () -> Unit) {
                         val file = viewModel.buildExport(format)
                         if (file != null) shareFile(context, file, format)
                     }
+                },
+                onShowGraph = {
+                    graphJson = Json.encodeToString(GraphBuilder.build(observable.raw, state.results))
+                    showGraph = true
                 }
             )
         }
+    }
+
+    if (showGraph) {
+        GraphDialog(graphJson = graphJson, onDismiss = { showGraph = false })
     }
 
     if (showSettings) {
@@ -206,7 +218,8 @@ private fun ResultPanel(
     workflowRunning: Boolean,
     onRunWorkflow: () -> Unit,
     onToolClick: (Tool) -> Unit,
-    onExport: (ExportFormat) -> Unit
+    onExport: (ExportFormat) -> Unit,
+    onShowGraph: () -> Unit
 ) {
     Surface(tonalElevation = 3.dp) {
         Column(
@@ -260,13 +273,16 @@ private fun ResultPanel(
 
             if (results.isNotEmpty()) {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(top = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("Export:", style = MaterialTheme.typography.labelMedium)
                     ExportFormat.values().forEach { format ->
                         TextButton(onClick = { onExport(format) }) { Text(format.name) }
                     }
+                    TextButton(onClick = onShowGraph) { Text("Graph") }
                 }
 
                 Column(

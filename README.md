@@ -6,9 +6,11 @@ and the app classifies it and routes you to the right tools. The default
 screen is the **God's Eye View**: a 3D globe (CesiumJS) showing live
 aircraft, with maritime and satellites to follow.
 
-> **Status:** Phase 1 (foundation). The globe, search bar, and observable
-> router are functional. Tool execution is wired as UI (chips) and lands in
-> Phase 2.
+> **Status:** Feature-complete MVP. Globe (aircraft + vessels + tap-to-
+> investigate), observable router, on-device + direct + cloud tool execution,
+> readable results, chained workflow, investigation history, and export
+> (JSON / CSV / dossier / PDF + link graph) are all built. Remaining:
+> deploy the backend for the cloud/credentialed tools.
 
 ## Building the APK with no PC (phone-only)
 
@@ -48,23 +50,51 @@ God's Eye View (CesiumJS WebView)           ▼  (Phase 2)
 
 ## Roadmap
 
-- **Phase 1 (now):** Globe, router, registry, DB schema, cloud build. ✅
-- **Phase 2:** Tool executors — local ARM64 binaries + cloud REST API
-  (Nuclei, GHunt, TruffleHog). Real tar1090 aircraft feed. Link graph.
-- **Phase 3:** PDF dossier export, case management, dark-mode polish, release.
+- **Phase 1 — Foundation:** Globe, router, registry, DB schema, cloud build. ✅
+- **Phase 2 — Executors + feeds:** local/cloud/direct tool execution, real
+  tar1090 feed, results persisted to Room. ✅
+- **Phase 3 — Results & release prep:** parsed summaries, export
+  (JSON/CSV/dossier/PDF), investigation history, link graph. ✅
+- **Phase 4 — GEOINT:** maritime (AIS) vessels, tap-to-investigate. ✅
+- **Phase 5 — Automation:** chained workflow (Subfinder → httpx). ✅
+- **Remaining:** deploy the backend (Nuclei/GHunt/h8mail/TruffleHog/
+  OpenSanctions); bundle Amass; a Python path for Holehe/others; signed
+  release build.
 
 ## How each tool runs
 
-- **On-device (bundled):** Subfinder and httpx are cross-compiled for
-  Android/arm64 in CI (with the NDK, so system DNS works) and shipped inside
-  the APK as `jniLibs` — the one place Android lets an app execute binaries.
-  No backend needed.
-- **Direct:** Overpass calls the public OpenStreetMap API straight from the
-  app. No backend needed.
-- **Cloud:** Nuclei, TruffleHog, GHunt, etc. run on the `backend/` server you
-  deploy, because they're heavy or need credentials/templates.
-- **Not yet bundled:** Amass and the Python tools (Maigret, Holehe, …) still
-  show a "binary not bundled" message until added to the build.
+Four execution modes (see `domain/ExecutionMode`):
+
+- **On-device (bundled Go binary):** Subfinder, httpx — cross-compiled for
+  Android/arm64 in CI with the NDK (so system DNS works), shipped in the APK
+  as `jniLibs`. No backend.
+- **Direct (native, in-app):** Sherlock/Maigret (username) via a native
+  WhatsMyName checker over OkHttp; PhoneInfoga (phone) via Google
+  libphonenumber; Overpass (coordinate) via the public OSM API. No backend.
+- **Cloud:** Nuclei, TruffleHog, GHunt, h8mail, OpenSanctions — run on the
+  `backend/` server you deploy (heavy, or need credentials/templates).
+- **Local, not yet bundled:** Amass, Holehe, ExifTool — show a "binary not
+  bundled" message until added (Amass is Go and bundleable; the Python tools
+  need a Python runtime path).
+
+| Search type | Works with no backend | Needs backend |
+|-------------|-----------------------|---------------|
+| Username | Sherlock, Maigret | — |
+| Phone | PhoneInfoga | — |
+| Coordinate | Overpass | — |
+| Domain | Subfinder, httpx | Nuclei; Amass (pending) |
+| IP | httpx | Nuclei |
+| Email | — | GHunt, h8mail (Holehe pending) |
+
+## Results, export & analysis
+
+- Results are parsed into readable summaries (`domain/ResultFormatter`).
+- Export an investigation as **JSON, CSV, a text dossier, or PDF**, shared via
+  the system share sheet.
+- **Link graph:** a D3 force-directed view of seed → tools → findings.
+- **Workflow:** one-tap "Domain recon" chains Subfinder → httpx.
+- **History:** every investigation and its results persist in Room and are
+  browsable from the clock icon.
 
 ## Notes & honest limitations
 
