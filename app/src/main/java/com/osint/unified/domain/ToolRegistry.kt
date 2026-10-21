@@ -1,6 +1,7 @@
 package com.osint.unified.domain
 
 import com.osint.unified.domain.ExecutionMode.CLOUD
+import com.osint.unified.domain.ExecutionMode.DIRECT
 import com.osint.unified.domain.ExecutionMode.LOCAL
 import com.osint.unified.domain.ToolCategory.FININT
 import com.osint.unified.domain.ToolCategory.FORENSICS
@@ -53,8 +54,8 @@ object ToolRegistry {
         Tool("tar1090", "tar1090", GEOINT, "coordinate", "json", LOCAL,
             "Live aviation ADS-B radar feed rendered on the God's Eye View.",
             "https://github.com/wiedehopf/tar1090"),
-        Tool("overpass_turbo", "Overpass Turbo", GEOINT, "coordinate", "geojson", CLOUD,
-            "Mines OpenStreetMap for infrastructure (towers, cameras, bases).",
+        Tool("overpass_turbo", "Overpass Turbo", GEOINT, "coordinate", "geojson", DIRECT,
+            "Mines OpenStreetMap for nearby infrastructure. Calls the public API directly — no backend.",
             "https://github.com/tyrasd/overpass-turbo"),
 
         // ---- FININT ----

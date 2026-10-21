@@ -4,10 +4,11 @@ enum class ToolCategory { SOCMINT, NETINT, GEOINT, FININT, FORENSICS }
 
 /**
  * Where a tool runs:
- *  - LOCAL: ARM64 binary / embedded runtime shipped with the app (Phase 2+)
- *  - CLOUD: executed via the backend REST API (heavy or sensor-bound tools)
+ *  - LOCAL:  ARM64 binary / embedded runtime shipped with the app (Phase 2+)
+ *  - CLOUD:  executed via the backend REST API (heavy or credentialed tools)
+ *  - DIRECT: a public API the app calls itself — no backend needed
  */
-enum class ExecutionMode { LOCAL, CLOUD }
+enum class ExecutionMode { LOCAL, CLOUD, DIRECT }
 
 data class Tool(
     val id: String,

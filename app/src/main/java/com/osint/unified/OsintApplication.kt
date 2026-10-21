@@ -8,6 +8,7 @@ import com.osint.unified.data.InvestigationRepository
 import com.osint.unified.data.db.AppDatabase
 import com.osint.unified.domain.ObservableRouter
 import com.osint.unified.domain.executor.CloudToolExecutor
+import com.osint.unified.domain.executor.DirectToolExecutor
 import com.osint.unified.domain.executor.ExecutorFactory
 import com.osint.unified.domain.executor.LocalToolExecutor
 
@@ -24,7 +25,8 @@ class OsintApplication : Application() {
     private val executorFactory: ExecutorFactory by lazy {
         ExecutorFactory(
             cloud = CloudToolExecutor(settings),
-            local = LocalToolExecutor(applicationInfo.nativeLibraryDir)
+            local = LocalToolExecutor(applicationInfo.nativeLibraryDir),
+            direct = DirectToolExecutor()
         )
     }
 

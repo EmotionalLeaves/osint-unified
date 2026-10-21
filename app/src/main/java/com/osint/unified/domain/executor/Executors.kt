@@ -116,14 +116,59 @@ class LocalToolExecutor(
     }
 }
 
+/**
+ * Runs DIRECT tools: public APIs the app calls itself, with no backend. Today
+ * that is Overpass (OpenStreetMap infrastructure near a coordinate).
+ */
+class DirectToolExecutor(
+    private val client: OkHttpClient = Http.client
+) : ToolExecutor {
+
+    private val formUrlEncoded = "application/x-www-form-urlencoded".toMediaType()
+
+    override suspend fun execute(tool: Tool, input: String): Result<String> =
+        withContext(Dispatchers.IO) {
+            when (tool.id) {
+                "overpass_turbo" -> overpass(input)
+                else -> Result.failure(IllegalStateException("${tool.name} has no direct implementation."))
+            }
+        }
+
+    private fun overpass(input: String): Result<String> {
+        val parts = input.split(",").map { it.trim().toDoubleOrNull() }
+        if (parts.size != 2 || parts.any { it == null }) {
+            return Result.failure(IllegalArgumentException("Expected coordinates as 'lat, lon'."))
+        }
+        val lat = parts[0]!!
+        val lon = parts[1]!!
+        val query = "[out:json][timeout:25];(node(around:500,$lat,$lon)[amenity];node(around:500,$lat,$lon)[man_made];);out body 60;"
+        return try {
+            val body = ("data=" + java.net.URLEncoder.encode(query, "UTF-8")).toRequestBody(formUrlEncoded)
+            val request = Request.Builder()
+                .url("https://overpass-api.de/api/interpreter")
+                .post(body)
+                .build()
+            client.newCall(request).execute().use { resp ->
+                val text = resp.body?.string().orEmpty()
+                if (resp.isSuccessful) Result.success(text)
+                else Result.failure(IOException("HTTP ${resp.code}: ${text.take(200)}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+}
+
 /** Picks the right executor for a tool based on its [ExecutionMode]. */
 class ExecutorFactory(
     private val cloud: ToolExecutor,
-    private val local: ToolExecutor
+    private val local: ToolExecutor,
+    private val direct: ToolExecutor
 ) {
     fun forTool(tool: Tool): ToolExecutor =
         when (tool.executionMode) {
             ExecutionMode.CLOUD -> cloud
             ExecutionMode.LOCAL -> local
+            ExecutionMode.DIRECT -> direct
         }
 }
