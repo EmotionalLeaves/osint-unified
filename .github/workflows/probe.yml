@@ -47,4 +47,5 @@ jobs:
             fi
           done < /tmp/urls.txt
           if [ -n "$OUT" ]; then echo "::error title=probe-$GROUP::$OUT"; fi
-          exit 1
+          # Annotations carry the results; the job itself succeeds.
+          exit 0

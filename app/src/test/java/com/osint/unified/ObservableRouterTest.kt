@@ -1,5 +1,6 @@
 package com.osint.unified
 
+import com.osint.unified.domain.ExecutionMode
 import com.osint.unified.domain.Observable
 import com.osint.unified.domain.ObservableRouter
 import com.osint.unified.domain.ToolRegistry
@@ -70,8 +71,53 @@ class ObservableRouterTest {
     fun emailSuggestsKeylessFirst() {
         val tools = router.suggestTools(Observable.Email("a@b.com"))
         // Keyless tools lead so email works with no backend.
-        assertEquals("gravatar", tools.first().id)
+        assertEquals("breaches", tools.first().id)
+        assertTrue(tools.any { it.id == "gravatar" })
         assertTrue(tools.any { it.id == "emailaccounts" })
+        // Nothing that needs the Python backend may come before a keyless tool.
+        val firstCloud = tools.indexOfFirst { it.executionMode == ExecutionMode.CLOUD }
+        assertTrue(firstCloud == -1 || firstCloud > 3)
+    }
+
+    @Test
+    fun classifiesCryptoWallets() {
+        assertTrue(router.classify("1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa") is Observable.Wallet)
+        assertTrue(router.classify("0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045") is Observable.Wallet)
+        assertEquals("wallet", router.suggestTools(Observable.Wallet("0x0")).first().id)
+    }
+
+    @Test
+    fun classifiesTailNumbers() {
+        assertTrue(router.classify("N628TS") is Observable.Aircraft)
+        assertEquals("aircraftreg", router.suggestTools(Observable.Aircraft("N628TS")).first().id)
+    }
+
+    @Test
+    fun everySuggestedToolIsRegistered() {
+        // A typo in a route would silently drop a tool; catch it here instead.
+        val observables = listOf(
+            Observable.Email("a@b.com"), Observable.Username("u"), Observable.Domain("b.com"),
+            Observable.IpAddress("8.8.8.8"), Observable.PhoneNumber("+15551234567"),
+            Observable.Coordinate("0,0", 0.0, 0.0), Observable.Url("https://b.com"),
+            Observable.ImageUrl("https://b.com/a.jpg"), Observable.Name("jane"),
+            Observable.Wallet("0x0"), Observable.Aircraft("N1")
+        )
+        observables.forEach { o ->
+            assertTrue("no tools for ${o.typeLabel}", router.suggestTools(o).isNotEmpty())
+        }
+    }
+
+    @Test
+    fun registryHasNoDuplicateIds() {
+        val ids = ToolRegistry.all.map { it.id }
+        assertEquals(ids.size, ids.distinct().size)
+    }
+
+    @Test
+    fun deepSourcesRegistered() {
+        listOf("keybase", "wikidata", "breaches", "subsweep", "gleif", "edgar",
+            "sanctions", "fbi", "wallet", "aircraftreg", "sunterrain", "cve")
+            .forEach { assertNotNull(it, ToolRegistry.byId(it)) }
     }
 
     @Test
