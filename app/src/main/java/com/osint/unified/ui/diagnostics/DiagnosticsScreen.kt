@@ -3,7 +3,6 @@ package com.osint.unified.ui.diagnostics
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,9 +12,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -37,9 +36,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import com.osint.unified.domain.ExecutionMode
+import com.osint.unified.domain.Tool
 import com.osint.unified.domain.ToolRegistry
 import com.osint.unified.domain.executor.ExecutorFactory
 import com.osint.unified.ui.theme.Intel
@@ -47,31 +47,54 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
-private data class Check(val toolId: String, val input: String)
+/** A single testable source: a name and a suspend producing a one-line result. */
+class Probe(val name: String, val group: String, val run: suspend () -> DiagResult)
 
-private val CHECKS = listOf(
-    Check("ipinfo", "1.1.1.1"),
-    Check("shodan", "1.1.1.1"),
-    Check("dns", "github.com"),
-    Check("crtsh", "github.com"),
-    Check("websearch", "osint tools"),
-    Check("github", "torvalds"),
-    Check("emailaccounts", "octocat"),
-    Check("gravatar", "beau@dentedreality.com.au"),
-    Check("geocode", "Paris, France"),
-    Check("revgeo", "48.8584, 2.2945"),
-    Check("wikinearby", "48.8584, 2.2945"),
-    Check("gdelt", "protest"),
-    Check("wayback", "github.com"),
-    Check("webcrawl", "example.com"),
-    Check("dorks", "John Smith")
-)
+data class DiagResult(val status: String, val ms: Long, val note: String)
 
-private data class DiagResult(val status: String, val ms: Long, val note: String)
+/** A live globe feed to include in the self-test. */
+class FeedProbe(val name: String, val fetch: suspend () -> Int)
+
+private fun sampleFor(tool: Tool): String = when (tool.inputType) {
+    "email" -> "test@gmail.com"
+    "domain" -> "github.com"
+    "ip" -> "1.1.1.1"
+    "username" -> "octocat"
+    "phone" -> "+14155550123"
+    "coordinate" -> "48.8584, 2.2945"
+    "place" -> "Paris, France"
+    "image", "media" -> "https://upload.wikimedia.org/wikipedia/commons/3/3f/Fronalpstock_big.jpg"
+    else -> "osint"
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DiagnosticsScreen(executors: ExecutorFactory, onBack: () -> Unit) {
+fun DiagnosticsScreen(executors: ExecutorFactory, feeds: List<FeedProbe>, onBack: () -> Unit) {
+    val probes = remember(feeds) {
+        val toolProbes = ToolRegistry.all
+            .filter { it.executionMode == ExecutionMode.DIRECT }
+            .map { tool ->
+                Probe(tool.name, "TOOLS") {
+                    val input = sampleFor(tool)
+                    val r = runCatching { executors.forTool(tool).execute(tool, input) }.getOrNull()
+                    toResult(r)
+                }
+            }
+        val feedProbes = feeds.map { f ->
+            Probe(f.name, "FEEDS") {
+                val t0 = System.currentTimeMillis()
+                val n = runCatching { f.fetch() }.getOrNull()
+                val ms = System.currentTimeMillis() - t0
+                when {
+                    n == null -> DiagResult("fail", ms, "error")
+                    n == 0 -> DiagResult("empty", ms, "0 results")
+                    else -> DiagResult("ok", ms, "$n results")
+                }
+            }
+        }
+        toolProbes + feedProbes
+    }
+
     val results = remember { mutableStateMapOf<String, DiagResult>() }
     var running by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -79,27 +102,15 @@ fun DiagnosticsScreen(executors: ExecutorFactory, onBack: () -> Unit) {
     fun runAll() {
         if (running) return
         running = true
-        CHECKS.forEach { results[it.toolId] = DiagResult("running", 0, "") }
+        probes.forEach { results[it.name] = DiagResult("running", 0, "") }
         scope.launch {
             coroutineScope {
-                CHECKS.forEach { c ->
+                probes.forEach { p ->
                     launch {
-                        val tool = ToolRegistry.byId(c.toolId) ?: return@launch
                         val t0 = System.currentTimeMillis()
-                        val r = runCatching {
-                            withTimeoutOrNull(30_000) { executors.forTool(tool).execute(tool, c.input) }
-                        }.getOrNull()
-                        val ms = System.currentTimeMillis() - t0
-                        results[c.toolId] = when {
-                            r == null -> DiagResult("timeout", ms, "no response")
-                            r.isSuccess -> {
-                                val out = r.getOrNull().orEmpty()
-                                val line = out.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() } ?: ""
-                                if (out.isBlank()) DiagResult("empty", ms, "no data")
-                                else DiagResult("ok", ms, line.take(90))
-                            }
-                            else -> DiagResult("fail", ms, (r.exceptionOrNull()?.message ?: "error").take(90))
-                        }
+                        val res = withTimeoutOrNull(35_000) { p.run() }
+                            ?: DiagResult("timeout", System.currentTimeMillis() - t0, "no response")
+                        results[p.name] = res
                     }
                 }
             }
@@ -125,15 +136,12 @@ fun DiagnosticsScreen(executors: ExecutorFactory, onBack: () -> Unit) {
             )
         }
     ) { pad ->
-        Column(
-            modifier = Modifier.padding(pad).fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp)
-        ) {
+        Column(modifier = Modifier.padding(pad).fillMaxSize().padding(horizontal = 12.dp)) {
             val ok = results.values.count { it.status == "ok" }
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
                 Text(
-                    "$ok / ${CHECKS.size} sources returning data",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = Intel.TextMid,
+                    "$ok / ${probes.size} sources returning data",
+                    style = MaterialTheme.typography.labelMedium, color = Intel.TextMid,
                     modifier = Modifier.weight(1f)
                 )
                 Box(
@@ -150,21 +158,32 @@ fun DiagnosticsScreen(executors: ExecutorFactory, onBack: () -> Unit) {
                     )
                 }
             }
-            Text(
-                "Runs each source against a known target. Share a screenshot if something's consistently red.",
-                style = MaterialTheme.typography.bodySmall,
-                color = Intel.TextLow,
-                modifier = Modifier.padding(top = 4.dp, bottom = 10.dp)
-            )
 
-            CHECKS.forEach { c ->
-                val tool = ToolRegistry.byId(c.toolId)
-                val res = results[c.toolId]
-                DiagRow(tool?.name ?: c.toolId, res)
-                Spacer(Modifier.size(8.dp))
+            LazyColumn(Modifier.fillMaxSize()) {
+                itemsIndexed(probes) { index, p ->
+                    if (index == 0 || probes[index - 1].group != p.group) {
+                        Text(
+                            p.group,
+                            style = MaterialTheme.typography.labelSmall, color = Intel.Cyan,
+                            modifier = Modifier.padding(top = 10.dp, bottom = 4.dp)
+                        )
+                    }
+                    DiagRow(p.name, results[p.name])
+                    Spacer(Modifier.size(6.dp))
+                }
             }
         }
     }
+}
+
+private fun toResult(r: Result<String>?): DiagResult = when {
+    r == null -> DiagResult("fail", 0, "error")
+    r.isSuccess -> {
+        val out = r.getOrNull().orEmpty()
+        val line = out.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() } ?: ""
+        if (out.isBlank()) DiagResult("empty", 0, "no data") else DiagResult("ok", 0, line.take(80))
+    }
+    else -> DiagResult("fail", 0, (r.exceptionOrNull()?.message ?: "error").take(80))
 }
 
 @Composable
@@ -188,18 +207,14 @@ private fun DiagRow(name: String, res: DiagResult?) {
             Spacer(Modifier.width(8.dp))
             Text(name, style = MaterialTheme.typography.titleSmall, color = Intel.TextHi, modifier = Modifier.weight(1f))
             Text(
-                res?.let { if (it.status == "running") "…" else "${it.status.uppercase()} · ${it.ms}ms" } ?: "",
-                style = MaterialTheme.typography.labelSmall,
-                color = color
+                res?.let { if (it.status == "running") "…" else it.status.uppercase() } ?: "",
+                style = MaterialTheme.typography.labelSmall, color = color
             )
         }
         res?.note?.takeIf { it.isNotBlank() }?.let {
             Text(
-                it,
-                style = MaterialTheme.typography.bodySmall,
-                color = Intel.TextMid,
-                fontFamily = FontFamily.Monospace,
-                modifier = Modifier.padding(top = 4.dp)
+                it, style = MaterialTheme.typography.bodySmall, color = Intel.TextMid,
+                fontFamily = FontFamily.Monospace, modifier = Modifier.padding(top = 4.dp)
             )
         }
     }

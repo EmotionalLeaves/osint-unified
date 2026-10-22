@@ -15,6 +15,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.osint.unified.ui.diagnostics.DiagnosticsScreen
+import com.osint.unified.ui.diagnostics.FeedProbe
 import com.osint.unified.ui.forensics.ForensicsScreen
 import com.osint.unified.ui.framework.FrameworkScreen
 import com.osint.unified.ui.godeye.GodEyeViewModel
@@ -58,10 +59,30 @@ class MainActivity : ComponentActivity() {
                             (application as OsintApplication).exifReader,
                             onBack = { screen = "godeye" }
                         )
-                        "diagnostics" -> DiagnosticsScreen(
-                            (application as OsintApplication).executorFactory,
-                            onBack = { screen = "godeye" }
-                        )
+                        "diagnostics" -> {
+                            val app = application as OsintApplication
+                            DiagnosticsScreen(
+                                app.executorFactory,
+                                feeds = listOf(
+                                    FeedProbe("Aircraft (OpenSky/adsb.fi)") { app.aircraftDataSource.fetch().size },
+                                    FeedProbe("Military ADS-B") { app.milAircraftDataSource.fetch().size },
+                                    FeedProbe("Vessels (AIS)") { app.aisDataSource.fetch().size },
+                                    FeedProbe("Earthquakes (USGS)") { app.earthquakeDataSource.fetch().size },
+                                    FeedProbe("Natural events (EONET)") { app.naturalEventsDataSource.fetch().size },
+                                    FeedProbe("Wildfires (EONET)") { app.firesDataSource.fetch().size },
+                                    FeedProbe("Volcanoes (EONET)") { app.volcanoDataSource.fetch().size },
+                                    FeedProbe("Disasters (GDACS)") { app.gdacsDataSource.fetch().size },
+                                    FeedProbe("Weather alerts (NWS)") { app.weatherDataSource.fetch().size },
+                                    FeedProbe("Aurora (SWPC)") { app.auroraDataSource.fetch().size },
+                                    FeedProbe("News (GDELT)") { app.newsDataSource.fetch().size },
+                                    FeedProbe("Ocean buoys (NDBC)") { app.buoyDataSource.fetch().size },
+                                    FeedProbe("METAR (AWC)") { app.metarDataSource.fetch().size },
+                                    FeedProbe("Satellites (wheretheiss)") { app.satellitesDataSource.fetch().size },
+                                    FeedProbe("Custom overlay") { app.overlayDataSource.fetch().size }
+                                ),
+                                onBack = { screen = "godeye" }
+                            )
+                        }
                         "framework" -> FrameworkScreen(onBack = { screen = "godeye" })
                         else -> GodEyeViewScreen(
                             godEyeViewModel,
