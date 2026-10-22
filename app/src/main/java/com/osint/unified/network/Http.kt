@@ -18,6 +18,22 @@ object Http {
     }
 
     /**
+     * For the few query APIs that are simply slow rather than large.
+     *
+     * crt.sh runs its search against a Postgres replica and routinely takes
+     * half a minute; on the shared client that read as "no certificates
+     * found" when the truth was that the request never finished. Long
+     * enough to let it answer, short enough that a dossier does not sit
+     * waiting on one source.
+     */
+    val slowApiClient: OkHttpClient by lazy {
+        client.newBuilder()
+            .readTimeout(55, TimeUnit.SECONDS)
+            .callTimeout(60, TimeUnit.SECONDS)
+            .build()
+    }
+
+    /**
      * For the handful of sources that are whole catalogues rather than
      * queries: Celestrak's orbital elements are seven megabytes and the IRIS
      * station list is fourteen.

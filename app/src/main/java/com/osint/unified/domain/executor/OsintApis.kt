@@ -24,18 +24,61 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
     private val ua = "OSINT-Unified/1.0 (research)"
 
-    /** crt.sh certificate-transparency subdomain discovery. */
+    /**
+     * Certificate-transparency subdomain discovery.
+     *
+     * crt.sh is the fullest index and also the slowest — it runs the query
+     * against a Postgres replica and regularly takes well over the shared
+     * client's call timeout, which showed up as "no certificates found" when
+     * the truth was "did not finish". So it gets the patient client, and Cert
+     * Spotter — a separate CT index, fast and keyless — answers when crt.sh
+     * will not, instead of the lookup coming back empty.
+     */
     fun crtsh(domain: String): Result<String> = runCatching {
-        val url = "https://crt.sh/?q=" + URLEncoder.encode("%.$domain", "UTF-8") + "&output=json"
+        val d = domain.trim().removePrefix("*.").lowercase()
         val subs = LinkedHashSet<String>()
-        json.parseToJsonElement(getBody(url)).jsonArray.forEach { el ->
-            ((el as? JsonObject)?.get("name_value") as? JsonPrimitive)?.contentOrNull
-                ?.split("\n")?.forEach { line ->
-                    val v = line.trim().removePrefix("*.").lowercase()
-                    if (v.isNotEmpty()) subs.add(v)
-                }
+
+        fun record(raw: String) {
+            raw.split("\n").forEach { line ->
+                val v = line.trim().removePrefix("*.").lowercase()
+                if (v.isNotEmpty() && v.endsWith(d)) subs.add(v)
+            }
         }
-        if (subs.isEmpty()) "crt.sh: no certificates found." else "crt.sh — ${subs.size} names:\n" + subs.sorted().joinToString("\n")
+
+        val crtFailure = runCatching {
+            val url = "https://crt.sh/?q=" + URLEncoder.encode("%.$d", "UTF-8") + "&output=json"
+            json.parseToJsonElement(getBody(url, patient = true)).jsonArray.forEach { el ->
+                ((el as? JsonObject)?.get("name_value") as? JsonPrimitive)?.contentOrNull
+                    ?.let(::record)
+            }
+        }.exceptionOrNull()
+        val fromCrtSh = subs.size
+
+        val spotterFailure = runCatching {
+            val url = "https://api.certspotter.com/v1/issuances?domain=$d" +
+                "&include_subdomains=true&expand=dns_names"
+            json.parseToJsonElement(getBody(url)).jsonArray.forEach { el ->
+                ((el as? JsonObject)?.get("dns_names") as? JsonArray)?.forEach { n ->
+                    (n as? JsonPrimitive)?.contentOrNull?.let(::record)
+                }
+            }
+        }.exceptionOrNull()
+
+        when {
+            subs.isNotEmpty() -> buildString {
+                append("Certificate transparency — ${subs.size} names for $d")
+                append(" (crt.sh $fromCrtSh")
+                append(", Cert Spotter +${subs.size - fromCrtSh}")
+                append(")")
+                if (crtFailure != null) append("\ncrt.sh did not answer: ${crtFailure.message}")
+                append("\n")
+                append(subs.sorted().joinToString("\n"))
+            }
+            crtFailure != null && spotterFailure != null ->
+                "Certificate transparency unreachable — crt.sh: ${crtFailure.message}; " +
+                    "Cert Spotter: ${spotterFailure.message}"
+            else -> "Certificate transparency: no certificates found for $d."
+        }
     }
 
     private fun dohTxt(name: String, type: String): List<String> = runCatching {
@@ -323,10 +366,18 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
         }
     }
 
-    /** BGP / ASN / prefix / RIR for an IP (keyless, BGPView). */
+    /**
+     * BGP / ASN / prefix / RIR for an IP.
+     *
+     * BGPView is the nicer shape but goes down for long stretches, and when
+     * it does this returned nothing at all for every IP. RIPEstat carries
+     * the same routing facts and is run by an RIR, so it answers instead.
+     */
     fun bgpview(ip: String): Result<String> = runCatching {
-        val o = json.parseToJsonElement(getBody("https://api.bgpview.io/ip/$ip"))
-            .jsonObject["data"]?.jsonObject ?: return@runCatching "No BGP data for $ip."
+        val o = runCatching {
+            json.parseToJsonElement(getBody("https://api.bgpview.io/ip/$ip"))
+                .jsonObject["data"]?.jsonObject
+        }.getOrNull() ?: return@runCatching ripeRouting(ip)
         buildString {
             (o["ip"] as? JsonPrimitive)?.contentOrNull?.let { append("IP: $it\n") }
             (o["ptr_record"] as? JsonPrimitive)?.contentOrNull?.let { append("PTR: $it\n") }
@@ -340,9 +391,37 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
                 }
                 (p["country_code"] as? JsonPrimitive)?.contentOrNull?.let { append("Country: $it\n") }
             }
-            if (isBlank()) append("No BGP data for $ip.")
+            if (isBlank()) append(ripeRouting(ip))
         }
     }
+
+    /** Routing facts for an IP straight from RIPEstat — the fallback when
+     *  BGPView is unavailable, which it often is. */
+    private fun ripeRouting(ip: String): String = runCatching {
+        val enc = URLEncoder.encode(ip, "UTF-8")
+        val net = json.parseToJsonElement(
+            getBody("https://stat.ripe.net/data/network-info/data.json?resource=$enc")
+        ).jsonObject["data"]?.jsonObject
+        val prefix = (net?.get("prefix") as? JsonPrimitive)?.contentOrNull
+        val asns = (net?.get("asns") as? JsonArray)
+            ?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }.orEmpty()
+        if (prefix == null && asns.isEmpty()) return@runCatching "No routing data for $ip."
+        buildString {
+            append("IP: $ip\n")
+            prefix?.let { append("Prefix: $it\n") }
+            asns.forEach { a ->
+                val holder = runCatching {
+                    (json.parseToJsonElement(
+                        getBody("https://stat.ripe.net/data/as-overview/data.json?resource=AS$a")
+                    ).jsonObject["data"]?.jsonObject?.get("holder") as? JsonPrimitive)?.contentOrNull
+                }.getOrNull()
+                append("ASN: AS$a")
+                if (!holder.isNullOrBlank()) append(" $holder")
+                append("\n")
+            }
+            append("Source: RIPEstat.")
+        }
+    }.getOrElse { "No routing data for $ip (${it.message})." }
 
     /** Hudson Rock infostealer check (keyless): is this email in stealer logs. */
     fun hudsonRock(email: String): Result<String> = runCatching {
@@ -670,9 +749,10 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
             }
     }.getOrNull()
 
-    private fun getBody(url: String): String {
+    private fun getBody(url: String, patient: Boolean = false): String {
         val request = Request.Builder().url(url).header("User-Agent", ua).build()
-        client.newCall(request).execute().use { resp ->
+        val c = if (patient) com.osint.unified.network.Http.slowApiClient else client
+        c.newCall(request).execute().use { resp ->
             val body = resp.body?.string().orEmpty()
             if (!resp.isSuccessful) throw IOException("HTTP ${resp.code}")
             return body
