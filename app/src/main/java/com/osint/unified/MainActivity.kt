@@ -14,6 +14,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.osint.unified.ui.diagnostics.DiagnosticsScreen
 import com.osint.unified.ui.forensics.ForensicsScreen
 import com.osint.unified.ui.godeye.GodEyeViewModel
 import com.osint.unified.ui.godeye.GodEyeViewScreen
@@ -56,10 +57,15 @@ class MainActivity : ComponentActivity() {
                             (application as OsintApplication).exifReader,
                             onBack = { screen = "godeye" }
                         )
+                        "diagnostics" -> DiagnosticsScreen(
+                            (application as OsintApplication).executorFactory,
+                            onBack = { screen = "godeye" }
+                        )
                         else -> GodEyeViewScreen(
                             godEyeViewModel,
                             onOpenHistory = { screen = "history" },
-                            onOpenForensics = { screen = "forensics" }
+                            onOpenForensics = { screen = "forensics" },
+                            onOpenDiagnostics = { screen = "diagnostics" }
                         )
                     }
                 }

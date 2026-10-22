@@ -41,7 +41,7 @@ class OsintApplication : Application() {
     val satellitesDataSource: SatellitesDataSource by lazy { SatellitesDataSource() }
     val newsDataSource: NewsDataSource by lazy { NewsDataSource() }
 
-    private val executorFactory: ExecutorFactory by lazy {
+    val executorFactory: ExecutorFactory by lazy {
         ExecutorFactory(
             cloud = CloudToolExecutor(settings),
             local = LocalToolExecutor(applicationInfo.nativeLibraryDir, filesDir.absolutePath),

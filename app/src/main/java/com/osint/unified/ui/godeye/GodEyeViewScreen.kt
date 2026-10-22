@@ -26,6 +26,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.NetworkCheck
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
@@ -77,7 +78,8 @@ private val SEARCH_TYPES = listOf(
 fun GodEyeViewScreen(
     viewModel: GodEyeViewModel,
     onOpenHistory: () -> Unit,
-    onOpenForensics: () -> Unit
+    onOpenForensics: () -> Unit,
+    onOpenDiagnostics: () -> Unit = {}
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var showSettings by remember { mutableStateOf(false) }
@@ -109,6 +111,9 @@ fun GodEyeViewScreen(
                             color = Intel.TextMid
                         )
                     }
+                }
+                IconButton(onClick = onOpenDiagnostics) {
+                    Icon(Icons.Filled.NetworkCheck, contentDescription = "Self-test", tint = Intel.TextMid)
                 }
                 IconButton(onClick = onOpenForensics) {
                     Icon(Icons.Filled.Build, contentDescription = "Forensics & decoders", tint = Intel.TextMid)
