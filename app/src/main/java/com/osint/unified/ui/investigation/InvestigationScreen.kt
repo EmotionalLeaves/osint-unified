@@ -53,6 +53,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.osint.unified.data.ExportFormat
 import com.osint.unified.domain.GraphBuilder
 import com.osint.unified.domain.EntityExtractor
+import com.osint.unified.domain.Findings
 import com.osint.unified.domain.IntelSummary
 import com.osint.unified.domain.Observable
 import com.osint.unified.domain.Tool
@@ -273,9 +274,7 @@ fun InvestigationScreen(viewModel: GodEyeViewModel, onBack: () -> Unit) {
                 // A source that found nothing is worth knowing about, but
                 // it should not sit between you and the ones that did. Most
                 // of a dossier is misses — they collapse to a single line.
-                val (hits, misses) = state.results.partition { row ->
-                    row.status == "success" && !saysNothingFound(row.rawOutput)
-                }
+                val (hits, misses) = state.results.partition { Findings.isHit(it) }
 
                 // What you asked about, and what the app went on to look up
                 // because the first pass named it, are two different kinds of
@@ -373,30 +372,6 @@ fun InvestigationScreen(viewModel: GodEyeViewModel, onBack: () -> Unit) {
     if (showGraph) {
         GraphDialog(graphJson = graphJson, onDismiss = { showGraph = false })
     }
-}
-
-/**
- * Whether a successful result is really a miss.
- *
- * Most sources answer "no entity named X" with HTTP 200, so status alone
- * cannot tell a hit from a miss, and a dossier ends up being mostly cards
- * reporting absence.
- */
-private fun saysNothingFound(output: String): Boolean {
-    val head = output.trimStart().lineSequence().firstOrNull()?.lowercase().orEmpty()
-    if (head.isBlank()) return true
-    val phrases = listOf(
-        "no entry matching", "no registered legal entity", "no sanctioned entity",
-        "no places matched", "no accounts found", "nothing matching", "no public data",
-        "no account named", "not found in any", "no certificates found", "no cves found",
-        "has nothing on", "no indexed pages", "no edits by", "no key published",
-        "no record", "no results", "no data", "no matching", "not a known relay",
-        "no outage alerts", "no uk crime data", "nothing reported near",
-        "no military-tagged sites", "no mapped infrastructure", "no public camera",
-        "no news coverage", "no geolocated news", "is not a recognised",
-        "no subdomain", "nothing found", "no entity"
-    )
-    return phrases.any { head.contains(it) }
 }
 
 @Composable

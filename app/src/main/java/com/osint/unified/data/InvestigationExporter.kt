@@ -6,6 +6,9 @@ import android.graphics.Paint
 import android.graphics.Typeface
 import android.graphics.pdf.PdfDocument
 import com.osint.unified.data.db.Result as ResultRow
+import com.osint.unified.domain.EntityExtractor
+import com.osint.unified.domain.Findings
+import com.osint.unified.domain.IntelSummary
 import com.osint.unified.domain.Observable
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -149,19 +152,80 @@ class InvestigationExporter(private val appContext: Context) {
         return sb.toString()
     }
 
+    /**
+     * The report someone actually reads.
+     *
+     * A flat dump of every tool in the order they finished buries the two
+     * or three sources that found something among the forty that did not,
+     * and gives no account of why half the entries are about an identifier
+     * nobody typed. So the report leads with the synthesis, then what was
+     * found, then what the second pass chased and why, and only then the
+     * roll call of sources that answered no — which belongs in a dossier,
+     * as a record of where someone has already looked, but not at the top.
+     */
     private fun toDossier(observable: Observable, results: List<ResultRow>): String = buildString {
+        val seed = observable.raw.trim().lowercase()
+        val sorted = Findings.sort(results)
+        val facts = IntelSummary.synthesize(results)
+        val pivots = EntityExtractor.extract(results, observable.raw)
+        val (direct, derived) = sorted.hits.partition { it.input.trim().lowercase() == seed }
+
         append("OSINT INVESTIGATION DOSSIER\n")
         append("===========================\n")
         append("Observable : ${observable.raw}\n")
         append("Type       : ${observable.typeLabel}\n")
         append("Generated  : ${Date()}\n")
-        append("Tools run  : ${results.size}\n\n")
-        results.forEach { r ->
-            append("--- ${r.toolName} [${r.status}] ---\n")
-            if (r.status == "error") append("Error: ${r.errorMessage}\n")
-            else append(r.rawOutput.ifBlank { "(no output)" }).append("\n")
+        append("Sources    : ${results.size} queried — ${sorted.hits.size} returned intel, ")
+        append("${sorted.empty.size} found nothing, ${sorted.failed.size} could not be reached\n")
+
+        if (facts.isNotEmpty()) {
+            append("\nSUMMARY\n-------\n")
+            facts.forEach { append("${it.label.padEnd(12)} ${it.value}\n") }
+        }
+
+        if (pivots.isNotEmpty()) {
+            append("\nIDENTIFIERS DISCOVERED\n----------------------\n")
+            pivots.groupBy { it.kind }.forEach { (kind, items) ->
+                append("${kind.padEnd(8)} ${items.joinToString(", ") { it.value }}\n")
+            }
+        }
+
+        if (direct.isNotEmpty()) {
+            append("\nFINDINGS\n--------\n")
+            direct.forEach { appendResult(it) }
+        }
+
+        if (derived.isNotEmpty()) {
+            append("\nFOLLOWED UP\n-----------\n")
+            append("Looked up because the first pass named them, not because they ")
+            append("were the target.\n")
+            derived.groupBy { it.input }.forEach { (via, rows) ->
+                append("\n◂ $via\n")
+                rows.forEach { appendResult(it) }
+            }
+        }
+
+        if (sorted.empty.isNotEmpty()) {
+            append("\nSOURCES THAT FOUND NOTHING (${sorted.empty.size})\n")
+            append("--------------------------\n")
+            append(sorted.empty.joinToString(", ") { it.toolName })
             append("\n")
         }
+
+        if (sorted.failed.isNotEmpty()) {
+            append("\nSOURCES THAT COULD NOT BE REACHED (${sorted.failed.size})\n")
+            append("---------------------------------\n")
+            append("These said nothing either way; absence here is not evidence.\n")
+            sorted.failed.forEach {
+                append("${it.toolName}: ${it.errorMessage ?: it.status}\n")
+            }
+        }
+    }
+
+    private fun StringBuilder.appendResult(r: ResultRow) {
+        append("\n--- ${r.toolName} ---\n")
+        append(r.rawOutput.ifBlank { "(no output)" })
+        append("\n")
     }
 
     private fun csv(value: String): String = "\"" + value.replace("\"", "\"\"") + "\""
