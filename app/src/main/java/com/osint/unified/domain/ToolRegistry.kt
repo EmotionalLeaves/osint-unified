@@ -279,8 +279,8 @@ object ToolRegistry {
             "Networks and regions losing connectivity in the last 24 hours (Georgia Tech IODA).",
             "https://ioda.inetintel.cc.gatech.edu"),
 
-        Tool("gdelt", "GDELT news geo", GEOINT, "any", "geojson", DIRECT,
-            "Geolocated global-news hotspots mentioning the query (GDELT 2.0).",
+        Tool("gdelt", "Global news", NETINT, "any", "text", DIRECT,
+            "Worldwide coverage of a query with sources, reporting countries and dates (GDELT article API).",
             "https://www.gdeltproject.org"),
     )
 
