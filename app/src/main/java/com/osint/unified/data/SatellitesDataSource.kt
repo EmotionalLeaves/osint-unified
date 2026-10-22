@@ -1,5 +1,6 @@
 package com.osint.unified.data
 
+import com.osint.unified.domain.OrbitPropagator
 import com.osint.unified.network.Http
 import com.osint.unified.ui.godeye.GeoBlip
 import kotlinx.coroutines.Dispatchers
@@ -16,18 +17,13 @@ import okhttp3.Request
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
-import kotlin.math.PI
 import kotlin.math.abs
-import kotlin.math.asin
-import kotlin.math.atan2
-import kotlin.math.cbrt
-import kotlin.math.cos
-import kotlin.math.pow
-import kotlin.math.sin
-import kotlin.math.sqrt
 
 /**
  * Every tracked satellite, positioned live.
+ *
+ * The orbital maths lives in [OrbitPropagator], which is tested against an
+ * observed ISS position rather than trusted.
  *
  * The previous source (wheretheiss.at) turned out to track exactly one
  * object — the ISS — so the layer was empty no matter how many NORAD IDs it
@@ -110,79 +106,32 @@ class SatellitesDataSource(private val client: OkHttpClient = Http.client) {
 
     /** Sub-satellite point and altitude at [nowMillis]. */
     private fun propagate(e: Elements, nowMillis: Long): GeoBlip? {
-        if (e.meanMotion <= 0.0 || e.eccentricity >= 1.0) return null
-        val dt = (nowMillis - e.epochMillis) / 1000.0          // seconds
         // Elements older than a fortnight have drifted too far to plot.
-        if (abs(dt) > 14 * 86400.0) return null
+        if (abs(nowMillis - e.epochMillis) > 14L * 86_400_000L) return null
+        val p = OrbitPropagator.propagate(
+            OrbitPropagator.Elements(
+                meanMotion = e.meanMotion,
+                eccentricity = e.eccentricity,
+                inclination = e.inclination,
+                raan = e.raan,
+                argPerigee = e.argPerigee,
+                meanAnomaly = e.meanAnomaly,
+                epochMillis = e.epochMillis
+            ),
+            nowMillis
+        ) ?: return null
 
-        val n = e.meanMotion * 2.0 * PI / 86400.0              // rad/s
-        val a = cbrt(MU / (n * n))                             // km
-        val ecc = e.eccentricity
-        val inc = Math.toRadians(e.inclination)
-
-        // J2 makes the node regress and the perigee rotate; over hours that
-        // dominates the error, so it is worth the few extra lines.
-        val p = a * (1 - ecc * ecc)
-        if (p <= 0) return null
-        val factor = 1.5 * J2 * (EARTH_RADIUS_KM / p).pow(2) * n
-        val raan = Math.toRadians(e.raan) - factor * cos(inc) * dt
-        val argP = Math.toRadians(e.argPerigee) + factor * 0.5 * (5 * cos(inc) * cos(inc) - 1) * dt
-
-        // Kepler's equation, solved by Newton-Raphson.
-        var m = Math.toRadians(e.meanAnomaly) + n * dt
-        m = ((m % TAU) + TAU) % TAU
-        var ea = m
-        repeat(12) {
-            val delta = (ea - ecc * sin(ea) - m) / (1 - ecc * cos(ea))
-            ea -= delta
-            if (abs(delta) < 1e-10) return@repeat
-        }
-
-        val trueAnomaly = 2.0 * atan2(
-            sqrt(1 + ecc) * sin(ea / 2.0),
-            sqrt(1 - ecc) * cos(ea / 2.0)
-        )
-        val r = a * (1 - ecc * cos(ea))
-
-        // Perifocal to Earth-centred inertial.
-        val u = argP + trueAnomaly
-        val cosU = cos(u); val sinU = sin(u)
-        val cosO = cos(raan); val sinO = sin(raan)
-        val cosI = cos(inc); val sinI = sin(inc)
-        val x = r * (cosO * cosU - sinO * sinU * cosI)
-        val y = r * (sinO * cosU + cosO * sinU * cosI)
-        val z = r * (sinU * sinI)
-
-        val lat = Math.toDegrees(asin((z / r).coerceIn(-1.0, 1.0)))
-        var lon = Math.toDegrees(atan2(y, x) - gmst(nowMillis))
-        lon = ((lon + 180.0) % 360.0 + 360.0) % 360.0 - 180.0
-        if (lat.isNaN() || lon.isNaN()) return null
-
-        val altitude = (r - EARTH_RADIUS_KM).toInt()
-        if (altitude < 80 || altitude > 100_000) return null   // decayed or junk elements
+        val altitude = p.altitudeKm.toInt()
+        // Decayed objects and junk element sets produce impossible orbits.
+        if (altitude < 80 || altitude > 100_000) return null
         return GeoBlip(
-            lat, lon,
+            p.lat, p.lon,
             "${e.name} · ${altitude}km",
             "https://celestrak.org/satcat/table-satcat.php?CATNR=${e.noradId}"
         )
     }
 
-    /** Greenwich mean sidereal time, in radians. */
-    private fun gmst(millis: Long): Double {
-        val jd = millis / 86_400_000.0 + 2440587.5
-        val t = (jd - 2451545.0) / 36525.0
-        var deg = 280.46061837 + 360.98564736629 * (jd - 2451545.0) +
-            0.000387933 * t * t - t * t * t / 38710000.0
-        deg %= 360.0
-        if (deg < 0) deg += 360.0
-        return Math.toRadians(deg)
-    }
-
     private companion object {
-        const val MU = 398600.4418            // km^3/s^2
-        const val EARTH_RADIUS_KM = 6378.137
-        const val J2 = 1.08262668e-3
-        const val TAU = 2.0 * PI
         const val CATALOGUE_TTL_MS = 6 * 60 * 60 * 1000L
     }
 }
