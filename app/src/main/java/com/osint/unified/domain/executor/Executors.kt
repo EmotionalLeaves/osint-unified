@@ -6,6 +6,8 @@ import com.osint.unified.domain.ExecutionMode
 import com.osint.unified.domain.Tool
 import com.osint.unified.network.Http
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -307,9 +309,9 @@ class DirectToolExecutor(
         val fetchable = curated.filter { it.fetchable }
         val openable = curated.filterNot { it.fetchable }
 
-        val executed = kotlinx.coroutines.coroutineScope {
+        val executed = coroutineScope {
             fetchable.map { t ->
-                kotlinx.coroutines.async {
+                async {
                     val url = com.osint.unified.domain.ToolTemplates.resolve(t, target)
                     val body = runCatching {
                         val request = Request.Builder().url(url)
