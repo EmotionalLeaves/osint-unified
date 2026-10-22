@@ -3,6 +3,7 @@ package com.osint.unified.ui.godeye
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.ShapeDrawable
 import android.graphics.drawable.shapes.OvalShape
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -50,6 +51,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
@@ -68,6 +70,11 @@ import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.views.overlay.Marker
 
 private val EXAMPLES = listOf("example.com", "8.8.8.8", "40.7128,-74.0060", "+14155550123", "John Smith")
+
+/** Display modes for the globe: tactical filters over the satellite imagery. */
+private enum class VisualMode(val label: String) {
+    DEFAULT("DEFAULT"), NVG("NVG"), FLIR("FLIR"), CRT("CRT"), GOD("GOD MODE")
+}
 
 private val SEARCH_TYPES = listOf(
     "auto" to "AUTO", "name" to "NAME", "email" to "EMAIL", "username" to "USER",
@@ -101,6 +108,21 @@ fun GodEyeViewScreen(
     var showMetar by remember { mutableStateOf(false) }
     var showMil by remember { mutableStateOf(true) }
     var showConflict by remember { mutableStateOf(true) }
+    var mode by remember { mutableStateOf(VisualMode.DEFAULT) }
+    val god = mode == VisualMode.GOD
+    // GOD MODE forces every layer visible.
+    fun <T> vis(on: Boolean, data: List<T>): List<T> = if (on || god) data else emptyList()
+
+    // Live UTC clock for the HUD.
+    var utc by remember { mutableStateOf("") }
+    LaunchedEffect(Unit) {
+        val fmt = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US)
+            .apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }
+        while (true) {
+            utc = fmt.format(java.util.Date())
+            kotlinx.coroutines.delay(1000)
+        }
+    }
     var showAqi by remember { mutableStateOf(false) }
     var showStations by remember { mutableStateOf(false) }
 
@@ -129,7 +151,7 @@ fun GodEyeViewScreen(
                         Box(Modifier.size(6.dp).clip(RoundedCornerShape(50)).background(Intel.Success))
                         Spacer(Modifier.width(5.dp))
                         Text(
-                            "LIVE  AIR ${state.aircraft.size} · SEA ${state.vessels.size} · SEIS ${state.quakes.size} · EVT ${state.naturalEvents.size}",
+                            "LIVE $utc" + "Z  AIR ${state.aircraft.size} · SEA ${state.vessels.size} · SEIS ${state.quakes.size} · EVT ${state.naturalEvents.size}",
                             style = MaterialTheme.typography.labelSmall,
                             color = Intel.TextMid
                         )
@@ -239,24 +261,24 @@ fun GodEyeViewScreen(
                     .clipToBounds()
             ) {
                 GlobeMap(
-                    aircraft = if (showAircraft) state.aircraft else emptyList(),
-                    vessels = if (showVessels) state.vessels else emptyList(),
-                    quakes = if (showQuakes) state.quakes else emptyList(),
-                    events = if (showEvents) state.naturalEvents else emptyList(),
-                    overlay = if (showOverlay) state.overlayPoints else emptyList(),
-                    weather = if (showWeather) state.weather else emptyList(),
-                    fires = if (showFires) state.fires else emptyList(),
-                    satellites = if (showSats) state.satellites else emptyList(),
-                    news = if (showNews) state.news else emptyList(),
-                    gdacs = if (showGdacs) state.gdacs else emptyList(),
-                    volcanoes = if (showVolcanoes) state.volcanoes else emptyList(),
-                    aurora = if (showAurora) state.aurora else emptyList(),
-                    buoys = if (showBuoys) state.buoys else emptyList(),
-                    metar = if (showMetar) state.metar else emptyList(),
-                    milAircraft = if (showMil) state.milAircraft else emptyList(),
-                    conflicts = if (showConflict) state.conflicts else emptyList(),
-                    airQuality = if (showAqi) state.airQuality else emptyList(),
-                    stations = if (showStations) state.stations else emptyList(),
+                    aircraft = vis(showAircraft, state.aircraft),
+                    vessels = vis(showVessels, state.vessels),
+                    quakes = vis(showQuakes, state.quakes),
+                    events = vis(showEvents, state.naturalEvents),
+                    overlay = vis(showOverlay, state.overlayPoints),
+                    weather = vis(showWeather, state.weather),
+                    fires = vis(showFires, state.fires),
+                    satellites = vis(showSats, state.satellites),
+                    news = vis(showNews, state.news),
+                    gdacs = vis(showGdacs, state.gdacs),
+                    volcanoes = vis(showVolcanoes, state.volcanoes),
+                    aurora = vis(showAurora, state.aurora),
+                    buoys = vis(showBuoys, state.buoys),
+                    metar = vis(showMetar, state.metar),
+                    milAircraft = vis(showMil, state.milAircraft),
+                    conflicts = vis(showConflict, state.conflicts),
+                    airQuality = vis(showAqi, state.airQuality),
+                    stations = vis(showStations, state.stations),
                     findings = state.findings,
                     focus = state.mapFocus,
                     onInvestigate = { label ->
@@ -266,6 +288,38 @@ fun GodEyeViewScreen(
                     onMapTap = { lat, lon -> viewModel.onMapClick(lat, lon) },
                     modifier = Modifier.fillMaxSize().clipToBounds()
                 )
+                // Tactical display filter over the imagery.
+                when (mode) {
+                    VisualMode.NVG -> Box(Modifier.matchParentSize().background(Color(0x5512FF7A)))
+                    VisualMode.FLIR -> Box(Modifier.matchParentSize().background(Color(0x55FF6A00)))
+                    VisualMode.CRT -> {
+                        Box(Modifier.matchParentSize().background(Color(0x3326FF95)))
+                        Canvas(Modifier.matchParentSize()) {
+                            var y = 0f
+                            while (y < size.height) {
+                                drawLine(Color(0x26000000), Offset(0f, y), Offset(size.width, y), strokeWidth = 1f)
+                                y += 4f
+                            }
+                        }
+                    }
+                    else -> Unit
+                }
+
+                // Mode cycle button.
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart).padding(6.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color(0xCC000000))
+                        .border(1.dp, Intel.Cyan, RoundedCornerShape(6.dp))
+                        .clickable {
+                            mode = VisualMode.values()[(mode.ordinal + 1) % VisualMode.values().size]
+                        }
+                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                ) {
+                    Text(mode.label, style = MaterialTheme.typography.labelSmall, color = Intel.CyanBright)
+                }
+
                 Surface(
                     color = Color(0xCC000000),
                     shape = RoundedCornerShape(6.dp),
