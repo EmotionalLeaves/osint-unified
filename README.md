@@ -10,10 +10,11 @@ The default screen is the **God's Eye View**: a native satellite-imagery
 globe carrying ~25 live layers, from aircraft and vessels to traffic
 cameras, restricted airspace and submarine cable landings.
 
-> **Status:** Working. 69 registered tools, 56 of them keyless and run
-> directly on the device with no backend, no API keys and no accounts.
-> The optional `backend/` server only adds the handful of tools that
-> genuinely need credentials or heavy runtimes.
+> **Status:** Working. 84 registered tools, 71 of them keyless and run
+> directly on the device with no backend, no API keys and no accounts —
+> plus thousands of username sites executed natively and thousands of
+> directory tools runnable against a target. The optional `backend/`
+> server only adds the handful that genuinely need credentials.
 
 ## Building the APK with no PC (phone-only)
 
@@ -58,6 +59,33 @@ HUD carries the Kp index, X-ray flare class and active SWPC alerts.
 
 Tap any marker for an object panel with its label, coordinates and MGRS,
 then investigate it or re-centre on it.
+
+## Thousands of tools, actually executed
+
+Two different things get called "a tool", and they are made executable in
+two different ways.
+
+**Username checkers are data, not programs.** Sherlock, Maigret, Blackbird
+and WhatsMyName are each a list of sites plus a rule for telling a live
+profile from a 404. The app bundles all three rulesets and runs the rules
+itself — no Python, no backend. They are merged and deduplicated by target
+URL, then fetched with bounded concurrency under a time cap, reporting a
+partial result honestly if it runs out of time.
+
+**Directory tools take their query in the URL.** `ToolTemplates` detects
+the search parameter in any catalogue entry and turns it into a template,
+so the entry can be launched already pointed at your target instead of at
+a blank search box:
+
+- the directory screen has a target field; every fillable entry grows a
+  **RUN** button
+- the `toolrun` tool executes, in parallel, every endpoint that returns
+  plain text or JSON — those run with no browser at all — and points the
+  rest at the target
+
+The self-test screen shows the exact per-dataset counts this build carries,
+read from a manifest written at build time, so the numbers are measured on
+your device rather than claimed here.
 
 ## Pivots
 
