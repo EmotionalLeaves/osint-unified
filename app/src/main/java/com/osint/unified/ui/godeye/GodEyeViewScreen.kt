@@ -81,6 +81,10 @@ fun GodEyeViewScreen(
     var showQuakes by remember { mutableStateOf(true) }
     var showEvents by remember { mutableStateOf(true) }
     var showOverlay by remember { mutableStateOf(true) }
+    var showWeather by remember { mutableStateOf(true) }
+    var showFires by remember { mutableStateOf(true) }
+    var showSats by remember { mutableStateOf(true) }
+    var showNews by remember { mutableStateOf(false) }
 
     Scaffold(containerColor = Intel.Base) { pad ->
         Column(modifier = Modifier.padding(pad).fillMaxSize()) {
@@ -162,6 +166,10 @@ fun GodEyeViewScreen(
                 LayerPill("SEA", state.vessels.size, Intel.Teal, showVessels) { showVessels = !showVessels }
                 LayerPill("SEIS", state.quakes.size, Intel.Coral, showQuakes) { showQuakes = !showQuakes }
                 LayerPill("EVT", state.naturalEvents.size, Intel.Amber, showEvents) { showEvents = !showEvents }
+                LayerPill("WX", state.weather.size, Color(0xFF7FB2FF), showWeather) { showWeather = !showWeather }
+                LayerPill("FIRE", state.fires.size, Color(0xFFFF5A4D), showFires) { showFires = !showFires }
+                LayerPill("SAT", state.satellites.size, Color(0xFFC0A8FF), showSats) { showSats = !showSats }
+                LayerPill("NEWS", state.news.size, Color(0xFFFF79C6), showNews) { showNews = !showNews }
                 if (state.overlayPoints.isNotEmpty()) {
                     LayerPill("OVLY", state.overlayPoints.size, Intel.CyanBright, showOverlay) { showOverlay = !showOverlay }
                 }
@@ -180,6 +188,10 @@ fun GodEyeViewScreen(
                     quakes = if (showQuakes) state.quakes else emptyList(),
                     events = if (showEvents) state.naturalEvents else emptyList(),
                     overlay = if (showOverlay) state.overlayPoints else emptyList(),
+                    weather = if (showWeather) state.weather else emptyList(),
+                    fires = if (showFires) state.fires else emptyList(),
+                    satellites = if (showSats) state.satellites else emptyList(),
+                    news = if (showNews) state.news else emptyList(),
                     findings = state.findings,
                     focus = state.mapFocus,
                     onInvestigate = { label ->
@@ -233,6 +245,10 @@ private fun GlobeMap(
     quakes: List<Quake>,
     events: List<NaturalEvent>,
     overlay: List<OverlayPoint>,
+    weather: List<GeoBlip>,
+    fires: List<GeoBlip>,
+    satellites: List<GeoBlip>,
+    news: List<GeoBlip>,
     findings: List<FindingPin>,
     focus: Pair<Double, Double>?,
     onInvestigate: (String) -> Unit,
@@ -291,7 +307,11 @@ private fun GlobeMap(
             }
             quakes.forEach { add(it.lat, it.lon, 0xFFF0997B.toInt(), 8, "M%.1f".format(it.mag), false) }
             events.forEach { add(it.lat, it.lon, 0xFFF2C94C.toInt(), 9, "${it.category}: ${it.title}", false) }
+            news.forEach { add(it.lat, it.lon, 0xFFFF79C6.toInt(), 7, it.label, false) }
+            weather.forEach { add(it.lat, it.lon, 0xFF7FB2FF.toInt(), 9, it.label, false) }
+            fires.forEach { add(it.lat, it.lon, 0xFFFF5A4D.toInt(), 8, it.label, false) }
             overlay.forEach { add(it.lat, it.lon, 0xFF5CE1D6.toInt(), 9, it.label, false) }
+            satellites.forEach { add(it.lat, it.lon, 0xFFC0A8FF.toInt(), 11, it.label, false) }
             vessels.forEach { add(it.lat, it.lon, 0xFF1D9E75.toInt(), 9, it.name.ifBlank { it.mmsi }, true) }
             aircraft.forEach { add(it.lat, it.lon, 0xFF4FC3F7.toInt(), 9, it.callsign.ifBlank { it.icao }, true) }
             // Investigation findings sit on top, larger and brighter.

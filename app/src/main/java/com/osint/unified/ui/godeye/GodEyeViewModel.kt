@@ -7,8 +7,12 @@ import com.osint.unified.data.AircraftDataSource
 import com.osint.unified.data.AisDataSource
 import com.osint.unified.data.AppSettings
 import com.osint.unified.data.EarthquakeDataSource
+import com.osint.unified.data.FiresDataSource
 import com.osint.unified.data.NaturalEventsDataSource
+import com.osint.unified.data.NewsDataSource
 import com.osint.unified.data.OverlayDataSource
+import com.osint.unified.data.SatellitesDataSource
+import com.osint.unified.data.WeatherDataSource
 import com.osint.unified.domain.GeoExtractor
 import com.osint.unified.data.ExportFormat
 import com.osint.unified.data.InvestigationExporter
@@ -40,6 +44,10 @@ data class GodEyeUiState(
     val quakes: List<Quake> = emptyList(),
     val naturalEvents: List<NaturalEvent> = emptyList(),
     val overlayPoints: List<OverlayPoint> = emptyList(),
+    val weather: List<GeoBlip> = emptyList(),
+    val fires: List<GeoBlip> = emptyList(),
+    val satellites: List<GeoBlip> = emptyList(),
+    val news: List<GeoBlip> = emptyList(),
     val findings: List<FindingPin> = emptyList(),
     val mapFocus: Pair<Double, Double>? = null,
     val results: List<ResultRow> = emptyList(),
@@ -61,6 +69,10 @@ class GodEyeViewModel(
     private val earthquakeDataSource: EarthquakeDataSource,
     private val naturalEventsDataSource: NaturalEventsDataSource,
     private val overlayDataSource: OverlayDataSource,
+    private val weatherDataSource: WeatherDataSource,
+    private val firesDataSource: FiresDataSource,
+    private val satellitesDataSource: SatellitesDataSource,
+    private val newsDataSource: NewsDataSource,
     private val settings: AppSettings,
     private val exporter: InvestigationExporter
 ) : ViewModel() {
@@ -89,6 +101,30 @@ class GodEyeViewModel(
             while (isActive) {
                 _state.update { it.copy(overlayPoints = overlayDataSource.fetch()) }
                 delay(60_000)
+            }
+        }
+        viewModelScope.launch {
+            while (isActive) {
+                _state.update { it.copy(weather = weatherDataSource.fetch()) }
+                delay(120_000)
+            }
+        }
+        viewModelScope.launch {
+            while (isActive) {
+                _state.update { it.copy(fires = firesDataSource.fetch()) }
+                delay(600_000)
+            }
+        }
+        viewModelScope.launch {
+            while (isActive) {
+                _state.update { it.copy(satellites = satellitesDataSource.fetch()) }
+                delay(10_000)
+            }
+        }
+        viewModelScope.launch {
+            while (isActive) {
+                _state.update { it.copy(news = newsDataSource.fetch()) }
+                delay(300_000)
             }
         }
         viewModelScope.launch {
@@ -280,11 +316,15 @@ class GodEyeViewModel(
         private val earthquakeDataSource: EarthquakeDataSource,
         private val naturalEventsDataSource: NaturalEventsDataSource,
         private val overlayDataSource: OverlayDataSource,
+        private val weatherDataSource: WeatherDataSource,
+        private val firesDataSource: FiresDataSource,
+        private val satellitesDataSource: SatellitesDataSource,
+        private val newsDataSource: NewsDataSource,
         private val settings: AppSettings,
         private val exporter: InvestigationExporter
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            GodEyeViewModel(router, repository, aircraftDataSource, aisDataSource, earthquakeDataSource, naturalEventsDataSource, overlayDataSource, settings, exporter) as T
+            GodEyeViewModel(router, repository, aircraftDataSource, aisDataSource, earthquakeDataSource, naturalEventsDataSource, overlayDataSource, weatherDataSource, firesDataSource, satellitesDataSource, newsDataSource, settings, exporter) as T
     }
 }
