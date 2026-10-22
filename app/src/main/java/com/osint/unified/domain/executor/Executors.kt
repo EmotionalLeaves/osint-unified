@@ -315,8 +315,15 @@ class DirectToolExecutor(
                 async {
                     val url = com.osint.unified.domain.ToolTemplates.resolve(t, target)
                     val body = runCatching {
+                        // The SEC rejects generic agents outright, and asks
+                        // for a descriptive one with contact details.
+                        val agent = if (url.contains("sec.gov")) {
+                            "OSINT Unified research tool (github.com/EmotionalLeaves/osint-unified)"
+                        } else {
+                            "OSINT-Unified/1.0 (research)"
+                        }
                         val request = Request.Builder().url(url)
-                            .header("User-Agent", "OSINT-Unified/1.0 (research)")
+                            .header("User-Agent", agent)
                             .header("Accept", "application/json, text/plain, */*")
                             .build()
                         client.newCall(request).execute().use { resp ->

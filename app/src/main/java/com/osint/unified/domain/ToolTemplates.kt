@@ -63,10 +63,8 @@ object ToolTemplates {
         Template("HackerTarget page links", "https://api.hackertarget.com/pagelinks/?q={}", "domain", true),
         Template("Cert Spotter issuances", "https://api.certspotter.com/v1/issuances?domain={}&include_subdomains=true&expand=dns_names", "domain", true),
         Template("RDAP registration", "https://rdap.org/domain/{}", "domain", true),
-        Template("Shodan InternetDB", "https://internetdb.shodan.io/{}", "domain", true),
         Template("AlienVault OTX", "https://otx.alienvault.com/api/v1/indicators/domain/{}/general", "domain", true),
         Template("Wayback availability", "https://archive.org/wayback/available?url={}", "domain", true),
-        Template("Common Crawl index", "https://index.commoncrawl.org/CC-MAIN-2026-43-index?url=*.{}&output=json&limit=50", "domain", true),
         Template("urlscan.io search", "https://urlscan.io/api/v1/search/?q=domain:{}", "domain", true),
         Template("BuiltWith", "https://builtwith.com/{}", "domain"),
         Template("DNSdumpster", "https://dnsdumpster.com/?q={}", "domain"),
@@ -97,7 +95,6 @@ object ToolTemplates {
         Template("IPinfo", "https://ipinfo.io/{}", "ip"),
 
         // ---- email ----
-        Template("Gravatar profile", "https://www.gravatar.com/{}.json", "email", true),
         Template("XposedOrNot breaches", "https://api.xposedornot.com/v1/check-email/{}", "email", true),
         Template("Hudson Rock infostealer", "https://cavalier.hudsonrock.com/api/json/v2/osint-tools/search-by-email?email={}", "email", true),
         Template("openpgp.org key", "https://keys.openpgp.org/vks/v1/by-email/{}", "email", true),
