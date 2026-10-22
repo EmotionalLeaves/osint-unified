@@ -3,6 +3,7 @@ package com.osint.unified.domain.executor
 import com.google.i18n.phonenumbers.PhoneNumberUtil
 import com.osint.unified.data.AppSettings
 import com.osint.unified.domain.ExecutionMode
+import com.osint.unified.domain.Findings
 import com.osint.unified.domain.Tool
 import com.osint.unified.network.Http
 import kotlinx.coroutines.CancellationException
@@ -36,6 +37,16 @@ import java.util.concurrent.TimeUnit
  */
 interface ToolExecutor {
     suspend fun execute(tool: Tool, input: String): Result<String>
+
+    /**
+     * What the tool meant by what it returned, when it can say.
+     *
+     * Null means "read the prose", which is what every tool used to force.
+     * A tool that answers here is stating its verdict instead of leaving it
+     * to a substring match over English, and cannot be flipped by someone
+     * else's page title landing on its first line.
+     */
+    fun classify(tool: Tool, output: String): Findings.Kind? = null
 }
 
 /**
@@ -242,6 +253,59 @@ class DirectToolExecutor(
 
     private val formUrlEncoded = "application/x-www-form-urlencoded".toMediaType()
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
+
+    /**
+     * The verdict, for the tools where getting it wrong matters most.
+     *
+     * Each of these matches the exact opening its own helper writes — an
+     * anchored prefix, not a substring hunted for anywhere in the text — so
+     * a value from a third party appearing further along the line cannot
+     * change the answer. Sanctions screening is first because a false
+     * "clean" there is the most consequential thing this app can say.
+     */
+    override fun classify(tool: Tool, output: String): Findings.Kind? {
+        val head = output.trimStart().lineSequence()
+            .firstOrNull { it.isNotBlank() }.orEmpty()
+        fun starts(vararg prefixes: String) = prefixes.any { head.startsWith(it) }
+
+        return when (tool.id) {
+            "sanctions" -> when {
+                starts("OFAC SDN: no sanctioned entity") -> Findings.Kind.ABSENT
+                starts("Give at least three") -> Findings.Kind.UNREACHABLE
+                starts("OFAC Specially Designated") -> Findings.Kind.HIT
+                else -> null
+            }
+            "unsanctions" -> when {
+                starts("The UN consolidated list is not bundled") -> Findings.Kind.UNREACHABLE
+                starts("UN consolidated list: no") -> Findings.Kind.ABSENT
+                starts("Give at least three") -> Findings.Kind.UNREACHABLE
+                else -> null
+            }
+            "breachcat" -> when {
+                starts("The breach catalogue is not bundled",
+                    "The bundled breach catalogue could not be read") -> Findings.Kind.UNREACHABLE
+                starts("Breach catalogue: no record") -> Findings.Kind.ABSENT
+                starts("Known breaches involving") -> Findings.Kind.HIT
+                starts("Give at least three") -> Findings.Kind.UNREACHABLE
+                else -> null
+            }
+            "sherlock", "maigret", "blackbird", "socialsweep", "emailaccounts" -> when {
+                starts("Could not load any site ruleset") -> Findings.Kind.UNREACHABLE
+                // The sweep states its own coverage; partial coverage is
+                // closer to "could not ask" than to "looked and found
+                // nothing", and the output says so in those words.
+                output.contains("This is not a clean sheet") -> Findings.Kind.UNREACHABLE
+                starts("No accounts found") -> Findings.Kind.ABSENT
+                starts("Found ") -> Findings.Kind.HIT
+                else -> null
+            }
+            "framework", "toolrun", "dorks", "websearch", "reverseimage" ->
+                // These are lists of places to look, not findings about the
+                // target. Counting them as hits inflated every dossier.
+                Findings.Kind.ABSENT
+            else -> null
+        }
+    }
 
     override suspend fun execute(tool: Tool, input: String): Result<String> =
         withContext(Dispatchers.IO) {

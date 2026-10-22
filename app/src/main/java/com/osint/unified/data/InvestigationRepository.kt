@@ -3,6 +3,7 @@ package com.osint.unified.data
 import com.osint.unified.data.db.AppDatabase
 import com.osint.unified.data.db.Investigation
 import com.osint.unified.data.db.Result as ResultRow
+import com.osint.unified.domain.Findings
 import com.osint.unified.domain.Observable
 import com.osint.unified.domain.Tool
 import com.osint.unified.domain.executor.ExecutorFactory
@@ -93,13 +94,22 @@ class InvestigationRepository(
 
         val updated = outcome.fold(
             onSuccess = { raw ->
+                // The tool's own verdict where it has one, so the dossier is
+                // not left reading English to decide whether a sanctions
+                // search came back clean.
+                val stated = runCatching { executors.forTool(tool).classify(tool, raw) }
+                    .getOrNull()
                 ResultRow(
                     id = rowId,
                     investigationId = investigationId,
                     toolId = tool.id,
                     toolName = tool.name,
                     input = input,
-                    status = "success",
+                    status = when (stated) {
+                        Findings.Kind.ABSENT -> Findings.STATUS_ABSENT
+                        Findings.Kind.UNREACHABLE -> Findings.STATUS_UNREACHABLE
+                        else -> "success"
+                    },
                     rawOutput = raw,
                     startedAt = started,
                     finishedAt = finished

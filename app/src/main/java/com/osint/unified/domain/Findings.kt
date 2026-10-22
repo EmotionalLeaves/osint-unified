@@ -13,6 +13,27 @@ import com.osint.unified.data.db.Result as ResultRow
  */
 object Findings {
 
+    /**
+     * What a source meant, as a value rather than a guess.
+     *
+     * Reading English out of a sentence to decide whether something was
+     * found is wrong in both directions: "Domain registered; WHOIS privacy:
+     * registrant unavailable" was filed as unreachable because of one word,
+     * and "No database exposures, but 4 open ports" was filed as an absence
+     * because "No database" contains "no data". Either way a real finding
+     * vanishes or a false one appears, and rewording one line in an executor
+     * silently changes a verdict with no test to catch it.
+     *
+     * A tool that knows what it meant now says so, and the answer is stored
+     * on the row. The prose reading below remains only for the tools that
+     * have not been migrated yet, and every migration shrinks its job.
+     */
+    enum class Kind { HIT, ABSENT, UNREACHABLE }
+
+    /** Row statuses that carry a stated verdict rather than an inferred one. */
+    const val STATUS_ABSENT = "absent"
+    const val STATUS_UNREACHABLE = "unreachable"
+
     /** Openings that mean the source looked and found nothing. */
     private val NOTHING = listOf(
         "no entry matching", "no registered legal entity", "no sanctioned entity",
@@ -41,15 +62,36 @@ object Findings {
      */
     private val UNREACHABLE = listOf(
         "could not be read", "is not bundled", "not bundled in this build",
-        "blocked the request", "could not load", "unavailable",
-        "unreachable", "rate limited", "rate-limited"
+        "blocked the request", "could not load any", "rate limited",
+        "rate-limited", "could not be reached", "no source answered"
     )
+
+    /**
+     * Whether [phrase] appears in [head] as a phrase, not as the start of a
+     * longer word.
+     *
+     * "No database exposures, but 4 open ports" is a finding, and it was
+     * being filed as an absence because "no database" begins with "no data".
+     */
+    private fun hasPhrase(head: String, phrase: String): Boolean {
+        var from = 0
+        while (true) {
+            val i = head.indexOf(phrase, from)
+            if (i < 0) return false
+            val after = i + phrase.length
+            val before = i - 1
+            val okBefore = before < 0 || !head[before].isLetterOrDigit()
+            val okAfter = after >= head.length || !head[after].isLetterOrDigit()
+            if (okBefore && okAfter) return true
+            from = i + 1
+        }
+    }
 
     /** True when a "successful" result is really a report of failure. */
     fun saysUnreachable(output: String): Boolean {
         val head = output.trimStart().lineSequence()
             .firstOrNull { it.isNotBlank() }?.lowercase().orEmpty()
-        if (UNREACHABLE.any { head.contains(it) }) return true
+        if (UNREACHABLE.any { hasPhrase(head, it) }) return true
         // A sweep that reached a fraction of its list is closer to "could
         // not ask" than to "looked and found nothing".
         return output.contains("This is not a clean sheet", ignoreCase = true)
@@ -60,17 +102,30 @@ object Findings {
         val head = output.trimStart().lineSequence()
             .firstOrNull { it.isNotBlank() }?.lowercase().orEmpty()
         if (head.isBlank()) return true
-        if (UNREACHABLE.any { head.contains(it) }) return false
+        if (UNREACHABLE.any { hasPhrase(head, it) }) return false
         // A sweep that says in its own words that it is not a clean sheet
         // is not reporting an absence; it is reporting partial coverage.
         if (output.contains("This is not a clean sheet", ignoreCase = true)) return false
-        return NOTHING.any { head.contains(it) }
+        return NOTHING.any { hasPhrase(head, it) }
     }
 
     /** A result that carries something, as opposed to one that errored or
      *  looked and found nothing. */
-    fun isHit(row: ResultRow): Boolean =
-        row.status == "success" && !saysNothing(row.rawOutput)
+    fun isHit(row: ResultRow): Boolean = kindOf(row) == Kind.HIT
+
+    /**
+     * The verdict for a row: what the tool stated, if it stated one, and
+     * only otherwise what its prose suggests.
+     */
+    fun kindOf(row: ResultRow): Kind = when (row.status) {
+        "success" -> when {
+            saysUnreachable(row.rawOutput) -> Kind.UNREACHABLE
+            saysNothing(row.rawOutput) -> Kind.ABSENT
+            else -> Kind.HIT
+        }
+        STATUS_ABSENT -> Kind.ABSENT
+        else -> Kind.UNREACHABLE
+    }
 
     /**
      * Splits results three ways: what was found, what was looked for and
@@ -84,18 +139,24 @@ object Findings {
         val failed: List<ResultRow>
     )
 
+    /** Rows still in flight, which belong in none of the three. */
+    fun pending(results: List<ResultRow>): List<ResultRow> =
+        results.filter { it.status == "running" }
+
     fun sort(results: List<ResultRow>): Sorted {
         val hits = ArrayList<ResultRow>()
         val empty = ArrayList<ResultRow>()
         val failed = ArrayList<ResultRow>()
         results.forEach { r ->
-            when {
-                r.status != "success" -> failed.add(r)
-                // A source that answered with its own failure belongs with
-                // the unreachable, not with the sources that looked.
-                saysUnreachable(r.rawOutput) -> failed.add(r)
-                saysNothing(r.rawOutput) -> empty.add(r)
-                else -> hits.add(r)
+            // A row still running is neither a finding nor an absence, and
+            // counting it as a miss is how the dossier reported "NOTHING
+            // FOUND (38 errored)" while thirty-eight tools were still
+            // working.
+            if (r.status == "running") return@forEach
+            when (kindOf(r)) {
+                Kind.HIT -> hits.add(r)
+                Kind.ABSENT -> empty.add(r)
+                Kind.UNREACHABLE -> failed.add(r)
             }
         }
         return Sorted(hits, empty, failed)

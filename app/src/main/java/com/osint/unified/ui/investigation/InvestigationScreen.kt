@@ -147,10 +147,9 @@ fun InvestigationScreen(
         // seed's tool list, or it reads "34/12 sources".
         val seedRaw = observable.raw.trim().lowercase()
         val done = state.results.count {
-            it.input.trim().lowercase() == seedRaw &&
-                (it.status == "success" || it.status == "error")
+            it.input.trim().lowercase() == seedRaw && it.status != "running"
         }
-        val found = state.results.count { it.status == "success" }
+        val found = state.results.count { Findings.isHit(it) }
         val facts = remember(state.results) { IntelSummary.synthesize(state.results) }
         val pivots = remember(state.results) {
             EntityExtractor.extract(
@@ -474,7 +473,13 @@ fun InvestigationScreen(
                 // A source that found nothing is worth knowing about, but
                 // it should not sit between you and the ones that did. Most
                 // of a dossier is misses — they collapse to a single line.
-                val (hits, misses) = state.results.partition { Findings.isHit(it) }
+                // Four ways, through the one function the export also uses,
+                // so the screen and the report cannot disagree about a count
+                // — which is the one thing the README says cannot happen.
+                val sorted = remember(state.results) { Findings.sort(state.results) }
+                val pending = remember(state.results) { Findings.pending(state.results) }
+                val hits = sorted.hits
+                val misses = sorted.empty + sorted.failed
 
                 // What you asked about, and what the app went on to look up
                 // because the first pass named it, are two different kinds of
@@ -522,6 +527,15 @@ fun InvestigationScreen(
                     }
                 }
 
+                if (pending.isNotEmpty()) {
+                    Text(
+                        "${pending.size} still running.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Intel.TextLow,
+                        modifier = Modifier.padding(top = 6.dp)
+                    )
+                }
+
                 if (hits.isEmpty() && !anyRunning) {
                     Text(
                         "No source returned anything on this target.",
@@ -533,10 +547,11 @@ fun InvestigationScreen(
 
                 if (misses.isNotEmpty()) {
                     var showMisses by remember { mutableStateOf(false) }
-                    val failed = misses.count { it.status != "success" }
                     SectionHeader(
-                        "NOTHING FOUND — ${misses.size} sources" +
-                            if (failed > 0) " ($failed errored)" else "",
+                        "NOTHING FOUND — ${sorted.empty.size} looked and found nothing" +
+                            if (sorted.failed.isNotEmpty())
+                                ", ${sorted.failed.size} could not be reached"
+                            else "",
                         Intel.TextLow
                     )
                     Text(
