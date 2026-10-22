@@ -129,6 +129,8 @@ fun GodEyeViewScreen(
     var showAqi by remember { mutableStateOf(false) }
     var showStations by remember { mutableStateOf(false) }
     var showAirports by remember { mutableStateOf(false) }
+    var showCameras by remember { mutableStateOf(false) }
+    var showAirspace by remember { mutableStateOf(false) }
     var showPower by remember { mutableStateOf(false) }
 
     Scaffold(containerColor = Intel.Base) { pad ->
@@ -159,6 +161,14 @@ fun GodEyeViewScreen(
                             "LIVE $utc" + "Z  AIR ${state.aircraft.size} · SEA ${state.vessels.size} · SEIS ${state.quakes.size} · EVT ${state.naturalEvents.size}",
                             style = MaterialTheme.typography.labelSmall,
                             color = Intel.TextMid
+                        )
+                    }
+                    state.spaceWeather?.let { sw ->
+                        Text(
+                            "SPACE WX ${sw.summary} · ${sw.stormLevel}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (sw.kp >= 5) Intel.Amber else Intel.TextLow,
+                            modifier = Modifier.padding(top = 1.dp)
                         )
                     }
                 }
@@ -255,6 +265,8 @@ fun GodEyeViewScreen(
                 LayerPill("BUOY", state.buoys.size, Color(0xFF4DD0E1), showBuoys) { showBuoys = !showBuoys }
                 LayerPill("METAR", state.metar.size, Color(0xFF9FE8FF), showMetar) { showMetar = !showMetar }
                 LayerPill("NEWS", state.news.size, Color(0xFFFF79C6), showNews) { showNews = !showNews }
+                LayerPill("CCTV", state.cameras.size, Color(0xFFB388FF), showCameras) { showCameras = !showCameras }
+                LayerPill("SUA", state.airspace.size, Color(0xFFFF5370), showAirspace) { showAirspace = !showAirspace }
                 if (state.overlayPoints.isNotEmpty()) {
                     LayerPill("OVLY", state.overlayPoints.size, Intel.CyanBright, showOverlay) { showOverlay = !showOverlay }
                 }
@@ -299,6 +311,8 @@ fun GodEyeViewScreen(
                     stations = vis(showStations, state.stations),
                     airports = vis(showAirports, state.airports),
                     powerPlants = vis(showPower, state.powerPlants),
+                    cameras = vis(showCameras, state.cameras),
+                    airspace = vis(showAirspace, state.airspace),
                     findings = state.findings,
                     focus = state.mapFocus,
                     onInspect = { label, la, lo -> inspected = Triple(label, la, lo) },
@@ -432,6 +446,8 @@ private fun GlobeMap(
     stations: List<GeoBlip>,
     airports: List<GeoBlip>,
     powerPlants: List<GeoBlip>,
+    cameras: List<GeoBlip>,
+    airspace: List<GeoBlip>,
     findings: List<FindingPin>,
     focus: Pair<Double, Double>?,
     onInspect: (String, Double, Double) -> Unit,
@@ -502,6 +518,8 @@ private fun GlobeMap(
             stations.forEach { add(it.lat, it.lon, 0xFF9AB0C0.toInt(), 5, it.label, false) }
             airports.forEach { add(it.lat, it.lon, 0xFF8FD3FF.toInt(), 6, it.label, true) }
             powerPlants.forEach { add(it.lat, it.lon, 0xFFFFC14D.toInt(), 6, it.label, false) }
+            cameras.forEach { add(it.lat, it.lon, 0xFFB388FF.toInt(), 6, it.label, true) }
+            airspace.forEach { add(it.lat, it.lon, 0xFFFF5370.toInt(), 7, it.label, false) }
             airQuality.forEach { add(it.lat, it.lon, 0xFFB4E66B.toInt(), 9, it.label, false) }
             buoys.forEach { add(it.lat, it.lon, 0xFF4DD0E1.toInt(), 6, it.label, false) }
             metar.forEach { add(it.lat, it.lon, 0xFF9FE8FF.toInt(), 6, it.label, false) }

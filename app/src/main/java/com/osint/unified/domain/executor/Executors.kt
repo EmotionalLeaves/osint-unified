@@ -149,6 +149,7 @@ class DirectToolExecutor(
     private val usernameChecker: UsernameChecker,
     private val exifReader: com.osint.unified.data.ExifReader,
     private val apis: OsintApis = OsintApis(),
+    private val deep: DeepApis = DeepApis(),
     private val client: OkHttpClient = Http.client
 ) : ToolExecutor {
 
@@ -187,6 +188,27 @@ class DirectToolExecutor(
                 "urlscan" -> apis.urlscan(input)
                 "websearch" -> apis.websearch(input)
                 "github" -> apis.githubUser(input)
+                "ghactivity" -> deep.githubActivity(input)
+                "keybase" -> deep.keybase(input)
+                "reddit" -> deep.reddit(input)
+                "hackernews" -> deep.hackerNews(input)
+                "telegram" -> deep.telegram(input)
+                "wikidata" -> deep.wikidata(input)
+                "breaches" -> deep.breaches(input)
+                "emailgithub" -> deep.emailToGithub(input)
+                "subsweep" -> deep.subdomainSweep(input)
+                "hostintel" -> deep.hostIntel(input)
+                "gleif" -> deep.legalEntity(input)
+                "edgar" -> deep.secEdgar(input)
+                "fbi" -> deep.fbiWanted(input)
+                "aircraftreg" -> deep.aircraft(input)
+                "wallet" -> deep.wallet(input)
+                "sunterrain" -> deep.sunAndTerrain(input)
+                "histweather" -> deep.historicalWeather(input)
+                "ukcrime" -> deep.ukCrime(input)
+                "cve" -> deep.cveLookup(input)
+                "sanctions" -> sanctions(input)
+                "cctvnear" -> cctvNear(input)
                 "geocode" -> apis.geocode(input)
                 "wikinearby" -> apis.wikiNearby(input)
                 "gdelt" -> apis.gdeltNews(input)
@@ -248,6 +270,99 @@ class DirectToolExecutor(
     }
 
     /** Military sites near a coordinate from OpenStreetMap (public map data). */
+    /** Searches the OFAC SDN list bundled into the APK — works offline. */
+    private fun sanctions(input: String): Result<String> = runCatching {
+        val needle = input.trim().lowercase()
+        if (needle.length < 3) return@runCatching "Give at least three characters to search the SDN list."
+        val hits = ArrayList<String>()
+        var scanned = 0
+        appContext.assets.open("sdn.csv").bufferedReader().useLines { lines ->
+            for (line in lines) {
+                scanned++
+                if (!line.lowercase().contains(needle)) continue
+                // ent_num,"NAME",type,"PROGRAM",title,…,remarks
+                val cols = splitCsv(line)
+                val name = cols.getOrNull(1)?.trim('"') ?: continue
+                val type = cols.getOrNull(2)?.trim('"')?.takeIf { it != "-0-" }
+                val program = cols.getOrNull(3)?.trim('"')?.takeIf { it != "-0-" }
+                val title = cols.getOrNull(4)?.trim('"')?.takeIf { it != "-0-" }
+                val remarks = cols.lastOrNull()?.trim('"')?.takeIf { it != "-0-" }
+                hits.add(buildString {
+                    append("• $name")
+                    if (type != null) append("  [$type]")
+                    if (program != null) append("\n  Programme: $program")
+                    if (title != null) append("\n  Title: $title")
+                    if (!remarks.isNullOrBlank()) append("\n  ${remarks.take(220)}")
+                })
+                if (hits.size >= 40) break
+            }
+        }
+        if (hits.isEmpty()) {
+            "OFAC SDN: no sanctioned entity matching '$input' (searched $scanned entries offline)."
+        } else {
+            "OFAC Specially Designated Nationals — ${hits.size} match" +
+                (if (hits.size == 1) "" else "es") + " for '$input':\n\n" + hits.joinToString("\n\n") +
+                "\n\nSource: US Treasury OFAC SDN list, bundled in the app."
+        }
+    }
+
+    /** Minimal CSV splitter that respects quoted fields. */
+    private fun splitCsv(line: String): List<String> {
+        val out = ArrayList<String>()
+        val sb = StringBuilder()
+        var inQuotes = false
+        for (c in line) {
+            when {
+                c == '"' -> { inQuotes = !inQuotes; sb.append(c) }
+                c == ',' && !inQuotes -> { out.add(sb.toString()); sb.clear() }
+                else -> sb.append(c)
+            }
+        }
+        out.add(sb.toString())
+        return out
+    }
+
+    /** Public traffic cameras near a coordinate, with live still-image links. */
+    private suspend fun cctvNear(input: String): Result<String> = runCatching {
+        val parts = input.split(",").map { it.trim().toDoubleOrNull() }
+        if (parts.size != 2 || parts.any { it == null }) {
+            throw IllegalArgumentException("Expected coordinates as 'lat, lon'.")
+        }
+        val lat = parts[0]!!
+        val lon = parts[1]!!
+        val cams = com.osint.unified.data.CctvDataSource(client).fetch()
+        if (cams.isEmpty()) return@runCatching "No public camera inventory reachable right now."
+        val near = cams.map { it to haversineKm(lat, lon, it.lat, it.lon) }
+            .filter { it.second <= 50 }
+            .sortedBy { it.second }
+            .take(25)
+        if (near.isEmpty()) {
+            return@runCatching "No public traffic cameras within 50 km of %.4f, %.4f.\n".format(lat, lon) +
+                "Coverage today is Caltrans (California). Elsewhere, try:\n" +
+                "• https://www.insecam.org/en/bymap/\n" +
+                "• https://www.earthcam.com/network/\n" +
+                "• OpenStreetMap: nwr[man_made=surveillance] near the point"
+        }
+        buildString {
+            append("Public cameras within 50 km of %.4f, %.4f — ${near.size} found:\n".format(lat, lon))
+            near.forEach { (cam, km) ->
+                append("\n• ${cam.label}")
+                append("\n  %.1f km — %.5f, %.5f".format(km, cam.lat, cam.lon))
+                cam.url?.let { append("\n  Live still: $it") }
+            }
+        }
+    }
+
+    private fun haversineKm(aLat: Double, aLon: Double, bLat: Double, bLon: Double): Double {
+        val r = 6371.0
+        val dLat = Math.toRadians(bLat - aLat)
+        val dLon = Math.toRadians(bLon - aLon)
+        val h = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(Math.toRadians(aLat)) * Math.cos(Math.toRadians(bLat)) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2)
+        return 2 * r * Math.asin(Math.sqrt(h))
+    }
+
     private fun militarySites(input: String): Result<String> {
         val parts = input.split(",").map { it.trim().toDoubleOrNull() }
         if (parts.size != 2 || parts.any { it == null }) {

@@ -17,6 +17,10 @@ class ObservableRouter {
     private val phoneRegex = Regex("""^\+\d{8,15}$""")
     private val domainRegex = Regex("""^(?=.{1,253}$)(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$""")
     private val usernameRegex = Regex("""^[a-zA-Z0-9_.-]{3,30}$""")
+    private val btcRegex = Regex("""^(?:bc1[a-z0-9]{25,62}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})$""")
+    private val ethRegex = Regex("""^0x[a-fA-F0-9]{40}$""")
+    private val modeSRegex = Regex("""^[0-9A-Fa-f]{6}$""")
+    private val tailRegex = Regex("""^(?:N[0-9]{1,5}[A-Z]{0,2}|[A-Z]{1,2}-[A-Z0-9]{3,5})$""")
     private val imageExtRegex = Regex(""".*\.(?:jpe?g|png|gif|webp|bmp|tiff?)(?:\?.*)?$""", RegexOption.IGNORE_CASE)
 
     fun classify(rawInput: String): Observable {
@@ -38,6 +42,10 @@ class ObservableRouter {
             }
 
             phoneRegex.matches(input) -> Observable.PhoneNumber(input)
+
+            btcRegex.matches(input) || ethRegex.matches(input) -> Observable.Wallet(input)
+
+            tailRegex.matches(input.uppercase()) -> Observable.Aircraft(input.uppercase())
 
             input.startsWith("http://", true) || input.startsWith("https://", true) ->
                 if (imageExtRegex.matches(input)) Observable.ImageUrl(input) else Observable.Url(input)
@@ -66,6 +74,8 @@ class ObservableRouter {
             "url" -> Observable.Url(input)
             "image" -> Observable.ImageUrl(input)
             "name" -> Observable.Name(input)
+            "wallet" -> Observable.Wallet(input)
+            "aircraft" -> Observable.Aircraft(input.uppercase())
             "coordinate" -> {
                 val parts = input.split(",").map { it.trim() }
                 val lat = parts.getOrNull(0)?.toDoubleOrNull()
@@ -82,15 +92,17 @@ class ObservableRouter {
      */
     fun suggestTools(observable: Observable): List<Tool> {
         val ids = when (observable) {
-            is Observable.Email -> listOf("gravatar", "emailaccounts", "hudsonrock", "mailsec", "websearch", "dorks", "framework", "holehe", "ghunt", "h8mail")
-            is Observable.Username -> listOf("github", "sherlock", "maigret", "blackbird", "websearch", "dorks", "framework")
-            is Observable.Domain -> listOf("subfinder", "crtsh", "dns", "tlscert", "mailsec", "headers", "sitefiles", "rdap", "httpx", "shodan", "urlscan", "waybackurls", "gau", "webcrawl", "wayback", "archive", "dorks", "framework", "amass", "nuclei")
-            is Observable.IpAddress -> listOf("ipinfo", "ptr", "torexit", "shodan", "bgpview", "rdap", "dorks", "framework", "httpx", "nuclei")
+            is Observable.Email -> listOf("breaches", "gravatar", "emailaccounts", "hudsonrock", "emailgithub", "mailsec", "websearch", "dorks", "framework", "holehe", "ghunt", "h8mail")
+            is Observable.Username -> listOf("keybase", "github", "ghactivity", "sherlock", "maigret", "blackbird", "reddit", "hackernews", "telegram", "wikidata", "websearch", "dorks", "framework")
+            is Observable.Domain -> listOf("subfinder", "crtsh", "subsweep", "dns", "tlscert", "mailsec", "headers", "sitefiles", "rdap", "hostintel", "httpx", "shodan", "urlscan", "waybackurls", "gau", "webcrawl", "wayback", "archive", "dorks", "framework", "amass", "nuclei")
+            is Observable.IpAddress -> listOf("ipinfo", "ptr", "torexit", "shodan", "bgpview", "rdap", "hostintel", "dorks", "framework", "httpx", "nuclei")
             is Observable.PhoneNumber -> listOf("phoneinfoga", "websearch", "dorks", "framework")
-            is Observable.Coordinate -> listOf("revgeo", "wikinearby", "overpass_turbo", "milsites", "framework")
+            is Observable.Coordinate -> listOf("revgeo", "sunterrain", "wikinearby", "overpass_turbo", "milsites", "cctvnear", "ukcrime", "histweather", "framework")
             is Observable.Url -> listOf("webcrawl", "wayback", "archive", "dorks", "framework")
             is Observable.ImageUrl -> listOf("exif", "reverseimage", "archive", "framework")
-            is Observable.Name -> listOf("websearch", "geocode", "gdelt", "dorks", "framework")
+            is Observable.Wallet -> listOf("wallet", "websearch", "dorks", "framework")
+            is Observable.Aircraft -> listOf("aircraftreg", "websearch", "dorks", "framework")
+            is Observable.Name -> listOf("websearch", "wikidata", "gleif", "edgar", "sanctions", "fbi", "geocode", "gdelt", "dorks", "framework")
             is Observable.Unknown -> emptyList()
         }
         return ids.mapNotNull { ToolRegistry.byId(it) }

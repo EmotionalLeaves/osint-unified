@@ -726,10 +726,13 @@ class DeepApis(private val client: OkHttpClient = Http.client) {
         if (Regex("^CVE-\\d{4}-\\d{4,}$").matches(t)) {
             val sb = StringBuilder("$t\n")
             runCatching {
-                val o = json.parseToJsonElement(get("https://cve.circl.lu/api/cve/$t")).jsonObject
-                o.str("summary")?.let { sb.append("\n$it\n") }
-                o.str("Published")?.let { sb.append("\nPublished: $it") }
-                ((o["cvss"] as? JsonPrimitive)?.doubleOrNull)?.let { sb.append("\nCVSS: $it") }
+                val o = json.parseToJsonElement(get("https://cve.circl.lu/api/vulnerability/$t")).jsonObject
+                val cna = ((o["containers"] as? JsonObject)?.get("cna") as? JsonObject)
+                cna.str("title")?.let { sb.append("\n$it\n") }
+                ((cna?.get("descriptions") as? JsonArray)?.firstOrNull() as? JsonObject)
+                    ?.str("value")?.let { sb.append("\n$it\n") }
+                ((o["cveMetadata"] as? JsonObject)).str("datePublished")
+                    ?.let { sb.append("\nPublished: ${it.substringBefore('T')}") }
             }
             runCatching {
                 val d = (json.parseToJsonElement(get("https://api.first.org/data/v1/epss?cve=$t"))
@@ -738,24 +741,39 @@ class DeepApis(private val client: OkHttpClient = Http.client) {
                     val pct = (e.toDoubleOrNull() ?: 0.0) * 100
                     sb.append("\nEPSS: %.2f%% chance of exploitation in the next 30 days".format(pct))
                 }
-                d?.str("percentile")?.let { sb.append(" (percentile ${(it.toDoubleOrNull() ?: 0.0) * 100}%)") }
+                d?.str("percentile")?.let {
+                    sb.append(" — more likely than %.1f%% of all CVEs".format((it.toDoubleOrNull() ?: 0.0) * 100))
+                }
             }
             sb.append("\n\nhttps://nvd.nist.gov/vuln/detail/$t")
+            sb.append("\nExploits: https://www.exploit-db.com/search?cve=${t.removePrefix("CVE-")}")
             return@runCatching sb.toString()
         }
-        // Not a CVE id — treat it as vendor/product.
+        // Not a CVE id — treat it as vendor/product. CIRCL returns
+        // {"results": {"nvd": [[id, record], …]}}.
         val parts = t.lowercase().split("/", " ").filter { it.isNotBlank() }
         val vendor = parts.getOrNull(0) ?: return@runCatching "Give a CVE id or 'vendor product'."
         val product = parts.getOrNull(1) ?: vendor
-        val arr = json.parseToJsonElement(get("https://cve.circl.lu/api/search/$vendor/$product")) as? JsonArray
-            ?: return@runCatching "No CVEs found for $vendor $product."
-        val sb = StringBuilder("CVEs for $vendor $product (${arr.size}):\n")
-        arr.take(25).forEach { el ->
-            val o = el as? JsonObject ?: return@forEach
-            sb.append("\n• ${o.str("id")}  CVSS ${(o["cvss"] as? JsonPrimitive)?.contentOrNull ?: "-"}")
-            o.str("summary")?.let { sb.append("\n  ${it.take(160)}") }
+        val results = (json.parseToJsonElement(get("https://cve.circl.lu/api/search/$vendor/$product"))
+            .jsonObject["results"] as? JsonObject) ?: return@runCatching "No CVEs found for $vendor $product."
+        val sb = StringBuilder("CVEs for $vendor $product\n")
+        results.forEach { (source, arr) ->
+            val rows = arr as? JsonArray ?: return@forEach
+            if (rows.isEmpty()) return@forEach
+            sb.append("\n${source.uppercase()} — ${rows.size} records:\n")
+            rows.take(25).forEach { row ->
+                val pair = row as? JsonArray ?: return@forEach
+                val id = (pair.getOrNull(0) as? JsonPrimitive)?.contentOrNull
+                val rec = pair.getOrNull(1) as? JsonObject
+                val cna = ((rec?.get("containers") as? JsonObject)?.get("cna") as? JsonObject)
+                val title = cna.str("title")
+                    ?: ((cna?.get("descriptions") as? JsonArray)?.firstOrNull() as? JsonObject)?.str("value")
+                sb.append("• ${id?.uppercase()}")
+                if (!title.isNullOrBlank()) sb.append(" — ${title.take(150)}")
+                sb.append("\n")
+            }
         }
-        sb.toString()
+        if (sb.length < 40) "No CVEs found for $vendor $product." else sb.toString()
     }
 
     // ------------------------------------------------------------------

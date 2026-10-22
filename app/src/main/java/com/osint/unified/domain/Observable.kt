@@ -17,6 +17,8 @@ sealed interface Observable {
     data class Coordinate(override val raw: String, val lat: Double, val lon: Double) : Observable
     data class Url(override val raw: String) : Observable
     data class ImageUrl(override val raw: String) : Observable
+    data class Wallet(override val raw: String) : Observable
+    data class Aircraft(override val raw: String) : Observable
     data class Name(override val raw: String) : Observable
     data class Unknown(override val raw: String) : Observable
 
@@ -30,6 +32,8 @@ sealed interface Observable {
             is Coordinate -> "Coordinate"
             is Url -> "URL"
             is ImageUrl -> "Image"
+            is Wallet -> "Crypto wallet"
+            is Aircraft -> "Aircraft"
             is Name -> "Name / place / query"
             is Unknown -> "Unknown"
         }

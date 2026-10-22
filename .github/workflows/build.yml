@@ -71,6 +71,9 @@ jobs:
           mkdir -p "$A"
           # OSINT Framework directory (hundreds of resources, categorized).
           curl -sSL https://raw.githubusercontent.com/lockfale/osint-framework/master/public/arf.json -o "$A/arf.json" || true
+          # US Treasury OFAC Specially Designated Nationals, searched offline in-app.
+          curl -sSL https://sanctionslistservice.ofac.treas.gov/api/PublicationPreview/exports/SDN.CSV -o "$A/sdn.csv" || true
+          if [ ! -s "$A/sdn.csv" ]; then echo "placeholder" > "$A/sdn.csv"; fi
           # WhatsMyName ruleset for on-device account enumeration (offline-ready).
           curl -sSL https://raw.githubusercontent.com/WebBreacher/WhatsMyName/main/wmn-data.json -o "$A/wmn-data.json" || true
           # Raw infrastructure datasets -> compact JSON bundled in the APK.
