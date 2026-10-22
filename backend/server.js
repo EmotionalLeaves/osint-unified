@@ -53,6 +53,10 @@ const handlers = {
   trufflehog: (input, res) =>
     runBinary("trufflehog", ["git", input, "--json", "--no-update"], 120_000, res),
 
+  // Holehe: which sites have an account registered to this email (keyless).
+  holehe: (input, res) =>
+    runBinary("holehe", [input, "--only-used", "--no-color"], 90_000, res),
+
   // Overpass is a pure HTTP call — works keyless against the public API.
   overpass_turbo: async (input, res) => {
     const parts = String(input).split(",").map((s) => parseFloat(s.trim()));

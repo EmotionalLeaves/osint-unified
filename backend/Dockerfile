@@ -2,8 +2,12 @@ FROM node:20-slim
 
 # System deps + CLI OSINT tools used by the cloud endpoints.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl unzip ca-certificates git \
+    curl unzip ca-certificates git python3 python3-pip \
  && rm -rf /var/lib/apt/lists/*
+
+# Holehe: keyless email-registration checker (Python).
+RUN pip install --no-cache-dir --break-system-packages holehe || \
+    pip3 install --no-cache-dir holehe
 
 # Pinned tool versions (bump as needed).
 ENV SUBFINDER_VERSION=2.6.6 \

@@ -3,9 +3,11 @@ services:
     name: osint-unified-backend
     runtime: docker
     plan: free
+    region: oregon
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend
     healthCheckPath: /health
+    autoDeploy: true
     envVars:
       - key: RATE_LIMIT
         value: "100"
