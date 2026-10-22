@@ -223,6 +223,10 @@ class DirectToolExecutor(
                 "ukcrime" -> deep.ukCrime(input)
                 "cve" -> deep.cveLookup(input)
                 "sanctions" -> sanctions(input)
+                "unsanctions" -> unSanctions(input)
+                "pgpkey" -> deep.pgpKey(input)
+                "commoncrawl" -> deep.commonCrawl(input)
+                "photosnear" -> deep.photosNear(input)
                 "cctvnear" -> cctvNear(input)
                 "geocode" -> apis.geocode(input)
                 "wikinearby" -> apis.wikiNearby(input)
@@ -401,6 +405,57 @@ class DirectToolExecutor(
                 "\n\nSource: US Treasury OFAC SDN list, bundled in the app."
         }
     }
+
+    /**
+     * Searches the UN Security Council consolidated list bundled in the APK.
+     * Offline, like the OFAC search — sanctions screening should not depend
+     * on a network that may be watched.
+     */
+    private fun unSanctions(input: String): Result<String> = runCatching {
+        val needle = input.trim().lowercase()
+        if (needle.length < 3) return@runCatching "Give at least three characters to search the UN list."
+        val xml = runCatching {
+            appContext.assets.open("un-sanctions.xml").bufferedReader().use { it.readText() }
+        }.getOrNull() ?: return@runCatching "The UN consolidated list is not bundled in this build."
+
+        fun tag(block: String, name: String): String? =
+            Regex("<$name>(.*?)</$name>", RegexOption.DOT_MATCHES_ALL)
+                .find(block)?.groupValues?.get(1)?.trim()?.takeIf { it.isNotBlank() }
+
+        val hits = ArrayList<String>()
+        listOf("INDIVIDUAL" to "Individual", "ENTITY" to "Entity").forEach { (element, label) ->
+            Regex("<$element>(.*?)</$element>", RegexOption.DOT_MATCHES_ALL)
+                .findAll(xml).forEach { m ->
+                    if (hits.size >= 30) return@forEach
+                    val block = m.groupValues[1]
+                    if (!block.lowercase().contains(needle)) return@forEach
+                    val name = listOfNotNull(
+                        tag(block, "FIRST_NAME"), tag(block, "SECOND_NAME"),
+                        tag(block, "THIRD_NAME"), tag(block, "FOURTH_NAME")
+                    ).joinToString(" ")
+                    hits.add(buildString {
+                        append("• ${name.ifBlank { "(unnamed)" }}  [$label]")
+                        tag(block, "UN_LIST_TYPE")?.let { append("\n  Regime: $it") }
+                        tag(block, "REFERENCE_NUMBER")?.let { append("\n  Reference: $it") }
+                        tag(block, "LISTED_ON")?.let { append("\n  Listed: $it") }
+                        tag(block, "NATIONALITY")?.let { append("\n  Nationality: ${stripXml(it)}") }
+                        tag(block, "DESIGNATION")?.let { append("\n  Designation: ${stripXml(it)}") }
+                        tag(block, "COMMENTS1")?.let { append("\n  ${stripXml(it).take(260)}") }
+                    })
+                }
+        }
+        if (hits.isEmpty()) {
+            "UN consolidated list: nothing matching '${input.trim()}'."
+        } else {
+            "UN Security Council consolidated sanctions — ${hits.size} match" +
+                (if (hits.size == 1) "" else "es") + " for '${input.trim()}':\n\n" +
+                hits.joinToString("\n\n") +
+                "\n\nSearched offline against the list bundled in the app."
+        }
+    }
+
+    private fun stripXml(s: String) =
+        s.replace(Regex("<[^>]+>"), " ").replace(Regex("\\s+"), " ").trim()
 
     /** Minimal CSV splitter that respects quoted fields. */
     private fun splitCsv(line: String): List<String> {

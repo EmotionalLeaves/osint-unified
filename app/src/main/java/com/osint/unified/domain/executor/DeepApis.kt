@@ -916,6 +916,108 @@ class DeepApis(private val client: OkHttpClient = Http.client) {
         sb.toString()
     }
 
+    /** Public PGP key for an address — user IDs on a key often carry a real
+     *  name and other addresses the person uses. */
+    fun pgpKey(email: String): Result<String> = runCatching {
+        val e = URLEncoder.encode(email.trim(), "UTF-8")
+        val body = runCatching { get("https://keys.openpgp.org/vks/v1/by-email/$e") }.getOrNull()
+        if (body.isNullOrBlank() || !body.contains("BEGIN PGP")) {
+            return@runCatching "No PGP key published for ${email.trim()} on keys.openpgp.org.\n" +
+                "Other keyservers to try by hand: https://keyserver.ubuntu.com/pks/lookup?search=$e&op=index"
+        }
+        buildString {
+            append("PGP key found for ${email.trim()}\n")
+            append("Published on keys.openpgp.org, which verifies the address before listing it, ")
+            append("so this is reasonable evidence the address is real and controlled by its owner.\n\n")
+            append("Key block (${body.length} bytes):\n")
+            append(body.lineSequence().take(4).joinToString("\n"))
+            append("\n…\n\nFull key: https://keys.openpgp.org/vks/v1/by-email/$e")
+        }
+    }
+
+    /** Historic URLs for a domain from the Common Crawl index — pages that
+     *  may no longer be linked anywhere. */
+    fun commonCrawl(domain: String): Result<String> = runCatching {
+        val d = domain.trim().lowercase().removePrefix("www.")
+        val index = runCatching {
+            (json.parseToJsonElement(get("https://index.commoncrawl.org/collinfo.json")) as? JsonArray)
+                ?.firstOrNull()?.jsonObject?.str("id")
+        }.getOrNull() ?: "CC-MAIN-2026-43"
+        val body = get("https://index.commoncrawl.org/$index-index?url=*.$d&output=json&limit=300")
+        val urls = LinkedHashSet<String>()
+        val statuses = LinkedHashMap<String, Int>()
+        body.lineSequence().forEach { line ->
+            if (line.isBlank()) return@forEach
+            runCatching {
+                val o = json.parseToJsonElement(line).jsonObject
+                o.str("url")?.let { urls.add(it) }
+                o.str("status")?.let { statuses[it] = (statuses[it] ?: 0) + 1 }
+            }
+        }
+        if (urls.isEmpty()) return@runCatching "Common Crawl has no indexed pages for $d in $index."
+        buildString {
+            append("Common Crawl ($index) — $d\n${urls.size} indexed URLs\n")
+            if (statuses.isNotEmpty()) {
+                append("Status codes: ${statuses.entries.joinToString(", ") { "${it.key}×${it.value}" }}\n")
+            }
+            val hosts = urls.mapNotNull {
+                runCatching { it.substringAfter("://").substringBefore("/") }.getOrNull()
+            }.distinct()
+            append("Hosts seen: ${hosts.size}\n")
+            hosts.take(40).forEach { append("• $it\n") }
+            append("\nSample URLs:\n")
+            urls.take(60).forEach { append("$it\n") }
+        }
+    }
+
+    /** Photographs taken near a coordinate — Wikimedia Commons plus
+     *  street-level imagery from KartaView. */
+    fun photosNear(input: String): Result<String> = runCatching {
+        val (lat, lon) = parseCoord(input) ?: return@runCatching "Not a coordinate: $input"
+        val sb = StringBuilder("Imagery near %.5f, %.5f\n".format(lat, lon))
+
+        runCatching {
+            val pages = (json.parseToJsonElement(
+                get("https://commons.wikimedia.org/w/api.php?action=query&generator=geosearch" +
+                    "&ggscoord=$lat%7C$lon&ggsradius=3000&ggslimit=40&prop=imageinfo" +
+                    "&iiprop=url%7Cextmetadata&format=json")
+            ).jsonObject["query"] as? JsonObject)?.get("pages") as? JsonObject
+            if (pages != null && pages.isNotEmpty()) {
+                sb.append("\nWikimedia Commons — ${pages.size} geotagged items within 3 km:\n")
+                pages.values.take(40).forEach { p ->
+                    val o = p as? JsonObject ?: return@forEach
+                    sb.append("• ${o.str("title")}")
+                    val info = (o["imageinfo"] as? JsonArray)?.firstOrNull()?.jsonObject
+                    info.str("url")?.let { sb.append("\n  $it") }
+                    sb.append("\n")
+                }
+            }
+        }
+
+        runCatching {
+            val data = ((json.parseToJsonElement(
+                get("https://api.openstreetcam.org/2.0/photo/?lat=$lat&lng=$lon&radius=400")
+            ).jsonObject["result"] as? JsonObject)?.get("data") as? JsonArray)
+            if (!data.isNullOrEmpty()) {
+                sb.append("\nKartaView street-level — ${data.size} photos within 400 m:\n")
+                data.take(25).forEach { p ->
+                    val o = p as? JsonObject ?: return@forEach
+                    sb.append("• ${o.str("dateAdded")?.substringBefore(' ') ?: "?"}")
+                    o.str("distance")?.let { sb.append("  ${it}m away") }
+                    o.str("fileurl")?.let { sb.append("\n  $it") }
+                    sb.append("\n")
+                }
+            }
+        }
+
+        if (sb.length < 40) {
+            sb.append("\nNo geotagged imagery found here. Wider options:\n")
+            sb.append("Google Street View: https://www.google.com/maps/@$lat,$lon,17z\n")
+            sb.append("Mapillary: https://www.mapillary.com/app/?lat=$lat&lng=$lon&z=17\n")
+        }
+        sb.toString()
+    }
+
     // ------------------------------------------------------------------
     // Aircraft and wallets
     // ------------------------------------------------------------------
