@@ -155,7 +155,7 @@ class GodEyeViewModel(
         // spiked memory/CPU). Each poll is exception-guarded so one bad fetch
         // can't kill its loop, and updates stay atomic per field.
         poll(0, 15_000, { aircraftDataSource.fetch(focus, wideView) }) { s, v -> s.copy(aircraft = v) }
-        poll(400, 10_000, { aisDataSource.fetch() }) { s, v -> s.copy(vessels = v) }
+        poll(400, 30_000, { aisDataSource.fetch() }) { s, v -> s.copy(vessels = v) }
         poll(800, 10_000, { satellitesDataSource.fetch() }) { s, v -> s.copy(satellites = v) }
         poll(1_500, 300_000, { earthquakeDataSource.fetch() }) { s, v -> s.copy(quakes = v) }
         poll(2_500, 600_000, { naturalEventsDataSource.fetch() }) { s, v -> s.copy(naturalEvents = v) }
@@ -163,7 +163,7 @@ class GodEyeViewModel(
         poll(4_500, 600_000, { firesDataSource.fetch() }) { s, v -> s.copy(fires = v) }
         poll(5_500, 600_000, { volcanoDataSource.fetch() }) { s, v -> s.copy(volcanoes = v) }
         poll(6_500, 600_000, { gdacsDataSource.fetch() }) { s, v -> s.copy(gdacs = v) }
-        poll(7_500, 120_000, { weatherDataSource.fetch() }) { s, v -> s.copy(weather = v) }
+        poll(7_500, 300_000, { weatherDataSource.fetch() }) { s, v -> s.copy(weather = v) }
         poll(8_500, 300_000, { auroraDataSource.fetch() }) { s, v -> s.copy(aurora = v) }
         poll(9_500, 300_000, { newsDataSource.fetch() }) { s, v -> s.copy(news = v) }
         poll(11_000, 600_000, { buoyDataSource.fetch() }) { s, v -> s.copy(buoys = v) }
@@ -179,6 +179,11 @@ class GodEyeViewModel(
         poll(4_800, 86_400_000, { cableLandingDataSource.fetch() }) { s, v -> s.copy(cables = v) }
     }
 
+    // Intervals are set by how often the data actually changes, not by how
+    // live it would be nice to look. The NWS alert feed is nearly two
+    // megabytes and alerts do not change by the minute; AIS positions for
+    // most vessels update on the order of minutes. Polling faster than the
+    // source changes just spends someone's mobile data.
     private fun <T> poll(
         initialDelayMs: Long,
         intervalMs: Long,
