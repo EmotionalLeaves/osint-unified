@@ -172,6 +172,8 @@ class DirectToolExecutor(
                 "revgeo" -> apis.revgeo(input)
                 "shodan" -> apis.shodan(input)
                 "dorks" -> apis.dorks(input)
+                "websearch" -> apis.websearch(input)
+                "github" -> apis.githubUser(input)
                 "geocode" -> apis.geocode(input)
                 "wikinearby" -> apis.wikiNearby(input)
                 "gdelt" -> apis.gdeltNews(input)

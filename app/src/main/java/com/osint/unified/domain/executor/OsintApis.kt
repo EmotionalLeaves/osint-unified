@@ -11,6 +11,7 @@ import kotlinx.serialization.json.jsonObject
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.IOException
+import java.net.URLDecoder
 import java.net.URLEncoder
 import java.security.MessageDigest
 
@@ -23,6 +24,8 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
     private val ua = "OSINT-Unified/1.0 (research)"
+    private val browserUa =
+        "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36"
 
     /** crt.sh certificate-transparency subdomain discovery. */
     fun crtsh(domain: String): Result<String> = runCatching {
@@ -76,12 +79,28 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
         val avatar = "https://www.gravatar.com/avatar/$hash"
         val request = Request.Builder().url("https://www.gravatar.com/$hash.json").header("User-Agent", ua).build()
         client.newCall(request).execute().use { resp ->
-            if (resp.code == 404) {
-                "No Gravatar profile.\nAvatar (default if unset): $avatar"
-            } else if (resp.isSuccessful) {
-                "Gravatar profile found.\nAvatar: $avatar\n" + (resp.body?.string().orEmpty().take(800))
-            } else {
-                throw IOException("HTTP ${resp.code}")
+            if (resp.code == 404) return@runCatching "No Gravatar profile.\nDefault avatar: $avatar"
+            if (!resp.isSuccessful) throw IOException("HTTP ${resp.code}")
+            val entry = json.parseToJsonElement(resp.body?.string().orEmpty())
+                .jsonObject["entry"]?.jsonArray?.firstOrNull()?.jsonObject
+                ?: return@runCatching "Gravatar exists.\nAvatar: $avatar"
+            fun s(k: String) = (entry[k] as? JsonPrimitive)?.contentOrNull
+            buildString {
+                append("Avatar: $avatar\n")
+                s("displayName")?.let { append("Name: $it\n") }
+                s("aboutMe")?.let { append("About: $it\n") }
+                (entry["currentLocation"] as? JsonPrimitive)?.contentOrNull
+                    ?.takeIf { it.isNotBlank() }?.let { append("Location: $it\n") }
+                (entry["accounts"] as? JsonArray)?.forEach { a ->
+                    val ao = a.jsonObject
+                    val url = (ao["url"] as? JsonPrimitive)?.contentOrNull
+                    val name = (ao["shortname"] as? JsonPrimitive)?.contentOrNull ?: ""
+                    if (url != null) append("Account: $name $url\n")
+                }
+                (entry["urls"] as? JsonArray)?.forEach { u ->
+                    (u.jsonObject["value"] as? JsonPrimitive)?.contentOrNull?.let { append("Link: $it\n") }
+                }
+                s("profileUrl")?.let { append("Profile: $it\n") }
             }
         }
     }
@@ -150,6 +169,67 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
             }
         }
     }
+
+    /** Live web search results (DuckDuckGo HTML endpoint, keyless): actual
+     *  titles, URLs and snippets shown inline — not just a search link. */
+    fun websearch(query: String): Result<String> = runCatching {
+        val request = Request.Builder()
+            .url("https://html.duckduckgo.com/html/?q=" + URLEncoder.encode(query, "UTF-8"))
+            .header("User-Agent", browserUa)
+            .build()
+        val html = client.newCall(request).execute().use { resp ->
+            if (!resp.isSuccessful) throw IOException("HTTP ${resp.code}")
+            resp.body?.string().orEmpty()
+        }
+        val linkRe = Regex("""class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>""",
+            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+        val snips = Regex("""class="result__snippet"[^>]*>(.*?)</a>""",
+            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+            .findAll(html).map { stripTags(it.groupValues[1]) }.toList()
+        val results = linkRe.findAll(html).take(12).toList()
+        if (results.isEmpty()) return@runCatching "No web results."
+        buildString {
+            append("${results.size} web results:\n")
+            results.forEachIndexed { i, m ->
+                val href = m.groupValues[1]
+                val title = stripTags(m.groupValues[2])
+                val real = Regex("""uddg=([^&]+)""").find(href)?.groupValues?.getOrNull(1)
+                    ?.let { runCatching { URLDecoder.decode(it, "UTF-8") }.getOrNull() }
+                    ?: if (href.startsWith("//")) "https:$href" else href
+                append("\n$title\n$real")
+                snips.getOrNull(i)?.takeIf { it.isNotBlank() }?.let { append("\n$it") }
+            }
+        }
+    }
+
+    /** Live GitHub profile for a username (keyless, 60 req/hr): name, bio,
+     *  company, location, repos, followers, join date. */
+    fun githubUser(username: String): Result<String> = runCatching {
+        val u = username.substringBefore('@').trim()
+        val o = json.parseToJsonElement(
+            getBody("https://api.github.com/users/" + URLEncoder.encode(u, "UTF-8"))
+        ).jsonObject
+        fun s(k: String) = (o[k] as? JsonPrimitive)?.contentOrNull
+        if (s("login") == null) return@runCatching "No GitHub user \"$u\"."
+        buildString {
+            append("GitHub: @${s("login")}\n")
+            s("name")?.let { append("Name: $it\n") }
+            s("bio")?.let { append("Bio: $it\n") }
+            s("company")?.let { append("Company: $it\n") }
+            s("location")?.let { append("Location: $it\n") }
+            s("email")?.let { append("Email: $it\n") }
+            s("blog")?.takeIf { it.isNotBlank() }?.let { append("Site: $it\n") }
+            s("twitter_username")?.let { append("Twitter: @$it\n") }
+            append("Repos: ${s("public_repos") ?: "?"} · Followers: ${s("followers") ?: "?"} · Following: ${s("following") ?: "?"}\n")
+            s("created_at")?.let { append("Joined: ${it.take(10)}\n") }
+            append("Profile: https://github.com/${s("login")}")
+        }
+    }
+
+    private fun stripTags(s: String) = s
+        .replace(Regex("<[^>]+>"), "")
+        .replace("&amp;", "&").replace("&#x27;", "'").replace("&quot;", "\"").replace("&#39;", "'")
+        .trim()
 
     /** Builds a rich, ready-to-tap OSINT pivot sheet tailored to the input
      *  type: platform profiles, people-search / public-records engines, breach
