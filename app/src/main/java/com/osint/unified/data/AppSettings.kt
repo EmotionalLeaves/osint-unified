@@ -17,8 +17,11 @@ class AppSettings(context: Context) {
         get() = prefs.getString(KEY_TAR1090, "").orEmpty()
         set(value) = prefs.edit().putString(KEY_TAR1090, value.trim()).apply()
 
+    // Defaults to Finland's Digitraffic open AIS (keyless, real live vessels in
+    // the Baltic) so the vessel layer shows real ships out of the box. There is
+    // no free global AIS feed; replace with your own for other regions.
     var aisUrl: String
-        get() = prefs.getString(KEY_AIS, "").orEmpty()
+        get() = prefs.getString(KEY_AIS, DEFAULT_AIS).orEmpty()
         set(value) = prefs.edit().putString(KEY_AIS, value.trim()).apply()
 
     /** Any GeoJSON points URL the user wants plotted as a custom globe layer. */
@@ -31,5 +34,6 @@ class AppSettings(context: Context) {
         const val KEY_TAR1090 = "tar1090_url"
         const val KEY_AIS = "ais_url"
         const val KEY_OVERLAY = "overlay_url"
+        const val DEFAULT_AIS = "https://meri.digitraffic.fi/api/ais/v1/locations"
     }
 }

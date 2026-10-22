@@ -1,7 +1,5 @@
 package com.osint.unified.ui.framework
 
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -54,13 +52,7 @@ fun FrameworkScreen(onBack: () -> Unit) {
     val stack = remember { mutableStateListOf<ArfNode>().apply { root?.let { add(it) } } }
     var query by remember { mutableStateOf("") }
 
-    fun open(url: String) {
-        runCatching {
-            context.startActivity(
-                Intent(Intent.ACTION_VIEW, Uri.parse(url.trim())).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            )
-        }
-    }
+    fun open(url: String) = com.osint.unified.ui.common.LinkOpener.open(context, url)
 
     Scaffold(
         containerColor = Intel.Base,

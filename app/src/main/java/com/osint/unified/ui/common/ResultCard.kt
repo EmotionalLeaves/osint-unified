@@ -26,8 +26,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -50,14 +48,7 @@ import com.osint.unified.ui.theme.categoryColor
 fun ResultCard(row: ResultRow, onPivot: ((String) -> Unit)? = null) {
     var expanded by remember { mutableStateOf(false) }
     val context = LocalContext.current
-    val open: (String) -> Unit = { url ->
-        val clean = url.trim().trimEnd('.', ',', ')', ']', '}', '"', '\'', ';', '>')
-        runCatching {
-            context.startActivity(
-                Intent(Intent.ACTION_VIEW, Uri.parse(clean)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            )
-        }
-    }
+    val open: (String) -> Unit = { url -> LinkOpener.open(context, url) }
     val accent = remember(row.toolId) {
         ToolRegistry.byId(row.toolId)?.category?.let { categoryColor(it) } ?: Intel.Cyan
     }
