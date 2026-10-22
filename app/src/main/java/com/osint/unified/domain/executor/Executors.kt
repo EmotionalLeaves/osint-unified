@@ -302,7 +302,16 @@ class DirectToolExecutor(
                 starts("Give at least three") -> Findings.Kind.UNREACHABLE
                 else -> null
             }
-            "sherlock", "maigret", "blackbird", "socialsweep", "emailaccounts" -> when {
+            // The same sweep, but its output opens with a caveat rather
+            // than its verdict, so the verdict has to be looked for.
+            "emailaccounts" -> when {
+                output.contains("Could not load any site ruleset") -> Findings.Kind.UNREACHABLE
+                output.contains("This is not a clean sheet") -> Findings.Kind.UNREACHABLE
+                output.contains("No accounts found") -> Findings.Kind.ABSENT
+                Regex("""(?m)^Found \d""").containsMatchIn(output) -> Findings.Kind.HIT
+                else -> null
+            }
+            "sherlock", "maigret", "blackbird", "socialsweep" -> when {
                 starts("Could not load any site ruleset") -> Findings.Kind.UNREACHABLE
                 // The sweep states its own coverage; partial coverage is
                 // closer to "could not ask" than to "looked and found
@@ -328,7 +337,18 @@ class DirectToolExecutor(
                 "osmrecon" -> osmRecon(input)
                 "sherlock", "maigret", "blackbird" -> runCatching { usernameChecker.check(input) }
                 "emailaccounts" -> runCatching {
-                    usernameChecker.check(input.substringBefore('@').substringBefore('+').trim())
+                    // The sweep is a username sweep; the email only
+                    // supplies a guess at the username. Everything it finds
+                    // is a name collision until something else ties it to
+                    // this address, and saying so in the output is the
+                    // difference between a lead and a false identification.
+                    val local = input.substringBefore('@').substringBefore('+').trim()
+                    val caveat = "Searched as the username \"$local\", taken from " +
+                        "before the @. Nothing below is tied to this email address: " +
+                        "a site listed here has an account with that name, held by " +
+                        "someone. Treat every line as a lead to corroborate, not a " +
+                        "finding.\n\n"
+                    caveat + usernameChecker.check(local)
                 }
                 "phoneinfoga" -> phoneInfo(input)
                 "webcrawl" -> apis.webcrawl(input)

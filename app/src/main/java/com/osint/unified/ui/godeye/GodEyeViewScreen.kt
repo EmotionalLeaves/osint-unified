@@ -1171,8 +1171,33 @@ private fun GlobeMap(
                             quota <= 0 -> emptyList()
                             markers.size <= quota -> markers
                             else -> {
-                                val stride = (markers.size / quota).coerceAtLeast(1)
-                                markers.filterIndexed { i, _ -> i % stride == 0 }.take(quota)
+                                // Which markers survive has to depend on
+                                // the markers, not on where they happened
+                                // to land in the list. Striding over list
+                                // position meant that a feed returning its
+                                // items in a different order — which these
+                                // do, every poll — kept a different subset
+                                // each time, so stationary things blinked
+                                // in and out while nothing was moving.
+                                //
+                                // Each marker falls in a bucket drawn from
+                                // its own identity: a callsign, an MMSI, a
+                                // satellite name, or its position for the
+                                // things that have no name. The same
+                                // marker lands in the same bucket on every
+                                // refresh, so the subset is stable and
+                                // still scattered across the view.
+                                val threshold =
+                                    (quota.toLong() * MARKER_BUCKETS / markers.size).toInt()
+                                val inside = markers.filter { markerBucket(it) < threshold }
+                                // The hash is not perfectly even, so the
+                                // count is brought to the quota rather than
+                                // left to overshoot the budget or waste it.
+                                if (inside.size >= quota) inside.take(quota)
+                                else inside + markers
+                                    .filter { markerBucket(it) >= threshold }
+                                    .sortedBy { markerBucket(it) }
+                                    .take(quota - inside.size)
                             }
                         }
                     }
@@ -1278,6 +1303,31 @@ private fun investigableQuery(obj: Inspected): String? {
 /** The most markers drawn at once. Layers may hold far more than this;
  *  what is off screen costs nothing, and what is left is thinned evenly. */
 private const val MARKER_BUDGET = 2500
+
+/** How finely the thinning hash divides the markers of one layer. */
+private const val MARKER_BUCKETS = 10_000
+
+/**
+ * A number between 0 and [MARKER_BUCKETS] that belongs to the marker
+ * rather than to its place in a list.
+ *
+ * Named things hash on the name — a callsign, an MMSI, a satellite — so
+ * the same object lands in the same bucket however the feed orders its
+ * reply. Unnamed ones hash on position, rounded to about a hundred metres
+ * so a reading that wobbles in the last decimal does not jump buckets.
+ * The shift mixes the high bits down, because String.hashCode leaves
+ * similar strings in neighbouring slots and a plain modulo would then
+ * keep or drop whole runs of them together.
+ */
+private fun markerBucket(pm: PendingMarker): Int {
+    val key = pm.title?.takeIf { it.isNotBlank() }
+        ?: "${(pm.lat * 1000).toInt()}:${(pm.lon * 1000).toInt()}"
+    var h = (pm.kind.hashCode() * 31) xor key.hashCode()
+    h = h xor (h ushr 16)
+    h *= -0x7ee3623b
+    h = h xor (h ushr 13)
+    return ((h.toLong() and 0xFFFFFFFFL) % MARKER_BUCKETS).toInt()
+}
 
 private data class PendingMarker(
     val kind: String,

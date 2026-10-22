@@ -84,8 +84,11 @@ object ToolRegistry {
         Tool("ipinfo", "IP geo / ASN", NETINT, "ip", "json", DIRECT,
             "IP geolocation, ISP, organization and ASN.",
             "https://ipwho.is"),
-        Tool("emailaccounts", "Account finder", SOCMINT, "email", "text", DIRECT,
-            "Finds accounts across sites registered to the email's username (WhatsMyName, keyless).",
+        Tool("emailaccounts", "Same-name accounts (unverified)", SOCMINT, "email", "text", DIRECT,
+            "Takes the part of the address before the @ and looks for accounts " +
+                "using it as a username. A match means the name is taken on that " +
+                "site, not that this person holds it — \"john\" is thousands of " +
+                "people. Corroborate before relying on any of it.",
             "https://github.com/WebBreacher/WhatsMyName", timeoutMs = 70_000L, touchesTarget = true),
         Tool("gravatar", "Gravatar", SOCMINT, "email", "json", DIRECT,
             "Finds a public Gravatar profile and avatar for an email.",
