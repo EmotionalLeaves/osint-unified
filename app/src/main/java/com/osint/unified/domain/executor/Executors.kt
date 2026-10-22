@@ -145,6 +145,7 @@ class LocalToolExecutor(
  * that is Overpass (OpenStreetMap infrastructure near a coordinate).
  */
 class DirectToolExecutor(
+    private val appContext: android.content.Context,
     private val usernameChecker: UsernameChecker,
     private val exifReader: com.osint.unified.data.ExifReader,
     private val apis: OsintApis = OsintApis(),
@@ -172,6 +173,7 @@ class DirectToolExecutor(
                 "revgeo" -> apis.revgeo(input)
                 "shodan" -> apis.shodan(input)
                 "dorks" -> apis.dorks(input)
+                "framework" -> framework(input)
                 "websearch" -> apis.websearch(input)
                 "github" -> apis.githubUser(input)
                 "geocode" -> apis.geocode(input)
@@ -182,6 +184,35 @@ class DirectToolExecutor(
                 else -> Result.failure(IllegalStateException("${tool.name} has no direct implementation."))
             }
         }
+
+    /** Surfaces the matching OSINT Framework category's resources for this
+     *  observable, so the whole framework is a connector inside investigations. */
+    private fun framework(input: String): Result<String> = runCatching {
+        val v = input.trim()
+        val isEmail = v.contains('@') && !v.contains(' ')
+        val isPhone = Regex("""^\+?[\d][\d\s\-().]{6,}$""").matches(v)
+        val isIp = Regex("""^(?:\d{1,3}\.){3}\d{1,3}$""").matches(v)
+        val isCoord = Regex("""^-?\d{1,3}(?:\.\d+)?\s*,\s*-?\d{1,3}(?:\.\d+)?$""").matches(v)
+        val isImage = Regex(""".*\.(?:jpe?g|png|gif|webp|bmp|tiff?)(?:\?.*)?$""", RegexOption.IGNORE_CASE).matches(v)
+        val isUrl = v.startsWith("http", true)
+        val isDomain = !isEmail && !isIp && v.contains('.') && !v.contains(' ')
+        val isName = v.contains(' ')
+        val categories = when {
+            isEmail -> listOf("Email Address")
+            isPhone -> listOf("Telephone Numbers")
+            isIp -> listOf("IP Address")
+            isCoord -> listOf("Geolocation Tools", "Maps")
+            isImage -> listOf("Images / Videos", "Images")
+            isUrl -> listOf("Archives", "Domain Name")
+            isDomain -> listOf("Domain Name")
+            isName -> listOf("People Search Engines", "People")
+            else -> listOf("Username")
+        }
+        val leaves = com.osint.unified.data.OsintFramework.categoryLeaves(appContext, categories)
+        if (leaves.isEmpty()) "No OSINT Framework resources matched."
+        else "${leaves.size} OSINT Framework resources:\n" +
+            leaves.joinToString("\n") { (name, url) -> "$name: $url" }
+    }
 
     private fun phoneInfo(input: String): Result<String> = try {
         val util = PhoneNumberUtil.getInstance()

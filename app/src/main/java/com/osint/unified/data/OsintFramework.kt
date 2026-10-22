@@ -46,6 +46,16 @@ object OsintFramework {
         return ArfNode(name, url, children)
     }
 
+    /** Leaf resources (name + url) under the top-level category whose name
+     *  matches any of [names] (case-insensitive, substring). */
+    fun categoryLeaves(context: Context, names: List<String>): List<Pair<String, String>> {
+        val root = load(context) ?: return emptyList()
+        val cat = root.children.firstOrNull { c ->
+            names.any { c.name.contains(it, ignoreCase = true) }
+        } ?: return emptyList()
+        return leaves(cat).map { it.first to it.second }
+    }
+
     /** All leaf resources (name + url) under a node, for search. */
     fun leaves(node: ArfNode, path: String = ""): List<Triple<String, String, String>> {
         val here = if (path.isBlank()) node.name else "$path › ${node.name}"

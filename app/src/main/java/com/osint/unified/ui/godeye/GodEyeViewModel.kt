@@ -118,88 +118,37 @@ class GodEyeViewModel(
     private var resultsJob: Job? = null
 
     init {
+        // Staggered start-up so launch doesn't fire every feed at once (which
+        // spiked memory/CPU). Each poll is exception-guarded so one bad fetch
+        // can't kill its loop, and updates stay atomic per field.
+        poll(0, 15_000, { aircraftDataSource.fetch() }) { s, v -> s.copy(aircraft = v) }
+        poll(400, 10_000, { aisDataSource.fetch() }) { s, v -> s.copy(vessels = v) }
+        poll(800, 10_000, { satellitesDataSource.fetch() }) { s, v -> s.copy(satellites = v) }
+        poll(1_500, 300_000, { earthquakeDataSource.fetch() }) { s, v -> s.copy(quakes = v) }
+        poll(2_500, 600_000, { naturalEventsDataSource.fetch() }) { s, v -> s.copy(naturalEvents = v) }
+        poll(3_500, 60_000, { overlayDataSource.fetch() }) { s, v -> s.copy(overlayPoints = v) }
+        poll(4_500, 600_000, { firesDataSource.fetch() }) { s, v -> s.copy(fires = v) }
+        poll(5_500, 600_000, { volcanoDataSource.fetch() }) { s, v -> s.copy(volcanoes = v) }
+        poll(6_500, 600_000, { gdacsDataSource.fetch() }) { s, v -> s.copy(gdacs = v) }
+        poll(7_500, 120_000, { weatherDataSource.fetch() }) { s, v -> s.copy(weather = v) }
+        poll(8_500, 300_000, { auroraDataSource.fetch() }) { s, v -> s.copy(aurora = v) }
+        poll(9_500, 300_000, { newsDataSource.fetch() }) { s, v -> s.copy(news = v) }
+        poll(11_000, 600_000, { buoyDataSource.fetch() }) { s, v -> s.copy(buoys = v) }
+        poll(13_000, 600_000, { metarDataSource.fetch() }) { s, v -> s.copy(metar = v) }
+    }
+
+    private fun <T> poll(
+        initialDelayMs: Long,
+        intervalMs: Long,
+        fetch: suspend () -> T,
+        apply: (GodEyeUiState, T) -> GodEyeUiState
+    ) {
         viewModelScope.launch {
+            if (initialDelayMs > 0) delay(initialDelayMs)
             while (isActive) {
-                _state.update { it.copy(aircraft = aircraftDataSource.fetch()) }
-                delay(15_000)
-            }
-        }
-        viewModelScope.launch {
-            while (isActive) {
-                _state.update { it.copy(overlayPoints = overlayDataSource.fetch()) }
-                delay(60_000)
-            }
-        }
-        viewModelScope.launch {
-            while (isActive) {
-                _state.update { it.copy(weather = weatherDataSource.fetch()) }
-                delay(120_000)
-            }
-        }
-        viewModelScope.launch {
-            while (isActive) {
-                _state.update { it.copy(fires = firesDataSource.fetch()) }
-                delay(600_000)
-            }
-        }
-        viewModelScope.launch {
-            while (isActive) {
-                _state.update { it.copy(satellites = satellitesDataSource.fetch()) }
-                delay(10_000)
-            }
-        }
-        viewModelScope.launch {
-            while (isActive) {
-                _state.update { it.copy(news = newsDataSource.fetch()) }
-                delay(300_000)
-            }
-        }
-        viewModelScope.launch {
-            while (isActive) {
-                _state.update { it.copy(gdacs = gdacsDataSource.fetch()) }
-                delay(600_000)
-            }
-        }
-        viewModelScope.launch {
-            while (isActive) {
-                _state.update { it.copy(volcanoes = volcanoDataSource.fetch()) }
-                delay(600_000)
-            }
-        }
-        viewModelScope.launch {
-            while (isActive) {
-                _state.update { it.copy(aurora = auroraDataSource.fetch()) }
-                delay(300_000)
-            }
-        }
-        viewModelScope.launch {
-            while (isActive) {
-                _state.update { it.copy(buoys = buoyDataSource.fetch()) }
-                delay(600_000)
-            }
-        }
-        viewModelScope.launch {
-            while (isActive) {
-                _state.update { it.copy(metar = metarDataSource.fetch()) }
-                delay(600_000)
-            }
-        }
-        viewModelScope.launch {
-            while (isActive) {
-                _state.update { it.copy(vessels = aisDataSource.fetch()) }
-                delay(10_000)
-            }
-        }
-        viewModelScope.launch {
-            while (isActive) {
-                _state.update { it.copy(quakes = earthquakeDataSource.fetch()) }
-                delay(300_000)
-            }
-        }
-        viewModelScope.launch {
-            while (isActive) {
-                _state.update { it.copy(naturalEvents = naturalEventsDataSource.fetch()) }
-                delay(600_000)
+                val result = runCatching { fetch() }.getOrNull()
+                if (result != null) _state.update { apply(it, result) }
+                delay(intervalMs)
             }
         }
     }

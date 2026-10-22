@@ -302,6 +302,9 @@ private fun GlobeMap(
     modifier: Modifier = Modifier
 ) {
     val appliedFocus = remember { mutableStateOf<Pair<Double, Double>?>(null) }
+    // Cache marker dot drawables by colour+size so a rebuild of hundreds of
+    // markers doesn't allocate a fresh ShapeDrawable each time.
+    val dotCache = remember { HashMap<Long, Drawable>() }
     AndroidView(
         modifier = modifier,
         factory = { ctx ->
@@ -335,14 +338,18 @@ private fun GlobeMap(
                 overlays.add(MapEventsOverlay(receiver))
             }
         },
-        update = { map ->
+        update = { map -> runCatching {
             // Rebuild only the markers; keep the tap-events overlay in place.
             map.overlays.removeAll { it is Marker }
             val density = map.resources.displayMetrics.density
             fun add(lat: Double, lon: Double, color: Int, sizeDp: Int, title: String?, clickable: Boolean) {
+                if (lat !in -90.0..90.0 || lon !in -180.0..180.0 || lat.isNaN() || lon.isNaN()) return
+                val px = (sizeDp * density).toInt()
+                val key = (color.toLong() shl 8) xor px.toLong()
+                val icon = dotCache.getOrPut(key) { dot(color, px) }
                 val m = Marker(map)
                 m.position = GeoPoint(lat, lon)
-                m.icon = dot(color, (sizeDp * density).toInt())
+                m.icon = icon
                 m.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                 m.title = title
                 m.setOnMarkerClickListener { mk, _ ->
@@ -375,7 +382,7 @@ private fun GlobeMap(
                 appliedFocus.value = focus
             }
             map.invalidate()
-        }
+        } }
     )
 }
 

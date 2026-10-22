@@ -121,7 +121,7 @@ class AircraftDataSource(
                 val states = json.parseToJsonElement(body).jsonObject["states"]?.jsonArray
                 val out = ArrayList<Aircraft>()
                 states?.forEach { s ->
-                    if (out.size >= 500) return@forEach
+                    if (out.size >= 250) return@forEach
                     val a = s as? JsonArray ?: return@forEach
                     fun d(i: Int) = (a.getOrNull(i) as? JsonPrimitive)?.doubleOrNull
                     fun str(i: Int) = (a.getOrNull(i) as? JsonPrimitive)?.contentOrNull
