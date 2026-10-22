@@ -65,9 +65,11 @@ class ObservableRouterTest {
     }
 
     @Test
-    fun emailSuggestsHoleheFirst() {
+    fun emailSuggestsKeylessFirst() {
         val tools = router.suggestTools(Observable.Email("a@b.com"))
-        assertEquals("holehe", tools.first().id)
+        // Keyless tools lead so email works with no backend.
+        assertEquals("gravatar", tools.first().id)
+        assertTrue(tools.any { it.id == "emailaccounts" })
     }
 
     @Test
