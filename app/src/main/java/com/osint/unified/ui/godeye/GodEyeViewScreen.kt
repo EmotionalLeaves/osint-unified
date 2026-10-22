@@ -660,7 +660,7 @@ private fun GlobeMap(
             volcanoes.forEach { add("Volcano", it.lat, it.lon, 0xFFFF4D4D.toInt(), 9, it.label, true, it.url) }
             weather.forEach { add("Weather alert", it.lat, it.lon, 0xFF7FB2FF.toInt(), 9, it.label, true, it.url) }
             fires.forEach { add("Wildfire", it.lat, it.lon, 0xFFFF5A4D.toInt(), 8, it.label, true, it.url) }
-            overlay.forEach { add("Custom overlay", it.lat, it.lon, 0xFF5CE1D6.toInt(), 9, it.label, false, it.url) }
+            overlay.forEach { add("Custom overlay", it.lat, it.lon, 0xFF5CE1D6.toInt(), 9, it.label, false) }
             satellites.forEach { add("Satellite", it.lat, it.lon, 0xFFC0A8FF.toInt(), 11, it.label, true, it.url) }
             vessels.forEach { add("Vessel", it.lat, it.lon, 0xFF1D9E75.toInt(), 9, it.name.ifBlank { it.mmsi }, true) }
             aircraft.forEach { add("Aircraft", it.lat, it.lon, 0xFF4FC3F7.toInt(), 9, it.callsign.ifBlank { it.icao }, true) }

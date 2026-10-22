@@ -14,7 +14,6 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import kotlin.random.Random
 
 /**
  * Maritime vessel positions for the God's Eye View.
@@ -33,7 +32,7 @@ class AisDataSource(
 
     suspend fun fetch(): List<Vessel> = withContext(Dispatchers.IO) {
         val urls = settings.aisUrl.split(',', '\n').map { it.trim() }.filter { it.isNotBlank() }
-        if (urls.isEmpty()) return@withContext mock()
+        if (urls.isEmpty()) return@withContext emptyList()
         val merged = LinkedHashMap<String, Vessel>()
         for (url in urls) {
             if (merged.size >= 20000) break
@@ -41,7 +40,7 @@ class AisDataSource(
                 merged.putIfAbsent(v.mmsi.ifBlank { "${v.lat},${v.lon}" }, v)
             }
         }
-        merged.values.toList().ifEmpty { mock() }
+        merged.values.toList()
     }
 
     private fun fetchOne(url: String): List<Vessel> {
@@ -84,34 +83,4 @@ class AisDataSource(
         }
     }
 
-    private fun mock(): List<Vessel> {
-        val ports = listOf(
-            Triple("Singapore", 1.26, 103.84),
-            Triple("Rotterdam", 51.95, 4.14),
-            Triple("LA/LongBeach", 33.74, -118.26),
-            Triple("Shanghai", 31.23, 121.50)
-        )
-        return ports.flatMap { (name, lat, lon) ->
-            List(5) { i ->
-                Vessel(
-                    mmsi = "%09d".format(Random.nextInt(100_000_000, 999_999_999)),
-                    name = "$name-${i + 1}",
-                    lat = lat + Random.nextDouble(-1.5, 1.5),
-                    lon = lon + Random.nextDouble(-1.5, 1.5),
-                    course = Random.nextDouble(0.0, 360.0),
-                    speed = Random.nextDouble(0.0, 22.0)
-                )
-            }
-        }
-    }
-
-    @Serializable
-    private data class AisVessel(
-        val mmsi: String? = null,
-        val name: String? = null,
-        val lat: Double? = null,
-        val lon: Double? = null,
-        val course: Double? = null,
-        val speed: Double? = null
-    )
 }
