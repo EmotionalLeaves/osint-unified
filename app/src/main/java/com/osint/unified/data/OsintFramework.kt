@@ -30,12 +30,67 @@ object OsintFramework {
         cached?.let { return it }
         return try {
             val text = context.assets.open("arf.json").bufferedReader().use { it.readText() }
-            val root = parse(json.parseToJsonElement(text) as JsonObject)
+            val arf = parse(json.parseToJsonElement(text) as JsonObject)
+            // Curated catalogues shipped alongside the framework are folded in
+            // as extra top-level categories, so one directory covers them all.
+            val extras = CATALOGUES.mapNotNull { (asset, label) ->
+                markdownCatalogue(context, asset, label)
+            }
+            val root = if (extras.isEmpty()) arf
+            else ArfNode(arf.name, arf.url, arf.children + extras)
             cached = root
             root
         } catch (e: Exception) {
             null
         }
+    }
+
+    private val CATALOGUES = listOf(
+        "awesome-osint.md" to "awesome-osint",
+        "osint-stuff.md" to "osint_stuff_tool_collection",
+        "osint-toolbox.md" to "OSINT Toolbox"
+    )
+
+    /**
+     * Turns a curated markdown tool list into a browsable category tree.
+     * Markdown headings become folders and `[name](url)` links become leaves,
+     * which is enough structure for these catalogues — they are all
+     * heading-grouped link lists.
+     */
+    private fun markdownCatalogue(context: Context, asset: String, label: String): ArfNode? {
+        val text = runCatching {
+            context.assets.open(asset).bufferedReader().use { it.readText() }
+        }.getOrNull()?.takeIf { it.length > 200 } ?: return null
+
+        val linkRegex = Regex("""\[([^\]\[]{1,120})\]\((https?://[^)\s]+)\)""")
+        val headingRegex = Regex("""^#{2,4}\s+(.+?)\s*#*$""")
+        val sections = LinkedHashMap<String, MutableList<ArfNode>>()
+        val seen = HashSet<String>()
+        var current = "General"
+
+        text.lineSequence().forEach { line ->
+            val heading = headingRegex.find(line.trim())?.groupValues?.get(1)
+            if (heading != null) {
+                // Strip any markdown link syntax out of the heading itself.
+                current = heading.replace(linkRegex, "$1").trim().take(60)
+                return@forEach
+            }
+            linkRegex.findAll(line).forEach { m ->
+                val name = m.groupValues[1].trim()
+                val url = m.groupValues[2].trimEnd('.', ',', ')')
+                // Skip badges, anchors and the catalogue's own scaffolding.
+                if (name.isBlank() || url.contains("shields.io") || url.contains("badge")) return@forEach
+                if (name.startsWith("!") || name.length < 2) return@forEach
+                if (!seen.add(url)) return@forEach
+                sections.getOrPut(current) { mutableListOf() }.add(ArfNode(name, url, emptyList()))
+            }
+        }
+        val children = sections.entries
+            .filter { it.value.isNotEmpty() }
+            .map { (heading, links) -> ArfNode(heading, null, links) }
+        if (children.isEmpty()) return null
+        val total = children.sumOf { it.children.size }
+        return ArfNode("$label ($total)", null, children)
     }
 
     private fun parse(o: JsonObject): ArfNode {

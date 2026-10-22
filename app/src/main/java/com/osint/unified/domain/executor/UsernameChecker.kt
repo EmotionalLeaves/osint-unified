@@ -9,8 +9,13 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonObject
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
@@ -18,64 +23,110 @@ import java.util.Collections
 import java.util.concurrent.TimeUnit
 
 /**
- * On-device username enumeration — a native stand-in for Sherlock/Maigret that
- * needs no Python. Uses the community WhatsMyName ruleset: for each site,
- * request the profile URL with the username substituted and treat a match
- * (expected HTTP status + the expected marker string) as "account exists".
- * Runs with bounded concurrency and an overall time cap.
+ * On-device username enumeration across every site ruleset the open-source
+ * tools ship — no Python, no backend.
+ *
+ * Sherlock, Maigret, Blackbird and WhatsMyName are all, underneath, lists of
+ * sites plus a rule for telling "profile exists" from "404". So rather than
+ * trying to run those tools, this bundles their data and executes the rules
+ * natively. Three rulesets are merged and deduplicated by target URL:
+ *
+ *  - WhatsMyName  (`wmn-data.json`)  — curated, carries a marker string
+ *  - Sherlock     (`sherlock.json`)  — status_code / message / response_url
+ *  - Maigret      (`maigret.json`)   — presence and absence strings
+ *
+ * Together that is a few thousand sites. Checks run with bounded concurrency
+ * under an overall time cap, and a partial result is reported honestly.
  */
 class UsernameChecker(private val appContext: Context) {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
     private val client: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(7, TimeUnit.SECONDS)
-        .readTimeout(7, TimeUnit.SECONDS)
-        .callTimeout(10, TimeUnit.SECONDS)
+        .connectTimeout(6, TimeUnit.SECONDS)
+        .readTimeout(6, TimeUnit.SECONDS)
+        .callTimeout(9, TimeUnit.SECONDS)
         .followRedirects(true)
         .build()
 
+    /** One site's rule, normalised across the three source formats. */
+    private data class SiteRule(
+        val name: String,
+        val urlTemplate: String,
+        val expectedCode: Int? = null,
+        val presence: List<String> = emptyList(),
+        val absence: List<String> = emptyList(),
+        val source: String = ""
+    ) {
+        fun urlFor(username: String): String = urlTemplate
+            .replace("{account}", username)
+            .replace("{username}", username)
+            .replace("{}", username)
+    }
+
+    @Volatile private var cached: List<SiteRule>? = null
+
     suspend fun check(username: String): String = withContext(Dispatchers.IO) {
-        val sites = loadSites()
-        if (sites.isEmpty()) return@withContext "Could not load the site ruleset (check network)."
+        val sites = loadRules()
+        if (sites.isEmpty()) return@withContext "Could not load any site ruleset (check network)."
 
-        val found = Collections.synchronizedList(mutableListOf<String>())
-        val semaphore = Semaphore(64)
+        val found = Collections.synchronizedList(mutableListOf<Pair<String, String>>())
+        val semaphore = Semaphore(96)
+        val checked = java.util.concurrent.atomic.AtomicInteger(0)
 
-        val completed = withTimeoutOrNull(26_000) {
+        val completed = withTimeoutOrNull(32_000) {
             coroutineScope {
                 sites.map { site ->
-                    async { semaphore.withPermit { checkSite(site, username)?.let { found.add(it) } } }
+                    async {
+                        semaphore.withPermit {
+                            checkSite(site, username)?.let { found.add(site.name to it) }
+                            checked.incrementAndGet()
+                        }
+                    }
                 }.awaitAll()
             }
             true
         } != null
 
-        val hits = found.sorted()
-        val header = if (hits.isEmpty()) {
-            "No accounts found for \"$username\" across ${sites.size} sites."
-        } else {
-            "Found ${hits.size} of ${sites.size} sites" + (if (!completed) " (partial — timed out)" else "") + ":"
+        val hits = found.sortedBy { it.first.lowercase() }
+        val scanned = if (completed) sites.size else checked.get()
+        buildString {
+            if (hits.isEmpty()) {
+                append("No accounts found for \"$username\" across $scanned sites")
+                append(if (completed) "." else " (partial — hit the time cap).")
+            } else {
+                append("Found ${hits.size} accounts for \"$username\" across $scanned sites")
+                append(if (completed) ":" else " (partial — hit the time cap):")
+                append("\n")
+                hits.forEach { (name, url) -> append("$name — $url\n") }
+            }
         }
-        if (hits.isEmpty()) header else header + "\n" + hits.joinToString("\n")
     }
 
-    private fun checkSite(site: WmnSite, username: String): String? {
-        if (site.uri_check.isBlank() || site.e_code == null) return null
-        val url = site.uri_check.replace("{account}", username)
+    private fun checkSite(site: SiteRule, username: String): String? {
+        val url = site.urlFor(username)
+        if (!url.startsWith("http")) return null
         return try {
             val request = Request.Builder()
                 .url(url)
-                .header("User-Agent", "Mozilla/5.0 (Android) OSINT-Unified")
+                .header(
+                    "User-Agent",
+                    "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) " +
+                        "Chrome/120.0.0.0 Mobile Safari/537.36"
+                )
                 .build()
             client.newCall(request).execute().use { resp ->
-                if (resp.code != site.e_code) return null
-                val marker = site.e_string
-                if (marker.isNullOrEmpty()) {
-                    "${site.name} — $url"
-                } else {
-                    val body = resp.body?.string().orEmpty()
-                    if (body.contains(marker)) "${site.name} — $url" else null
+                // Body is only read when a rule actually needs it.
+                val needsBody = site.presence.isNotEmpty() || site.absence.isNotEmpty()
+                val body = if (needsBody) resp.body?.string().orEmpty() else ""
+                when {
+                    site.presence.isNotEmpty() ->
+                        if (resp.isSuccessful && site.presence.any { body.contains(it) }) url else null
+                    site.absence.isNotEmpty() ->
+                        if (resp.isSuccessful && site.absence.none { body.contains(it) }) url else null
+                    site.expectedCode != null ->
+                        if (resp.code == site.expectedCode) url else null
+                    else -> if (resp.isSuccessful) url else null
                 }
             }
         } catch (e: Exception) {
@@ -83,45 +134,124 @@ class UsernameChecker(private val appContext: Context) {
         }
     }
 
-    private fun loadSites(): List<WmnSite> {
-        // Prefer the copy bundled in the APK (instant, offline), then a cached
-        // download, then fetch live as a last resort.
-        val bundled = runCatching {
-            appContext.assets.open("wmn-data.json").bufferedReader().use { it.readText() }
-        }.getOrNull()
-        val cache = File(appContext.cacheDir, "wmn-data.json")
-        val text = when {
-            !bundled.isNullOrBlank() && bundled.length > 1000 -> bundled
-            cache.exists() && cache.length() > 1000 -> cache.readText()
-            else -> {
-                val downloaded = download() ?: return emptyList()
-                runCatching { cache.writeText(downloaded) }
-                downloaded
+    // ------------------------------------------------------------------
+    // Ruleset loading
+    // ------------------------------------------------------------------
+
+    private fun loadRules(): List<SiteRule> {
+        cached?.let { return it }
+        val merged = LinkedHashMap<String, SiteRule>()
+        fun add(rules: List<SiteRule>) {
+            rules.forEach { r ->
+                // Deduplicate on the URL template so the same site arriving
+                // from two rulesets is only requested once. First writer wins,
+                // and WhatsMyName is loaded first because its rules are the
+                // most precise.
+                val key = r.urlTemplate.lowercase()
+                    .replace("{account}", "{}").replace("{username}", "{}")
+                if (!merged.containsKey(key)) merged[key] = r
             }
         }
-        return runCatching { json.decodeFromString<WmnRoot>(text).sites }.getOrDefault(emptyList())
+        add(parseWhatsMyName(asset("wmn-data.json") ?: downloadWmn()))
+        add(parseSherlock(asset("sherlock.json")))
+        add(parseMaigret(asset("maigret.json")))
+        val all = merged.values.toList()
+        if (all.isNotEmpty()) cached = all
+        return all
     }
 
-    private fun download(): String? = try {
-        val request = Request.Builder()
-            .url("https://raw.githubusercontent.com/WebBreacher/WhatsMyName/main/wmn-data.json")
-            .build()
-        client.newCall(request).execute().use { resp ->
-            if (resp.isSuccessful) resp.body?.string() else null
+    private fun asset(name: String): String? = runCatching {
+        appContext.assets.open(name).bufferedReader().use { it.readText() }
+    }.getOrNull()?.takeIf { it.length > 1000 }
+
+    private fun parseWhatsMyName(text: String?): List<SiteRule> {
+        if (text.isNullOrBlank()) return emptyList()
+        return runCatching {
+            val sites = json.parseToJsonElement(text).jsonObject["sites"] as? JsonArray
+                ?: return emptyList()
+            sites.mapNotNull { el ->
+                val o = el as? JsonObject ?: return@mapNotNull null
+                val uri = o.str("uri_check") ?: return@mapNotNull null
+                SiteRule(
+                    name = o.str("name") ?: return@mapNotNull null,
+                    urlTemplate = uri,
+                    expectedCode = (o["e_code"] as? JsonPrimitive)?.intOrNull,
+                    presence = listOfNotNull(o.str("e_string")?.takeIf { it.isNotBlank() }),
+                    source = "whatsmyname"
+                )
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    private fun parseSherlock(text: String?): List<SiteRule> {
+        if (text.isNullOrBlank()) return emptyList()
+        return runCatching {
+            json.parseToJsonElement(text).jsonObject.mapNotNull { (name, el) ->
+                val o = el as? JsonObject ?: return@mapNotNull null
+                val url = o.str("url") ?: return@mapNotNull null
+                // Sherlock skips sites needing a POST or a special probe.
+                if (o.str("request_method")?.equals("POST", true) == true) return@mapNotNull null
+                when (o.str("errorType")) {
+                    "message" -> SiteRule(
+                        name, url,
+                        absence = stringsOf(o["errorMsg"]),
+                        source = "sherlock"
+                    )
+                    // Sherlock's status_code sites 404 when absent, so a
+                    // 200 is the positive signal.
+                    "status_code" -> SiteRule(name, url, expectedCode = 200, source = "sherlock")
+                    else -> null   // response_url relies on redirect comparison
+                }
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    private fun parseMaigret(text: String?): List<SiteRule> {
+        if (text.isNullOrBlank()) return emptyList()
+        return runCatching {
+            val root = json.parseToJsonElement(text).jsonObject
+            // Maigret ships either a flat map or one nested under "sites".
+            val sites = (root["sites"] as? JsonObject) ?: root
+            sites.mapNotNull { (name, el) ->
+                val o = el as? JsonObject ?: return@mapNotNull null
+                val url = o.str("url") ?: return@mapNotNull null
+                val presence = stringsOf(o["presenceStrs"])
+                val absence = stringsOf(o["absenceStrs"])
+                SiteRule(
+                    name = name,
+                    urlTemplate = url,
+                    expectedCode = if (presence.isEmpty() && absence.isEmpty()) 200 else null,
+                    presence = presence,
+                    absence = absence,
+                    source = "maigret"
+                )
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    private fun stringsOf(el: kotlinx.serialization.json.JsonElement?): List<String> = when (el) {
+        is JsonArray -> el.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+        is JsonPrimitive -> listOfNotNull(el.contentOrNull)
+        else -> emptyList()
+    }
+
+    private fun JsonObject?.str(k: String) = (this?.get(k) as? JsonPrimitive)?.contentOrNull
+
+    private fun downloadWmn(): String? {
+        val cache = File(appContext.cacheDir, "wmn-data.json")
+        if (cache.exists() && cache.length() > 1000) return cache.readText()
+        return try {
+            val request = Request.Builder()
+                .url("https://raw.githubusercontent.com/WebBreacher/WhatsMyName/main/wmn-data.json")
+                .build()
+            client.newCall(request).execute().use { resp ->
+                if (!resp.isSuccessful) return null
+                val body = resp.body?.string()
+                if (!body.isNullOrBlank()) runCatching { cache.writeText(body) }
+                body
+            }
+        } catch (e: Exception) {
+            null
         }
-    } catch (e: Exception) {
-        null
     }
-
-    @Serializable
-    private data class WmnRoot(val sites: List<WmnSite> = emptyList())
-
-    @Serializable
-    private data class WmnSite(
-        val name: String = "",
-        val uri_check: String = "",
-        val e_code: Int? = null,
-        val e_string: String? = null,
-        val cat: String = ""
-    )
 }

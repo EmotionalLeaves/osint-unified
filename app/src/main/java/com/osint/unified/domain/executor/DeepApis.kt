@@ -68,7 +68,7 @@ class DeepApis(private val client: OkHttpClient = Http.client) {
             }
         }
         if (found == 0) sb.append("Account exists but publishes no proofs.\n")
-        sb.append("\nProfile: https://keybase.io/$username")
+        sb.append("\nProfile: https://keybase.io/${seg(username)}")
         sb.toString()
     }
 
@@ -79,7 +79,7 @@ class DeepApis(private val client: OkHttpClient = Http.client) {
         val about = runCatching {
             json.parseToJsonElement(get("https://www.reddit.com/user/$u/about.json", browserUa))
                 .jsonObject["data"]?.jsonObject
-        }.getOrNull() ?: return@runCatching "Reddit: no public data for u/$username (or Reddit blocked the request).\nhttps://www.reddit.com/user/$username"
+        }.getOrNull() ?: return@runCatching "Reddit: no public data for u/$username (or Reddit blocked the request).\nhttps://www.reddit.com/user/${seg(username)}"
         val sb = StringBuilder("Reddit — u/$username\n")
         about.int("total_karma")?.let { sb.append("Karma: $it (post ${about.int("link_karma") ?: 0} / comment ${about.int("comment_karma") ?: 0})\n") }
         about.dbl("created_utc")?.let { sb.append("Created: ${utc(it.toLong() * 1000)}\n") }
@@ -111,7 +111,7 @@ class DeepApis(private val client: OkHttpClient = Http.client) {
                 sb.append("Quiet hours usually bracket local night — a rough timezone hint.\n")
             }
         }
-        sb.append("\nhttps://www.reddit.com/user/$username")
+        sb.append("\nhttps://www.reddit.com/user/${seg(username)}")
         sb.toString()
     }
 
@@ -128,7 +128,7 @@ class DeepApis(private val client: OkHttpClient = Http.client) {
             emailsIn(it).takeIf { e -> e.isNotEmpty() }?.let { e -> sb.append("Emails in bio: ${e.joinToString(", ")}\n") }
         }
         (o["submitted"] as? JsonArray)?.let { sb.append("Submissions: ${it.size}\n") }
-        sb.append("https://news.ycombinator.com/user?id=$username")
+        sb.append("https://news.ycombinator.com/user?id=${seg(username)}")
         sb.toString()
     }
 
@@ -177,7 +177,7 @@ class DeepApis(private val client: OkHttpClient = Http.client) {
             }
         }
         if (emails.isEmpty() && repos.isEmpty()) sb.append("No public activity in the last 90 days.\n")
-        sb.append("\nhttps://github.com/$username")
+        sb.append("\nhttps://github.com/${seg(username)}")
         sb.toString()
     }
 
@@ -292,7 +292,7 @@ class DeepApis(private val client: OkHttpClient = Http.client) {
             sb.append("\nRecent posts (${posts.size}):\n")
             posts.takeLast(10).reversed().forEach { sb.append("• ${it.take(220)}\n") }
         }
-        sb.append("\nhttps://t.me/$name")
+        sb.append("\nhttps://t.me/${seg(name)}")
         sb.toString()
     }
 
@@ -321,7 +321,7 @@ class DeepApis(private val client: OkHttpClient = Http.client) {
                         o.int("followersCount")?.let { append("\n  ${it} followers, ${o.int("followsCount") ?: 0} following, ${o.int("postsCount") ?: 0} posts") }
                         o.str("description")?.takeIf { it.isNotBlank() }?.let { append("\n  ${it.replace("\n", " ").take(200)}") }
                         o.str("createdAt")?.let { append("\n  Joined ${it.substringBefore('T')}") }
-                        append("\n  https://bsky.app/profile/$h")
+                        append("\n  https://bsky.app/profile/${seg(h)}")
                     }
                 }
             },
@@ -359,7 +359,7 @@ class DeepApis(private val client: OkHttpClient = Http.client) {
                         o.str("location")?.takeIf { l -> l.isNotBlank() }?.let { l -> append(" · $l") }
                         o.str("date_joined")?.let { d -> append("\n  Joined ${d.substringBefore('T')}") }
                         o.str("profile_url")?.takeIf { p -> p.isNotBlank() }?.let { p -> append("\n  Linked: $p") }
-                        append("\n  https://hub.docker.com/u/$u")
+                        append("\n  https://hub.docker.com/u/${seg(u)}")
                     }
                 }
             },
@@ -378,7 +378,7 @@ class DeepApis(private val client: OkHttpClient = Http.client) {
             "Bitbucket" to {
                 val o = json.parseToJsonElement(get("https://api.bitbucket.org/2.0/users/$e")).jsonObject
                 o.str("display_name")?.let {
-                    "$it\n  https://bitbucket.org/$u"
+                    "$it\n  https://bitbucket.org/${seg(u)}"
                 }
             },
             "npm" to {
@@ -405,7 +405,7 @@ class DeepApis(private val client: OkHttpClient = Http.client) {
                 contribs?.takeIf { it.isNotEmpty() }?.let { arr ->
                     val pages = arr.mapNotNull { (it as? JsonObject).str("title") }.distinct()
                     "  ${arr.size} recent edits\n  Pages: ${pages.take(8).joinToString(", ")}" +
-                        "\n  https://en.wikipedia.org/wiki/Special:Contributions/$u"
+                        "\n  https://en.wikipedia.org/wiki/Special:Contributions/${seg(u)}"
                 }
             }
         )
@@ -464,7 +464,7 @@ class DeepApis(private val client: OkHttpClient = Http.client) {
             sb.append("\nCentre of recent activity: %.4f, %.4f".format(aLat, aLon))
             sb.append("\n(People overwhelmingly map where they live and travel.)")
         }
-        sb.append("\nhttps://www.openstreetmap.org/user/$u")
+        sb.append("\nhttps://www.openstreetmap.org/user/${seg(u)}")
         sb.toString()
     }
 
@@ -961,8 +961,8 @@ class DeepApis(private val client: OkHttpClient = Http.client) {
             }
         }
         if (reg != null) {
-            sb.append("\nHistory: https://globe.adsb.lol/?reg=$reg\n")
-            sb.append("Photos: https://www.jetphotos.com/registration/$reg\n")
+            sb.append("\nHistory: https://globe.adsb.lol/?reg=${seg(reg ?: "")}\n")
+            sb.append("Photos: https://www.jetphotos.com/registration/${seg(reg ?: "")}\n")
         }
         sb.toString()
     }
@@ -1028,6 +1028,144 @@ class DeepApis(private val client: OkHttpClient = Http.client) {
         sb.append("\nExplorer: https://etherscan.io/address/$a")
         sb.append("\nLabels: https://etherscan.io/address/$a#analytics")
         return sb.toString()
+    }
+
+    /**
+     * Generates the address patterns an organisation is likely to use for a
+     * person, then checks which of them the mail server will actually accept
+     * on the evidence available without sending mail: whether the domain has
+     * MX at all, and whether a catch-all is in play.
+     *
+     * Input is "First Last @domain.com" or "First Last domain.com".
+     */
+    fun emailPermutations(input: String): Result<String> = runCatching {
+        val raw = input.trim()
+        val domain = Regex("""[@\s]([a-z0-9-]+(?:\.[a-z0-9-]+)+)\s*$""", RegexOption.IGNORE_CASE)
+            .find(raw)?.groupValues?.get(1)?.lowercase()
+            ?: return@runCatching "Give a name and a domain, e.g. 'Jane Doe @example.com'."
+        val nameParts = raw.substringBeforeLast(domain).trim().trimEnd('@').trim()
+            .split(Regex("""\s+""")).filter { it.isNotBlank() }.map { it.lowercase() }
+        if (nameParts.size < 2) {
+            return@runCatching "Give at least a first and last name, e.g. 'Jane Doe @$domain'."
+        }
+        val first = nameParts.first()
+        val last = nameParts.last()
+        val middle = nameParts.drop(1).dropLast(1).firstOrNull()
+        val f = first.first()
+        val l = last.first()
+        val m = middle?.first()
+
+        val patterns = linkedSetOf(
+            "$first.$last", "$first$last", "$f$last", "$first$l", "$f.$last",
+            "$last.$first", "$last$first", "$last$f", "$first-$last", "${first}_${last}",
+            first, last, "$f$l", "$first.$l", "$f.$l"
+        )
+        if (m != null) {
+            patterns.add("$f$m$last"); patterns.add("$first.$middle.$last"); patterns.add("$f$m$l")
+        }
+
+        val sb = StringBuilder("Likely addresses — ${nameParts.joinToString(" ") { it.replaceFirstChar(Char::uppercase) }} at $domain\n")
+
+        // What the domain's mail setup says about deliverability.
+        val mx = runCatching {
+            val o = json.parseToJsonElement(get("https://dns.google/resolve?name=$domain&type=MX")).jsonObject
+            (o["Answer"] as? JsonArray)?.mapNotNull { (it as? JsonObject).str("data") } ?: emptyList()
+        }.getOrDefault(emptyList())
+        if (mx.isEmpty()) {
+            sb.append("\nWARNING: $domain publishes no MX record, so it may not receive mail at all.\n")
+        } else {
+            sb.append("\nMail handled by: ${mx.take(3).joinToString(", ") { it.substringAfter(" ").trimEnd('.') }}\n")
+            val provider = when {
+                mx.any { it.contains("google", true) } -> "Google Workspace"
+                mx.any { it.contains("outlook", true) || it.contains("protection.outlook", true) } -> "Microsoft 365"
+                mx.any { it.contains("zoho", true) } -> "Zoho"
+                mx.any { it.contains("protonmail", true) || it.contains("proton.me", true) } -> "Proton"
+                else -> null
+            }
+            provider?.let { sb.append("Provider: $it\n") }
+        }
+
+        sb.append("\n${patterns.size} candidate addresses, commonest first:\n")
+        patterns.forEach { sb.append("• $it@$domain\n") }
+        sb.append("\nThese are generated patterns, not confirmed accounts. ")
+        sb.append("Run the breach check or the account finder against the ones that matter — ")
+        sb.append("a hit there is evidence the address is real.")
+        sb.toString()
+    }
+
+    /**
+     * Typosquat sweep: generates the lookalike domains an attacker would
+     * register, then resolves each one. Only domains that actually exist are
+     * reported, with their address and mail setup.
+     */
+    suspend fun typosquat(input: String): String = coroutineScope {
+        val domain = input.trim().lowercase()
+            .removePrefix("https://").removePrefix("http://").substringBefore("/").removePrefix("www.")
+        val name = domain.substringBefore(".")
+        val tld = domain.substringAfter(".")
+        if (name.length < 3) return@coroutineScope "Domain too short to permute."
+
+        val keyboard = mapOf(
+            'q' to "wa", 'w' to "qes", 'e' to "wrd", 'r' to "etf", 't' to "ryg", 'y' to "tuh",
+            'u' to "yij", 'i' to "uok", 'o' to "ipl", 'p' to "ol", 'a' to "qsz", 's' to "awdx",
+            'd' to "serfc", 'f' to "drtgv", 'g' to "ftyhb", 'h' to "gyujn", 'j' to "huikm",
+            'k' to "jiol", 'l' to "kop", 'z' to "asx", 'x' to "zsdc", 'c' to "xdfv",
+            'v' to "cfgb", 'b' to "vghn", 'n' to "bhjm", 'm' to "njk"
+        )
+        val variants = LinkedHashSet<String>()
+        // Character omission, duplication, transposition and fat-finger swaps.
+        for (i in name.indices) {
+            variants.add(name.removeRange(i, i + 1))
+            variants.add(name.substring(0, i) + name[i] + name.substring(i))
+            if (i < name.length - 1) {
+                val chars = name.toCharArray()
+                val t = chars[i]; chars[i] = chars[i + 1]; chars[i + 1] = t
+                variants.add(String(chars))
+            }
+            keyboard[name[i]]?.forEach { k ->
+                variants.add(name.substring(0, i) + k + name.substring(i + 1))
+            }
+        }
+        // Homoglyphs and common additions.
+        variants.add(name.replace("o", "0")); variants.add(name.replace("l", "1"))
+        variants.add(name.replace("i", "1")); variants.add(name.replace("e", "3"))
+        variants.add(name.replace("rn", "m")); variants.add(name.replace("m", "rn"))
+        listOf("-secure", "-login", "-support", "-mail", "secure", "login", "app", "s").forEach {
+            variants.add("$name$it"); variants.add("$it$name")
+        }
+        variants.remove(name)
+
+        val otherTlds = listOf("com", "net", "org", "co", "info", "online", "site", "xyz", "io", "app")
+            .filter { it != tld }.map { "$name.$it" }
+        val candidates = (variants.map { "$it.$tld" } + otherTlds).distinct().take(220)
+
+        val live = candidates.map { cand ->
+            async {
+                val a = runCatching {
+                    val o = json.parseToJsonElement(
+                        get("https://dns.google/resolve?name=$cand&type=A")
+                    ).jsonObject
+                    (o["Answer"] as? JsonArray)?.mapNotNull { (it as? JsonObject).str("data") }
+                        ?.filter { Regex("""^(?:\d{1,3}\.){3}\d{1,3}$""").matches(it) } ?: emptyList()
+                }.getOrDefault(emptyList())
+                if (a.isEmpty()) null else cand to a.first()
+            }
+        }.mapNotNull { it.await() }
+
+        buildString {
+            append("Typosquat sweep — $domain\n")
+            append("${candidates.size} lookalikes generated and resolved; ${live.size} are registered and live.\n")
+            if (live.isEmpty()) {
+                append("\nNone of the obvious lookalikes resolve. That is unusual for a well-known brand ")
+                append("and good news for this one.")
+            } else {
+                append("\nRegistered lookalikes:\n")
+                live.forEach { (d, ip) -> append("• $d → $ip\n") }
+                append("\nA live lookalike is not proof of malice — brands register their own ")
+                append("defensively. Check each one's registration date and TLS certificate ")
+                append("to tell a defensive registration from a phishing host.")
+            }
+        }
     }
 
     // ------------------------------------------------------------------
@@ -1199,6 +1337,11 @@ class DeepApis(private val client: OkHttpClient = Http.client) {
     // ------------------------------------------------------------------
     // Helpers
     // ------------------------------------------------------------------
+
+    /** Percent-encodes a value for use inside a displayed URL path. A raw
+     *  space in a link makes it unopenable, and names routinely contain them. */
+    private fun seg(v: String): String =
+        URLEncoder.encode(v.trim(), "UTF-8").replace("+", "%20")
 
     private fun JsonObject?.str(k: String) = (this?.get(k) as? JsonPrimitive)?.contentOrNull
     private fun JsonObject?.int(k: String) = (this?.get(k) as? JsonPrimitive)?.intOrNull

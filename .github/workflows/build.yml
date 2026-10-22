@@ -76,6 +76,24 @@ jobs:
           if [ ! -s "$A/sdn.csv" ]; then echo "placeholder" > "$A/sdn.csv"; fi
           # WhatsMyName ruleset for on-device account enumeration (offline-ready).
           curl -sSL https://raw.githubusercontent.com/WebBreacher/WhatsMyName/main/wmn-data.json -o "$A/wmn-data.json" || true
+          # Sherlock and Maigret are site rulesets underneath; the app runs
+          # their rules natively, so bundle the data rather than the tools.
+          curl -sSL https://raw.githubusercontent.com/sherlock-project/sherlock/master/sherlock_project/resources/data.json -o "$A/sherlock.json" || true
+          if [ ! -s "$A/sherlock.json" ]; then
+            curl -sSL https://raw.githubusercontent.com/sherlock-project/sherlock/master/sherlock/resources/data.json -o "$A/sherlock.json" || true
+          fi
+          curl -sSL https://raw.githubusercontent.com/soxoj/maigret/main/maigret/resources/data.json -o "$A/maigret.json" || true
+          # Curated tool catalogues, merged into the in-app directory.
+          curl -sSL https://raw.githubusercontent.com/jivoi/awesome-osint/master/README.md -o "$A/awesome-osint.md" || true
+          curl -sSL https://raw.githubusercontent.com/cipher387/osint_stuff_tool_collection/main/README.md -o "$A/osint-stuff.md" || true
+          curl -sSL https://raw.githubusercontent.com/The-Osint-Toolbox/OSINT-Toolbox/main/README.md -o "$A/osint-toolbox.md" || true
+          for f in sherlock.json maigret.json awesome-osint.md osint-stuff.md osint-toolbox.md; do
+            if [ -s "$A/$f" ]; then
+              echo "bundled $f ($(wc -c < "$A/$f") bytes)"
+            else
+              echo "WARNING: $f missing or empty"; rm -f "$A/$f"
+            fi
+          done
           # Raw infrastructure datasets -> compact JSON bundled in the APK.
           curl -sSL https://davidmegginson.github.io/ourairports-data/airports.csv -o /tmp/airports.csv || true
           curl -sSL https://raw.githubusercontent.com/wri/global-power-plant-database/master/output_database/global_power_plant_database.csv -o /tmp/powerplants.csv || true

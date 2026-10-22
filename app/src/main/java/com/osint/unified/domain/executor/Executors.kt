@@ -195,6 +195,8 @@ class DirectToolExecutor(
                 "github" -> apis.githubUser(input)
                 "ghactivity" -> deep.githubActivity(input)
                 "socialsweep" -> runCatching { deep.socialSweep(input) }
+                "emailperm" -> deep.emailPermutations(input)
+                "typosquat" -> runCatching { deep.typosquat(input) }
                 "osmuser" -> deep.osmUser(input)
                 "asnintel" -> deep.asnIntel(input)
                 "iprep" -> deep.ipReputation(input)

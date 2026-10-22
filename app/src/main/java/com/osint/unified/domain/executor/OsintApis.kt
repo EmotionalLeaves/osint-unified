@@ -492,8 +492,8 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
                 add("Login / admin", g("site:$v (inurl:login OR inurl:admin OR inurl:dashboard)"))
                 add("Config / backups", g("site:$v (ext:env OR ext:bak OR ext:sql OR ext:log OR ext:conf)"))
                 add("crt.sh certs", "https://crt.sh/?q=${enc(v)}")
-                add("urlscan.io", "https://urlscan.io/domain/$v")
-                add("Wayback", "https://web.archive.org/web/*/$v*")
+                add("urlscan.io", "https://urlscan.io/domain/${seg(v)}")
+                add("Wayback", "https://web.archive.org/web/*/${seg(v)}*")
             }
             isName -> {
                 add("Exact (Google)", g("\"$v\""))
@@ -510,12 +510,12 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
                 add("Documents", g("\"$v\" (filetype:pdf OR filetype:docx)"))
             }
             else -> {
-                add("GitHub", "https://github.com/$handle")
-                add("X / Twitter", "https://x.com/$handle")
-                add("Instagram", "https://www.instagram.com/$handle")
-                add("Reddit", "https://www.reddit.com/user/$handle")
-                add("TikTok", "https://www.tiktok.com/@$handle")
-                add("YouTube", "https://www.youtube.com/@$handle")
+                add("GitHub", "https://github.com/${seg(handle)}")
+                add("X / Twitter", "https://x.com/${seg(handle)}")
+                add("Instagram", "https://www.instagram.com/${seg(handle)}")
+                add("Reddit", "https://www.reddit.com/user/${seg(handle)}")
+                add("TikTok", "https://www.tiktok.com/@${seg(handle)}")
+                add("YouTube", "https://www.youtube.com/@${seg(handle)}")
                 add("Twitch", "https://www.twitch.tv/$handle")
                 add("Telegram", "https://t.me/$handle")
                 add("Mentions", g("\"$handle\""))
@@ -637,6 +637,11 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
             return body
         }
     }
+
+    /** Percent-encodes a value for use inside a displayed URL path, so a name
+     *  with a space still produces an openable link. */
+    private fun seg(v: String): String =
+        URLEncoder.encode(v.trim(), "UTF-8").replace("+", "%20")
 
     private fun md5(s: String): String =
         MessageDigest.getInstance("MD5").digest(s.toByteArray()).joinToString("") { "%02x".format(it) }

@@ -94,7 +94,7 @@ class ObservableRouter {
         val ids = when (observable) {
             is Observable.Email -> listOf("breaches", "gravatar", "emailaccounts", "hudsonrock", "emailgithub", "mailsec", "websearch", "dorks", "framework", "holehe", "ghunt", "h8mail")
             is Observable.Username -> listOf("keybase", "socialsweep", "github", "ghactivity", "sherlock", "maigret", "blackbird", "reddit", "hackernews", "telegram", "osmuser", "wikidata", "websearch", "dorks", "framework")
-            is Observable.Domain -> listOf("subfinder", "crtsh", "subsweep", "dns", "tlscert", "mailsec", "headers", "sitefiles", "rdap", "hostintel", "otx", "httpx", "shodan", "urlscan", "waybackurls", "gau", "webcrawl", "wayback", "archive", "dorks", "framework", "amass", "nuclei")
+            is Observable.Domain -> listOf("subfinder", "crtsh", "subsweep", "dns", "tlscert", "mailsec", "headers", "sitefiles", "rdap", "hostintel", "otx", "typosquat", "httpx", "shodan", "urlscan", "waybackurls", "gau", "webcrawl", "wayback", "archive", "dorks", "framework", "amass", "nuclei")
             is Observable.IpAddress -> listOf("ipinfo", "ptr", "iprep", "torexit", "torrelay", "shodan", "bgpview", "asnintel", "otx", "rdap", "hostintel", "dorks", "framework", "httpx", "nuclei")
             is Observable.PhoneNumber -> listOf("phoneinfoga", "websearch", "dorks", "framework")
             is Observable.Coordinate -> listOf("revgeo", "sunterrain", "wikinearby", "overpass_turbo", "milsites", "cctvnear", "ukcrime", "histweather", "framework")
@@ -102,7 +102,7 @@ class ObservableRouter {
             is Observable.ImageUrl -> listOf("exif", "reverseimage", "archive", "framework")
             is Observable.Wallet -> listOf("wallet", "websearch", "dorks", "framework")
             is Observable.Aircraft -> listOf("aircraftreg", "websearch", "dorks", "framework")
-            is Observable.Name -> listOf("websearch", "wikidata", "gleif", "edgar", "sanctions", "fbi", "geocode", "gdelt", "dorks", "framework")
+            is Observable.Name -> listOf("websearch", "emailperm", "wikidata", "gleif", "edgar", "sanctions", "fbi", "geocode", "gdelt", "dorks", "framework")
             is Observable.Unknown -> emptyList()
         }
         return ids.mapNotNull { ToolRegistry.byId(it) }
