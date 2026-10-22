@@ -5,6 +5,7 @@ import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
 import kotlin.math.sqrt
+import java.util.Locale
 
 /**
  * Everything the globe currently knows about one place.
@@ -118,7 +119,7 @@ object AreaReport {
         blips("Tropical cyclone", state.cyclones)
         blips("Disaster alert", state.gdacs)
         blips("Weather alert", state.weather)
-        sweep("Earthquake", state.quakes, { it.lat }, { it.lon }, { "M%.1f".format(it.mag) })
+        sweep("Earthquake", state.quakes, { it.lat }, { it.lon }, { it.label }, { it.url })
         blips("Volcano", state.volcanoes)
         blips("Wildfire", state.fires)
         sweep("Natural event", state.naturalEvents, { it.lat }, { it.lon }, { "${it.category}: ${it.title}" })
@@ -164,7 +165,7 @@ object AreaReport {
 
     fun fmtKm(km: Double): String = when {
         km < 1 -> "${(km * 1000).toInt()} m"
-        km < 10 -> "%.1f km".format(km)
+        km < 10 -> "%.1f km".format(Locale.US, km)
         else -> "${km.toInt()} km"
     }
 }

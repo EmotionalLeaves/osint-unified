@@ -1,5 +1,7 @@
 package com.osint.unified.ui.godeye
 
+import java.util.Locale
+
 /**
  * What is happening in the world right now, from the layers already loaded.
  *
@@ -161,7 +163,7 @@ object WorldBrief {
                         state.quakes.any { it.mag >= 5.0 } -> 2
                         else -> 1
                     },
-                    shown.map { Entry("M%.1f".format(it.mag), it.lat, it.lon) },
+                    shown.map { Entry(it.label, it.lat, it.lon, it.url) },
                     note = if (strong.isEmpty()) "nothing above M4.5" else null
                 )
             )

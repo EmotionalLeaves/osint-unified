@@ -11,6 +11,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.util.Locale
 
 /** Current space weather, condensed into one HUD line plus active warnings. */
 data class SpaceWeather(
@@ -21,7 +22,7 @@ data class SpaceWeather(
     /** e.g. "Kp 4.0 · X-ray C2.1 · 2 alerts" */
     val summary: String
         get() = buildString {
-            append("Kp %.1f".format(kp))
+            append("Kp %.1f".format(Locale.US, kp))
             if (xrayClass.isNotBlank()) append(" · X-ray $xrayClass")
             if (alerts.isNotEmpty()) append(" · ${alerts.size} alert${if (alerts.size == 1) "" else "s"}")
         }
@@ -101,7 +102,7 @@ class SpaceWeatherDataSource(private val client: OkHttpClient = Http.client) {
             flux >= 1e-7 -> "B" to 1e-7
             else -> "A" to 1e-8
         }
-        return "%s%.1f".format(letter, flux / scale)
+        return "%s%.1f".format(Locale.US, letter, flux / scale)
     }
 
     private fun get(url: String): String {

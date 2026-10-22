@@ -6,6 +6,7 @@ import kotlin.math.pow
 import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlin.math.tan
+import java.util.Locale
 
 /**
  * Self-contained WGS84 lat/lon -> MGRS (Military Grid Reference System)
@@ -61,6 +62,6 @@ object Mgrs {
 
         val e = (easting % 100000).toInt()
         val nr = (northing % 100000).toInt()
-        return "%d%c %c%c %05d %05d".format(zone, band, col, row, e, nr)
+        return "%d%c %c%c %05d %05d".format(Locale.US, zone, band, col, row, e, nr)
     }
 }

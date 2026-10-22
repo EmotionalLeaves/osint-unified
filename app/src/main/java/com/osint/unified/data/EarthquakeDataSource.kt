@@ -7,7 +7,9 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import okhttp3.OkHttpClient
@@ -35,8 +37,20 @@ class EarthquakeDataSource(private val client: OkHttpClient = Http.client) {
                     val coords = (o["geometry"] as? JsonObject)?.get("coordinates")?.jsonArray ?: return@mapNotNull null
                     val lon = (coords.getOrNull(0) as? JsonPrimitive)?.doubleOrNull ?: return@mapNotNull null
                     val lat = (coords.getOrNull(1) as? JsonPrimitive)?.doubleOrNull ?: return@mapNotNull null
-                    val mag = ((o["properties"] as? JsonObject)?.get("mag") as? JsonPrimitive)?.doubleOrNull ?: 0.0
-                    Quake(lat, lon, mag)
+                    val props = o["properties"] as? JsonObject
+                    fun p(k: String) = (props?.get(k) as? JsonPrimitive)
+                    val mag = p("mag")?.doubleOrNull ?: 0.0
+                    Quake(
+                        lat = lat,
+                        lon = lon,
+                        mag = mag,
+                        // USGS already names the place and times the event;
+                        // the layer was throwing both away.
+                        place = p("place")?.contentOrNull.orEmpty(),
+                        atMillis = p("time")?.longOrNull,
+                        depthKm = (coords.getOrNull(2) as? JsonPrimitive)?.doubleOrNull,
+                        url = p("url")?.contentOrNull
+                    )
                 }
             }
         } catch (e: Exception) {

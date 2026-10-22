@@ -83,7 +83,7 @@ class WorldBriefTest {
         )
         val brief = WorldBrief.build(state)
         assertTrue(brief.sections.first().title.startsWith("EARTHQUAKES"))
-        assertEquals("M6.4", brief.sections.first().entries.first().text)
+        assertTrue(brief.sections.first().entries.first().text.startsWith("M6.4"))
     }
 
     /** A geomagnetic storm is news; a quiet magnetosphere is not. */

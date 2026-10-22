@@ -465,7 +465,7 @@ class DeepApis(
             if (minLat != null && maxLat != null && minLon != null && maxLon != null) {
                 val cLat = (minLat + maxLat) / 2; val cLon = (minLon + maxLon) / 2
                 centres.add(cLat to cLon)
-                sb.append("\n  Near %.4f, %.4f".format(cLat, cLon))
+                sb.append("\n  Near %.4f, %.4f".format(Locale.US, cLat, cLon))
             }
             tags.str("created_by")?.let { sb.append("\n  Editor: $it") }
         }
@@ -473,7 +473,7 @@ class DeepApis(
         if (centres.isNotEmpty()) {
             val aLat = centres.sumOf { it.first } / centres.size
             val aLon = centres.sumOf { it.second } / centres.size
-            sb.append("\nCentre of recent activity: %.4f, %.4f".format(aLat, aLon))
+            sb.append("\nCentre of recent activity: %.4f, %.4f".format(Locale.US, aLat, aLon))
             sb.append("\n(People overwhelmingly map where they live and travel.)")
         }
         sb.append("\nhttps://www.openstreetmap.org/user/${seg(u)}")
@@ -991,7 +991,7 @@ class DeepApis(
      *  street-level imagery from KartaView. */
     fun photosNear(input: String): Result<String> = runCatching {
         val (lat, lon) = parseCoord(input) ?: return@runCatching "Not a coordinate: $input"
-        val sb = StringBuilder("Imagery near %.5f, %.5f\n".format(lat, lon))
+        val sb = StringBuilder("Imagery near %.5f, %.5f\n".format(Locale.US, lat, lon))
 
         runCatching {
             val pages = (json.parseToJsonElement(
@@ -1081,7 +1081,7 @@ class DeepApis(
                 a.str("flight")?.trim()?.takeIf { it.isNotBlank() }?.let { sb.append("Callsign: $it\n") }
                 val la = a.dbl("lat"); val lo = a.dbl("lon")
                 if (la != null && lo != null) {
-                    sb.append("Position: %.4f, %.4f\n".format(la, lo))
+                    sb.append("Position: %.4f, %.4f\n".format(Locale.US, la, lo))
                     com.osint.unified.domain.Mgrs.from(la, lo)?.let { sb.append("MGRS: $it\n") }
                     sb.append("Map: https://globe.adsb.lol/?icao=${hex ?: ""}&zoom=9&lat=$la&lon=$lo\n")
                 }
@@ -1115,9 +1115,9 @@ class DeepApis(
         val o = json.parseToJsonElement(get("https://blockchain.info/rawaddr/$a?limit=10")).jsonObject
         val sb = StringBuilder("Bitcoin address — $a\n")
         val sat = 100_000_000.0
-        o.dbl("final_balance")?.let { sb.append("Balance: %.8f BTC\n".format(it / sat)) }
-        o.dbl("total_received")?.let { sb.append("Total received: %.8f BTC\n".format(it / sat)) }
-        o.dbl("total_sent")?.let { sb.append("Total sent: %.8f BTC\n".format(it / sat)) }
+        o.dbl("final_balance")?.let { sb.append("Balance: %.8f BTC\n".format(Locale.US, it / sat)) }
+        o.dbl("total_received")?.let { sb.append("Total received: %.8f BTC\n".format(Locale.US, it / sat)) }
+        o.dbl("total_sent")?.let { sb.append("Total sent: %.8f BTC\n".format(Locale.US, it / sat)) }
         o.int("n_tx")?.let { sb.append("Transactions: $it\n") }
         val txs = o["txs"] as? JsonArray
         val counterparties = LinkedHashSet<String>()
@@ -1147,7 +1147,7 @@ class DeepApis(
             val o = json.parseToJsonElement(
                 get("https://api.ethplorer.io/getAddressInfo/$a?apiKey=freekey")
             ).jsonObject
-            ((o["ETH"] as? JsonObject)?.dbl("balance"))?.let { sb.append("Balance: %.6f ETH\n".format(it)) }
+            ((o["ETH"] as? JsonObject)?.dbl("balance"))?.let { sb.append("Balance: %.6f ETH\n".format(Locale.US, it)) }
             o.int("countTxs")?.let { sb.append("Transactions: $it\n") }
             val tokens = o["tokens"] as? JsonArray
             if (!tokens.isNullOrEmpty()) {
@@ -1317,7 +1317,7 @@ class DeepApis(
      *  photo's shadows match a claimed place and time. */
     fun sunAndTerrain(input: String): Result<String> = runCatching {
         val (lat, lon) = parseCoord(input) ?: return@runCatching "Not a coordinate: $input"
-        val sb = StringBuilder("Terrain & sun — %.5f, %.5f\n".format(lat, lon))
+        val sb = StringBuilder("Terrain & sun — %.5f, %.5f\n".format(Locale.US, lat, lon))
         runCatching {
             val o = json.parseToJsonElement(
                 get("https://api.open-meteo.com/v1/elevation?latitude=$lat&longitude=$lon")
@@ -1330,12 +1330,12 @@ class DeepApis(
         val now = Date()
         val sun = solarPosition(lat, lon, now)
         sb.append("\nSun right now (${utc(now.time)}):\n")
-        sb.append("Elevation: %.1f°\n".format(sun.first))
-        sb.append("Azimuth: %.1f° (compass bearing to the sun)\n".format(sun.second))
+        sb.append("Elevation: %.1f°\n".format(Locale.US, sun.first))
+        sb.append("Azimuth: %.1f° (compass bearing to the sun)\n".format(Locale.US, sun.second))
         if (sun.first > 0) {
             val shadowBearing = (sun.second + 180.0) % 360.0
             val ratio = 1.0 / tan(Math.toRadians(sun.first))
-            sb.append("Shadows fall toward %.0f° and are %.2f× the object's height.\n".format(shadowBearing, ratio))
+            sb.append("Shadows fall toward %.0f° and are %.2f× the object's height.\n".format(Locale.US, shadowBearing, ratio))
         } else {
             sb.append("The sun is below the horizon here — it is night.\n")
         }
@@ -1373,7 +1373,7 @@ class DeepApis(
         fun col(k: String) = (o[k] as? JsonArray)?.map { (it as? JsonPrimitive)?.contentOrNull ?: "-" } ?: emptyList()
         val days = col("time"); val tmax = col("temperature_2m_max"); val tmin = col("temperature_2m_min")
         val rain = col("precipitation_sum"); val snow = col("snowfall_sum"); val code = col("weathercode")
-        val sb = StringBuilder("Historical weather — %.4f, %.4f\n$start to $end (UTC)\n\n".format(lat, lon))
+        val sb = StringBuilder("Historical weather — %.4f, %.4f\n$start to $end (UTC)\n\n".format(Locale.US, lat, lon))
         days.indices.forEach { i ->
             sb.append("${days[i]}  ${tmin.getOrNull(i)}–${tmax.getOrNull(i)}°C  ")
             sb.append("rain ${rain.getOrNull(i)}mm  snow ${snow.getOrNull(i)}cm  ")
@@ -1390,7 +1390,7 @@ class DeepApis(
         val arr = json.parseToJsonElement(
             get("https://data.police.uk/api/crimes-street/all-crime?lat=$lat&lng=$lon")
         ) as? JsonArray ?: return@runCatching "No UK crime data for that point (UK only)."
-        if (arr.isEmpty()) return@runCatching "UK crime data: nothing reported near %.4f, %.4f (or outside the UK).".format(lat, lon)
+        if (arr.isEmpty()) return@runCatching "UK crime data: nothing reported near %.4f, %.4f (or outside the UK).".format(Locale.US, lat, lon)
         val byCat = LinkedHashMap<String, Int>()
         val byStreet = LinkedHashMap<String, Int>()
         var month = ""
@@ -1401,7 +1401,7 @@ class DeepApis(
                 ?.let { byStreet[it] = (byStreet[it] ?: 0) + 1 }
             o.str("month")?.let { month = it }
         }
-        val sb = StringBuilder("UK street crime — %.4f, %.4f\n".format(lat, lon))
+        val sb = StringBuilder("UK street crime — %.4f, %.4f\n".format(Locale.US, lat, lon))
         sb.append("${arr.size} offences reported in $month within ~1 mile\n\nBy category:\n")
         byCat.entries.sortedByDescending { it.value }.forEach {
             sb.append("• ${it.key.replace('-', ' ')}: ${it.value}\n")
@@ -1437,10 +1437,10 @@ class DeepApis(
                     .jsonObject["data"] as? JsonArray)?.firstOrNull()?.jsonObject
                 d?.str("epss")?.let { e ->
                     val pct = (e.toDoubleOrNull() ?: 0.0) * 100
-                    sb.append("\nEPSS: %.2f%% chance of exploitation in the next 30 days".format(pct))
+                    sb.append("\nEPSS: %.2f%% chance of exploitation in the next 30 days".format(Locale.US, pct))
                 }
                 d?.str("percentile")?.let {
-                    sb.append(" — more likely than %.1f%% of all CVEs".format((it.toDoubleOrNull() ?: 0.0) * 100))
+                    sb.append(" — more likely than %.1f%% of all CVEs".format(Locale.US, (it.toDoubleOrNull() ?: 0.0) * 100))
                 }
             }
             sb.append("\n\nhttps://nvd.nist.gov/vuln/detail/$t")

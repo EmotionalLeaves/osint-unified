@@ -110,7 +110,7 @@ class InvestigationRepository(
                         Findings.Kind.UNREACHABLE -> Findings.STATUS_UNREACHABLE
                         else -> "success"
                     },
-                    rawOutput = raw,
+                    rawOutput = cap(raw),
                     startedAt = started,
                     finishedAt = finished
                 )
@@ -135,6 +135,20 @@ class InvestigationRepository(
     }
 
     /**
+     * Keeps one result from making a whole case unopenable.
+     *
+     * Room reads a row through a CursorWindow of about two megabytes, and a
+     * row past that throws when the results flow reads it — which kills the
+     * collector, so the investigation can never be opened again. One
+     * talkative source should not be able to do that.
+     */
+    private fun cap(raw: String): String =
+        if (raw.length <= MAX_RESULT_CHARS) raw
+        else raw.take(MAX_RESULT_CHARS) +
+            "\n\n[truncated: this source returned ${raw.length / 1024} KB, " +
+            "kept the first ${MAX_RESULT_CHARS / 1024} KB]"
+
+    /**
      * Rows left mid-flight when the app was killed.
      *
      * A process death during a search leaves "running" rows that nothing
@@ -153,5 +167,9 @@ class InvestigationRepository(
          * replaced by a generic timeout just as it finishes.
          */
         const val TOOL_CAP_MS = 75_000L
+
+        /** Well inside Room's ~2 MB CursorWindow, with room for the rest of
+         *  the row and for several rows in one page. */
+        const val MAX_RESULT_CHARS = 256 * 1024
     }
 }

@@ -82,6 +82,7 @@ import org.osmdroid.util.MapTileIndex
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.views.overlay.Marker
+import java.util.Locale
 
 private val EXAMPLES = listOf("example.com", "8.8.8.8", "40.7128,-74.0060", "+14155550123", "John Smith")
 
@@ -208,7 +209,7 @@ fun GodEyeViewScreen(
                     Text(
                         "AIR ${state.aircraft.size} · SEA ${state.vessels.size} · " +
                             "SAT ${state.satellites.size} · SEIS ${state.quakes.size}" +
-                            (state.spaceWeather?.let { " · Kp %.1f".format(it.kp) } ?: ""),
+                            (state.spaceWeather?.let { " · Kp %.1f".format(Locale.US, it.kp) } ?: ""),
                         style = MaterialTheme.typography.labelSmall,
                         color = Intel.TextMid,
                         maxLines = 1,
@@ -476,7 +477,7 @@ fun GodEyeViewScreen(
                             .padding(horizontal = 12.dp, vertical = 8.dp)
                     ) {
                         Text(
-                            "%.5f, %.5f".format(tLat, tLon),
+                            "%.5f, %.5f".format(Locale.US, tLat, tLon),
                             style = MaterialTheme.typography.labelMedium,
                             color = Intel.TextHi,
                             fontFamily = FontFamily.Monospace
@@ -653,7 +654,7 @@ fun GodEyeViewScreen(
                         color = Intel.Cyan
                     )
                     Text(
-                        "%.4f, %.4f".format(report.lat, report.lon),
+                        "%.4f, %.4f".format(Locale.US, report.lat, report.lon),
                         style = MaterialTheme.typography.labelSmall,
                         color = Intel.TextLow,
                         fontFamily = FontFamily.Monospace
@@ -764,7 +765,7 @@ fun GodEyeViewScreen(
                     Spacer(Modifier.size(8.dp))
                     Text("LAT/LON", style = MaterialTheme.typography.labelSmall, color = Intel.TextLow)
                     Text(
-                        "%.5f, %.5f".format(obj.lat, obj.lon),
+                        "%.5f, %.5f".format(Locale.US, obj.lat, obj.lon),
                         style = MaterialTheme.typography.bodySmall,
                         color = Intel.TextHi, fontFamily = FontFamily.Monospace
                     )
@@ -1076,7 +1077,7 @@ private fun GlobeMap(
                     map.overlays.add(m)
                 }
             }
-            quakes.forEach { add("Earthquake", it.lat, it.lon, 0xFFF0997B.toInt(), 8, "M%.1f".format(it.mag), true) }
+            quakes.forEach { add("Earthquake", it.lat, it.lon, 0xFFF0997B.toInt(), 8, it.label, true, it.url) }
             events.forEach { add("Natural event", it.lat, it.lon, 0xFFF2C94C.toInt(), 9, "${it.category}: ${it.title}", true) }
             news.forEach { add("News hotspot", it.lat, it.lon, 0xFFFF79C6.toInt(), 7, it.label, true, it.url) }
             aurora.forEach { add("Aurora forecast", it.lat, it.lon, 0xFF66FFB2.toInt(), 6, it.label, false, it.url) }

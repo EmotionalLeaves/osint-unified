@@ -14,6 +14,7 @@ import kotlinx.serialization.json.jsonObject
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.IOException
+import java.util.Locale
 
 /**
  * Named tropical cyclones currently in the water, from the US National
@@ -80,7 +81,7 @@ class CycloneDataSource(private val client: OkHttpClient = Http.client) {
                         classes[cls]?.let { append(" · $it") }
                             ?: cls?.let { append(" · $it") }
                         if (knots != null) {
-                            append(" · %.0f kt (%.0f mph)".format(knots, knots * 1.15078))
+                            append(" · %.0f kt (%.0f mph)".format(Locale.US, knots, knots * 1.15078))
                         }
                         s("pressure")?.let { append(" · $it mb") }
                         val dir = s("movementDir")

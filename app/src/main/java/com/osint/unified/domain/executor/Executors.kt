@@ -29,6 +29,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.TimeUnit
+import java.util.Locale
 
 /**
  * Executes a single tool against an input and returns its raw output text.
@@ -604,7 +605,7 @@ class DirectToolExecutor(
                 append("• $title")
                 if (domain.isNotEmpty()) append("  ($domain)")
                 str(o, "BreachDate")?.let { append("\n  Breached: $it") }
-                num(o, "PwnCount")?.let { append("   Accounts: ${"%,d".format(it)}") }
+                num(o, "PwnCount")?.let { append("   Accounts: ${"%,d".format(Locale.US, it)}") }
                 if (classes.isNotEmpty()) append("\n  Exposed: ${classes.joinToString(", ")}")
                 if ((o["IsVerified"] as? JsonPrimitive)?.contentOrNull == "false") {
                     append("\n  Unverified by HIBP.")
@@ -762,7 +763,7 @@ class DirectToolExecutor(
                 tag("camera:type")?.let { append(" · $it") }
                 tag("surveillance")?.let { append(" · covers $it") }
                 tag("camera:mount")?.let { append(" · $it mounted") }
-                append("\n  %.1f km — %.5f, %.5f".format(
+                append("\n  %.1f km — %.5f, %.5f".format(Locale.US, 
                     haversineKm(lat, lon, eLat, eLon), eLat, eLon
                 ))
                 if (id != null) append("\n  https://www.openstreetmap.org/$type/$id")
@@ -809,7 +810,7 @@ class DirectToolExecutor(
             // rather than described.
             val mapped = runCatching { surveillanceNear(lat, lon) }.getOrNull().orEmpty()
             return@runCatching buildString {
-                append("No public traffic-camera feed within 50 km of %.4f, %.4f ".format(lat, lon))
+                append("No public traffic-camera feed within 50 km of %.4f, %.4f ".format(Locale.US, lat, lon))
                 append("(live still images today are Caltrans, California only).\n")
                 if (mapped.isEmpty()) {
                     append("OpenStreetMap has no surveillance cameras mapped within 1 km either.")
@@ -822,10 +823,10 @@ class DirectToolExecutor(
             }
         }
         buildString {
-            append("Public cameras within 50 km of %.4f, %.4f — ${near.size} found:\n".format(lat, lon))
+            append("Public cameras within 50 km of %.4f, %.4f — ${near.size} found:\n".format(Locale.US, lat, lon))
             near.forEach { (cam, km) ->
                 append("\n• ${cam.label}")
-                append("\n  %.1f km — %.5f, %.5f".format(km, cam.lat, cam.lon))
+                append("\n  %.1f km — %.5f, %.5f".format(Locale.US, km, cam.lat, cam.lon))
                 cam.url?.let { append("\n  Live still: $it") }
             }
         }
@@ -921,7 +922,7 @@ class DirectToolExecutor(
                     return Result.success("No mapped infrastructure within ${r}m of $lat, $lon.")
                 }
                 val out = buildString {
-                    append("Infrastructure within ${r}m of %.5f, %.5f\n".format(lat, lon))
+                    append("Infrastructure within ${r}m of %.5f, %.5f\n".format(Locale.US, lat, lon))
                     append("${grouped.values.sumOf { it.size }} mapped features, from OpenStreetMap.\n")
                     grouped.forEach { (label, items) ->
                         append("\n${label.uppercase()} (${items.size}):\n")

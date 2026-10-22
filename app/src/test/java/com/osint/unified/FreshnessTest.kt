@@ -44,11 +44,36 @@ class FreshnessTest {
         assertFalse(Freshness.within(now - 200 * hour, 24))
     }
 
+    /**
+     * An undated item is not current.
+     *
+     * The filter used to keep it, which meant the one test standing between
+     * a four-month-old fire and a live map failed open whenever a timestamp
+     * could not be read. A caller that genuinely has an undated feed asks
+     * for that explicitly.
+     */
     @Test
-    fun anUndatedItemIsKept() {
-        // Dropping items a feed simply does not date would empty a live
-        // layer, which is a worse failure than showing one without an age.
-        assertTrue(Freshness.within(null, 1))
+    fun anUndatedItemIsNotAssumedCurrent() {
+        assertFalse(Freshness.within(null, 1))
+        assertTrue(Freshness.within(null, 1, keepUndated = true))
+        assertEquals("undated", Freshness.agoOrUndated(null))
+    }
+
+    /**
+     * An offset is not decoration.
+     *
+     * SimpleDateFormat matched these by prefix and ignored the trailing
+     * offset, so a timestamp five hours behind UTC parsed as UTC — enough
+     * to push a current METAR outside its two-hour window, or to let a
+     * stale one in.
+     */
+    @Test
+    fun offsetsAreRespected() {
+        val utc = Freshness.parse("2026-10-22T14:00:00Z")!!
+        val minusFive = Freshness.parse("2026-10-22T09:00:00-05:00")!!
+        val plusTwo = Freshness.parse("2026-10-22T16:00:00+02:00")!!
+        assertEquals(utc, minusFive)
+        assertEquals(utc, plusTwo)
     }
 
     @Test

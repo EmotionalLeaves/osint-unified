@@ -1,6 +1,7 @@
 package com.osint.unified.domain
 
 import com.osint.unified.data.db.Result as ResultRow
+import java.util.Locale
 
 /**
  * Synthesizes a handful of headline facts across every tool result so the
@@ -28,7 +29,7 @@ object IntelSummary {
             facts += Fact("LOCATION", location)
         } else {
             ok.firstNotNullOfOrNull { GeoExtractor.firstCoordinate(it.rawOutput) }?.let { (lat, lon) ->
-                facts += Fact("COORDINATE", "%.4f, %.4f".format(lat, lon))
+                facts += Fact("COORDINATE", "%.4f, %.4f".format(Locale.US, lat, lon))
             }
         }
 

@@ -1,5 +1,7 @@
 package com.osint.unified.domain
 
+import java.util.Locale
+
 /**
  * "What am I looking at?"
  *
@@ -98,7 +100,7 @@ object Identify {
             val lat = m.groupValues[1].toDoubleOrNull()
             val lon = m.groupValues[2].toDoubleOrNull()
             if (lat != null && lon != null && lat in -90.0..90.0 && lon in -180.0..180.0) {
-                out.add(Guess("Coordinate", "Latitude %.5f, longitude %.5f.".format(lat, lon), confidence = 90))
+                out.add(Guess("Coordinate", "Latitude %.5f, longitude %.5f.".format(Locale.US, lat, lon), confidence = 90))
             }
         }
 
