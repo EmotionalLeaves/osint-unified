@@ -175,6 +175,100 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
         }
     }
 
+    /** RDAP registration data (keyless): registrar, key dates, nameservers,
+     *  org/country for a domain or IP. The modern WHOIS. */
+    fun rdap(input: String): Result<String> = runCatching {
+        val isIp = ipRegex.matches(input)
+        val url = if (isIp) "https://rdap.org/ip/$input" else "https://rdap.org/domain/$input"
+        val o = json.parseToJsonElement(getBody(url)).jsonObject
+        buildString {
+            (o["ldhName"] as? JsonPrimitive)?.contentOrNull?.let { append("Name: $it\n") }
+            (o["handle"] as? JsonPrimitive)?.contentOrNull?.let { append("Handle: $it\n") }
+            (o["country"] as? JsonPrimitive)?.contentOrNull?.let { append("Country: $it\n") }
+            (o["startAddress"] as? JsonPrimitive)?.contentOrNull?.let { append("Range: $it") }
+            (o["endAddress"] as? JsonPrimitive)?.contentOrNull?.let { append(" – $it\n") }
+            (o["events"] as? JsonArray)?.forEach { e ->
+                val eo = e.jsonObject
+                val a = (eo["eventAction"] as? JsonPrimitive)?.contentOrNull
+                val d = (eo["eventDate"] as? JsonPrimitive)?.contentOrNull
+                if (a != null && d != null) append("${a.replaceFirstChar { it.uppercase() }}: ${d.take(10)}\n")
+            }
+            (o["entities"] as? JsonArray)?.forEach { ent ->
+                val eo = ent.jsonObject
+                val role = (eo["roles"] as? JsonArray)?.firstNotNullOfOrNull { (it as? JsonPrimitive)?.contentOrNull }
+                val vcard = (eo["vcardArray"] as? JsonArray)?.getOrNull(1) as? JsonArray
+                val fn = vcard?.firstNotNullOfOrNull { row ->
+                    val r = row as? JsonArray
+                    if ((r?.getOrNull(0) as? JsonPrimitive)?.contentOrNull == "fn")
+                        (r.getOrNull(3) as? JsonPrimitive)?.contentOrNull else null
+                }
+                if (fn != null) append("${role?.replaceFirstChar { it.uppercase() } ?: "Entity"}: $fn\n")
+            }
+            val ns = (o["nameservers"] as? JsonArray)?.mapNotNull {
+                ((it as? JsonObject)?.get("ldhName") as? JsonPrimitive)?.contentOrNull
+            }
+            if (!ns.isNullOrEmpty()) append("Nameservers: ${ns.joinToString(", ")}\n")
+            if (isBlank()) append("RDAP: no structured record for $input.")
+        }
+    }
+
+    /** BGP / ASN / prefix / RIR for an IP (keyless, BGPView). */
+    fun bgpview(ip: String): Result<String> = runCatching {
+        val o = json.parseToJsonElement(getBody("https://api.bgpview.io/ip/$ip"))
+            .jsonObject["data"]?.jsonObject ?: return@runCatching "No BGP data for $ip."
+        buildString {
+            (o["ip"] as? JsonPrimitive)?.contentOrNull?.let { append("IP: $it\n") }
+            (o["ptr_record"] as? JsonPrimitive)?.contentOrNull?.let { append("PTR: $it\n") }
+            (o["prefixes"] as? JsonArray)?.firstOrNull()?.jsonObject?.let { p ->
+                (p["prefix"] as? JsonPrimitive)?.contentOrNull?.let { append("Prefix: $it\n") }
+                (p["asn"] as? JsonObject)?.let { asn ->
+                    val num = (asn["asn"] as? JsonPrimitive)?.contentOrNull
+                    val name = (asn["name"] as? JsonPrimitive)?.contentOrNull ?: ""
+                    append("ASN: AS$num $name\n")
+                    (asn["description"] as? JsonPrimitive)?.contentOrNull?.let { append("Org: $it\n") }
+                }
+                (p["country_code"] as? JsonPrimitive)?.contentOrNull?.let { append("Country: $it\n") }
+            }
+            if (isBlank()) append("No BGP data for $ip.")
+        }
+    }
+
+    /** Hudson Rock infostealer check (keyless): is this email in stealer logs. */
+    fun hudsonRock(email: String): Result<String> = runCatching {
+        val o = json.parseToJsonElement(
+            getBody("https://cavalier.hudsonrock.com/api/json/v2/osint-tools/search-by-email?email=" + URLEncoder.encode(email, "UTF-8"))
+        ).jsonObject
+        val stealers = o["stealers"] as? JsonArray
+        buildString {
+            (o["message"] as? JsonPrimitive)?.contentOrNull?.let { append("$it\n") }
+            if (stealers != null && stealers.isNotEmpty()) {
+                append("Infostealer infections: ${stealers.size}\n")
+                stealers.take(6).forEach { s ->
+                    val so = s.jsonObject
+                    val fam = (so["stealer_family"] as? JsonPrimitive)?.contentOrNull ?: "stealer"
+                    val date = (so["date_compromised"] as? JsonPrimitive)?.contentOrNull?.take(10) ?: ""
+                    append("• $fam $date\n")
+                }
+            }
+            if (isBlank()) append("No infostealer records found for this email.")
+        }
+    }
+
+    /** urlscan.io recent scans for a domain (keyless search API). */
+    fun urlscan(domain: String): Result<String> = runCatching {
+        val results = json.parseToJsonElement(
+            getBody("https://urlscan.io/api/v1/search/?q=domain:" + URLEncoder.encode(domain, "UTF-8") + "&size=10")
+        ).jsonObject["results"]?.jsonArray
+        if (results == null || results.isEmpty()) "No urlscan.io scans for $domain." else
+            "urlscan.io — ${results.size} recent scans:\n" + results.take(10).joinToString("\n") { r ->
+                val ro = r.jsonObject
+                val pageUrl = ((ro["page"] as? JsonObject)?.get("url") as? JsonPrimitive)?.contentOrNull ?: ""
+                val time = ((ro["task"] as? JsonObject)?.get("time") as? JsonPrimitive)?.contentOrNull?.take(10) ?: ""
+                val scan = (ro["result"] as? JsonPrimitive)?.contentOrNull ?: ""
+                "$pageUrl ($time)\n$scan"
+            }
+    }
+
     /** Real inline results from reliable keyless sources: Wikipedia full-text
      *  search (title + snippet + link) plus a best-effort DuckDuckGo instant
      *  answer. (The DDG HTML scrape serves a bot captcha, so it's not used.) */
