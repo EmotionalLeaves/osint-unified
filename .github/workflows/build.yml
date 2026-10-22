@@ -146,7 +146,13 @@ jobs:
             SUMMARY="${SUMMARY}$(basename "$f") $(wc -c < "$f") bytes%0A"
           done
           echo "::error title=bundled-assets::${SUMMARY}"
-          echo "::error title=rule-counts::$(python3 .github/count-assets.py)"
+          # Ship the inventory inside the APK too, so the self-test screen
+          # can show on-device exactly which datasets this build carries.
+          python3 .github/count-assets.py | tr '\n' '\n' > /tmp/counts.txt
+          COUNTS=$(cat /tmp/counts.txt)
+          echo "::error title=rule-counts::${COUNTS}"
+          printf '%s\n' "${COUNTS}" | sed 's/%0A/\n/g' > "$A/bundle-manifest.txt"
+          cat "$A/bundle-manifest.txt"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4

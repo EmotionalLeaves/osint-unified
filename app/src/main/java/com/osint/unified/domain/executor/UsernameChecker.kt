@@ -103,6 +103,18 @@ class UsernameChecker(private val appContext: Context) {
         }
     }
 
+    /** How many site rules this build actually merged, and from where.
+     *  Shown in the self-test so the count is observable on-device rather
+     *  than taken on trust. */
+    fun rulesetSummary(): String {
+        val rules = loadRules()
+        if (rules.isEmpty()) return "No username rulesets bundled in this build."
+        val bySource = rules.groupingBy { it.source }.eachCount()
+        return "${rules.size} unique site rules merged — " +
+            bySource.entries.sortedByDescending { it.value }
+                .joinToString(", ") { "${it.key} ${it.value}" }
+    }
+
     private fun checkSite(site: SiteRule, username: String): String? {
         val url = site.urlFor(username)
         if (!url.startsWith("http")) return null

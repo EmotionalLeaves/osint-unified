@@ -36,6 +36,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.osint.unified.domain.ExecutionMode
@@ -74,6 +75,48 @@ private fun sampleFor(tool: Tool): String = when (tool.inputType) {
         "cve" -> "CVE-2021-44228"
         "wikidata" -> "Tesla"
         else -> "osint"
+    }
+}
+
+/**
+ * What this build actually carries: the dataset inventory written at build
+ * time, plus the username ruleset size the app merged on this device. Both
+ * are measured rather than asserted, so a dataset whose mirror died shows up
+ * here instead of silently reducing coverage.
+ */
+@Composable
+private fun BundleManifest() {
+    val context = LocalContext.current
+    val lines = remember {
+        val manifest = runCatching {
+            context.assets.open("bundle-manifest.txt").bufferedReader().use { it.readText() }
+        }.getOrNull()?.lines()?.filter { it.isNotBlank() } ?: emptyList()
+        val live = runCatching {
+            com.osint.unified.domain.executor.UsernameChecker(context).rulesetSummary()
+        }.getOrNull()
+        manifest + listOfNotNull(live?.let { "On this device: $it" })
+    }
+    if (lines.isEmpty()) return
+    Column(
+        Modifier.fillMaxWidth().padding(vertical = 6.dp)
+            .background(Intel.Surface, RoundedCornerShape(10.dp))
+            .border(1.dp, Intel.Hairline, RoundedCornerShape(10.dp))
+            .padding(12.dp)
+    ) {
+        Text(
+            "BUNDLED DATASETS",
+            style = MaterialTheme.typography.labelSmall,
+            color = Intel.Cyan
+        )
+        lines.forEach {
+            Text(
+                it,
+                style = MaterialTheme.typography.labelSmall,
+                color = Intel.TextMid,
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier.padding(top = 3.dp)
+            )
+        }
     }
 }
 
@@ -147,6 +190,7 @@ fun DiagnosticsScreen(executors: ExecutorFactory, feeds: List<FeedProbe>, onBack
         }
     ) { pad ->
         Column(modifier = Modifier.padding(pad).fillMaxSize().padding(horizontal = 12.dp)) {
+            BundleManifest()
             val ok = results.values.count { it.status == "ok" }
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
                 Text(
