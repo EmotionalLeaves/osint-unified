@@ -92,9 +92,9 @@ class ObservableRouter {
      */
     fun suggestTools(observable: Observable): List<Tool> {
         val ids = when (observable) {
-            is Observable.Email -> listOf("breaches", "gravatar", "pgpkey", "emailaccounts", "hudsonrock", "emailgithub", "mailsec", "websearch", "dorks", "toolrun", "framework", "holehe", "ghunt", "h8mail")
+            is Observable.Email -> listOf("breaches", "breachcat", "gravatar", "pgpkey", "emailaccounts", "hudsonrock", "emailgithub", "mailsec", "websearch", "dorks", "toolrun", "framework", "holehe", "ghunt", "h8mail")
             is Observable.Username -> listOf("keybase", "socialsweep", "github", "ghactivity", "sherlock", "maigret", "blackbird", "reddit", "hackernews", "telegram", "osmuser", "wikidata", "websearch", "dorks", "toolrun", "framework")
-            is Observable.Domain -> listOf("subfinder", "crtsh", "subsweep", "commoncrawl", "dns", "tlscert", "mailsec", "headers", "sitefiles", "rdap", "hostintel", "otx", "typosquat", "httpx", "shodan", "urlscan", "waybackurls", "gau", "webcrawl", "wayback", "archive", "dorks", "toolrun", "framework", "amass", "nuclei")
+            is Observable.Domain -> listOf("subfinder", "breachcat", "crtsh", "subsweep", "commoncrawl", "dns", "tlscert", "mailsec", "headers", "sitefiles", "rdap", "hostintel", "otx", "typosquat", "httpx", "shodan", "urlscan", "waybackurls", "gau", "webcrawl", "wayback", "archive", "dorks", "toolrun", "framework", "amass", "nuclei")
             is Observable.IpAddress -> listOf("ipinfo", "ptr", "iprep", "torexit", "torrelay", "shodan", "bgpview", "asnintel", "otx", "rdap", "hostintel", "dorks", "toolrun", "framework", "httpx", "nuclei")
             is Observable.PhoneNumber -> listOf("phoneinfoga", "websearch", "dorks", "toolrun", "framework")
             is Observable.Coordinate -> listOf("revgeo", "sunterrain", "photosnear", "wikinearby", "overpass_turbo", "osmrecon", "milsites", "cctvnear", "ukcrime", "histweather", "toolrun", "framework")
@@ -102,7 +102,7 @@ class ObservableRouter {
             is Observable.ImageUrl -> listOf("exif", "reverseimage", "toolrun", "archive", "framework")
             is Observable.Wallet -> listOf("wallet", "websearch", "dorks", "toolrun", "framework")
             is Observable.Aircraft -> listOf("aircraftreg", "websearch", "dorks", "toolrun", "framework")
-            is Observable.Name -> listOf("websearch", "emailperm", "wikidata", "gleif", "edgar", "sanctions", "unsanctions", "fbi", "geocode", "gdelt", "dorks", "toolrun", "framework")
+            is Observable.Name -> listOf("websearch", "emailperm", "wikidata", "gleif", "edgar", "breachcat", "sanctions", "unsanctions", "fbi", "geocode", "gdelt", "dorks", "toolrun", "framework")
             is Observable.Unknown -> emptyList()
         }
         return ids.mapNotNull { ToolRegistry.byId(it) }

@@ -68,6 +68,21 @@ def main():
     except Exception:
         pass
 
+    # The breach catalogue is parsed on-device by field name, so the build
+    # asserts those fields are still there rather than discovering it on a
+    # phone. A schema change shows up here as a zero.
+    try:
+        breaches = json.load(open(path("breaches.json"), encoding="utf-8"))
+        usable = [
+            b for b in breaches
+            if isinstance(b, dict) and b.get("Domain") and b.get("Title")
+            and b.get("BreachDate") and isinstance(b.get("DataClasses"), list)
+        ]
+        rows.append(("Breach catalogue entries", len(breaches)))
+        rows.append(("  with domain+date+fields", len(usable)))
+    except Exception:
+        pass
+
     username_total = sum(v for k, v in rows if "sites" in k)
     if username_total:
         rows.append(("TOTAL username site rules", username_total))

@@ -9,6 +9,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -43,6 +45,7 @@ class CloudToolExecutor(
 ) : ToolExecutor {
 
     private val jsonMedia = "application/json; charset=utf-8".toMediaType()
+    private val json = Json { ignoreUnknownKeys = true }
 
     override suspend fun execute(tool: Tool, input: String): Result<String> =
         withContext(Dispatchers.IO) {
@@ -225,6 +228,7 @@ class DirectToolExecutor(
                 "histweather" -> deep.historicalWeather(input)
                 "ukcrime" -> deep.ukCrime(input)
                 "cve" -> deep.cveLookup(input)
+                "breachcat" -> breachCatalogue(input)
                 "sanctions" -> sanctions(input)
                 "unsanctions" -> unSanctions(input)
                 "pgpkey" -> deep.pgpKey(input)
@@ -400,6 +404,76 @@ class DirectToolExecutor(
                     append("\n…and ${derived.size - 40} more in the directory screen, ")
                     append("which runs any of them against this target.\n")
                 }
+            }
+        }
+    }
+
+    /**
+     * The catalogue of known public breaches, bundled in the APK.
+     *
+     * This is the other half of a breach question. Asking whether one
+     * address appears in a leak needs a service; asking what has ever
+     * leaked from a company — when, how many records, which fields —
+     * needs only the catalogue, and that answer holds for every address
+     * at that domain. It works with the radio off.
+     */
+    private fun breachCatalogue(input: String): Result<String> = runCatching {
+        val raw = input.trim().lowercase()
+        // An address is really a question about its domain.
+        val needle = raw.substringAfterLast('@').removePrefix("www.")
+        if (needle.length < 3) return@runCatching "Give at least three characters to search the breach catalogue."
+        val text = runCatching {
+            appContext.assets.open("breaches.json").bufferedReader().use { it.readText() }
+        }.getOrNull() ?: return@runCatching "The breach catalogue is not bundled in this build."
+
+        val arr = json.parseToJsonElement(text) as? JsonArray
+            ?: return@runCatching "The bundled breach catalogue could not be read."
+
+        fun str(o: JsonObject, k: String) = (o[k] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
+        fun num(o: JsonObject, k: String) = (o[k] as? JsonPrimitive)?.contentOrNull?.toLongOrNull()
+
+        val exact = ArrayList<String>()
+        val loose = ArrayList<String>()
+        var total = 0
+        arr.forEach { el ->
+            val o = el as? JsonObject ?: return@forEach
+            total++
+            val domain = str(o, "Domain")?.lowercase().orEmpty()
+            val title = str(o, "Title") ?: str(o, "Name") ?: return@forEach
+            val hitDomain = domain.isNotEmpty() &&
+                (domain == needle || domain.endsWith(".$needle") || needle.endsWith(".$domain"))
+            val hitName = title.lowercase().contains(needle)
+            if (!hitDomain && !hitName) return@forEach
+
+            val classes = (o["DataClasses"] as? JsonArray)
+                ?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }.orEmpty()
+            val line = buildString {
+                append("• $title")
+                if (domain.isNotEmpty()) append("  ($domain)")
+                str(o, "BreachDate")?.let { append("\n  Breached: $it") }
+                num(o, "PwnCount")?.let { append("   Accounts: ${"%,d".format(it)}") }
+                if (classes.isNotEmpty()) append("\n  Exposed: ${classes.joinToString(", ")}")
+                if ((o["IsVerified"] as? JsonPrimitive)?.contentOrNull == "false") {
+                    append("\n  Unverified by HIBP.")
+                }
+                str(o, "Description")?.let {
+                    append("\n  ${it.replace(Regex("<[^>]+>"), "").take(260)}")
+                }
+            }
+            if (hitDomain) exact.add(line) else loose.add(line)
+        }
+
+        val hits = exact + loose.take((12 - exact.size).coerceAtLeast(0))
+        if (hits.isEmpty()) {
+            "Breach catalogue: no record of a public breach at '$needle' (checked $total known breaches offline)."
+        } else {
+            buildString {
+                append("Known breaches involving '$needle' — ${exact.size} by domain")
+                if (loose.isNotEmpty()) append(", ${hits.size - exact.size} by name")
+                append(":\n\n")
+                append(hits.joinToString("\n\n"))
+                append("\n\nAnyone with an address at this domain may appear in these. ")
+                append("Source: Have I Been Pwned breach catalogue, bundled in the app.")
             }
         }
     }
