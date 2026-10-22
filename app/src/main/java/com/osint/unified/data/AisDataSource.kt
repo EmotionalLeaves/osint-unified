@@ -83,4 +83,14 @@ class AisDataSource(
         }
     }
 
+
+    @Serializable
+    private data class AisVessel(
+        val mmsi: String? = null,
+        val name: String? = null,
+        val lat: Double? = null,
+        val lon: Double? = null,
+        val course: Double? = null,
+        val speed: Double? = null
+    )
 }

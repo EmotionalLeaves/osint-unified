@@ -157,6 +157,43 @@ class AircraftDataSource(
         }
     }
 
+    private fun openSky(): List<Aircraft>? = try {
+        val request = Request.Builder()
+            .url("https://opensky-network.org/api/states/all")
+            .header("User-Agent", "OSINT-Unified/1.0")
+            .build()
+        client.newCall(request).execute().use { resp ->
+            val body = resp.body?.string()
+            if (!resp.isSuccessful || body.isNullOrBlank()) null
+            else {
+                val states = json.parseToJsonElement(body).jsonObject["states"]?.jsonArray
+                val out = ArrayList<Aircraft>()
+                states?.forEach { s ->
+                    if (out.size >= 20000) return@forEach
+                    val a = s as? JsonArray ?: return@forEach
+                    fun d(i: Int) = (a.getOrNull(i) as? JsonPrimitive)?.doubleOrNull
+                    fun str(i: Int) = (a.getOrNull(i) as? JsonPrimitive)?.contentOrNull
+                    val lon = d(5) ?: return@forEach
+                    val lat = d(6) ?: return@forEach
+                    out.add(
+                        Aircraft(
+                            icao = str(0).orEmpty(),
+                            callsign = str(1)?.trim().orEmpty(),
+                            lat = lat,
+                            lon = lon,
+                            altitude = d(7) ?: d(13) ?: 0.0,
+                            track = d(10) ?: 0.0,
+                            speed = d(9) ?: 0.0
+                        )
+                    )
+                }
+                out.ifEmpty { null }
+            }
+        }
+    } catch (e: Exception) {
+        null
+    }
+
     private companion object {
         val PROVIDERS = listOf(
             "https://api.adsb.lol/v2/lat/",
@@ -196,4 +233,18 @@ class AircraftDataSource(
         )
     }
 
+
+    @Serializable
+    private data class Tar1090Envelope(val aircraft: List<Tar1090Ac> = emptyList())
+
+    @Serializable
+    private data class Tar1090Ac(
+        val hex: String? = null,
+        val flight: String? = null,
+        val lat: Double? = null,
+        val lon: Double? = null,
+        val alt_baro: JsonElement? = null,
+        val track: Double? = null,
+        val gs: Double? = null
+    )
 }
