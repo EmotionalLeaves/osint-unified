@@ -49,8 +49,9 @@ import com.osint.unified.BuildConfig
 import com.osint.unified.R
 import org.osmdroid.config.Configuration
 import org.osmdroid.events.MapEventsReceiver
-import org.osmdroid.tileprovider.tilesource.XYTileSource
+import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
 import org.osmdroid.util.GeoPoint
+import org.osmdroid.util.MapTileIndex
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.views.overlay.Marker
@@ -204,16 +205,19 @@ private fun GlobeMap(
             // osmdroid refuses to fetch tiles without a user agent.
             Configuration.getInstance().userAgentValue = ctx.packageName
             MapView(ctx).apply {
-                setTileSource(
-                    XYTileSource(
-                        "CartoDark", 0, 19, 256, ".png",
-                        arrayOf(
-                            "https://a.basemaps.cartocdn.com/dark_all/",
-                            "https://b.basemaps.cartocdn.com/dark_all/",
-                            "https://c.basemaps.cartocdn.com/dark_all/"
-                        )
-                    )
-                )
+                // Esri World Imagery: keyless satellite basemap (no token), and
+                // its tile path is z/y/x with no extension, so build it directly.
+                setTileSource(object : OnlineTileSourceBase(
+                    "EsriWorldImagery", 0, 19, 256, "",
+                    arrayOf("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/")
+                ) {
+                    override fun getTileURLString(pMapTileIndex: Long): String {
+                        val z = MapTileIndex.getZoom(pMapTileIndex)
+                        val x = MapTileIndex.getX(pMapTileIndex)
+                        val y = MapTileIndex.getY(pMapTileIndex)
+                        return "$baseUrl$z/$y/$x"
+                    }
+                })
                 setMultiTouchControls(true)
                 setBackgroundColor(0xFF0B0E11.toInt())
                 controller.setZoom(2.5)
