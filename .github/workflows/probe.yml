@@ -7,6 +7,10 @@ on:
         description: "Newline or comma separated URLs to probe"
         required: false
         default: ""
+      list:
+        description: "Which bundled list to probe: feeds (probe-urls.txt) or tools (probe-tools.txt)"
+        required: false
+        default: "feeds"
 
 jobs:
   probe:
@@ -18,8 +22,10 @@ jobs:
         run: |
           set +e
           LIST="${{ github.event.inputs.urls }}"
-          if [ -z "$LIST" ] && [ -f .github/probe-urls.txt ]; then
-            LIST=$(cat .github/probe-urls.txt)
+          FILE=.github/probe-urls.txt
+          if [ "${{ github.event.inputs.list }}" = "tools" ]; then FILE=.github/probe-tools.txt; fi
+          if [ -z "$LIST" ] && [ -f "$FILE" ]; then
+            LIST=$(cat "$FILE")
           fi
           echo "$LIST" | sed '/^[[:space:]]*$/d' > /tmp/urls.txt
           OUT=""
