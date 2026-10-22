@@ -3,7 +3,9 @@ package com.osint.unified.work
 import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.app.ActivityCompat
@@ -16,7 +18,9 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import com.osint.unified.MainActivity
 import com.osint.unified.OsintApplication
+import com.osint.unified.data.WatchRepository
 import kotlinx.coroutines.CancellationException
 import java.util.concurrent.TimeUnit
 
@@ -44,7 +48,17 @@ class WatchWorker(
         return Result.success()
     }
 
-    private fun notify(changes: List<String>) {
+    /**
+     * One notification per changed target, under a group summary.
+     *
+     * A single notification with a fixed id meant the second target to
+     * change replaced the first, so a night of checks left one line about
+     * one target and no trace of the others. Each target now posts under
+     * its own id — derived from the row id, so a later change to the same
+     * target updates its notification rather than stacking another copy —
+     * and tapping one opens the watch list instead of doing nothing.
+     */
+    private fun notify(changes: List<WatchRepository.Change>) {
         val manager = applicationContext
             .getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
         manager.createNotificationChannel(
@@ -63,37 +77,80 @@ class WatchWorker(
             ) == PackageManager.PERMISSION_GRANTED
         if (!granted) return
 
-        val title = if (changes.size == 1) "A watched target changed"
-        else "${changes.size} watched targets changed"
+        val notifier = NotificationManagerCompat.from(applicationContext)
 
-        val notification = NotificationCompat.Builder(applicationContext, CHANNEL)
+        changes.forEach { change ->
+            val notification = NotificationCompat.Builder(applicationContext, CHANNEL)
+                .setSmallIcon(android.R.drawable.ic_menu_compass)
+                // A target identifier does not belong on a locked screen.
+                .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+                .setPublicVersion(
+                    NotificationCompat.Builder(applicationContext, CHANNEL)
+                        .setSmallIcon(android.R.drawable.ic_menu_compass)
+                        .setContentTitle("A watched target changed")
+                        .build()
+                )
+                .setContentTitle(change.target)
+                .setContentText(change.summary.substringAfter(" — ", change.summary))
+                .setStyle(NotificationCompat.BigTextStyle().bigText(change.summary))
+                .setGroup(GROUP)
+                .setContentIntent(openWatch(change.watchId))
+                .setAutoCancel(true)
+                .build()
+            runCatching { notifier.notify(idFor(change.watchId), notification) }
+        }
+
+        // Android collapses several notifications in a group behind this
+        // one; without it they are shown loose, and on older versions the
+        // group is ignored entirely and this is simply the total.
+        val summary = NotificationCompat.Builder(applicationContext, CHANNEL)
             .setSmallIcon(android.R.drawable.ic_menu_compass)
-            // A target identifier does not belong on a locked screen.
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
-            .setPublicVersion(
-                NotificationCompat.Builder(applicationContext, CHANNEL)
-                    .setSmallIcon(android.R.drawable.ic_menu_compass)
-                    .setContentTitle(
-                        if (changes.size == 1) "A watched target changed"
-                        else "${changes.size} watched targets changed"
-                    )
-                    .build()
+            .setContentTitle(
+                if (changes.size == 1) "A watched target changed"
+                else "${changes.size} watched targets changed"
             )
-            .setContentTitle(title)
-            .setContentText(changes.first())
-            .setStyle(NotificationCompat.BigTextStyle().bigText(changes.joinToString("\n")))
+            .setStyle(
+                NotificationCompat.InboxStyle()
+                    .also { style -> changes.take(6).forEach { style.addLine(it.target) } }
+                    .setSummaryText("Watched targets")
+            )
+            .setGroup(GROUP)
+            .setGroupSummary(true)
+            .setContentIntent(openWatch(null))
             .setAutoCancel(true)
             .build()
-
-        runCatching {
-            NotificationManagerCompat.from(applicationContext).notify(NOTIFICATION_ID, notification)
-        }
+        runCatching { notifier.notify(SUMMARY_ID, summary) }
     }
+
+    /** Opens the app on the watch list, at this target if there is one. */
+    private fun openWatch(watchId: Long?): PendingIntent {
+        val intent = Intent(applicationContext, MainActivity::class.java)
+            .setAction(ACTION_OPEN_WATCH)
+            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            .putExtra(EXTRA_WATCH_ID, watchId ?: -1L)
+        return PendingIntent.getActivity(
+            applicationContext,
+            if (watchId == null) SUMMARY_ID else idFor(watchId),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+    }
+
+    /** Stable per target, and clear of the summary's own id. */
+    private fun idFor(watchId: Long): Int =
+        NOTIFICATION_BASE + (watchId % 100_000L).toInt()
 
     companion object {
         private const val CHANNEL = "watched-targets"
-        private const val NOTIFICATION_ID = 4201
+        private const val GROUP = "com.osint.unified.WATCHES"
+        private const val NOTIFICATION_BASE = 4300
+        private const val SUMMARY_ID = 4201
         private const val WORK_NAME = "watch-check"
+
+        /** Set on the intent a watch notification launches. */
+        const val ACTION_OPEN_WATCH = "com.osint.unified.OPEN_WATCH"
+        const val EXTRA_WATCH_ID = "watchId"
 
         /**
          * Six hours, whenever there is a network.

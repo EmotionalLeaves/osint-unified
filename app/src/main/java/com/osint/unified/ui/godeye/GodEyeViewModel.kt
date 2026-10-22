@@ -844,6 +844,30 @@ class GodEyeViewModel(
             GodEyeViewModel(router, repository, aircraftDataSource, aisDataSource, earthquakeDataSource, naturalEventsDataSource, overlayDataSource, weatherDataSource, firesDataSource, satellitesDataSource, newsDataSource, gdacsDataSource, volcanoDataSource, auroraDataSource, buoyDataSource, metarDataSource, milAircraftDataSource, airQualityDataSource, seismicStationDataSource, conflictDataSource, airportDataSource, powerPlantDataSource, cctvDataSource, airspaceDataSource, spaceWeatherDataSource, cableLandingDataSource, cycloneDataSource, tsunamiDataSource, radiationDataSource, airportStatusDataSource, availableLocalTools, settings, exporter) as T
     }
 
+    /**
+     * A tool can be running against more than one identifier at once.
+     *
+     * The second pass runs the same tool against each discovered
+     * identifier, and when these were tracked as a set the first of those
+     * to finish marked the tool idle while the others were still going —
+     * so the spinner stopped and RUN ALL came back while work was in
+     * flight. Counting them keeps the state honest, and reaching zero is
+     * the only thing that removes the entry.
+     */
+    private fun Map<String, Int>.plusRunning(ids: List<String>): Map<String, Int> {
+        if (ids.isEmpty()) return this
+        val next = HashMap(this)
+        ids.forEach { next[it] = (next[it] ?: 0) + 1 }
+        return next
+    }
+
+    private fun Map<String, Int>.minusRunning(id: String): Map<String, Int> {
+        val count = this[id] ?: return this
+        val next = HashMap(this)
+        if (count <= 1) next.remove(id) else next[id] = count - 1
+        return next
+    }
+
     private companion object {
         /** How often a sleeping feed checks whether its layer came back
          *  on. Short enough to feel immediate, long enough to cost nothing. */

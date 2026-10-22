@@ -11,8 +11,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -39,22 +41,51 @@ import androidx.compose.ui.unit.dp
 import com.osint.unified.data.Freshness
 import com.osint.unified.data.WatchRepository
 import com.osint.unified.data.db.Watch
+import com.osint.unified.data.db.WatchEvent
+import com.osint.unified.domain.ToolRegistry
 import com.osint.unified.ui.theme.Intel
 import kotlinx.coroutines.launch
 
+/**
+ * The targets the app re-checks on its own, and what it found.
+ *
+ * Each row now opens into the target's history rather than showing only
+ * the most recent line. A watch exists to accumulate a record; a record
+ * that keeps overwriting itself is a status, and a status does not answer
+ * "when did this start".
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WatchScreen(
     repository: WatchRepository,
+    focusWatchId: Long? = null,
     onOpen: (String) -> Unit,
     onBack: () -> Unit
 ) {
     var list by remember { mutableStateOf<List<Watch>>(emptyList()) }
+    var unseen by remember { mutableStateOf<Map<Long, Int>>(emptyMap()) }
+    var events by remember { mutableStateOf<List<WatchEvent>>(emptyList()) }
+    var expanded by remember { mutableStateOf(focusWatchId) }
     var checking by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val listState = rememberLazyListState()
 
+    LaunchedEffect(Unit) { repository.observeAll().collect { list = it } }
     LaunchedEffect(Unit) {
-        repository.observeAll().collect { list = it }
+        repository.observeUnseen().collect { rows ->
+            unseen = rows.associate { it.watchId to it.unseen }
+        }
+    }
+    LaunchedEffect(Unit) { repository.observeRecentEvents().collect { events = it } }
+
+    // Arriving from a notification: scroll to the target it was about.
+    LaunchedEffect(focusWatchId, list.size) {
+        val id = focusWatchId ?: return@LaunchedEffect
+        val index = list.indexOfFirst { it.id == id }
+        if (index >= 0) {
+            expanded = id
+            runCatching { listState.animateScrollToItem(index) }
+        }
     }
 
     Scaffold(
@@ -83,19 +114,32 @@ fun WatchScreen(
             Text(
                 "An investigation says what is true now. A watch says what " +
                     "changed. Each target is re-checked every few hours, and " +
-                    "only a difference is reported.",
+                    "only a difference is reported. Tap a target for its history.",
                 style = MaterialTheme.typography.labelSmall,
                 color = Intel.TextMid,
                 modifier = Modifier.padding(vertical = 8.dp)
             )
 
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                val totalUnseen = unseen.values.sum()
                 Text(
-                    "${list.size} watched",
+                    "${list.size} watched" + if (totalUnseen > 0) " · $totalUnseen unseen" else "",
                     style = MaterialTheme.typography.labelMedium,
-                    color = Intel.TextMid,
+                    color = if (totalUnseen > 0) Intel.Amber else Intel.TextMid,
                     modifier = Modifier.weight(1f)
                 )
+                if (totalUnseen > 0) {
+                    Text(
+                        "MARK ALL SEEN",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Intel.TextMid,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable { scope.launch { repository.acknowledgeAll() } }
+                            .padding(horizontal = 8.dp, vertical = 6.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                }
                 val canCheck = !checking && list.isNotEmpty()
                 Box(
                     modifier = Modifier
@@ -130,11 +174,20 @@ fun WatchScreen(
             }
 
             Spacer(Modifier.height(10.dp))
-            LazyColumn(Modifier.fillMaxSize()) {
+            LazyColumn(Modifier.fillMaxSize(), state = listState) {
                 items(list, key = { it.id }) { watch ->
                     WatchRow(
-                        watch,
-                        onOpen = { onOpen(watch.observable) },
+                        watch = watch,
+                        unseen = unseen[watch.id] ?: 0,
+                        expanded = expanded == watch.id,
+                        history = events.filter { it.watchId == watch.id },
+                        onToggle = {
+                            val opening = expanded != watch.id
+                            expanded = if (opening) watch.id else null
+                            // Opening the history is seeing it.
+                            if (opening) scope.launch { repository.acknowledge(watch.id) }
+                        },
+                        onInvestigate = { onOpen(watch.observable) },
                         onRemove = { scope.launch { repository.remove(watch.id) } }
                     )
                     Spacer(Modifier.height(8.dp))
@@ -145,7 +198,15 @@ fun WatchScreen(
 }
 
 @Composable
-private fun WatchRow(watch: Watch, onOpen: () -> Unit, onRemove: () -> Unit) {
+private fun WatchRow(
+    watch: Watch,
+    unseen: Int,
+    expanded: Boolean,
+    history: List<WatchEvent>,
+    onToggle: () -> Unit,
+    onInvestigate: () -> Unit,
+    onRemove: () -> Unit
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -153,10 +214,10 @@ private fun WatchRow(watch: Watch, onOpen: () -> Unit, onRemove: () -> Unit) {
             .background(Intel.Surface)
             .border(
                 1.dp,
-                if (watch.lastChangeAt != null) Intel.Amber else Intel.Hairline,
+                if (unseen > 0) Intel.Amber else Intel.Hairline,
                 RoundedCornerShape(10.dp)
             )
-            .clickable(onClick = onOpen)
+            .clickable(onClick = onToggle)
             .padding(12.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -166,6 +227,18 @@ private fun WatchRow(watch: Watch, onOpen: () -> Unit, onRemove: () -> Unit) {
                 color = Intel.Cyan,
                 modifier = Modifier.weight(1f)
             )
+            if (unseen > 0) {
+                Text(
+                    "$unseen NEW",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Intel.Base,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(5.dp))
+                        .background(Intel.Amber)
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+            }
             Text(
                 "REMOVE",
                 style = MaterialTheme.typography.labelSmall,
@@ -191,24 +264,90 @@ private fun WatchRow(watch: Watch, onOpen: () -> Unit, onRemove: () -> Unit) {
                 checked == null -> "not checked yet"
                 watch.lastChangeAt == null ->
                     "no change in ${watch.checks} check${if (watch.checks == 1) "" else "s"}" +
-                        (ago(checked)?.let { " · last $it" } ?: "")
+                        (Freshness.ago(checked)?.let { " · last $it" } ?: "")
                 else -> watch.lastChange
             },
             style = MaterialTheme.typography.bodySmall,
             color = if (watch.lastChangeAt != null) Intel.Amber else Intel.TextMid,
             modifier = Modifier.padding(top = 4.dp)
         )
-        if (watch.lastChangeAt != null) {
-            ago(watch.lastChangeAt)?.let {
-                Text(
-                    "changed $it",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Intel.TextLow,
-                    modifier = Modifier.padding(top = 2.dp)
-                )
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
+        ) {
+            Text(
+                if (history.isEmpty()) "no changes recorded"
+                else "${history.size} change${if (history.size == 1) "" else "s"}" +
+                    (if (expanded) " ▴" else " ▾"),
+                style = MaterialTheme.typography.labelSmall,
+                color = Intel.TextLow,
+                modifier = Modifier.weight(1f)
+            )
+            Text(
+                "INVESTIGATE",
+                style = MaterialTheme.typography.labelSmall,
+                color = Intel.Cyan,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .clickable(onClick = onInvestigate)
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            )
+        }
+
+        if (expanded && history.isNotEmpty()) {
+            Column(Modifier.padding(top = 8.dp)) {
+                history.forEach { event -> EventLine(event) }
             }
         }
     }
 }
 
-private fun ago(millis: Long): String? = Freshness.ago(millis)
+/**
+ * One recorded change, with the sources it involved named rather than
+ * summarised. "now found by 2 sources" is a number; "now found by
+ * crt.sh, Wayback" is something to act on.
+ */
+@Composable
+private fun EventLine(event: WatchEvent) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(bottom = 6.dp)
+            .clip(RoundedCornerShape(7.dp))
+            .background(Intel.Elevated)
+            .padding(8.dp)
+    ) {
+        Text(
+            Freshness.agoOrUndated(event.at),
+            style = MaterialTheme.typography.labelSmall,
+            color = Intel.TextLow
+        )
+        listOf(
+            Triple("appeared at", event.appeared, Intel.Success),
+            Triple("gone from", event.vanished, Intel.Danger),
+            Triple("changed at", event.altered, Intel.Amber)
+        ).forEach { (label, ids, colour) ->
+            val names = ids.split(",").filter { it.isNotBlank() }
+                .joinToString(", ") { ToolRegistry.byId(it)?.name ?: it }
+            if (names.isNotBlank()) {
+                Text(
+                    "$label $names",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colour,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+            }
+        }
+        // Rows carried over from before the log existed have no source
+        // breakdown, only the sentence that was stored at the time.
+        if (event.appeared.isBlank() && event.vanished.isBlank() && event.altered.isBlank()) {
+            Text(
+                event.summary,
+                style = MaterialTheme.typography.bodySmall,
+                color = Intel.TextMid,
+                modifier = Modifier.padding(top = 2.dp)
+            )
+        }
+    }
+}

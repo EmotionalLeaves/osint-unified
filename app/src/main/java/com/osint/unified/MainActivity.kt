@@ -1,5 +1,6 @@
 package com.osint.unified
 
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -32,6 +33,7 @@ import com.osint.unified.ui.history.HistoryViewModel
 import com.osint.unified.ui.investigation.InvestigationScreen
 import com.osint.unified.ui.watch.WatchScreen
 import com.osint.unified.ui.theme.OsintTheme
+import com.osint.unified.work.WatchWorker
 
 class MainActivity : ComponentActivity() {
 
@@ -69,6 +71,24 @@ class MainActivity : ComponentActivity() {
     private val notificationPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
+    /**
+     * Bumped when a watch notification is tapped.
+     *
+     * A notification that does nothing when tapped is a notification that
+     * teaches people to swipe it away. The value is a timestamp rather
+     * than a flag, so a second tap while the app is already on the watch
+     * screen is still a distinct signal, and the composition can tell a
+     * handled one from a new one across a rotation.
+     */
+    private val openWatchAt = mutableLongStateOf(0L)
+    private val openWatchId = mutableLongStateOf(-1L)
+
+    private fun consume(intent: Intent?) {
+        if (intent?.action != WatchWorker.ACTION_OPEN_WATCH) return
+        openWatchId.longValue = intent.getLongExtra(WatchWorker.EXTRA_WATCH_ID, -1L)
+        openWatchAt.longValue = System.currentTimeMillis()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         // Draw behind the status and navigation bars. The console fills the
         // screen; a black strip at each end was wasted space on a map.
@@ -81,6 +101,10 @@ class MainActivity : ComponentActivity() {
             WindowManager.LayoutParams.FLAG_SECURE,
             WindowManager.LayoutParams.FLAG_SECURE
         )
+        consume(intent)
+        // Rather than overriding onNewIntent, whose signature has moved
+        // between versions of androidx.activity.
+        addOnNewIntentListener { consume(it) }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(
                 this, android.Manifest.permission.POST_NOTIFICATIONS
@@ -123,6 +147,15 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
+                    var handledWatch by rememberSaveable { mutableLongStateOf(0L) }
+                    val watchSignal = openWatchAt.longValue
+                    LaunchedEffect(watchSignal) {
+                        if (watchSignal > handledWatch) {
+                            handledWatch = watchSignal
+                            screen = "watch"
+                        }
+                    }
+
                     // System back returns to the globe from any sub-screen.
                     // The framework directory is excluded: it has its own
                     // folder stack, and back there should go up one level
@@ -159,6 +192,7 @@ class MainActivity : ComponentActivity() {
                         "history" -> HistoryScreen(historyViewModel, onBack = { screen = "godeye" })
                         "watch" -> WatchScreen(
                             (application as OsintApplication).watchRepository,
+                            focusWatchId = openWatchId.longValue.takeIf { it > 0 },
                             onOpen = { target ->
                                 godEyeViewModel.onQueryChange(target)
                                 godEyeViewModel.onSearch()

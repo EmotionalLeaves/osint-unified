@@ -1,7 +1,9 @@
 package com.osint.unified.data
 
 import com.osint.unified.data.db.AppDatabase
+import com.osint.unified.data.db.UnseenCount
 import com.osint.unified.data.db.Watch
+import com.osint.unified.data.db.WatchEvent
 import com.osint.unified.domain.ExecutionMode
 import com.osint.unified.domain.Findings
 import com.osint.unified.domain.Observable
@@ -12,6 +14,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import java.security.MessageDigest
 
@@ -35,25 +39,53 @@ class WatchRepository(
     private val executors: ExecutorFactory
 ) {
     private val dao = db.watchDao()
+    private val events = db.watchEventDao()
+
+    /**
+     * One round of checking at a time.
+     *
+     * The six-hourly worker and the CHECK NOW button could run together.
+     * Both read a watch row, run the same sources, and write the row back;
+     * the slower one then overwrote the faster one's digest with a baseline
+     * taken before its change was recorded, and the change was reported
+     * again on the next check. Interleaved, they also ran every source
+     * twice at once against the same target.
+     */
+    private val checking = Mutex()
 
     fun observeAll(): Flow<List<Watch>> = dao.observeAll()
 
+    /** The change log for one target, newest first. */
+    fun observeEvents(watchId: Long): Flow<List<WatchEvent>> = events.observeFor(watchId, 50)
+
+    /** Everything that has changed lately, across all targets. */
+    fun observeRecentEvents(): Flow<List<WatchEvent>> = events.observeRecent(200)
+
+    /** How many unseen changes each target has. */
+    fun observeUnseen(): Flow<List<UnseenCount>> = events.observeUnseen()
+
+    suspend fun acknowledge(watchId: Long) = events.acknowledge(watchId)
+
+    suspend fun acknowledgeAll() = events.acknowledgeAll()
+
     suspend fun isWatched(observable: String): Boolean = dao.countFor(observable) > 0
 
-    suspend fun add(observable: Observable): Long = dao.insert(
+    /** True when this added a new watch, false when it was already there. */
+    suspend fun add(observable: Observable): Boolean = dao.insert(
         Watch(observable = observable.raw, observableType = observable.typeLabel)
-    )
+    ) != -1L
 
     suspend fun remove(id: Long) = dao.delete(id)
 
     /** The dossier knows the target, not the row id. */
-    suspend fun removeByObservable(observable: String) {
-        dao.all().filter { it.observable == observable }.forEach { dao.delete(it.id) }
-    }
+    suspend fun removeByObservable(observable: String) = dao.deleteByObservable(observable)
 
-    /** A check of every watched target. Returns what changed, in words. */
-    suspend fun checkAll(): List<String> {
-        val changes = ArrayList<String>()
+    /** What one check found, for the caller that has to announce it. */
+    data class Change(val watchId: Long, val target: String, val summary: String)
+
+    /** A check of every watched target. Returns what changed. */
+    suspend fun checkAll(): List<Change> = checking.withLock {
+        val changes = ArrayList<Change>()
         dao.all().forEach { watch ->
             val outcome = runCatching { check(watch) }
             // A cancellation is the work being stopped, not a target
@@ -62,11 +94,11 @@ class WatchRepository(
             outcome.exceptionOrNull()?.let { if (it is CancellationException) throw it }
             outcome.getOrNull()?.let { changes.add(it) }
         }
-        return changes
+        changes
     }
 
     /** One target. Returns a description if something changed, else null. */
-    suspend fun check(watch: Watch): String? {
+    private suspend fun check(watch: Watch): Change? {
         val observable = router.classify(watch.observable)
         val tools = router.suggestTools(observable)
             .filter { it.executionMode == ExecutionMode.DIRECT }
@@ -125,7 +157,23 @@ class WatchRepository(
                 lastChangeAt = if (description != null) now else watch.lastChangeAt
             )
         )
-        return description
+        if (description == null) return null
+
+        // The row keeps the latest change so the list can show it without a
+        // join; the log keeps every one of them, which is the record a watch
+        // exists to build.
+        events.insert(
+            WatchEvent(
+                watchId = watch.id,
+                at = now,
+                summary = description,
+                appeared = appeared.joinToString(","),
+                vanished = vanished.joinToString(","),
+                altered = altered.joinToString(",")
+            )
+        )
+        events.trim(watch.id, 100)
+        return Change(watch.id, watch.observable, description)
     }
 
     /**

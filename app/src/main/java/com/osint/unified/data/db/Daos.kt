@@ -72,7 +72,11 @@ interface WatchDao {
     @Query("SELECT COUNT(*) FROM watches WHERE observable = :observable")
     suspend fun countFor(observable: String): Int
 
-    @Insert
+    @Query("SELECT * FROM watches WHERE observable = :observable LIMIT 1")
+    suspend fun byObservable(observable: String): Watch?
+
+    /** Returns -1 when the target is already watched, rather than throwing. */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(watch: Watch): Long
 
     @Update
@@ -80,4 +84,44 @@ interface WatchDao {
 
     @Query("DELETE FROM watches WHERE id = :id")
     suspend fun delete(id: Long)
+
+    @Query("DELETE FROM watches WHERE observable = :observable")
+    suspend fun deleteByObservable(observable: String)
+}
+
+@Dao
+interface WatchEventDao {
+    @Query("SELECT * FROM watch_events WHERE watchId = :watchId ORDER BY at DESC LIMIT :limit")
+    fun observeFor(watchId: Long, limit: Int): Flow<List<WatchEvent>>
+
+    @Query("SELECT * FROM watch_events ORDER BY at DESC LIMIT :limit")
+    fun observeRecent(limit: Int): Flow<List<WatchEvent>>
+
+    @Query(
+        "SELECT watchId, COUNT(*) AS unseen FROM watch_events " +
+            "WHERE acknowledged = 0 GROUP BY watchId"
+    )
+    fun observeUnseen(): Flow<List<UnseenCount>>
+
+    @Insert
+    suspend fun insert(event: WatchEvent): Long
+
+    @Query("UPDATE watch_events SET acknowledged = 1 WHERE watchId = :watchId")
+    suspend fun acknowledge(watchId: Long)
+
+    @Query("UPDATE watch_events SET acknowledged = 1")
+    suspend fun acknowledgeAll()
+
+    /**
+     * Keeps the most recent [keep] events for a target.
+     *
+     * A watch checked every six hours for a year is 1,460 checks; a noisy
+     * target could leave a row behind for a good share of them. The log is
+     * a history, not an archive.
+     */
+    @Query(
+        "DELETE FROM watch_events WHERE watchId = :watchId AND id NOT IN (" +
+            "SELECT id FROM watch_events WHERE watchId = :watchId ORDER BY at DESC LIMIT :keep)"
+    )
+    suspend fun trim(watchId: Long, keep: Int)
 }

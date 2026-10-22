@@ -70,7 +70,13 @@ data class Result(
  * the source and fingerprinting what it said, which is enough to detect a
  * change without storing every full result forever.
  */
-@Entity(tableName = "watches")
+@Entity(
+    tableName = "watches",
+    // Watching the same target twice produced two rows that checked the
+    // same sources, raised the same alerts, and each had to be removed
+    // separately. The database refuses the second one now.
+    indices = [Index(value = ["observable"], unique = true)]
+)
 data class Watch(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val observable: String,
@@ -84,3 +90,44 @@ data class Watch(
     val lastChangeAt: Long? = null,
     val checks: Int = 0
 )
+
+/**
+ * One change found on a watched target.
+ *
+ * The watch row used to hold only the most recent change, so the second
+ * one overwrote the first and the history of a target — the thing a watch
+ * exists to accumulate — was a single line that kept being replaced. Each
+ * change is now its own row: what appeared, what went away, what altered,
+ * and whether it has been seen.
+ *
+ * Tool ids rather than names are stored, because a name can be reworded
+ * between versions and a stored sentence would then disagree with the
+ * current one. The words are built when the row is read.
+ */
+@Entity(
+    tableName = "watch_events",
+    foreignKeys = [
+        ForeignKey(
+            entity = Watch::class,
+            parentColumns = ["id"],
+            childColumns = ["watchId"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
+    indices = [Index("watchId"), Index("at")]
+)
+data class WatchEvent(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val watchId: Long,
+    val at: Long,
+    /** The sentence shown in the list and the notification. */
+    val summary: String,
+    /** Comma-separated tool ids; empty when nothing fell in that bucket. */
+    val appeared: String = "",
+    val vanished: String = "",
+    val altered: String = "",
+    val acknowledged: Boolean = false
+)
+
+/** How many unseen changes a watch has. Room fills both columns by name. */
+data class UnseenCount(val watchId: Long, val unseen: Int)

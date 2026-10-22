@@ -84,3 +84,14 @@ fi
 
 echo "No syntax or declaration problems."
 echo "($TOTAL diagnostics in total, all needing the Android SDK — left to CI.)"
+echo
+# Not an error — a list to glance at. A member call introduced by this
+# change and found nowhere else is either a library API used for the first
+# time or a helper that was never written, and the second one has now
+# failed two builds.
+# A member named on a project singleton that the singleton does not
+# declare. Fully decidable from the source, and invisible to the
+# classpath-less compile, which writes it off as missing-SDK noise.
+python3 "$ROOT/tools/object-members.py" || exit 1
+echo
+python3 "$ROOT/tools/novel-calls.py" || true
