@@ -67,6 +67,11 @@ import org.osmdroid.views.overlay.Marker
 
 private val EXAMPLES = listOf("example.com", "8.8.8.8", "40.7128,-74.0060", "+14155550123", "John Smith")
 
+private val SEARCH_TYPES = listOf(
+    "auto" to "AUTO", "name" to "NAME", "email" to "EMAIL", "username" to "USER",
+    "domain" to "DOMAIN", "ip" to "IP", "phone" to "PHONE", "coordinate" to "COORD", "image" to "IMAGE"
+)
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun GodEyeViewScreen(
@@ -145,6 +150,17 @@ fun GodEyeViewScreen(
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)
             )
+
+            // Search-type selector: AUTO detects; others force the type so a
+            // query always routes to the right tools.
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp)
+            ) {
+                SEARCH_TYPES.forEach { (key, label) ->
+                    TypeChip(label, state.searchType == key) { viewModel.onTypeSelected(key) }
+                }
+            }
 
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -336,6 +352,24 @@ private fun dot(color: Int, sizePx: Int): Drawable {
         intrinsicWidth = size
         intrinsicHeight = size
         setBounds(0, 0, size, size)
+    }
+}
+
+@Composable
+private fun TypeChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(if (selected) Intel.Cyan else Intel.Surface)
+            .border(1.dp, if (selected) Intel.Cyan else Intel.Hairline, RoundedCornerShape(6.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 9.dp, vertical = 5.dp)
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            color = if (selected) Intel.Base else Intel.TextMid
+        )
     }
 }
 

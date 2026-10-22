@@ -40,9 +40,9 @@ class UsernameChecker(private val appContext: Context) {
         if (sites.isEmpty()) return@withContext "Could not load the site ruleset (check network)."
 
         val found = Collections.synchronizedList(mutableListOf<String>())
-        val semaphore = Semaphore(40)
+        val semaphore = Semaphore(64)
 
-        val completed = withTimeoutOrNull(90_000) {
+        val completed = withTimeoutOrNull(45_000) {
             coroutineScope {
                 sites.map { site ->
                     async { semaphore.withPermit { checkSite(site, username)?.let { found.add(it) } } }

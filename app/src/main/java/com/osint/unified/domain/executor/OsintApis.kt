@@ -151,34 +151,80 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
         }
     }
 
-    /** Google dork generator: builds ready-to-open search URLs for exposed
-     *  files, directories and mentions. */
+    /** Builds a rich, ready-to-tap OSINT pivot sheet tailored to the input
+     *  type: platform profiles, people-search / public-records engines, breach
+     *  checks, dork queries and recon links. All links, no API dependency. */
     fun dorks(value: String): Result<String> = runCatching {
         val v = value.trim()
-        val isDomain = v.contains('.') && !v.contains(' ') && !v.contains('@')
-        val queries = mutableListOf<Pair<String, String>>()
-        queries.add("Exact mentions" to "\"$v\"")
-        if (isDomain) {
-            queries.add("Site contents" to "site:$v")
-            queries.add("Exposed documents" to "site:$v (filetype:pdf OR filetype:xls OR filetype:docx OR filetype:csv)")
-            queries.add("Directory listings" to "site:$v intitle:\"index of\"")
-            queries.add("Login / admin" to "site:$v (inurl:login OR inurl:admin OR inurl:dashboard)")
-            queries.add("Config / backups" to "site:$v (ext:env OR ext:bak OR ext:sql OR ext:log OR ext:conf)")
-        } else {
-            if (v.contains(' ')) {
-                queries.add("LinkedIn" to "site:linkedin.com/in \"$v\"")
-                queries.add("Facebook" to "site:facebook.com \"$v\"")
-                queries.add("X / Twitter" to "(site:twitter.com OR site:x.com) \"$v\"")
-                queries.add("Instagram" to "site:instagram.com \"$v\"")
+        fun enc(q: String) = URLEncoder.encode(q, "UTF-8")
+        fun g(q: String) = "https://www.google.com/search?q=${enc(q)}"
+        val lines = mutableListOf<String>()
+        fun add(label: String, url: String) = lines.add("$label: $url")
+
+        val isEmail = v.contains('@') && !v.contains(' ')
+        val isPhone = Regex("""^\+?[\d][\d\s\-().]{6,}$""").matches(v)
+        val isDomain = !isEmail && v.contains('.') && !v.contains(' ')
+        val isName = v.contains(' ')
+        val handle = v.substringBefore('@').replace(" ", "").lowercase()
+
+        when {
+            isEmail -> {
+                add("Exact mentions", g("\"$v\""))
+                add("Have I Been Pwned", "https://haveibeenpwned.com/account/${enc(v)}")
+                add("Breach search (IntelX)", "https://intelx.io/?s=${enc(v)}")
+                add("Paste / code", g("\"$v\" (site:pastebin.com OR site:github.com OR site:gist.github.com)"))
+                add("Documents", g("\"$v\" (filetype:pdf OR filetype:xls OR filetype:docx)"))
+                add("Google", g(v))
             }
-            queries.add("In URLs" to "inurl:$v")
-            queries.add("In titles" to "intitle:$v")
-            queries.add("Paste / code sites" to "\"$v\" (site:pastebin.com OR site:github.com OR site:gist.github.com)")
-            queries.add("In documents" to "\"$v\" (filetype:pdf OR filetype:xls OR filetype:docx)")
+            isPhone -> {
+                val digits = v.filter { it.isDigit() || it == '+' }
+                add("Exact number", g("\"$v\""))
+                add("Digits", g("\"$digits\""))
+                add("TrueCaller", "https://www.truecaller.com/search/us/${enc(digits)}")
+                add("Reverse lookup", g("$digits (site:truecaller.com OR site:whitepages.com OR site:spydialer.com)"))
+                add("Social mentions", g("\"$v\" (site:facebook.com OR site:linkedin.com)"))
+            }
+            isDomain -> {
+                add("Site contents", g("site:$v"))
+                add("Subdomains", g("site:*.$v"))
+                add("Exposed docs", g("site:$v (filetype:pdf OR filetype:xls OR filetype:docx OR filetype:csv)"))
+                add("Directory listings", g("site:$v intitle:\"index of\""))
+                add("Login / admin", g("site:$v (inurl:login OR inurl:admin OR inurl:dashboard)"))
+                add("Config / backups", g("site:$v (ext:env OR ext:bak OR ext:sql OR ext:log OR ext:conf)"))
+                add("crt.sh certs", "https://crt.sh/?q=${enc(v)}")
+                add("urlscan.io", "https://urlscan.io/domain/$v")
+                add("VirusTotal", "https://www.virustotal.com/gui/domain/$v")
+                add("Shodan", "https://www.shodan.io/search?query=${enc("hostname:$v")}")
+                add("Wayback", "https://web.archive.org/web/*/$v*")
+            }
+            isName -> {
+                add("Exact (Google)", g("\"$v\""))
+                add("Bing", "https://www.bing.com/search?q=${enc("\"$v\"")}")
+                add("DuckDuckGo", "https://duckduckgo.com/?q=${enc("\"$v\"")}")
+                add("LinkedIn", g("site:linkedin.com/in \"$v\""))
+                add("Facebook", g("site:facebook.com \"$v\""))
+                add("X / Twitter", g("(site:twitter.com OR site:x.com) \"$v\""))
+                add("Instagram", g("site:instagram.com \"$v\""))
+                add("TikTok", g("site:tiktok.com \"$v\""))
+                add("TruePeopleSearch", "https://www.truepeoplesearch.com/results?name=${enc(v)}")
+                add("FastPeopleSearch", "https://www.fastpeoplesearch.com/name/${enc(v.replace(" ", "-"))}")
+                add("ThatsThem", "https://thatsthem.com/name/${enc(v.replace(" ", "-"))}")
+                add("Documents", g("\"$v\" (filetype:pdf OR filetype:docx)"))
+            }
+            else -> {
+                add("GitHub", "https://github.com/$handle")
+                add("X / Twitter", "https://x.com/$handle")
+                add("Instagram", "https://www.instagram.com/$handle")
+                add("Reddit", "https://www.reddit.com/user/$handle")
+                add("TikTok", "https://www.tiktok.com/@$handle")
+                add("YouTube", "https://www.youtube.com/@$handle")
+                add("Twitch", "https://www.twitch.tv/$handle")
+                add("Telegram", "https://t.me/$handle")
+                add("Mentions", g("\"$handle\""))
+                add("Paste / code", g("\"$handle\" (site:pastebin.com OR site:github.com)"))
+            }
         }
-        "Google dork URLs:\n" + queries.joinToString("\n") { (label, q) ->
-            "$label: https://www.google.com/search?q=" + URLEncoder.encode(q, "UTF-8")
-        }
+        "${lines.size} pivots:\n" + lines.joinToString("\n")
     }
 
     /** Photon-style crawl: fetch a page and extract emails, links and JS files. */

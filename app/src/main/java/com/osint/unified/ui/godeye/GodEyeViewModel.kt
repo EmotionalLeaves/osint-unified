@@ -58,7 +58,8 @@ data class GodEyeUiState(
     val backendUrl: String = "",
     val tar1090Url: String = "",
     val aisUrl: String = "",
-    val overlayUrl: String = ""
+    val overlayUrl: String = "",
+    val searchType: String = "auto"
 )
 
 class GodEyeViewModel(
@@ -167,8 +168,14 @@ class GodEyeViewModel(
         _state.update { it.copy(query = value) }
     }
 
+    fun onTypeSelected(type: String) {
+        _state.update { it.copy(searchType = type) }
+    }
+
     fun onSearch() {
-        val observable = router.classify(_state.value.query)
+        val type = _state.value.searchType
+        val observable = if (type == "auto") router.classify(_state.value.query)
+            else router.classifyAs(_state.value.query, type)
         // New search = fresh investigation context.
         currentInvestigationId = null
         resultsJob?.cancel()

@@ -52,6 +52,30 @@ class ObservableRouter {
         }
     }
 
+    /** Classifies with the type forced by the user (the search type selector),
+     *  falling back to auto-detection for AUTO/unknown keys. */
+    fun classifyAs(rawInput: String, type: String): Observable {
+        val input = rawInput.trim()
+        if (input.isEmpty()) return Observable.Unknown(input)
+        return when (type) {
+            "email" -> Observable.Email(input)
+            "username" -> Observable.Username(input)
+            "domain" -> Observable.Domain(input)
+            "ip" -> Observable.IpAddress(input)
+            "phone" -> Observable.PhoneNumber(input)
+            "url" -> Observable.Url(input)
+            "image" -> Observable.ImageUrl(input)
+            "name" -> Observable.Name(input)
+            "coordinate" -> {
+                val parts = input.split(",").map { it.trim() }
+                val lat = parts.getOrNull(0)?.toDoubleOrNull()
+                val lon = parts.getOrNull(1)?.toDoubleOrNull()
+                if (lat != null && lon != null) Observable.Coordinate(input, lat, lon) else Observable.Name(input)
+            }
+            else -> classify(input)
+        }
+    }
+
     /**
      * Returns suggested tools for an observable, ordered primary-first.
      * Resolved against [ToolRegistry]; unknown ids are silently dropped.
@@ -61,7 +85,7 @@ class ObservableRouter {
             is Observable.Email -> listOf("gravatar", "emailaccounts", "dorks", "holehe", "ghunt", "h8mail")
             is Observable.Username -> listOf("sherlock", "maigret", "blackbird", "dorks")
             is Observable.Domain -> listOf("subfinder", "crtsh", "dns", "httpx", "shodan", "webcrawl", "wayback", "archive", "dorks", "amass", "nuclei")
-            is Observable.IpAddress -> listOf("ipinfo", "shodan", "httpx", "nuclei")
+            is Observable.IpAddress -> listOf("ipinfo", "shodan", "dorks", "httpx", "nuclei")
             is Observable.PhoneNumber -> listOf("phoneinfoga", "dorks")
             is Observable.Coordinate -> listOf("revgeo", "wikinearby", "overpass_turbo")
             is Observable.Url -> listOf("webcrawl", "wayback", "archive", "dorks")
