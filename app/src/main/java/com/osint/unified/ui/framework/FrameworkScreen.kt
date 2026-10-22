@@ -41,6 +41,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.osint.unified.data.ArfNode
 import com.osint.unified.data.OsintFramework
+import com.osint.unified.domain.ToolTemplates
 import com.osint.unified.ui.theme.Intel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -51,8 +52,18 @@ fun FrameworkScreen(onBack: () -> Unit) {
     val allLeaves = remember(root) { root?.let { OsintFramework.leaves(it) } ?: emptyList() }
     val stack = remember { mutableStateListOf<ArfNode>().apply { root?.let { add(it) } } }
     var query by remember { mutableStateOf("") }
+    var target by remember { mutableStateOf("") }
 
     fun open(url: String) = com.osint.unified.ui.common.LinkOpener.open(context, url)
+
+    // A directory entry is runnable when its URL carries a search parameter
+    // the app can fill in. With a target typed, those entries launch the tool
+    // already pointed at it instead of at an empty search box.
+    fun runnable(url: String): String? {
+        if (target.isBlank()) return null
+        val t = ToolTemplates.templateFor(url) ?: return null
+        return t.resolve(target.trim())
+    }
 
     Scaffold(
         containerColor = Intel.Base,
@@ -100,6 +111,36 @@ fun FrameworkScreen(onBack: () -> Unit) {
                 modifier = Modifier.fillMaxWidth().padding(12.dp)
             )
 
+            OutlinedTextField(
+                value = target,
+                onValueChange = { target = it },
+                singleLine = true,
+                placeholder = {
+                    Text(
+                        "target to run tools against — name · email · domain · ip",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                },
+                leadingIcon = { Text("▸", style = MaterialTheme.typography.titleMedium, color = Intel.Amber) },
+                textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                shape = RoundedCornerShape(10.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Intel.Amber, unfocusedBorderColor = Intel.Hairline,
+                    cursorColor = Intel.Amber, focusedContainerColor = Intel.Surface,
+                    unfocusedContainerColor = Intel.Surface, focusedTextColor = Intel.TextHi,
+                    unfocusedTextColor = Intel.TextHi, focusedPlaceholderColor = Intel.TextLow,
+                    unfocusedPlaceholderColor = Intel.TextLow
+                ),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)
+            )
+            if (target.isNotBlank()) {
+                Text(
+                    "Entries marked RUN open already filled in with \"${target.trim()}\".",
+                    style = MaterialTheme.typography.labelSmall, color = Intel.Amber,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp)
+                )
+            }
+
             if (query.isNotBlank()) {
                 val q = query.trim()
                 val matches = allLeaves.filter { it.first.contains(q, true) || it.third.contains(q, true) }.take(300)
@@ -110,7 +151,7 @@ fun FrameworkScreen(onBack: () -> Unit) {
                 )
                 LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
                     items(matches) { (name, url, path) ->
-                        LeafRow(name, path) { open(url) }
+                        LeafRow(name, path, runnable(url)?.let { r -> { open(r) } }) { open(url) }
                     }
                 }
             } else {
@@ -118,7 +159,11 @@ fun FrameworkScreen(onBack: () -> Unit) {
                 LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
                     items(node.children) { child ->
                         if (child.isFolder) FolderRow(child) { stack.add(child) }
-                        else LeafRow(child.name, null) { child.url?.let(::open) }
+                        else LeafRow(
+                            child.name,
+                            null,
+                            child.url?.let { u -> runnable(u) }?.let { r -> { open(r) } }
+                        ) { child.url?.let(::open) }
                     }
                 }
             }
@@ -144,16 +189,40 @@ private fun FolderRow(node: ArfNode, onClick: () -> Unit) {
 }
 
 @Composable
-private fun LeafRow(name: String, path: String?, onClick: () -> Unit) {
-    Column(
-        Modifier.fillMaxWidth().padding(vertical = 3.dp)
+private fun LeafRow(
+    name: String,
+    path: String?,
+    onRun: (() -> Unit)? = null,
+    onClick: () -> Unit
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)
             .clip(RoundedCornerShape(8.dp)).background(Intel.Surface)
             .border(1.dp, Intel.Hairline, RoundedCornerShape(8.dp))
             .clickable(onClick = onClick).padding(12.dp)
     ) {
-        Text(name, style = MaterialTheme.typography.bodyMedium, color = Intel.CyanBright)
-        if (!path.isNullOrBlank()) {
-            Text(path, style = MaterialTheme.typography.labelSmall, color = Intel.TextLow, modifier = Modifier.padding(top = 2.dp))
+        Column(Modifier.weight(1f)) {
+            Text(name, style = MaterialTheme.typography.bodyMedium, color = Intel.CyanBright)
+            if (!path.isNullOrBlank()) {
+                Text(
+                    path, style = MaterialTheme.typography.labelSmall, color = Intel.TextLow,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+            }
+        }
+        if (onRun != null) {
+            Text(
+                "RUN ▸",
+                style = MaterialTheme.typography.labelMedium,
+                color = Intel.Amber,
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(Intel.Elevated)
+                    .clickable(onClick = onRun)
+                    .padding(horizontal = 10.dp, vertical = 6.dp)
+            )
         }
     }
 }

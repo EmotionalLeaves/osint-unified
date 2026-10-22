@@ -233,6 +233,9 @@ object ToolRegistry {
             "Public traffic cameras near a coordinate, with live still-image links.",
             "https://cwwp2.dot.ca.gov"),
 
+        Tool("toolrun", "Run tool directory", NETINT, "any", "text", DIRECT,
+            "Executes every runnable endpoint in the directory against this target and points the rest at it.",
+            "https://osintframework.com", timeoutMs = 45_000L),
         Tool("emailperm", "Address patterns", SOCMINT, "any", "text", DIRECT,
             "Generates the likely addresses for a name at a domain, with that domain's real mail setup. Input: 'Jane Doe @example.com'.",
             "https://en.wikipedia.org/wiki/Email_address"),

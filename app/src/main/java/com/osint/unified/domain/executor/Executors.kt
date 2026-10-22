@@ -195,6 +195,7 @@ class DirectToolExecutor(
                 "github" -> apis.githubUser(input)
                 "ghactivity" -> deep.githubActivity(input)
                 "socialsweep" -> runCatching { deep.socialSweep(input) }
+                "toolrun" -> directoryRun(input)
                 "emailperm" -> deep.emailPermutations(input)
                 "typosquat" -> runCatching { deep.typosquat(input) }
                 "osmuser" -> deep.osmUser(input)
@@ -284,6 +285,87 @@ class DirectToolExecutor(
     }
 
     /** Military sites near a coordinate from OpenStreetMap (public map data). */
+    /**
+     * Runs the tool directory against the target.
+     *
+     * Every curated template whose endpoint returns text or JSON is executed
+     * here, in parallel, and summarised — those tools genuinely run, with no
+     * browser involved. Everything else in the directory that accepts a
+     * query in its URL is listed with the target already substituted, so it
+     * is one tap from running rather than a bookmark to a blank search box.
+     */
+    private suspend fun directoryRun(input: String): Result<String> = runCatching {
+        val target = input.trim()
+        if (target.isEmpty()) throw IllegalArgumentException("Give a target to run the directory against.")
+        val observable = com.osint.unified.domain.ObservableRouter().classify(target)
+        val type = com.osint.unified.domain.ToolTemplates.typeOf(observable)
+        val curated = com.osint.unified.domain.ToolTemplates.curated(type)
+        val fetchable = curated.filter { it.fetchable }
+        val openable = curated.filterNot { it.fetchable }
+
+        val executed = kotlinx.coroutines.coroutineScope {
+            fetchable.map { t ->
+                kotlinx.coroutines.async {
+                    val url = com.osint.unified.domain.ToolTemplates.resolve(t, target)
+                    val body = runCatching {
+                        val request = Request.Builder().url(url)
+                            .header("User-Agent", "OSINT-Unified/1.0 (research)")
+                            .header("Accept", "application/json, text/plain, */*")
+                            .build()
+                        client.newCall(request).execute().use { resp ->
+                            if (!resp.isSuccessful) null else resp.body?.string()
+                        }
+                    }.getOrNull()
+                    Triple(t.name, url, body)
+                }
+            }.map { it.await() }
+        }
+
+        val hits = executed.filter { !it.third.isNullOrBlank() && it.third!!.length > 20 }
+        val empty = executed.filter { it.third.isNullOrBlank() || it.third!!.length <= 20 }
+
+        // The wider directory, pointed at this target.
+        val derived = runCatching {
+            com.osint.unified.domain.ToolTemplates.derived(appContext)
+        }.getOrDefault(emptyList())
+
+        buildString {
+            append("Tool directory run — $target (${observable.typeLabel})\n")
+            append("${hits.size} of ${fetchable.size} executable endpoints returned data.\n")
+
+            hits.forEach { (name, url, body) ->
+                append("\n▸ $name\n")
+                val text = body!!.trim()
+                val preview = text.lineSequence().filter { it.isNotBlank() }.take(6)
+                    .joinToString("\n") { "  " + it.trim().take(180) }
+                append(preview)
+                append("\n  $url\n")
+            }
+
+            if (empty.isNotEmpty()) {
+                append("\nNo data from: ${empty.joinToString(", ") { it.first }}\n")
+            }
+
+            if (openable.isNotEmpty()) {
+                append("\n── Run in the browser (target already filled in) ──\n")
+                openable.forEach { t ->
+                    append("${t.name}: ${com.osint.unified.domain.ToolTemplates.resolve(t, target)}\n")
+                }
+            }
+
+            if (derived.isNotEmpty()) {
+                append("\n── Directory tools that accept this query (${derived.size} total) ──\n")
+                derived.take(120).forEach { t ->
+                    append("${t.name}: ${t.resolve(target)}\n")
+                }
+                if (derived.size > 120) {
+                    append("\n…and ${derived.size - 120} more in the directory screen, ")
+                    append("which runs any of them against this target.\n")
+                }
+            }
+        }
+    }
+
     /** Searches the OFAC SDN list bundled into the APK — works offline. */
     private fun sanctions(input: String): Result<String> = runCatching {
         val needle = input.trim().lowercase()
