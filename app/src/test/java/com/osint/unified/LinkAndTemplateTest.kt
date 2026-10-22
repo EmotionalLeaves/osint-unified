@@ -30,10 +30,14 @@ class LinkAndTemplateTest {
 
     @Test
     fun otherIllegalCharactersAreEncoded() {
-        val fixed = LinkOpener.sanitize("https://example.com/a|b{c}")
+        // Note the trailing character: a closing brace at the very end is
+        // treated as prose punctuation and trimmed, so the URL under test
+        // keeps one inside it.
+        val fixed = LinkOpener.sanitize("https://example.com/a|b{c}d")
         assertTrue(fixed, fixed.contains("%7C"))
         assertTrue(fixed, fixed.contains("%7B"))
         assertTrue(fixed, fixed.contains("%7D"))
+        assertTrue(fixed, fixed.endsWith("d"))
     }
 
     @Test

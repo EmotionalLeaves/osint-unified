@@ -177,6 +177,10 @@ jobs:
       - name: Run unit tests
         run: gradle test --no-daemon --stacktrace
 
+      - name: Surface unit-test failures as annotations
+        if: failure()
+        run: python3 .github/test-report.py || true
+
       - name: Build debug APK
         run: gradle assembleDebug --no-daemon --stacktrace -PosintVersionCode=${{ github.run_number }} -PosintVersionName=r${{ github.run_number }}
 
