@@ -498,11 +498,19 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
     /** Reverse image search links across the major engines. */
     fun reverseImage(url: String): Result<String> = runCatching {
         val e = URLEncoder.encode(url, "UTF-8")
-        "Reverse image search:\n" +
-            "Google Lens: https://lens.google.com/uploadbyurl?url=$e\n" +
-            "Yandex: https://yandex.com/images/search?rpt=imageview&url=$e\n" +
-            "Bing: https://www.bing.com/images/search?view=detailv2&iss=sbi&q=imgurl:$e\n" +
-            "TinEye: https://tineye.com/search?url=$e"
+        // General reverse-image engines (image URL pre-filled) plus the
+        // face-search services, which you run yourself under your own account.
+        buildString {
+            append("Reverse image search:\n")
+            append("Google Lens: https://lens.google.com/uploadbyurl?url=$e\n")
+            append("Yandex: https://yandex.com/images/search?rpt=imageview&url=$e\n")
+            append("Bing: https://www.bing.com/images/search?view=detailv2&iss=sbi&q=imgurl:$e\n")
+            append("TinEye: https://tineye.com/search?url=$e\n")
+            append("Lenso.ai: https://lenso.ai/en/search/url?url=$e\n")
+            append("\nFace search (upload the image there, your own account):\n")
+            append("PimEyes: https://pimeyes.com/en\n")
+            append("FaceCheck.id: https://facecheck.id\n")
+        }
     }
 
     private val ipRegex = Regex("""^(?:\d{1,3}\.){3}\d{1,3}$""")
