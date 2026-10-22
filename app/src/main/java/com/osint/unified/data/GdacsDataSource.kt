@@ -6,6 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.io.IOException
 
 /**
  * GDACS — the EU's global disaster alert system: earthquakes, cyclones,
@@ -35,7 +36,8 @@ class GdacsDataSource(private val client: OkHttpClient = Http.client) {
                 .build()
             client.newCall(request).execute().use { resp ->
                 val body = resp.body?.string()
-                if (!resp.isSuccessful || body.isNullOrBlank()) return@withContext emptyList()
+                if (!resp.isSuccessful) throw IOException("GDACS HTTP ${resp.code}")
+                if (body.isNullOrBlank()) throw IOException("GDACS returned nothing")
                 itemRegex.findAll(body).mapNotNull { m ->
                     val item = m.groupValues[1]
                     val (lat, lon) = coordsOf(item) ?: return@mapNotNull null
@@ -58,7 +60,10 @@ class GdacsDataSource(private val client: OkHttpClient = Http.client) {
                 }.toList()
             }
         } catch (e: Exception) {
-            emptyList()
+            // An empty list is a claim that there is nothing out
+            // there, which the pills and the world brief repeat as
+            // fact. A failure is not that claim.
+            throw IOException("GDACS unavailable: ${e.message}", e)
         }
     }
 

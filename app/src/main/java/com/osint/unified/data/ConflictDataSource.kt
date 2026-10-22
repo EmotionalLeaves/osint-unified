@@ -12,6 +12,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.io.IOException
 import java.net.URLEncoder
 
 /**
@@ -54,10 +55,11 @@ class ConflictDataSource(private val client: OkHttpClient = Http.client) {
                 .build()
             client.newCall(request).execute().use { resp ->
                 val body = resp.body?.string()
-                if (!resp.isSuccessful || body.isNullOrBlank()) return@withContext emptyList()
+                if (!resp.isSuccessful) throw IOException("Wikidata HTTP ${resp.code}")
+                if (body.isNullOrBlank()) throw IOException("Wikidata returned nothing")
                 val bindings = json.parseToJsonElement(body)
                     .jsonObject["results"]?.jsonObject?.get("bindings")?.jsonArray
-                    ?: return@withContext emptyList()
+                    ?: throw IOException("Wikidata answered in an unexpected shape")
                 bindings.mapNotNull { b ->
                     val o = b.jsonObject
                     val coord = ((o["coord"] as? JsonObject)?.get("value") as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
@@ -75,7 +77,10 @@ class ConflictDataSource(private val client: OkHttpClient = Http.client) {
                 }
             }
         } catch (e: Exception) {
-            emptyList()
+            // An empty list is a claim that there is nothing out
+            // there, which the pills and the world brief repeat as
+            // fact. A failure is not that claim.
+            throw IOException("Wikidata unavailable: ${e.message}", e)
         }
     }
 

@@ -3,6 +3,7 @@ package com.osint.unified
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.activity.ComponentActivity
@@ -35,7 +36,7 @@ class MainActivity : ComponentActivity() {
 
     private val godEyeViewModel: GodEyeViewModel by viewModels {
         val app = application as OsintApplication
-        GodEyeViewModel.Factory(app.router, app.repository, app.aircraftDataSource, app.aisDataSource, app.earthquakeDataSource, app.naturalEventsDataSource, app.overlayDataSource, app.weatherDataSource, app.firesDataSource, app.satellitesDataSource, app.newsDataSource, app.gdacsDataSource, app.volcanoDataSource, app.auroraDataSource, app.buoyDataSource, app.metarDataSource, app.milAircraftDataSource, app.airQualityDataSource, app.seismicStationDataSource, app.conflictDataSource, app.airportDataSource, app.powerPlantDataSource, app.cctvDataSource, app.airspaceDataSource, app.spaceWeatherDataSource, app.laddAircraftDataSource, app.cableLandingDataSource, app.cycloneDataSource, app.tsunamiDataSource, app.radiationDataSource, app.airportStatusDataSource, app.availableLocalTools, app.settings, app.exporter)
+        GodEyeViewModel.Factory(app.router, app.repository, app.aircraftDataSource, app.aisDataSource, app.earthquakeDataSource, app.naturalEventsDataSource, app.overlayDataSource, app.weatherDataSource, app.firesDataSource, app.satellitesDataSource, app.newsDataSource, app.gdacsDataSource, app.volcanoDataSource, app.auroraDataSource, app.buoyDataSource, app.metarDataSource, app.milAircraftDataSource, app.airQualityDataSource, app.seismicStationDataSource, app.conflictDataSource, app.airportDataSource, app.powerPlantDataSource, app.cctvDataSource, app.airspaceDataSource, app.spaceWeatherDataSource, app.cableLandingDataSource, app.cycloneDataSource, app.tsunamiDataSource, app.radiationDataSource, app.airportStatusDataSource, app.availableLocalTools, app.settings, app.exporter)
     }
 
     private val historyViewModel: HistoryViewModel by viewModels {
@@ -52,6 +53,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // The recent-apps thumbnail is a screenshot of whatever was on
+        // screen, and the app is usually showing who you are looking at.
+        // It also blocks screen recording of a dossier.
+        window.setFlags(
+            WindowManager.LayoutParams.FLAG_SECURE,
+            WindowManager.LayoutParams.FLAG_SECURE
+        )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(
                 this, android.Manifest.permission.POST_NOTIFICATIONS
@@ -137,7 +145,6 @@ class MainActivity : ComponentActivity() {
                                     FeedProbe("Traffic cameras (Caltrans)") { app.cctvDataSource.fetch().size },
                                     FeedProbe("Restricted airspace (FAA)") { app.airspaceDataSource.fetch().size },
                                     FeedProbe("Space weather (SWPC)") { app.spaceWeatherDataSource.fetch().alerts.size + 1 },
-                                    FeedProbe("Blocked aircraft (LADD)") { app.laddAircraftDataSource.fetch().size },
                                     FeedProbe("Cable landings") { app.cableLandingDataSource.fetch().size },
                                     FeedProbe("Tropical cyclones (NHC)") { app.cycloneDataSource.fetch().size },
                                     FeedProbe("Tsunami bulletins (NTWC/PTWC)") { app.tsunamiDataSource.fetch().size },

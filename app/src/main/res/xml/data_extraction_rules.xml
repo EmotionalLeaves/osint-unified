@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Nothing about an investigation leaves the device.
+
+  Auto Backup would otherwise upload the case database — every target you
+  have looked at and everything the tools returned — to the account holder's
+  Google Drive, and device-to-device transfer would copy it to a new phone.
+  Neither is a decision this app should make on someone's behalf.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="file" />
+        <exclude domain="external" />
+        <exclude domain="root" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="file" />
+        <exclude domain="external" />
+        <exclude domain="root" />
+    </device-transfer>
+</data-extraction-rules>

@@ -14,6 +14,41 @@ android {
     val verCode = (project.findProperty("osintVersionCode") as String?)?.toIntOrNull() ?: 1
     val verName = (project.findProperty("osintVersionName") as String?) ?: "dev"
 
+    /**
+     * One signing key, for every build, forever.
+     *
+     * Android refuses an update signed by a different key. Every CI runner
+     * used to generate its own throwaway debug keystore, so installing a
+     * new build meant uninstalling the old one — which deleted every
+     * investigation and every watch. That made the app unusable for work
+     * that lasts longer than one release.
+     *
+     * The keystore in `keystore/` is committed deliberately and its
+     * password is in this file. It is not a secret and is not pretending to
+     * be one: anyone can sign an APK that this device will accept as an
+     * update, so only install builds from your own Actions runs. To use a
+     * real private key instead, set the OSINT_KEYSTORE_B64,
+     * OSINT_KEYSTORE_PASSWORD, OSINT_KEY_ALIAS and OSINT_KEY_PASSWORD
+     * repository secrets; CI decodes them and this block prefers them.
+     */
+    signingConfigs {
+        create("shared") {
+            val fromSecret = rootProject.file("keystore/ci.jks")
+            val committed = rootProject.file("keystore/osint-unified.jks")
+            if (fromSecret.exists()) {
+                storeFile = fromSecret
+                storePassword = System.getenv("OSINT_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("OSINT_KEY_ALIAS")
+                keyPassword = System.getenv("OSINT_KEY_PASSWORD")
+            } else {
+                storeFile = committed
+                storePassword = "osint-unified"
+                keyAlias = "osint-unified"
+                keyPassword = "osint-unified"
+            }
+        }
+    }
+
     defaultConfig {
         applicationId = "com.osint.unified"
         minSdk = 26
@@ -24,8 +59,19 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Signed with the shared key so a new build installs over the
+            // last one instead of forcing an uninstall.
+            signingConfig = signingConfigs.getByName("shared")
+            // A debuggable build lets anyone with the phone read the case
+            // database over adb. There is no reason for this app ever to
+            // ship one, so even the debug type is not debuggable.
+            isDebuggable = false
+        }
         release {
-            isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("shared")
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

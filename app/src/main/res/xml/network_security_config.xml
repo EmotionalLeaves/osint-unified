@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  HTTPS everywhere on the public internet.
+
+  The app previously allowed cleartext app-wide, which meant a backend URL
+  typed as http:// would send target identifiers over the network in the
+  clear. The only legitimate cleartext need is a feed or backend on the
+  local network, so that is the only place it is allowed.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">localhost</domain>
+        <domain includeSubdomains="true">127.0.0.1</domain>
+        <domain includeSubdomains="true">10.0.0.0</domain>
+        <domain includeSubdomains="true">192.168.0.0</domain>
+        <domain includeSubdomains="true">172.16.0.0</domain>
+        <domain includeSubdomains="true">localdomain</domain>
+        <domain includeSubdomains="true">local</domain>
+    </domain-config>
+</network-security-config>

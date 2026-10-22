@@ -12,6 +12,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.io.IOException
 import java.net.URLEncoder
 
 /**
@@ -45,13 +46,17 @@ class NewsDataSource(private val client: OkHttpClient = Http.client) {
                 .build()
             client.newCall(request).execute().use { resp ->
                 val body = resp.body?.string()
-                // GDELT rate limits with a plain-text body rather than a code.
-                if (!resp.isSuccessful || body.isNullOrBlank() ||
-                    body.trimStart().startsWith("Please limit")
-                ) return@withContext emptyList()
+                // GDELT rate limits with a plain-text body rather than a
+                // code, and being rate limited is emphatically not "there is
+                // no news anywhere in the world".
+                if (!resp.isSuccessful) throw IOException("GDELT HTTP ${resp.code}")
+                if (body.isNullOrBlank()) throw IOException("GDELT returned nothing")
+                if (body.trimStart().startsWith("Please limit")) {
+                    throw IOException("GDELT is rate limiting this device")
+                }
 
                 val articles = json.parseToJsonElement(body).jsonObject["articles"] as? JsonArray
-                    ?: return@withContext emptyList()
+                    ?: throw IOException("GDELT answered in an unexpected shape")
 
                 val counts = LinkedHashMap<String, Int>()
                 val headline = LinkedHashMap<String, String>()
@@ -80,7 +85,10 @@ class NewsDataSource(private val client: OkHttpClient = Http.client) {
                 }
             }
         } catch (e: Exception) {
-            emptyList()
+            // An empty list is a claim that there is nothing out
+            // there, which the pills and the world brief repeat as
+            // fact. A failure is not that claim.
+            throw IOException("GDELT unavailable: ${e.message}", e)
         }
     }
 

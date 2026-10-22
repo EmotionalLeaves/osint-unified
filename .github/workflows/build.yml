@@ -154,6 +154,14 @@ jobs:
           echo "::notice title=bundled-assets::${SUMMARY}"
           echo "::notice title=rule-counts::${COUNTS}"
 
+      - name: Use the private signing key when one is configured
+        if: ${{ env.OSINT_KEYSTORE_B64 != '' }}
+        env:
+          OSINT_KEYSTORE_B64: ${{ secrets.OSINT_KEYSTORE_B64 }}
+        run: |
+          echo "$OSINT_KEYSTORE_B64" | base64 -d > keystore/ci.jks
+          echo "Signing with the configured private key."
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -182,7 +190,21 @@ jobs:
         run: python3 .github/test-report.py || true
 
       - name: Build debug APK
+        env:
+          OSINT_KEYSTORE_PASSWORD: ${{ secrets.OSINT_KEYSTORE_PASSWORD }}
+          OSINT_KEY_ALIAS: ${{ secrets.OSINT_KEY_ALIAS }}
+          OSINT_KEY_PASSWORD: ${{ secrets.OSINT_KEY_PASSWORD }}
         run: gradle assembleDebug --no-daemon --stacktrace -PosintVersionCode=${{ github.run_number }} -PosintVersionName=r${{ github.run_number }}
+
+      - name: Report the signing fingerprint and the APK size
+        run: |
+          APK=$(ls app/build/outputs/apk/debug/*.apk | head -1)
+          SIZE=$(( $(wc -c < "$APK") / 1048576 ))
+          FP=$(keytool -printcert -jarfile "$APK" 2>/dev/null \
+                | grep -m1 "SHA256:" | tr -d " " || echo "unknown")
+          # The fingerprint must be identical between builds, or an update
+          # will not install over the previous one.
+          echo "::notice title=apk::${SIZE} MB%0Asigner ${FP}"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

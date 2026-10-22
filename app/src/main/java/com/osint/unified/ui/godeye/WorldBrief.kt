@@ -166,7 +166,6 @@ object WorldBrief {
         blips("SEVERE WEATHER", state.weather, 6)
         blips("WILDFIRES", state.fires, 5)
         blips("MILITARY AIRCRAFT", state.milAircraft, 5, rank = { 1 })
-        blips("HIDDEN-OWNER AIRCRAFT", state.ladd, 4, rank = { 1 })
         blips("AIRPORT STATUS", state.airportStatus, 4, rank = { b ->
             if (b.label.contains("GROUND STOP") || b.label.contains("CLOSED")) 3 else 1
         })
@@ -183,8 +182,15 @@ object WorldBrief {
         // Layers that have reported and found nothing are worth one line
         // each — "no disaster alerts anywhere" is itself information, and
         // it is not the same as a layer that has not run.
+        // "Nothing anywhere" may only be said about a feed that answered,
+        // and whose last answer is the one being counted. A feed that
+        // answered an hour ago and has failed since is neither.
+        val troubled = ArrayList<String>()
         fun maybeQuiet(key: String, label: String, size: Int) {
-            if (key in state.loaded && size == 0) quiet.add(label)
+            when {
+                key in state.feedTrouble -> troubled.add(label)
+                key in state.loaded && size == 0 -> quiet.add(label)
+            }
         }
         maybeQuiet("gdacs", "disaster alerts", state.gdacs.size)
         maybeQuiet("conflicts", "conflicts", state.conflicts.size)
@@ -196,6 +202,17 @@ object WorldBrief {
         maybeQuiet("tsunamis", "tsunami bulletins", state.tsunamis.size)
         maybeQuiet("airportStatus", "US airport delays", state.airportStatus.size)
 
+        if (troubled.isNotEmpty()) {
+            sections.add(
+                Section(
+                    "NOT REPORTING — ${troubled.size}",
+                    8,
+                    troubled.map { Entry(it) },
+                    note = "These feeds could not be reached. Their absence " +
+                        "from the brief above means nothing."
+                )
+            )
+        }
         return Brief(sections.sortedByDescending { it.severity }, quiet)
     }
 

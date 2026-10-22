@@ -14,6 +14,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.io.IOException
 
 /**
  * Fetches a user-supplied GeoJSON URL and plots its Point features as a custom
@@ -33,9 +34,10 @@ class OverlayDataSource(
             val request = Request.Builder().url(url).header("User-Agent", "OSINT-Unified/1.0").build()
             client.newCall(request).execute().use { resp ->
                 val body = resp.body?.string()
-                if (!resp.isSuccessful || body.isNullOrBlank()) return@withContext emptyList()
+                if (!resp.isSuccessful) throw IOException("custom overlay HTTP ${resp.code}")
+                if (body.isNullOrBlank()) throw IOException("custom overlay returned nothing")
                 val features = json.parseToJsonElement(body).jsonObject["features"]?.jsonArray
-                    ?: return@withContext emptyList()
+                    ?: throw IOException("custom overlay answered in an unexpected shape")
                 features.mapNotNull { f ->
                     val o = f.jsonObject
                     val geom = o["geometry"] as? JsonObject ?: return@mapNotNull null
@@ -51,7 +53,10 @@ class OverlayDataSource(
                 }.take(5000)
             }
         } catch (e: Exception) {
-            emptyList()
+            // An empty list is a claim that there is nothing out
+            // there, which the pills and the world brief repeat as
+            // fact. A failure is not that claim.
+            throw IOException("custom overlay unavailable: ${e.message}", e)
         }
     }
 }

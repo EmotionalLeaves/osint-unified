@@ -12,6 +12,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.io.IOException
 
 /**
  * NOAA SWPC OVATION aurora forecast (keyless): a global grid of aurora
@@ -30,9 +31,10 @@ class AuroraDataSource(private val client: OkHttpClient = Http.client) {
                 .build()
             client.newCall(request).execute().use { resp ->
                 val body = resp.body?.string()
-                if (!resp.isSuccessful || body.isNullOrBlank()) return@withContext emptyList()
+                if (!resp.isSuccessful) throw IOException("SWPC aurora HTTP ${resp.code}")
+                if (body.isNullOrBlank()) throw IOException("SWPC aurora returned nothing")
                 val coords = json.parseToJsonElement(body).jsonObject["coordinates"]?.jsonArray
-                    ?: return@withContext emptyList()
+                    ?: throw IOException("SWPC aurora answered in an unexpected shape")
                 val out = ArrayList<GeoBlip>()
                 var i = 0
                 for (c in coords) {
@@ -49,7 +51,10 @@ class AuroraDataSource(private val client: OkHttpClient = Http.client) {
                 out
             }
         } catch (e: Exception) {
-            emptyList()
+            // An empty list is a claim that there is nothing out
+            // there, which the pills and the world brief repeat as
+            // fact. A failure is not that claim.
+            throw IOException("SWPC aurora unavailable: ${e.message}", e)
         }
     }
 }

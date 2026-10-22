@@ -17,7 +17,6 @@ import com.osint.unified.data.CycloneDataSource
 import com.osint.unified.data.RadiationDataSource
 import com.osint.unified.data.TsunamiDataSource
 import com.osint.unified.data.CctvDataSource
-import com.osint.unified.data.LaddAircraftDataSource
 import com.osint.unified.data.SpaceWeather
 import com.osint.unified.data.SpaceWeatherDataSource
 import com.osint.unified.data.ConflictDataSource
@@ -85,7 +84,6 @@ data class GodEyeUiState(
     val powerPlants: List<GeoBlip> = emptyList(),
     val cameras: List<GeoBlip> = emptyList(),
     val airspace: List<GeoBlip> = emptyList(),
-    val ladd: List<GeoBlip> = emptyList(),
     val cables: List<GeoBlip> = emptyList(),
     val cyclones: List<GeoBlip> = emptyList(),
     val tsunamis: List<GeoBlip> = emptyList(),
@@ -96,6 +94,12 @@ data class GodEyeUiState(
      *  yet is not the same as a layer that ran and found nothing, and the
      *  pills say which is which instead of both reading "0". */
     val loaded: Set<String> = emptySet(),
+    /** Layer key -> why its last fetch failed. A layer in here is showing
+     *  the last good data it had, or nothing at all, and in neither case
+     *  may its count be read as "there is nothing out there". */
+    val feedTrouble: Map<String, String> = emptyMap(),
+    /** Layer key -> when it last answered, for "stale 12m" on the pill. */
+    val lastSuccess: Map<String, Long> = emptyMap(),
     val findings: List<FindingPin> = emptyList(),
     val mapFocus: Pair<Double, Double>? = null,
     val results: List<ResultRow> = emptyList(),
@@ -141,7 +145,6 @@ class GodEyeViewModel(
     private val cctvDataSource: CctvDataSource,
     private val airspaceDataSource: AirspaceDataSource,
     private val spaceWeatherDataSource: SpaceWeatherDataSource,
-    private val laddAircraftDataSource: LaddAircraftDataSource,
     private val cableLandingDataSource: CableLandingDataSource,
     private val cycloneDataSource: CycloneDataSource,
     private val tsunamiDataSource: TsunamiDataSource,
@@ -214,7 +217,6 @@ class GodEyeViewModel(
         poll(300, 3_600_000, "airports", { airportDataSource.fetch() }) { s, v -> s.copy(airports = v) }
         poll(450, 3_600_000, "powerPlants", { powerPlantDataSource.fetch() }) { s, v -> s.copy(powerPlants = v) }
         poll(900, 900_000, "spaceWeather", { spaceWeatherDataSource.fetch() }) { s, v -> s.copy(spaceWeather = v) }
-        poll(1050, 120_000, "ladd", { laddAircraftDataSource.fetch() }) { s, v -> s.copy(ladd = v) }
         poll(1200, 86_400_000, "cables", { cableLandingDataSource.fetch() }) { s, v -> s.copy(cables = v) }
         poll(700, 600_000, "cyclones", { cycloneDataSource.fetch() }) { s, v -> s.copy(cyclones = v) }
         poll(800, 600_000, "tsunamis", { tsunamiDataSource.fetch() }) { s, v -> s.copy(tsunamis = v) }
@@ -246,11 +248,24 @@ class GodEyeViewModel(
                 // "loaded" means this feed has answered — only then does a
                 // count of zero mean "nothing out there", which is what the
                 // pills and the world brief go on to assert. A failed fetch
-                // leaves the layer unloaded so neither of them claims an
-                // all-clear during an outage.
+                // records the trouble and keeps whatever it last had, so
+                // neither of them claims an all-clear during an outage.
                 _state.update { state ->
-                    if (result == null) state
-                    else apply(state.copy(loaded = state.loaded + key), result)
+                    if (result == null) {
+                        val why = attempt.exceptionOrNull()?.message?.take(90)
+                            ?: "no answer"
+                        state.copy(feedTrouble = state.feedTrouble + (key to why))
+                    } else {
+                        apply(
+                            state.copy(
+                                loaded = state.loaded + key,
+                                feedTrouble = state.feedTrouble - key,
+                                lastSuccess = state.lastSuccess +
+                                    (key to System.currentTimeMillis())
+                            ),
+                            result
+                        )
+                    }
                 }
                 delay(intervalMs)
             }
@@ -661,7 +676,6 @@ class GodEyeViewModel(
         private val cctvDataSource: CctvDataSource,
         private val airspaceDataSource: AirspaceDataSource,
         private val spaceWeatherDataSource: SpaceWeatherDataSource,
-        private val laddAircraftDataSource: LaddAircraftDataSource,
         private val cableLandingDataSource: CableLandingDataSource,
         private val cycloneDataSource: CycloneDataSource,
         private val tsunamiDataSource: TsunamiDataSource,
@@ -673,7 +687,7 @@ class GodEyeViewModel(
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            GodEyeViewModel(router, repository, aircraftDataSource, aisDataSource, earthquakeDataSource, naturalEventsDataSource, overlayDataSource, weatherDataSource, firesDataSource, satellitesDataSource, newsDataSource, gdacsDataSource, volcanoDataSource, auroraDataSource, buoyDataSource, metarDataSource, milAircraftDataSource, airQualityDataSource, seismicStationDataSource, conflictDataSource, airportDataSource, powerPlantDataSource, cctvDataSource, airspaceDataSource, spaceWeatherDataSource, laddAircraftDataSource, cableLandingDataSource, cycloneDataSource, tsunamiDataSource, radiationDataSource, airportStatusDataSource, availableLocalTools, settings, exporter) as T
+            GodEyeViewModel(router, repository, aircraftDataSource, aisDataSource, earthquakeDataSource, naturalEventsDataSource, overlayDataSource, weatherDataSource, firesDataSource, satellitesDataSource, newsDataSource, gdacsDataSource, volcanoDataSource, auroraDataSource, buoyDataSource, metarDataSource, milAircraftDataSource, airQualityDataSource, seismicStationDataSource, conflictDataSource, airportDataSource, powerPlantDataSource, cctvDataSource, airspaceDataSource, spaceWeatherDataSource, cableLandingDataSource, cycloneDataSource, tsunamiDataSource, radiationDataSource, airportStatusDataSource, availableLocalTools, settings, exporter) as T
     }
 
     private companion object {

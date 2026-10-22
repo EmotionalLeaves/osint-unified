@@ -16,7 +16,6 @@ import com.osint.unified.data.CycloneDataSource
 import com.osint.unified.data.RadiationDataSource
 import com.osint.unified.data.TsunamiDataSource
 import com.osint.unified.data.CctvDataSource
-import com.osint.unified.data.LaddAircraftDataSource
 import com.osint.unified.data.SpaceWeatherDataSource
 import com.osint.unified.data.ConflictDataSource
 import com.osint.unified.data.DiskCache
@@ -84,7 +83,6 @@ class OsintApplication : Application() {
     val cctvDataSource: CctvDataSource by lazy { CctvDataSource() }
     val airspaceDataSource: AirspaceDataSource by lazy { AirspaceDataSource() }
     val spaceWeatherDataSource: SpaceWeatherDataSource by lazy { SpaceWeatherDataSource() }
-    val laddAircraftDataSource: LaddAircraftDataSource by lazy { LaddAircraftDataSource() }
     val cableLandingDataSource: CableLandingDataSource by lazy { CableLandingDataSource() }
     val cycloneDataSource: CycloneDataSource by lazy { CycloneDataSource() }
     val tsunamiDataSource: TsunamiDataSource by lazy { TsunamiDataSource() }

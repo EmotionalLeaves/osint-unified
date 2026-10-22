@@ -14,6 +14,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.io.IOException
 
 /**
  * Open natural events worldwide from NASA EONET v3 (keyless): wildfires,
@@ -30,9 +31,10 @@ class NaturalEventsDataSource(private val client: OkHttpClient = Http.client) {
                 .build()
             client.newCall(request).execute().use { resp ->
                 val body = resp.body?.string()
-                if (!resp.isSuccessful || body.isNullOrBlank()) return@withContext emptyList()
+                if (!resp.isSuccessful) throw IOException("EONET events HTTP ${resp.code}")
+                if (body.isNullOrBlank()) throw IOException("EONET events returned nothing")
                 val events = json.parseToJsonElement(body).jsonObject["events"]?.jsonArray
-                    ?: return@withContext emptyList()
+                    ?: throw IOException("EONET events answered in an unexpected shape")
                 events.mapNotNull { e ->
                     val o = e.jsonObject
                     val title = (o["title"] as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
@@ -54,7 +56,10 @@ class NaturalEventsDataSource(private val client: OkHttpClient = Http.client) {
                 }
             }
         } catch (e: Exception) {
-            emptyList()
+            // An empty list is a claim that there is nothing out
+            // there, which the pills and the world brief repeat as
+            // fact. A failure is not that claim.
+            throw IOException("EONET events unavailable: ${e.message}", e)
         }
     }
 }

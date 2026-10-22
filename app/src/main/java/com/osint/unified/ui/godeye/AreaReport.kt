@@ -123,7 +123,6 @@ object AreaReport {
         blips("Wildfire", state.fires)
         sweep("Natural event", state.naturalEvents, { it.lat }, { it.lon }, { "${it.category}: ${it.title}" })
         blips("Military aircraft", state.milAircraft)
-        blips("Hidden-owner aircraft", state.ladd)
         sweep("Aircraft", state.aircraft, { it.lat }, { it.lon },
             { it.callsign.ifBlank { it.icao } })
         sweep("Vessel", state.vessels, { it.lat }, { it.lon }, { it.name.ifBlank { it.mmsi } })

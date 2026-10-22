@@ -12,6 +12,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.io.IOException
 
 /** Fetches recent earthquakes (USGS, last 24h) for the native globe. */
 class EarthquakeDataSource(private val client: OkHttpClient = Http.client) {
@@ -25,9 +26,10 @@ class EarthquakeDataSource(private val client: OkHttpClient = Http.client) {
                 .build()
             client.newCall(request).execute().use { resp ->
                 val body = resp.body?.string()
-                if (!resp.isSuccessful || body.isNullOrBlank()) return@withContext emptyList()
+                if (!resp.isSuccessful) throw IOException("USGS HTTP ${resp.code}")
+                if (body.isNullOrBlank()) throw IOException("USGS returned nothing")
                 val features = json.parseToJsonElement(body).jsonObject["features"]?.jsonArray
-                    ?: return@withContext emptyList()
+                    ?: throw IOException("USGS answered in an unexpected shape")
                 features.mapNotNull { f ->
                     val o = f.jsonObject
                     val coords = (o["geometry"] as? JsonObject)?.get("coordinates")?.jsonArray ?: return@mapNotNull null
@@ -38,7 +40,10 @@ class EarthquakeDataSource(private val client: OkHttpClient = Http.client) {
                 }
             }
         } catch (e: Exception) {
-            emptyList()
+            // An empty list is a claim that there is nothing out
+            // there, which the pills and the world brief repeat as
+            // fact. A failure is not that claim.
+            throw IOException("USGS unavailable: ${e.message}", e)
         }
     }
 }

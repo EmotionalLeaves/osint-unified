@@ -14,6 +14,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.io.IOException
 
 /** Active wildfires worldwide from NASA EONET (keyless), as their own layer. */
 class FiresDataSource(private val client: OkHttpClient = Http.client) {
@@ -27,9 +28,10 @@ class FiresDataSource(private val client: OkHttpClient = Http.client) {
                 .build()
             client.newCall(request).execute().use { resp ->
                 val body = resp.body?.string()
-                if (!resp.isSuccessful || body.isNullOrBlank()) return@withContext emptyList()
+                if (!resp.isSuccessful) throw IOException("EONET wildfires HTTP ${resp.code}")
+                if (body.isNullOrBlank()) throw IOException("EONET wildfires returned nothing")
                 val events = json.parseToJsonElement(body).jsonObject["events"]?.jsonArray
-                    ?: return@withContext emptyList()
+                    ?: throw IOException("EONET wildfires answered in an unexpected shape")
                 events.mapNotNull { e ->
                     val o = e.jsonObject
                     val title = (o["title"] as? JsonPrimitive)?.contentOrNull ?: "Wildfire"
@@ -50,7 +52,10 @@ class FiresDataSource(private val client: OkHttpClient = Http.client) {
                 }
             }
         } catch (e: Exception) {
-            emptyList()
+            // An empty list is a claim that there is nothing out
+            // there, which the pills and the world brief repeat as
+            // fact. A failure is not that claim.
+            throw IOException("EONET wildfires unavailable: ${e.message}", e)
         }
     }
 }

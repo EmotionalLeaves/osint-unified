@@ -13,6 +13,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.io.IOException
 
 /**
  * Live military-class ADS-B tracks worldwide from adsb.fi open data (keyless):
@@ -30,9 +31,10 @@ class MilAircraftDataSource(private val client: OkHttpClient = Http.client) {
                 .build()
             client.newCall(request).execute().use { resp ->
                 val body = resp.body?.string()
-                if (!resp.isSuccessful || body.isNullOrBlank()) return@withContext emptyList()
+                if (!resp.isSuccessful) throw IOException("adsb.lol military HTTP ${resp.code}")
+                if (body.isNullOrBlank()) throw IOException("adsb.lol military returned nothing")
                 val ac = json.parseToJsonElement(body).jsonObject["ac"]?.jsonArray
-                    ?: return@withContext emptyList()
+                    ?: throw IOException("adsb.lol military answered in an unexpected shape")
                 val out = ArrayList<GeoBlip>()
                 ac.forEach { el ->
                     if (out.size >= 5000) return@forEach
@@ -48,7 +50,10 @@ class MilAircraftDataSource(private val client: OkHttpClient = Http.client) {
                 out
             }
         } catch (e: Exception) {
-            emptyList()
+            // An empty list is a claim that there is nothing out
+            // there, which the pills and the world brief repeat as
+            // fact. A failure is not that claim.
+            throw IOException("adsb.lol military unavailable: ${e.message}", e)
         }
     }
 }

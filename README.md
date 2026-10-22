@@ -98,8 +98,8 @@ A native osmdroid `MapView` over keyless Esri World Imagery — earlier
 WebView attempts (CesiumJS, MapLibre, Leaflet) all rendered blank on device.
 
 Layers, each toggleable, with the true count in the pill: aircraft (with
-carrier/cargo/military filtering), military ADS-B, LADD (aircraft whose
-owners paid to be hidden from tracking), vessels, satellites, earthquakes,
+carrier/cargo/military filtering), military ADS-B, vessels, satellites,
+earthquakes,
 seismic stations, natural events, wildfires, volcanoes, GDACS disasters,
 tropical cyclones, tsunami bulletins, FAA ground stops and delay
 programmes, weather alerts, METAR, air quality, radiation, aurora, ocean
@@ -360,7 +360,7 @@ equivalent, or is documented as infeasible on a stock phone with the reason.
 
 **Functional now — on-device or keyless direct APIs (no backend):**
 
-- GEOINT: God's Eye View (3D globe), tar1090 (aircraft), AIS-catcher
+- GEOINT: God's Eye View (native map), tar1090 (aircraft), AIS-catcher
   (vessels — data feed), satellite tracking (satellite.js/Celestrak, the
   Gpredict capability), Overpass Turbo, reverse geocoding
 - SOCMINT: Sherlock, Maigret, Blackbird, WhatsMyName (all native username
@@ -391,7 +391,7 @@ GHunt (needs Google cookie), h8mail (breach keys), TruffleHog, OpenSanctions.
 - OpenCTI, MISP, Yeti, IntelOwl, OCCRP Aleph — server platforms/databases,
   not an app feature
 - Gitleaks, FinalRecon — need a local repo / covered by httpx + DNS
-- Kepler.gl — heavy geospatial viz (the 3D globe is the in-app equivalent)
+- Kepler.gl — heavy geospatial viz (the native map is the in-app equivalent)
 - Bellingcat Toolkit, OSINT Framework, Monitoring-The-Situation — reference
   directories, represented by the tool suite itself
 

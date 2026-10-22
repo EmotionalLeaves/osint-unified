@@ -14,6 +14,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.io.IOException
 
 /**
  * Active severe-weather alerts from the US National Weather Service (keyless).
@@ -44,9 +45,10 @@ class WeatherDataSource(private val client: OkHttpClient = Http.client) {
                 .build()
             client.newCall(request).execute().use { resp ->
                 val body = resp.body?.string()
-                if (!resp.isSuccessful || body.isNullOrBlank()) return@withContext emptyList()
+                if (!resp.isSuccessful) throw IOException("NWS alerts HTTP ${resp.code}")
+                if (body.isNullOrBlank()) throw IOException("NWS alerts returned nothing")
                 val features = json.parseToJsonElement(body).jsonObject["features"]?.jsonArray
-                    ?: return@withContext emptyList()
+                    ?: throw IOException("NWS alerts answered in an unexpected shape")
                 val perState = HashMap<String, Int>()
                 features.mapNotNull { f ->
                     val o = f.jsonObject
@@ -71,7 +73,10 @@ class WeatherDataSource(private val client: OkHttpClient = Http.client) {
                 }.take(3000)
             }
         } catch (e: Exception) {
-            emptyList()
+            // An empty list is a claim that there is nothing out
+            // there, which the pills and the world brief repeat as
+            // fact. A failure is not that claim.
+            throw IOException("NWS alerts unavailable: ${e.message}", e)
         }
     }
 

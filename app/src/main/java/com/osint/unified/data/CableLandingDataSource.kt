@@ -13,6 +13,7 @@ import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.jsonObject
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.io.IOException
 
 /**
  * Submarine cable landing points worldwide (TeleGeography's public map data,
@@ -34,9 +35,10 @@ class CableLandingDataSource(private val client: OkHttpClient = Http.client) {
                 .build()
             client.newCall(request).execute().use { resp ->
                 val body = resp.body?.string()
-                if (!resp.isSuccessful || body.isNullOrBlank()) return@withContext emptyList()
+                if (!resp.isSuccessful) throw IOException("cable landings HTTP ${resp.code}")
+                if (body.isNullOrBlank()) throw IOException("cable landings returned nothing")
                 val features = json.parseToJsonElement(body).jsonObject["features"] as? JsonArray
-                    ?: return@withContext emptyList()
+                    ?: throw IOException("cable landings answered in an unexpected shape")
                 val out = ArrayList<GeoBlip>(features.size)
                 features.forEach { f ->
                     val o = f as? JsonObject ?: return@forEach
@@ -58,7 +60,10 @@ class CableLandingDataSource(private val client: OkHttpClient = Http.client) {
                 out
             }
         } catch (e: Exception) {
-            emptyList()
+            // An empty list is a claim that there is nothing out
+            // there, which the pills and the world brief repeat as
+            // fact. A failure is not that claim.
+            throw IOException("cable landings unavailable: ${e.message}", e)
         }
     }
 }

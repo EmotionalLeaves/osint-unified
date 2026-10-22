@@ -6,6 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.io.IOException
 
 /**
  * Global seismic-station network (IRIS FDSN station metadata, keyless): active
@@ -24,7 +25,7 @@ class SeismicStationDataSource(
             val body = cache?.read(CACHE_KEY, WEEK_MS)
                 ?: download()?.also { cache?.write(CACHE_KEY, it) }
                 ?: cache?.readStale(CACHE_KEY)
-                ?: return@withContext emptyList()
+                ?: throw IOException("IRIS answered in an unexpected shape")
             run {
                 val out = ArrayList<GeoBlip>()
                 body.lineSequence().forEach { line ->
@@ -48,7 +49,10 @@ class SeismicStationDataSource(
                 out
             }
         } catch (e: Exception) {
-            emptyList()
+            // An empty list is a claim that there is nothing out
+            // there, which the pills and the world brief repeat as
+            // fact. A failure is not that claim.
+            throw IOException("IRIS unavailable: ${e.message}", e)
         }
     }
 

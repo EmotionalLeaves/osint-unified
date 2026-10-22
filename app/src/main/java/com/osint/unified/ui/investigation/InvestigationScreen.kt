@@ -68,7 +68,6 @@ import com.osint.unified.ui.theme.Intel
 import com.osint.unified.ui.theme.categoryColor
 import kotlinx.coroutines.launch
 import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -82,7 +81,7 @@ fun InvestigationScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var showGraph by remember { mutableStateOf(false) }
-    var graphJson by remember { mutableStateOf("") }
+    var graphData by remember { mutableStateOf<GraphBuilder.Graph?>(null) }
     val observable = state.observable
     // Whether this target is already being followed. Read once per target
     // rather than observed: it only changes when the button below is used.
@@ -308,7 +307,7 @@ fun InvestigationScreen(
                 }
                 if (state.results.isNotEmpty()) {
                     ConsoleButton("GRAPH") {
-                        graphJson = Json.encodeToString(GraphBuilder.build(observable.raw, state.results))
+                        graphData = GraphBuilder.build(observable.raw, state.results)
                         showGraph = true
                     }
                     ExportFormat.values().forEach { fmt ->
@@ -483,7 +482,7 @@ fun InvestigationScreen(
     }
 
     if (showGraph) {
-        GraphDialog(graphJson = graphJson, onDismiss = { showGraph = false })
+        graphData?.let { GraphDialog(graph = it, onDismiss = { showGraph = false }) }
     }
 }
 

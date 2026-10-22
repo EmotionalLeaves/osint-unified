@@ -10,5 +10,6 @@ intent
 item
 paint
 settings
+size
 type
 value
