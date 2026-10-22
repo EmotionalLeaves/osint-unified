@@ -30,12 +30,14 @@ jobs:
             [ -z "$U" ] && continue
             UA='OSINT-Unified/1.0 (+https://github.com/EmotionalLeaves/osint-unified)'
             case "$U" in *'||'*) UA="${U##*||}"; U="${U%%||*}";; esac
+            SKIP=1
+            case "$U" in *'@@'*) SKIP="${U##*@@}"; U="${U%%@@*}";; esac
             CODE=$(curl -sS -o /tmp/body -w '%{http_code}' -m 25 \
               -H "User-Agent: $UA" \
               -H 'Accept: application/json,text/html,*/*' \
               "$U" 2>/tmp/err)
             SIZE=$(wc -c < /tmp/body 2>/dev/null || echo 0)
-            SNIP=$(head -c 700 /tmp/body | tr -d '\r' | tr '\n' ' ' | sed 's/%/pct/g')
+            SNIP=$(tail -c +$SKIP /tmp/body | head -c 700 | tr -d '\r' | tr '\n' ' ' | sed 's/%/pct/g')
             [ -z "$CODE" ] && CODE="ERR:$(head -c 60 /tmp/err | tr '\n' ' ')"
             OUT="${OUT}[$CODE ${SIZE}b] $U%0A    $SNIP%0A"
             N=$((N+1))
