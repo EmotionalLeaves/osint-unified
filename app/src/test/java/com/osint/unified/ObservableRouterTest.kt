@@ -2,7 +2,9 @@ package com.osint.unified
 
 import com.osint.unified.domain.Observable
 import com.osint.unified.domain.ObservableRouter
+import com.osint.unified.domain.ToolRegistry
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -70,6 +72,27 @@ class ObservableRouterTest {
         // Keyless tools lead so email works with no backend.
         assertEquals("gravatar", tools.first().id)
         assertTrue(tools.any { it.id == "emailaccounts" })
+    }
+
+    @Test
+    fun usernameIncludesLiveFetchers() {
+        val ids = router.suggestTools(Observable.Username("octocat")).map { it.id }
+        assertTrue(ids.contains("github"))
+        assertTrue(ids.contains("websearch"))
+    }
+
+    @Test
+    fun classifyAsForcesType() {
+        assertTrue(router.classifyAs("anything", "email") is Observable.Email)
+        assertTrue(router.classifyAs("anything", "domain") is Observable.Domain)
+        assertTrue(router.classifyAs("anything", "name") is Observable.Name)
+    }
+
+    @Test
+    fun newToolsRegistered() {
+        assertNotNull(ToolRegistry.byId("websearch"))
+        assertNotNull(ToolRegistry.byId("github"))
+        assertNotNull(ToolRegistry.byId("emailaccounts"))
     }
 
     @Test

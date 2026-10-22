@@ -11,7 +11,6 @@ import kotlinx.serialization.json.jsonObject
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.IOException
-import java.net.URLDecoder
 import java.net.URLEncoder
 import java.security.MessageDigest
 
@@ -24,8 +23,6 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
     private val ua = "OSINT-Unified/1.0 (research)"
-    private val browserUa =
-        "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36"
 
     /** crt.sh certificate-transparency subdomain discovery. */
     fun crtsh(domain: String): Result<String> = runCatching {
@@ -170,36 +167,48 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
         }
     }
 
-    /** Live web search results (DuckDuckGo HTML endpoint, keyless): actual
-     *  titles, URLs and snippets shown inline — not just a search link. */
+    /** Real inline results from reliable keyless sources: Wikipedia full-text
+     *  search (title + snippet + link) plus a best-effort DuckDuckGo instant
+     *  answer. (The DDG HTML scrape serves a bot captcha, so it's not used.) */
     fun websearch(query: String): Result<String> = runCatching {
-        val request = Request.Builder()
-            .url("https://html.duckduckgo.com/html/?q=" + URLEncoder.encode(query, "UTF-8"))
-            .header("User-Agent", browserUa)
-            .build()
-        val html = client.newCall(request).execute().use { resp ->
-            if (!resp.isSuccessful) throw IOException("HTTP ${resp.code}")
-            resp.body?.string().orEmpty()
+        val q = URLEncoder.encode(query, "UTF-8")
+        val out = StringBuilder()
+
+        // Best-effort DuckDuckGo Instant Answer (quick facts; may be empty).
+        runCatching {
+            val o = json.parseToJsonElement(
+                getBody("https://api.duckduckgo.com/?q=$q&format=json&no_html=1&skip_disambig=1")
+            ).jsonObject
+            (o["AbstractText"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }?.let {
+                out.append(it).append("\n")
+                (o["AbstractURL"] as? JsonPrimitive)?.contentOrNull?.takeIf { u -> u.isNotBlank() }
+                    ?.let { u -> out.append(u).append("\n") }
+            }
+            (o["Answer"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
+                ?.let { out.append("Answer: $it\n") }
         }
-        val linkRe = Regex("""class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>""",
-            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
-        val snips = Regex("""class="result__snippet"[^>]*>(.*?)</a>""",
-            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
-            .findAll(html).map { stripTags(it.groupValues[1]) }.toList()
-        val results = linkRe.findAll(html).take(12).toList()
-        if (results.isEmpty()) return@runCatching "No web results."
-        buildString {
-            append("${results.size} web results:\n")
-            results.forEachIndexed { i, m ->
-                val href = m.groupValues[1]
-                val title = stripTags(m.groupValues[2])
-                val real = Regex("""uddg=([^&]+)""").find(href)?.groupValues?.getOrNull(1)
-                    ?.let { runCatching { URLDecoder.decode(it, "UTF-8") }.getOrNull() }
-                    ?: if (href.startsWith("//")) "https:$href" else href
-                append("\n$title\n$real")
-                snips.getOrNull(i)?.takeIf { it.isNotBlank() }?.let { append("\n$it") }
+
+        // Wikipedia full-text search (reliable, keyless).
+        runCatching {
+            val w = json.parseToJsonElement(
+                getBody("https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=$q&format=json&srlimit=8")
+            ).jsonObject
+            val hits = w["query"]?.jsonObject?.get("search")?.jsonArray
+            if (hits != null && hits.isNotEmpty()) {
+                out.append("\nWikipedia (${hits.size}):\n")
+                hits.forEach { el ->
+                    val eo = el.jsonObject
+                    val title = (eo["title"] as? JsonPrimitive)?.contentOrNull ?: return@forEach
+                    val snippet = (eo["snippet"] as? JsonPrimitive)?.contentOrNull?.let { stripTags(it) }.orEmpty()
+                    val url = "https://en.wikipedia.org/wiki/" + URLEncoder.encode(title.replace(" ", "_"), "UTF-8")
+                    out.append("\n$title\n$url")
+                    if (snippet.isNotBlank()) out.append("\n$snippet")
+                }
             }
         }
+
+        if (out.isBlank()) "No web/wiki results for \"$query\" — use the pivots below."
+        else out.toString().trim()
     }
 
     /** Live GitHub profile for a username (keyless, 60 req/hr): name, bio,
