@@ -3,14 +3,21 @@ package com.osint.unified.ui.godeye
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.ShapeDrawable
 import android.graphics.drawable.shapes.OvalShape
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -21,17 +28,15 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,14 +44,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.osint.unified.BuildConfig
-import com.osint.unified.R
+import com.osint.unified.ui.theme.Intel
 import org.osmdroid.config.Configuration
 import org.osmdroid.events.MapEventsReceiver
 import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
@@ -72,38 +78,64 @@ fun GodEyeViewScreen(
     var showQuakes by remember { mutableStateOf(true) }
     var showEvents by remember { mutableStateOf(true) }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("OSINT Unified") },
-                actions = {
-                    IconButton(onClick = onOpenForensics) {
-                        Icon(Icons.Filled.Build, contentDescription = "Forensics & decoders")
-                    }
-                    IconButton(onClick = onOpenHistory) {
-                        Icon(Icons.Filled.History, contentDescription = "History")
-                    }
-                    IconButton(onClick = { showSettings = true }) {
-                        Icon(Icons.Filled.Settings, contentDescription = "Settings")
+    Scaffold(containerColor = Intel.Base) { pad ->
+        Column(modifier = Modifier.padding(pad).fillMaxSize()) {
+            // ---- Console header + live telemetry ----
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 4.dp, top = 10.dp)
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("OSINT ∷ UNIFIED", style = MaterialTheme.typography.titleSmall, color = Intel.TextHi)
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
+                        Box(Modifier.size(6.dp).clip(RoundedCornerShape(50)).background(Intel.Success))
+                        Spacer(Modifier.width(5.dp))
+                        Text(
+                            "LIVE  AIR ${state.aircraft.size} · SEA ${state.vessels.size} · SEIS ${state.quakes.size} · EVT ${state.naturalEvents.size}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Intel.TextMid
+                        )
                     }
                 }
-            )
-        }
-    ) { pad ->
-        Column(modifier = Modifier.padding(pad).fillMaxSize()) {
+                IconButton(onClick = onOpenForensics) {
+                    Icon(Icons.Filled.Build, contentDescription = "Forensics & decoders", tint = Intel.TextMid)
+                }
+                IconButton(onClick = onOpenHistory) {
+                    Icon(Icons.Filled.History, contentDescription = "History", tint = Intel.TextMid)
+                }
+                IconButton(onClick = { showSettings = true }) {
+                    Icon(Icons.Filled.Settings, contentDescription = "Settings", tint = Intel.TextMid)
+                }
+            }
+
+            // ---- Command search ----
             OutlinedTextField(
                 value = state.query,
                 onValueChange = viewModel::onQueryChange,
                 singleLine = true,
-                placeholder = { Text(stringResource(R.string.search_hint)) },
+                textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+                leadingIcon = { Text("›", style = MaterialTheme.typography.titleMedium, color = Intel.Cyan) },
+                placeholder = { Text("query any target — name · email · domain · ip · coord · image", style = MaterialTheme.typography.bodySmall) },
                 trailingIcon = {
                     IconButton(onClick = viewModel::onSearch) {
-                        Icon(Icons.Filled.Search, contentDescription = "Search")
+                        Icon(Icons.Filled.Search, contentDescription = "Search", tint = Intel.Cyan)
                     }
                 },
+                shape = RoundedCornerShape(10.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Intel.Cyan,
+                    unfocusedBorderColor = Intel.Hairline,
+                    cursorColor = Intel.Cyan,
+                    focusedContainerColor = Intel.Surface,
+                    unfocusedContainerColor = Intel.Surface,
+                    focusedTextColor = Intel.TextHi,
+                    unfocusedTextColor = Intel.TextHi,
+                    focusedPlaceholderColor = Intel.TextLow,
+                    unfocusedPlaceholderColor = Intel.TextLow
+                ),
                 keyboardActions = KeyboardActions(onSearch = { viewModel.onSearch() }),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)
             )
 
             FlowRow(
@@ -111,31 +143,24 @@ fun GodEyeViewScreen(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)
             ) {
                 EXAMPLES.forEach { example ->
-                    SuggestionChip(
-                        onClick = {
-                            viewModel.onQueryChange(example)
-                            viewModel.onSearch()
-                        },
-                        label = { Text(example) }
-                    )
+                    ExamplePill(example) {
+                        viewModel.onQueryChange(example)
+                        viewModel.onSearch()
+                    }
                 }
             }
 
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp)
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)
             ) {
-                FilterChip(selected = showAircraft, onClick = { showAircraft = !showAircraft },
-                    label = { Text("Aircraft ${state.aircraft.size}") })
-                FilterChip(selected = showVessels, onClick = { showVessels = !showVessels },
-                    label = { Text("Vessels ${state.vessels.size}") })
-                FilterChip(selected = showQuakes, onClick = { showQuakes = !showQuakes },
-                    label = { Text("Quakes ${state.quakes.size}") })
-                FilterChip(selected = showEvents, onClick = { showEvents = !showEvents },
-                    label = { Text("Events ${state.naturalEvents.size}") })
+                LayerPill("AIR", state.aircraft.size, Intel.NetCyan, showAircraft) { showAircraft = !showAircraft }
+                LayerPill("SEA", state.vessels.size, Intel.Teal, showVessels) { showVessels = !showVessels }
+                LayerPill("SEIS", state.quakes.size, Intel.Coral, showQuakes) { showQuakes = !showQuakes }
+                LayerPill("EVT", state.naturalEvents.size, Intel.Amber, showEvents) { showEvents = !showEvents }
             }
 
-            Box(modifier = Modifier.fillMaxWidth().weight(1f).padding(top = 6.dp)) {
+            Box(modifier = Modifier.fillMaxWidth().weight(1f).padding(top = 2.dp)) {
                 GlobeMap(
                     aircraft = if (showAircraft) state.aircraft else emptyList(),
                     vessels = if (showVessels) state.vessels else emptyList(),
@@ -274,6 +299,41 @@ private fun dot(color: Int, sizePx: Int): Drawable {
         intrinsicWidth = size
         intrinsicHeight = size
         setBounds(0, 0, size, size)
+    }
+}
+
+@Composable
+private fun ExamplePill(text: String, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(Intel.Surface)
+            .border(1.dp, Intel.Hairline, RoundedCornerShape(6.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 9.dp, vertical = 5.dp)
+    ) {
+        Text(text, style = MaterialTheme.typography.labelMedium, color = Intel.TextMid)
+    }
+}
+
+@Composable
+private fun LayerPill(label: String, count: Int, color: Color, on: Boolean, onClick: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(if (on) Intel.Elevated else Intel.Surface)
+            .border(1.dp, if (on) color else Intel.Hairline, RoundedCornerShape(50))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 5.dp)
+    ) {
+        Box(Modifier.size(7.dp).clip(RoundedCornerShape(50)).background(if (on) color else Intel.TextLow))
+        Spacer(Modifier.width(6.dp))
+        Text(
+            "$label $count",
+            style = MaterialTheme.typography.labelSmall,
+            color = if (on) Intel.TextHi else Intel.TextLow
+        )
     }
 }
 
