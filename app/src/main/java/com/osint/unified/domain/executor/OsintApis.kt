@@ -144,9 +144,7 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
             getBody("https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=$lat&lon=$lon")
         ).jsonObject
         val display = (o["display_name"] as? JsonPrimitive)?.contentOrNull ?: "(no address found)"
-        val mgrs = runCatching {
-            mil.nga.mgrs.MGRS.from(mil.nga.grid.features.Point.point(lon, lat)).coordinate()
-        }.getOrNull()
+        val mgrs = com.osint.unified.domain.Mgrs.from(lat, lon)
         buildString {
             append("Address: $display\n")
             append("Lat/Lon: $lat, $lon\n")
