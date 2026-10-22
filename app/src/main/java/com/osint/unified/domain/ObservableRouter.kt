@@ -84,7 +84,7 @@ class ObservableRouter {
         val ids = when (observable) {
             is Observable.Email -> listOf("gravatar", "emailaccounts", "hudsonrock", "websearch", "dorks", "framework", "holehe", "ghunt", "h8mail")
             is Observable.Username -> listOf("github", "sherlock", "maigret", "blackbird", "websearch", "dorks", "framework")
-            is Observable.Domain -> listOf("subfinder", "crtsh", "dns", "rdap", "httpx", "shodan", "urlscan", "webcrawl", "wayback", "archive", "dorks", "framework", "amass", "nuclei")
+            is Observable.Domain -> listOf("subfinder", "crtsh", "dns", "rdap", "httpx", "shodan", "urlscan", "waybackurls", "gau", "webcrawl", "wayback", "archive", "dorks", "framework", "amass", "nuclei")
             is Observable.IpAddress -> listOf("ipinfo", "shodan", "bgpview", "rdap", "dorks", "framework", "httpx", "nuclei")
             is Observable.PhoneNumber -> listOf("phoneinfoga", "websearch", "dorks", "framework")
             is Observable.Coordinate -> listOf("revgeo", "wikinearby", "overpass_turbo", "framework")

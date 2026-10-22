@@ -50,7 +50,10 @@ jobs:
           for spec in \
             "subfinder=github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest" \
             "httpx=github.com/projectdiscovery/httpx/cmd/httpx@latest" \
-            "amass=github.com/owasp-amass/amass/v4/...@master"; do
+            "amass=github.com/owasp-amass/amass/v4/...@master" \
+            "waybackurls=github.com/tomnomnom/waybackurls@latest" \
+            "gau=github.com/lc/gau/v2/cmd/gau@latest" \
+            "dnsx=github.com/projectdiscovery/dnsx/cmd/dnsx@latest"; do
             name="${spec%%=*}"; path="${spec#*=}"
             if go install "$path"; then
               cp "$BIN/$name" "$OUT/lib$name.so" && echo "BUILT $name"
