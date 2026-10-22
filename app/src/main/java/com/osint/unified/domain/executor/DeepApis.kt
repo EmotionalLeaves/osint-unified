@@ -313,9 +313,14 @@ class DeepApis(private val client: OkHttpClient = Http.client) {
 
         val checks = listOf<Pair<String, suspend () -> String?>>(
             "Bluesky" to {
-                val o = json.parseToJsonElement(
+                // Handles are either name.bsky.social or a custom domain, so
+                // try the default form first and the bare handle after.
+                val body = runCatching {
                     get("https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=$e.bsky.social")
-                ).jsonObject
+                }.getOrElse {
+                    get("https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=$e")
+                }
+                val o = json.parseToJsonElement(body).jsonObject
                 o.str("handle")?.let { h ->
                     buildString {
                         append("@$h")
