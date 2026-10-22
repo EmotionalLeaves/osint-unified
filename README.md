@@ -1,37 +1,87 @@
 # OSINT Unified
 
 A single-entry Android app for open-source intelligence. You type one
-observable — an email, username, domain, IP, phone number, or coordinate —
-and the app classifies it and routes you to the right tools. The default
-screen is the **God's Eye View**: a 3D globe (CesiumJS) showing live
-aircraft, with maritime and satellites to follow.
+observable — an email, username, domain, IP, phone number, coordinate,
+crypto wallet, aircraft tail number or just a name — and the app classifies
+it, fans out across every source that can say something about it, and shows
+the findings in one dossier.
 
-> **Status:** Feature-complete MVP. Globe (aircraft + vessels + tap-to-
-> investigate), observable router, on-device + direct + cloud tool execution,
-> readable results, chained workflow, investigation history, and export
-> (JSON / CSV / dossier / PDF + link graph) are all built. Remaining:
-> deploy the backend for the cloud/credentialed tools.
+The default screen is the **God's Eye View**: a native satellite-imagery
+globe carrying ~25 live layers, from aircraft and vessels to traffic
+cameras, restricted airspace and submarine cable landings.
+
+> **Status:** Working. 69 registered tools, 56 of them keyless and run
+> directly on the device with no backend, no API keys and no accounts.
+> The optional `backend/` server only adds the handful of tools that
+> genuinely need credentials or heavy runtimes.
 
 ## Building the APK with no PC (phone-only)
 
 You don't need Android Studio or a desktop. GitHub builds the APK for you:
 
-1. Create a new GitHub repo and push this project to it (GitHub mobile app,
-   or any git client on your phone, works).
-2. GitHub Actions runs automatically on push (see `.github/workflows/build.yml`).
-3. Open the repo on github.com → **Actions** tab → the latest **Build APK**
-   run → scroll to **Artifacts** → download **osint-unified-debug**.
+1. Push this project to a GitHub repo (the GitHub mobile app, or any git
+   client on your phone, works).
+2. GitHub Actions runs automatically on push (`.github/workflows/build.yml`).
+3. Open the repo → **Actions** → the latest **Build APK** run → **Artifacts**
+   → download **osint-unified-debug**.
 4. Unzip, tap the `.apk`, and allow "install from unknown sources."
 
 Every push rebuilds and produces a fresh APK. No local toolchain required.
+
+## Verifying sources actually work
+
+Third-party endpoints rot: they start demanding keys, block datacenter IPs,
+or quietly disappear. `.github/workflows/probe.yml` exists so no source is
+ever wired in on faith.
+
+Put candidate URLs in `.github/probe-urls.txt` (one per line, optionally
+`URL||custom user agent` or `URL@@byte-offset`), run the **Probe endpoints**
+workflow, and each URL's status code, response size and first bytes come
+back as build annotations. Every source in this app was confirmed that way
+before a line of Kotlin was written for it, and the ones that failed —
+FAA's registry, Blockchair, OpenSanctions, OpenAQ, ReliefWeb, phishstats —
+were dropped rather than shipped broken.
+
+## The globe
+
+A native osmdroid `MapView` over keyless Esri World Imagery — earlier
+WebView attempts (CesiumJS, MapLibre, Leaflet) all rendered blank on device.
+
+Layers, each toggleable, counts live in the pill: aircraft (with
+carrier/cargo/military filtering), military ADS-B, LADD (aircraft whose
+owners paid to be hidden from tracking), vessels, satellites, earthquakes,
+seismic stations, natural events, wildfires, volcanoes, GDACS disasters,
+weather alerts, METAR, air quality, aurora, ocean buoys, news hotspots,
+conflicts, airports, power plants, traffic cameras, restricted airspace,
+submarine cable landings, and your own overlay. A space-weather line in the
+HUD carries the Kp index, X-ray flare class and active SWPC alerts.
+
+Tap any marker for an object panel with its label, coordinates and MGRS,
+then investigate it or re-centre on it.
+
+## Pivots
+
+Every successful result is scanned for emails, handles, hosts, IPs, phone
+numbers, wallets, tail numbers, coordinates and hashes, ranked by how many
+sources corroborate each. They appear as **PIVOTS** in the dossier — one tap
+starts a fresh investigation. A domain leads to an admin email, which leads
+to a username, which leads to a Keybase proof.
+
+## Self-test
+
+The network-check icon runs every DIRECT tool and every live feed against a
+sample input and reports ok / empty / timeout / fail with timings. If
+something breaks in the field, that screen says which source and why.
 
 ## What's in Phase 1
 
 | Area | File | What it does |
 |------|------|--------------|
 | Observable router | `domain/ObservableRouter.kt` | Regex classification + tool suggestions |
-| Tool registry | `domain/ToolRegistry.kt` | The 15 MVP tools, single source of truth |
-| God's Eye View | `assets/cesium.html` + `ui/godeye/` | 3D globe, live (mock) aircraft, tap-to-search |
+| Tool registry | `domain/ToolRegistry.kt` | All 69 tools, single source of truth |
+| God's Eye View | `ui/godeye/` | Native osmdroid globe, ~25 live layers, tap-to-inspect |
+| Keyless sources | `domain/executor/OsintApis.kt`, `DeepApis.kt` | Every direct API call the app makes |
+| Pivot extraction | `domain/EntityExtractor.kt` | Identifiers pulled out of all results |
 | Storage | `data/db/` | Room: investigations + results, ready for Phase 2 |
 | Tests | `test/.../ObservableRouterTest.kt` | Router classification unit tests |
 
@@ -40,7 +90,7 @@ Every push rebuilds and produces a fresh APK. No local toolchain required.
 ```
 Search bar  ─►  ObservableRouter  ─►  suggested Tools (chips)
    │                                        │
-God's Eye View (CesiumJS WebView)           ▼  (Phase 2)
+God's Eye View (osmdroid, native)           ▼
    ▲                                   Tool executors
    └── live aircraft feed              (LOCAL binaries / CLOUD API)
                                             │
@@ -57,9 +107,10 @@ God's Eye View (CesiumJS WebView)           ▼  (Phase 2)
   (JSON/CSV/dossier/PDF), investigation history, link graph. ✅
 - **Phase 4 — GEOINT:** maritime (AIS) vessels, tap-to-investigate. ✅
 - **Phase 5 — Automation:** chained workflow (Subfinder → httpx). ✅
-- **Remaining:** deploy the backend (Nuclei/GHunt/h8mail/TruffleHog/
-  OpenSanctions); bundle Amass; a Python path for Holehe/others; signed
-  release build.
+- **Phase 6 — Keyless depth:** 56 direct sources, live-probed in CI before
+  shipping; object inspector; cross-result pivots. ✅
+- **Remaining:** signed release build; optional backend for the few
+  credentialed tools (Nuclei/GHunt/h8mail/TruffleHog).
 
 ## How each tool runs
 
@@ -77,14 +128,18 @@ Four execution modes (see `domain/ExecutionMode`):
   bundled" message until added (Amass is Go and bundleable; the Python tools
   need a Python runtime path).
 
-| Search type | Works with no backend | Needs backend |
-|-------------|-----------------------|---------------|
-| Username | Sherlock, Maigret | — |
-| Phone | PhoneInfoga | — |
-| Coordinate | Overpass | — |
-| Domain | Subfinder, httpx | Nuclei; Amass (pending) |
-| IP | httpx | Nuclei |
-| Email | — | GHunt, h8mail (Holehe pending) |
+| Search type | Runs with no backend, no key, no account | Needs backend |
+|-------------|------------------------------------------|---------------|
+| Email | Breach exposure, Gravatar, account finder, infostealer check, email→GitHub, mail security, web search, dorks, framework | GHunt, h8mail, Holehe |
+| Username | Keybase proofs, GitHub profile + activity, Sherlock/Maigret/Blackbird, Reddit, Hacker News, Telegram, Wikidata, web search, dorks | — |
+| Domain | Subfinder, crt.sh, subdomain sweep, DNS, TLS cert, mail security, headers, site files, RDAP, host intel, httpx, Shodan InternetDB, urlscan, Wayback, crawl, archive | Nuclei |
+| IP | IP geo/ASN, reverse DNS, Tor exit, Shodan InternetDB, BGP/ASN, RDAP, host intel | Nuclei |
+| Phone | PhoneInfoga (native libphonenumber) | — |
+| Coordinate | Reverse geocode, sun & terrain, Wikipedia nearby, Overpass, military sites, cameras nearby, UK crime, historical weather | — |
+| Name / entity | Web search, Wikidata, GLEIF, SEC EDGAR, OFAC sanctions (offline), FBI wanted, geocode, GDELT | OpenSanctions |
+| Wallet | BTC/ETH balance, transactions, tokens, counterparties | — |
+| Aircraft | Mode-S/tail → type, registered owner, live position | — |
+| Image | EXIF/GPS, reverse image search, archive | — |
 
 ## Results, export & analysis
 
@@ -102,8 +157,12 @@ Four execution modes (see `domain/ExecutionMode`):
   in settings; with a URL, it parses the real `aircraft.json`.
 - **arm64 only:** bundled binaries target arm64-v8a (essentially all modern
   phones). A 32-bit-only device wouldn't get the on-device tools.
-- **CesiumJS** loads from its CDN and uses OpenStreetMap imagery (no Cesium
-  Ion account/token needed).
+- **Esri World Imagery** supplies the satellite basemap, keyless — no token
+  or account.
+- **Reddit** blocks datacenter IP ranges, so that source may return nothing
+  on an emulator in the cloud while working normally from a phone.
+- **Traffic cameras** currently cover Caltrans (California); the coordinate
+  tool points elsewhere at other public camera directories.
 
 ## Full tool coverage (the 48)
 
