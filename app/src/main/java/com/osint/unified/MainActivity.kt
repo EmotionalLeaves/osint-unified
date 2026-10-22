@@ -7,6 +7,7 @@ import android.view.WindowManager
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.activity.ComponentActivity
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
@@ -69,6 +70,9 @@ class MainActivity : ComponentActivity() {
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Draw behind the status and navigation bars. The console fills the
+        // screen; a black strip at each end was wasted space on a map.
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         // The recent-apps thumbnail is a screenshot of whatever was on
         // screen, and the app is usually showing who you are looking at.

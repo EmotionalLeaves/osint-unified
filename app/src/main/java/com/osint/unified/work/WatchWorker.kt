@@ -68,6 +68,17 @@ class WatchWorker(
 
         val notification = NotificationCompat.Builder(applicationContext, CHANNEL)
             .setSmallIcon(android.R.drawable.ic_menu_compass)
+            // A target identifier does not belong on a locked screen.
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setPublicVersion(
+                NotificationCompat.Builder(applicationContext, CHANNEL)
+                    .setSmallIcon(android.R.drawable.ic_menu_compass)
+                    .setContentTitle(
+                        if (changes.size == 1) "A watched target changed"
+                        else "${changes.size} watched targets changed"
+                    )
+                    .build()
+            )
             .setContentTitle(title)
             .setContentText(changes.first())
             .setStyle(NotificationCompat.BigTextStyle().bigText(changes.joinToString("\n")))

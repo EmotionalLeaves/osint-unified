@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Kept in step with Intel.Base in ui/theme/Color.kt. -->
+    <color name="intel_base">#FF070B0F</color>
+</resources>

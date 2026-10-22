@@ -1,4 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.OsintUnified" parent="android:Theme.Material.NoActionBar" />
+    <!--
+      The window behind Compose.
+      
+      It was android:Theme.Material.NoActionBar with no background colour, so
+      every launch flashed white before the first frame painted — the single
+      loudest "this is a debug build" signal the app had.
+    -->
+    <style name="Theme.OsintUnified" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/intel_base</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
 </resources>
