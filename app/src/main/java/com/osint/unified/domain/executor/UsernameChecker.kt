@@ -42,6 +42,20 @@ class UsernameChecker(private val appContext: Context) {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
+    /**
+     * The device's own user agent.
+     *
+     * Every request used to claim to be Chrome 120 on Android 13 — a 2023
+     * browser — from one address at ninety-six at a time. Bot detection
+     * reads that pattern instantly, and it is trivially linkable across
+     * nine thousand sites back to this app.
+     */
+    private val userAgent: String = runCatching {
+        android.webkit.WebSettings.getDefaultUserAgent(appContext)
+    }.getOrNull()?.takeIf { it.isNotBlank() }
+        ?: "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) " +
+        "Chrome/120.0.0.0 Mobile Safari/537.36"
+
     private val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(6, TimeUnit.SECONDS)
         .readTimeout(6, TimeUnit.SECONDS)
@@ -78,23 +92,43 @@ class UsernameChecker(private val appContext: Context) {
         /** Control probes to run. Beyond this, hits are reported unverified
          *  rather than paying for a second sweep as large as the first. */
         const val CONTROL_PROBE_CAP = 400
+
+        /** One heavy page at 64 concurrent reads is enough to run out of
+         *  memory, so no body is read past this. */
+        const val MAX_BODY_BYTES = 256L * 1024
+
+        /** 40 + 15 = 55 s, inside the 70 s the registry allows this tool. */
+        const val SWEEP_BUDGET_MS = 40_000L
+        const val CONTROL_BUDGET_MS = 15_000L
     }
 
     suspend fun check(username: String): String = withContext(Dispatchers.IO) {
         val sites = loadRules()
         if (sites.isEmpty()) return@withContext "Could not load any site ruleset (check network)."
 
-        val found = Collections.synchronizedList(mutableListOf<Pair<SiteRule, String>>())
-        val semaphore = Semaphore(96)
-        val checked = java.util.concurrent.atomic.AtomicInteger(0)
+        // A username with characters a site's URL cannot carry was being
+        // injected raw into thousands of templates; sites that reject the
+        // format answer with their homepage, which then counted as a hit.
+        val encoded = java.net.URLEncoder.encode(username, "UTF-8").replace("+", "%20")
 
-        val completed = withTimeoutOrNull(32_000) {
+        val found = Collections.synchronizedList(mutableListOf<Pair<SiteRule, String>>())
+        val semaphore = Semaphore(64)
+        val answeredNo = java.util.concurrent.atomic.AtomicInteger(0)
+        val couldNotAsk = java.util.concurrent.atomic.AtomicInteger(0)
+
+        // The outer per-tool cap is 70 s. Sweep plus control probes has to
+        // finish inside that, or the whole result is thrown away and
+        // replaced by a generic timeout just as it completes.
+        val completed = withTimeoutOrNull(SWEEP_BUDGET_MS) {
             coroutineScope {
                 sites.map { site ->
                     async {
                         semaphore.withPermit {
-                            checkSite(site, username)?.let { found.add(site to it) }
-                            checked.incrementAndGet()
+                            when (val answer = checkSite(site, encoded)) {
+                                is SiteAnswer.Found -> found.add(site to answer.url)
+                                SiteAnswer.Absent -> answeredNo.incrementAndGet()
+                                SiteAnswer.Unreachable -> couldNotAsk.incrementAndGet()
+                            }
                         }
                     }
                 }.awaitAll()
@@ -103,7 +137,9 @@ class UsernameChecker(private val appContext: Context) {
         } != null
 
         val raw = found.sortedBy { it.first.name.lowercase() }
-        val scanned = if (completed) sites.size else checked.get()
+        val said = answeredNo.get() + found.size
+        val refused = couldNotAsk.get()
+        val notReached = (sites.size - said - refused).coerceAtLeast(0)
 
         // Anything matched on page content is believed; anything matched on
         // a bare 200 is not, until a control proves the site can say no.
@@ -113,12 +149,21 @@ class UsernameChecker(private val appContext: Context) {
         val hits = (byContent + survived).sortedBy { it.first.name.lowercase() }
 
         buildString {
+            // Three numbers, because they mean three different things and
+            // pooling them is how a sweep that reached a fifth of its list
+            // reported a clean sheet.
+            val coverage = "$said answered · $refused refused or blocked" +
+                if (notReached > 0) " · $notReached not reached" else ""
             if (hits.isEmpty()) {
-                append("No accounts found for \"$username\" across $scanned sites")
-                append(if (completed) "." else " (partial — hit the time cap).")
+                append("No accounts found for \"$username\".\n")
+                append("Coverage: $coverage of ${sites.size} sites")
+                append(if (completed) "." else " — stopped at the time cap.")
+                append("\nThis is not a clean sheet: only the $said sites that ")
+                append("answered said no.")
             } else {
-                append("Found ${hits.size} accounts for \"$username\" across $scanned sites")
-                append(if (completed) ":" else " (partial — hit the time cap):")
+                append("Found ${hits.size} accounts for \"$username\".\n")
+                append("Coverage: $coverage of ${sites.size} sites")
+                append(if (completed) ":" else " — stopped at the time cap:")
                 append("\n")
                 hits.forEach { (site, url) ->
                     append(site.name)
@@ -162,13 +207,18 @@ class UsernameChecker(private val appContext: Context) {
         val control = "zq" + java.util.UUID.randomUUID().toString().replace("-", "").take(16)
         val keep = Collections.synchronizedList(mutableListOf<Pair<SiteRule, String>>())
         val semaphore = Semaphore(48)
-        withTimeoutOrNull(18_000) {
+        withTimeoutOrNull(CONTROL_BUDGET_MS) {
             coroutineScope {
                 candidates.take(CONTROL_PROBE_CAP).map { pair ->
                     async {
                         semaphore.withPermit {
-                            // Survives only if the control is NOT reported found.
-                            if (checkSite(pair.first, control) == null) keep.add(pair)
+                            // Survives only if the control is NOT reported
+                            // found. A site that could not be asked about the
+                            // control proves nothing, so the hit stands and
+                            // keeps its unverified mark.
+                            if (checkSite(pair.first, control) !is SiteAnswer.Found) {
+                                keep.add(pair)
+                            }
                         }
                     }
                 }.awaitAll()
@@ -212,34 +262,69 @@ class UsernameChecker(private val appContext: Context) {
                 .joinToString(", ") { "${it.key} ${it.value}" }
     }
 
-    private fun checkSite(site: SiteRule, username: String): String? {
+    /**
+     * What one site said.
+     *
+     * [Unreachable] is the point of this type. A site that refused, timed
+     * out or was blocked used to return the same value as a site that
+     * answered "no such account", so a sweep that could not reach nine
+     * hundred sites reported them as nine hundred confirmed absences — and
+     * the dossier printed "No accounts found across 2,140 sites" as though
+     * every one of them had looked.
+     */
+    private sealed interface SiteAnswer {
+        data class Found(val url: String) : SiteAnswer
+        data object Absent : SiteAnswer
+        data object Unreachable : SiteAnswer
+    }
+
+    private fun checkSite(site: SiteRule, username: String): SiteAnswer {
         val url = site.urlFor(username)
-        if (!url.startsWith("http")) return null
+        if (!url.startsWith("http")) return SiteAnswer.Unreachable
         return try {
             val request = Request.Builder()
                 .url(url)
-                .header(
-                    "User-Agent",
-                    "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) " +
-                        "Chrome/120.0.0.0 Mobile Safari/537.36"
-                )
+                .header("User-Agent", userAgent)
                 .build()
             client.newCall(request).execute().use { resp ->
-                // Body is only read when a rule actually needs it.
+                // Body is only read when a rule actually needs it, and never
+                // more than 256 KB: at 96 concurrent full reads one heavy
+                // page is enough to run the app out of memory.
                 val needsBody = site.presence.isNotEmpty() || site.absence.isNotEmpty()
-                val body = if (needsBody) resp.body?.string().orEmpty() else ""
+                val body = if (needsBody) {
+                    resp.peekBody(MAX_BODY_BYTES).string()
+                } else {
+                    ""
+                }
+                fun verdict(found: Boolean) =
+                    if (found) SiteAnswer.Found(url) else SiteAnswer.Absent
+
                 when {
+                    // A server error is the server failing, not an answer
+                    // about this username.
+                    resp.code >= 500 -> SiteAnswer.Unreachable
+                    // Blocked by a bot wall. It did not look either.
+                    resp.code == 401 || resp.code == 403 || resp.code == 429 ->
+                        SiteAnswer.Unreachable
+                    // Upstream rules that carry both lists mean: present
+                    // markers confirm, absent markers deny. Checking only
+                    // presence counted a page carrying both as found.
+                    site.presence.isNotEmpty() && site.absence.isNotEmpty() ->
+                        verdict(
+                            resp.isSuccessful &&
+                                site.presence.any { body.contains(it) } &&
+                                site.absence.none { body.contains(it) }
+                        )
                     site.presence.isNotEmpty() ->
-                        if (resp.isSuccessful && site.presence.any { body.contains(it) }) url else null
+                        verdict(resp.isSuccessful && site.presence.any { body.contains(it) })
                     site.absence.isNotEmpty() ->
-                        if (resp.isSuccessful && site.absence.none { body.contains(it) }) url else null
-                    site.expectedCode != null ->
-                        if (resp.code == site.expectedCode) url else null
-                    else -> if (resp.isSuccessful) url else null
+                        verdict(resp.isSuccessful && site.absence.none { body.contains(it) })
+                    site.expectedCode != null -> verdict(resp.code == site.expectedCode)
+                    else -> verdict(resp.isSuccessful)
                 }
             }
         } catch (e: Exception) {
-            null
+            SiteAnswer.Unreachable
         }
     }
 

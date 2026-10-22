@@ -7,6 +7,9 @@ import com.osint.unified.domain.Observable
 import com.osint.unified.domain.Tool
 import com.osint.unified.domain.executor.ExecutorFactory
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
@@ -59,10 +62,33 @@ class InvestigationRepository(
 
         // Hard cap per tool so one slow source can't make the dossier feel
         // hung; most finish in 1–10s, this is just a safety net.
-        val cap = tool.timeoutMs.coerceAtMost(40_000L)
-        val outcome: kotlin.Result<String> =
+        val cap = tool.timeoutMs.coerceAtMost(TOOL_CAP_MS)
+        val outcome: kotlin.Result<String> = try {
             withTimeoutOrNull(cap) { executors.forTool(tool).execute(tool, input) }
                 ?: kotlin.Result.failure(java.io.IOException("No response within ${cap / 1000}s"))
+        } catch (cancelled: CancellationException) {
+            // A new search, or STOP. The row was inserted as "running" and
+            // without this it stays that way for ever: History spins on it
+            // and the export calls it unreachable. NonCancellable because the
+            // scope is already dying.
+            withContext(NonCancellable) {
+                resultDao.update(
+                    ResultRow(
+                        id = rowId,
+                        investigationId = investigationId,
+                        toolId = tool.id,
+                        toolName = tool.name,
+                        input = input,
+                        status = "cancelled",
+                        rawOutput = "",
+                        errorMessage = "stopped before it finished",
+                        startedAt = started,
+                        finishedAt = System.currentTimeMillis()
+                    )
+                )
+            }
+            throw cancelled
+        }
         val finished = System.currentTimeMillis()
 
         val updated = outcome.fold(
@@ -96,5 +122,26 @@ class InvestigationRepository(
         )
         resultDao.update(updated)
         return updated
+    }
+
+    /**
+     * Rows left mid-flight when the app was killed.
+     *
+     * A process death during a search leaves "running" rows that nothing
+     * will ever complete, and they would otherwise spin in History for the
+     * life of the database.
+     */
+    suspend fun markInterruptedRuns() {
+        runCatching { resultDao.markRunningAsInterrupted() }
+    }
+
+    private companion object {
+        /**
+         * The outer cap. It has to exceed everything that can happen inside
+         * a single tool — the username sweep is 32 s of checking plus up to
+         * 18 s of control probes — or the whole result is thrown away and
+         * replaced by a generic timeout just as it finishes.
+         */
+        const val TOOL_CAP_MS = 75_000L
     }
 }

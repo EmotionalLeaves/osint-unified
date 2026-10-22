@@ -35,34 +35,46 @@ jobs:
       # jniLibs (the one place Android lets an app execute binaries from).
       - name: Cross-compile Go tools into jniLibs
         run: |
-          set -ux
+          set -eux
           NDK="${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_ROOT}"
           CC_BIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
           OUT="$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a"
           mkdir -p "$OUT"
           export GOOS=android GOARCH=arm64 CGO_ENABLED=1 CC="$CC_BIN"
+          # Pinned, and pinned means pinned: @latest and @master put whatever
+          # upstream pushed this morning into native code that runs inside the
+          # app with the case database next to it. GOTOOLCHAIN=local stops a
+          # module's go directive silently fetching a different compiler, which
+          # is how one build ended up using two Go versions at once.
+          export GOTOOLCHAIN=local GOFLAGS=-mod=mod
           BIN="$(go env GOPATH)/bin/android_arm64"
-          # Tools with a known cmd path, built via `go install`. Each failure is
-          # non-fatal so one bad tool can't drop the others.
-          # Self-contained pure-Go tools (no embedded frontend). nuclei and
-          # phoneinfoga are handled natively in-app instead, since they embed a
-          # web UI that a plain cross-build can't satisfy.
+
+          # -trimpath drops build paths, -s -w drop the symbol table and DWARF.
+          # The binaries were shipping unstripped with full debug info.
+          LDFLAGS="-s -w"
+
+          # dnsx was built, shipped and never called from anywhere in the app:
+          # 39 MB of native code for nothing. Amass is 51 MB and in passive
+          # mode largely repeats subfinder, so it goes too; subfinder stays.
           for spec in \
-            "subfinder=github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest" \
-            "httpx=github.com/projectdiscovery/httpx/cmd/httpx@latest" \
-            "amass=github.com/owasp-amass/amass/v4/...@master" \
-            "waybackurls=github.com/tomnomnom/waybackurls@latest" \
-            "gau=github.com/lc/gau/v2/cmd/gau@latest" \
-            "dnsx=github.com/projectdiscovery/dnsx/cmd/dnsx@latest"; do
+            "subfinder=github.com/projectdiscovery/subfinder/v2/cmd/subfinder@v2.6.6" \
+            "httpx=github.com/projectdiscovery/httpx/cmd/httpx@v1.6.5" \
+            "waybackurls=github.com/tomnomnom/waybackurls@v0.1.0" \
+            "gau=github.com/lc/gau/v2/cmd/gau@v2.2.3"; do
             name="${spec%%=*}"; path="${spec#*=}"
-            if go install "$path"; then
-              cp "$BIN/$name" "$OUT/lib$name.so" && echo "BUILT $name"
-            else
-              echo "WARN build failed: $name"
-            fi
+            go install -trimpath -ldflags="$LDFLAGS" "$path"
+            cp "$BIN/$name" "$OUT/lib$name.so"
+            echo "BUILT $name $(wc -c < "$OUT/lib$name.so") bytes from ${path##*@}"
           done
-          chmod +x "$OUT"/*.so || true
+          chmod +x "$OUT"/*.so
           ls -la "$OUT"
+          # A missing binary used to be a warning, so a tool could vanish from
+          # a release without anyone noticing.
+          for want in subfinder httpx waybackurls gau; do
+            test -s "$OUT/lib$want.so" || { echo "::error::missing lib$want.so"; exit 1; }
+          done
+          VERSIONS="subfinder v2.6.6%0Ahttpx v1.6.5%0Awaybackurls v0.1.0%0Agau v2.2.3"
+          echo "::notice title=native-tools::${VERSIONS}"
 
       - name: Bundle OSINT datasets into assets
         run: |
@@ -200,8 +212,9 @@ jobs:
         run: |
           APK=$(ls app/build/outputs/apk/debug/*.apk | head -1)
           SIZE=$(( $(wc -c < "$APK") / 1048576 ))
-          FP=$(keytool -printcert -jarfile "$APK" 2>/dev/null \
-                | grep -m1 "SHA256:" | tr -d " " || echo "unknown")
+          APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner 2>/dev/null | tail -1)
+          FP=$("$APKSIGNER" verify --print-certs "$APK" 2>/dev/null \
+                | grep -m1 -i "SHA-256 digest" | tr -d " " || echo "unknown")
           # The fingerprint must be identical between builds, or an update
           # will not install over the previous one.
           echo "::notice title=apk::${SIZE} MB%0Asigner ${FP}"

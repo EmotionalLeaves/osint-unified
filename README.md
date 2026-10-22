@@ -296,9 +296,13 @@ God's Eye View (osmdroid, native)           ▼
 
 Four execution modes (see `domain/ExecutionMode`):
 
-- **On-device (bundled Go binary):** Subfinder, httpx — cross-compiled for
-  Android/arm64 in CI with the NDK (so system DNS works), shipped in the APK
-  as `jniLibs`. No backend.
+- **On-device (bundled Go binary):** Subfinder, httpx, gau and waybackurls —
+  cross-compiled for Android/arm64 in CI with the NDK (so system DNS works),
+  shipped in the APK as `jniLibs`. No backend. Every one is pinned to an
+  exact upstream version, built with `GOTOOLCHAIN=local`, stripped and
+  `-trimpath`'d, and the build fails if one is missing rather than quietly
+  dropping it. `@latest` and `@master` meant whatever upstream pushed that
+  morning became native code running beside the case database.
 - **Direct (native, in-app):** Sherlock/Maigret (username) via a native
   WhatsMyName checker over OkHttp; PhoneInfoga (phone) via Google
   libphonenumber; Overpass (coordinate) via the public OSM API. No backend.
@@ -374,7 +378,9 @@ equivalent, or is documented as infeasible on a stock phone with the reason.
 - Analysis capabilities: Maltego → link graph + pivot transforms;
   SpiderFoot / Recon-ng → Run-all + workflows + history workspace
 
-**Attempted on-device (may bundle, CI-dependent):** OWASP Amass.
+**Deliberately not bundled:** OWASP Amass (51 MB, and in passive mode
+largely repeats subfinder) and dnsx (39 MB, which was being built and
+shipped without a single call site).
 
 **Functional once the backend is deployed (code ready):** Nuclei (templates),
 GHunt (needs Google cookie), h8mail (breach keys), TruffleHog, OpenSanctions.

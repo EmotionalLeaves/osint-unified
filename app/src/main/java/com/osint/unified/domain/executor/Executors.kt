@@ -5,9 +5,12 @@ import com.osint.unified.data.AppSettings
 import com.osint.unified.domain.ExecutionMode
 import com.osint.unified.domain.Tool
 import com.osint.unified.network.Http
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -50,7 +53,7 @@ class CloudToolExecutor(
         withContext(Dispatchers.IO) {
             val base = settings.backendBaseUrl.trimEnd('/')
             if (base.isBlank()) {
-                return@withContext Result.failure(
+                return@coroutineScope Result.failure(
                     IllegalStateException(
                         "No backend URL set. Open settings (gear icon) and enter your deployed backend URL."
                     )
@@ -86,7 +89,10 @@ class LocalToolExecutor(
 ) : ToolExecutor {
 
     override suspend fun execute(tool: Tool, input: String): Result<String> =
-        withContext(Dispatchers.IO) {
+        withContext(Dispatchers.IO) { runTool(tool, input) }
+
+    private suspend fun runTool(tool: Tool, input: String): Result<String> =
+        coroutineScope {
             val binary = File(nativeLibraryDir, "lib${tool.id}.so")
             if (!binary.exists()) {
                 return@withContext Result.failure(
@@ -96,27 +102,87 @@ class LocalToolExecutor(
                     )
                 )
             }
+            // An argument that begins with a dash is read as a flag by every
+            // one of these tools, so a target called "-oJ" could rewrite the
+            // command line.
+            if (input.trimStart().startsWith("-")) {
+                return@coroutineScope Result.failure(
+                    IllegalArgumentException("Refusing to pass an argument beginning with '-'.")
+                )
+            }
+
+            // Each run gets its own directory. A shared target file was being
+            // overwritten by whichever workflow got there second.
+            val runDir = File(workDir, "run-${System.nanoTime()}").apply { mkdirs() }
             try {
-                val command = buildCommand(tool, input, binary.absolutePath)
+                val command = buildCommand(tool, input, binary.absolutePath, runDir)
                 val process = ProcessBuilder(command)
                     .redirectErrorStream(true)
                     .apply {
-                        directory(File(workDir))
+                        directory(runDir)
                         // Tools expect a writable HOME/TMP for config + caches.
-                        environment()["HOME"] = workDir
-                        environment()["TMPDIR"] = workDir
+                        environment()["HOME"] = runDir.absolutePath
+                        environment()["TMPDIR"] = runDir.absolutePath
                     }
                     .start()
-                val output = process.inputStream.bufferedReader().readText()
-                val finished = process.waitFor(tool.timeoutMs, TimeUnit.MILLISECONDS)
+
+                // readText() blocks until the child closes stdout, so the
+                // timeout below was unreachable: a hung tool never got as far
+                // as waitFor and destroyForcibly never ran. Worse, the read is
+                // not interruptible, so cancelling the coroutine left the
+                // process running — burning CPU and mobile data until it
+                // finished on its own. Reading on a job that can be killed,
+                // with a cap on how much it may produce, fixes both.
+                val output = StringBuilder()
+                // The search moving on must stop the process, not orphan it:
+                // an orphan keeps contacting the target after the person
+                // stopped asking.
+                val guard = launch {
+                    try {
+                        awaitCancellation()
+                    } finally {
+                        if (process.isAlive) process.destroyForcibly()
+                    }
+                }
+                val reader = launch(Dispatchers.IO) {
+                    process.inputStream.bufferedReader().use { r ->
+                        val buf = CharArray(8192)
+                        while (true) {
+                            val n = r.read(buf)
+                            if (n < 0) break
+                            if (output.length < MAX_OUTPUT_CHARS) {
+                                output.append(buf, 0, n)
+                            }
+                        }
+                    }
+                }
+                val finished = withContext(Dispatchers.IO) {
+                    process.waitFor(tool.timeoutMs, TimeUnit.MILLISECONDS)
+                }
                 if (!finished) {
                     process.destroyForcibly()
-                    Result.failure(IOException("${tool.name} timed out after ${tool.timeoutMs} ms"))
-                } else {
-                    Result.success(output)
+                    reader.cancel()
+                    guard.cancel()
+                    return@coroutineScope Result.failure(
+                        IOException("${tool.name} timed out after ${tool.timeoutMs} ms")
+                    )
                 }
+                reader.join()
+                guard.cancel()
+                val text = output.toString()
+                Result.success(
+                    if (text.length >= MAX_OUTPUT_CHARS) {
+                        text + "\n[truncated at ${MAX_OUTPUT_CHARS / 1024} KB]"
+                    } else {
+                        text
+                    }
+                )
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Result.failure(e)
+            } finally {
+                runCatching { runDir.deleteRecursively() }
             }
         }
 
@@ -125,10 +191,15 @@ class LocalToolExecutor(
      * (e.g. subfinder output into httpx), it's written to a file and fed via
      * `-l` instead of `-u`.
      */
-    private fun buildCommand(tool: Tool, input: String, binPath: String): List<String> {
+    private fun buildCommand(
+        tool: Tool,
+        input: String,
+        binPath: String,
+        runDir: File
+    ): List<String> {
         val cmd = mutableListOf(binPath)
         if (tool.id == "httpx" && input.contains('\n')) {
-            val listFile = File(workDir, "httpx_targets.txt").apply { writeText(input) }
+            val listFile = File(runDir, "targets.txt").apply { writeText(input) }
             cmd += listOf("-l", listFile.absolutePath, "-json", "-silent", "-title", "-tech-detect", "-status-code")
         } else {
             cmd += argsFor(tool, input)
@@ -142,10 +213,16 @@ class LocalToolExecutor(
         "holehe" -> listOf(input, "--only-used")
         "phoneinfoga" -> listOf("scan", "-n", input)
         "subfinder" -> listOf("-d", input, "-silent", "-json")
-        "amass" -> listOf("enum", "-passive", "-d", input, "-json", "/dev/stdout")
         "httpx" -> listOf("-u", input, "-json", "-silent", "-title", "-tech-detect", "-status-code")
         "exiftool" -> listOf("-j", "-a", "-u", "-g1", input)
-        else -> listOf(input)
+        // "--" ends option parsing, so a positional target can never be read
+        // as a flag no matter what it contains.
+        else -> listOf("--", input)
+    }
+
+    private companion object {
+        /** A runaway tool could otherwise fill memory with its own output. */
+        const val MAX_OUTPUT_CHARS = 2_000_000
     }
 }
 

@@ -38,6 +38,10 @@ interface ResultDao {
 
     @Query("DELETE FROM results WHERE investigationId = :investigationId")
     suspend fun deleteForInvestigation(investigationId: Long)
+
+    /** Nothing will ever finish a run the process died in the middle of. */
+    @Query("UPDATE results SET status = 'interrupted' WHERE status = 'running'")
+    suspend fun markRunningAsInterrupted()
 }
 
 @Dao

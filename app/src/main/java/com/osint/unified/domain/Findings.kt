@@ -49,7 +49,10 @@ object Findings {
     fun saysUnreachable(output: String): Boolean {
         val head = output.trimStart().lineSequence()
             .firstOrNull { it.isNotBlank() }?.lowercase().orEmpty()
-        return UNREACHABLE.any { head.contains(it) }
+        if (UNREACHABLE.any { head.contains(it) }) return true
+        // A sweep that reached a fraction of its list is closer to "could
+        // not ask" than to "looked and found nothing".
+        return output.contains("This is not a clean sheet", ignoreCase = true)
     }
 
     /** True when a successful result is really a report of absence. */
@@ -58,6 +61,9 @@ object Findings {
             .firstOrNull { it.isNotBlank() }?.lowercase().orEmpty()
         if (head.isBlank()) return true
         if (UNREACHABLE.any { head.contains(it) }) return false
+        // A sweep that says in its own words that it is not a clean sheet
+        // is not reporting an absence; it is reporting partial coverage.
+        if (output.contains("This is not a clean sheet", ignoreCase = true)) return false
         return NOTHING.any { head.contains(it) }
     }
 

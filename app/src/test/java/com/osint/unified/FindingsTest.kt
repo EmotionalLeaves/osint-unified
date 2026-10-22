@@ -43,6 +43,35 @@ class FindingsTest {
         assertEquals(listOf("failed"), sorted.failed.map { it.toolId })
     }
 
+    /**
+     * The sweep's own caveat outranks its headline.
+     *
+     * "No accounts found" at the top of a run that reached a fifth of its
+     * list is not an absence, and filing it as one is how a dossier states
+     * a clean sheet nobody checked.
+     */
+    @Test
+    fun partialCoverageIsNotAnAbsence() {
+        val out = "No accounts found for \"jo\".\n" +
+            "Coverage: 2140 answered · 900 refused or blocked · 6349 not reached " +
+            "of 9389 sites — stopped at the time cap.\n" +
+            "This is not a clean sheet: only the 2140 sites that answered said no."
+        assertFalse(Findings.saysNothing(out))
+        assertTrue(Findings.saysUnreachable(out))
+        assertEquals(listOf("sweep"), Findings.sort(listOf(row("success", out, "sweep"))).failed.map { it.toolId })
+    }
+
+    /** A source reporting its own failure is unreachable, not empty. */
+    @Test
+    fun aSourceReportingItsOwnFailureIsNotAnAbsence() {
+        val out = "The UN consolidated list is not bundled in this build."
+        assertFalse(Findings.saysNothing(out))
+        assertTrue(Findings.saysUnreachable(out))
+        val sorted = Findings.sort(listOf(row("success", out, "unsanctions")))
+        assertTrue(sorted.empty.isEmpty())
+        assertEquals(listOf("unsanctions"), sorted.failed.map { it.toolId })
+    }
+
     /** Only the first line decides: a long report that happens to contain
      *  the words "no results" further down is still a report. */
     @Test
