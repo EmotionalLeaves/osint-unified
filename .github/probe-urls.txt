@@ -1,18 +1,16 @@
-https://keybase.io/_/api/1.0/user/lookup.json?usernames=chris&fields=basics,proofs_summary
-https://api.xposedornot.com/v1/check-email/test@gmail.com
-https://hexdb.io/api/v1/aircraft/A835AF
-https://api.gleif.org/api/v1/lei-records?filter%5Bentity.legalName%5D=Tesla&page%5Bsize%5D=2
-https://www.reddit.com/user/spez/about.json
-https://hacker-news.firebaseio.com/v0/user/pg.json
-https://api.blockchair.com/bitcoin/dashboards/address/1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa
-https://services.swpc.noaa.gov/json/goes/primary/xrays-1-day.json
-https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json
-https://cwwp2.dot.ca.gov/data/d3/cctv/cctvStatusD03.json
-https://api.hackertarget.com/hostsearch/?q=example.com
-https://rapiddns.io/subdomain/example.com?full=1
-https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&company=tesla&type=10-K&dateb=&owner=include&count=10&output=atom
-https://www.wikidata.org/w/api.php?action=wbsearchentities&search=Elon%20Musk&language=en&format=json&limit=3
-https://api.open-meteo.com/v1/elevation?latitude=40.7128&longitude=-74.0060
-https://api.github.com/search/users?q=torvalds+in:fullname
-https://registry.faa.gov/AircraftInquiry/Search/NNumberResult?nNumberTxt=N628TS
-https://api.blockchair.com/ethereum/dashboards/address/0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045
+https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&company=tesla&type=&dateb=&owner=include&count=10&output=atom||OSINT Unified research woofdog05@gmail.com
+https://www.reddit.com/user/spez/about.json||Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36
+https://blockchain.info/rawaddr/1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa?limit=2
+https://eth.blockscout.com/api/v2/addresses/0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045
+https://api.github.com/users/torvalds/events/public
+https://archive-api.open-meteo.com/v1/archive?latitude=40.71&longitude=-74.01&start_date=2026-09-01&end_date=2026-09-02&daily=temperature_2m_max,weathercode&timezone=UTC
+https://api.opensanctions.org/search/default?q=putin&limit=2
+https://cwwp2.dot.ca.gov/data/d11/cctv/cctvStatusD11.json
+https://t.me/s/durov
+https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/ArcGIS/rest/services?f=json
+https://api.fbi.gov/wanted/v1/list?pageSize=2
+https://data.police.uk/api/crimes-street/all-crime?lat=51.5074&lng=-0.1278
+https://keybase.io/_/api/1.0/user/lookup.json?usernames=chris&fields=basics%2Cproofs_summary
+https://www.wikidata.org/w/api.php?action=wbgetentities&ids=Q317521&props=claims&format=json
+https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=test&format=json
+https://api.allorigins.win/raw?url=https%3A%2F%2Fregistry.faa.gov%2FAircraftInquiry%2FSearch%2FNNumberResult%3FnNumberTxt%3DN628TS
