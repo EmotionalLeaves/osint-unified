@@ -15,6 +15,7 @@ import com.osint.unified.data.CctvDataSource
 import com.osint.unified.data.LaddAircraftDataSource
 import com.osint.unified.data.SpaceWeatherDataSource
 import com.osint.unified.data.ConflictDataSource
+import com.osint.unified.data.DiskCache
 import com.osint.unified.data.SeismicStationDataSource
 import com.osint.unified.data.EarthquakeDataSource
 import com.osint.unified.data.FiresDataSource
@@ -44,6 +45,7 @@ import com.osint.unified.domain.executor.UsernameChecker
  */
 class OsintApplication : Application() {
     val database: AppDatabase by lazy { AppDatabase.get(this) }
+    val diskCache: DiskCache by lazy { DiskCache(this) }
     val router: ObservableRouter by lazy { ObservableRouter() }
     val settings: AppSettings by lazy { AppSettings(this) }
     val aircraftDataSource: AircraftDataSource by lazy { AircraftDataSource(settings) }
@@ -53,7 +55,7 @@ class OsintApplication : Application() {
     val overlayDataSource: OverlayDataSource by lazy { OverlayDataSource(settings) }
     val weatherDataSource: WeatherDataSource by lazy { WeatherDataSource() }
     val firesDataSource: FiresDataSource by lazy { FiresDataSource() }
-    val satellitesDataSource: SatellitesDataSource by lazy { SatellitesDataSource() }
+    val satellitesDataSource: SatellitesDataSource by lazy { SatellitesDataSource(diskCache) }
     val newsDataSource: NewsDataSource by lazy { NewsDataSource() }
     val gdacsDataSource: GdacsDataSource by lazy { GdacsDataSource() }
     val volcanoDataSource: VolcanoDataSource by lazy { VolcanoDataSource() }
@@ -62,7 +64,7 @@ class OsintApplication : Application() {
     val metarDataSource: MetarDataSource by lazy { MetarDataSource() }
     val milAircraftDataSource: MilAircraftDataSource by lazy { MilAircraftDataSource() }
     val airQualityDataSource: AirQualityDataSource by lazy { AirQualityDataSource() }
-    val seismicStationDataSource: SeismicStationDataSource by lazy { SeismicStationDataSource() }
+    val seismicStationDataSource: SeismicStationDataSource by lazy { SeismicStationDataSource(diskCache) }
     val conflictDataSource: ConflictDataSource by lazy { ConflictDataSource() }
     val airportDataSource: BundledPointsDataSource by lazy { BundledPointsDataSource.airports(this) }
     val powerPlantDataSource: BundledPointsDataSource by lazy { BundledPointsDataSource.powerPlants(this) }

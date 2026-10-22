@@ -156,7 +156,7 @@ class GodEyeViewModel(
         // can't kill its loop, and updates stay atomic per field.
         poll(0, 15_000, { aircraftDataSource.fetch(focus, wideView) }) { s, v -> s.copy(aircraft = v) }
         poll(400, 30_000, { aisDataSource.fetch() }) { s, v -> s.copy(vessels = v) }
-        poll(800, 10_000, { satellitesDataSource.fetch() }) { s, v -> s.copy(satellites = v) }
+        poll(800, 15_000, { satellitesDataSource.fetch() }) { s, v -> s.copy(satellites = v) }
         poll(1_500, 300_000, { earthquakeDataSource.fetch() }) { s, v -> s.copy(quakes = v) }
         poll(2_500, 600_000, { naturalEventsDataSource.fetch() }) { s, v -> s.copy(naturalEvents = v) }
         poll(3_500, 60_000, { overlayDataSource.fetch() }) { s, v -> s.copy(overlayPoints = v) }
@@ -170,7 +170,7 @@ class GodEyeViewModel(
         poll(13_000, 600_000, { metarDataSource.fetch() }) { s, v -> s.copy(metar = v) }
         poll(2_000, 20_000, { milAircraftDataSource.fetch() }) { s, v -> s.copy(milAircraft = v) }
         poll(14_000, 900_000, { airQualityDataSource.fetch() }) { s, v -> s.copy(airQuality = v) }
-        poll(15_000, 1_800_000, { seismicStationDataSource.fetch() }) { s, v -> s.copy(stations = v) }
+        poll(15_000, 21_600_000, { seismicStationDataSource.fetch() }) { s, v -> s.copy(stations = v) }
         poll(16_000, 1_800_000, { conflictDataSource.fetch() }) { s, v -> s.copy(conflicts = v) }
         poll(1_200, 3_600_000, { airportDataSource.fetch() }) { s, v -> s.copy(airports = v) }
         poll(1_800, 3_600_000, { powerPlantDataSource.fetch() }) { s, v -> s.copy(powerPlants = v) }

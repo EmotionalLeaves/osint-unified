@@ -36,7 +36,10 @@ import kotlin.math.abs
  * zoom levels a globe is viewed at, and the label says the position is
  * computed rather than observed.
  */
-class SatellitesDataSource(private val client: OkHttpClient = Http.client) {
+class SatellitesDataSource(
+    private val cache: DiskCache? = null,
+    private val client: OkHttpClient = Http.client
+) {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
@@ -71,36 +74,61 @@ class SatellitesDataSource(private val client: OkHttpClient = Http.client) {
     }
 
     private fun loadCatalogue(): List<Elements> {
-        val request = Request.Builder()
-            .url("https://celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=json")
-            .header("User-Agent", "OSINT-Unified/1.0 (research)")
-            .build()
-        client.newCall(request).execute().use { resp ->
-            val body = resp.body?.string()
-            if (!resp.isSuccessful || body.isNullOrBlank()) return emptyList()
-            val arr = json.parseToJsonElement(body) as? JsonArray ?: return emptyList()
-            val fmt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US)
-                .apply { timeZone = TimeZone.getTimeZone("UTC") }
-            return arr.mapNotNull { el ->
-                val o = el as? JsonObject ?: return@mapNotNull null
-                fun d(k: String) = (o[k] as? JsonPrimitive)?.doubleOrNull
-                fun s(k: String) = (o[k] as? JsonPrimitive)?.contentOrNull
-                val epoch = s("EPOCH") ?: return@mapNotNull null
-                val epochMs = runCatching {
-                    fmt.parse(epoch.substringBefore('.'))?.time
-                }.getOrNull() ?: return@mapNotNull null
-                Elements(
-                    name = s("OBJECT_NAME") ?: "satellite",
-                    noradId = (o["NORAD_CAT_ID"] as? JsonPrimitive)?.intOrNull ?: 0,
-                    epochMillis = epochMs,
-                    meanMotion = d("MEAN_MOTION") ?: return@mapNotNull null,
-                    eccentricity = d("ECCENTRICITY") ?: 0.0,
-                    inclination = d("INCLINATION") ?: 0.0,
-                    raan = d("RA_OF_ASC_NODE") ?: 0.0,
-                    argPerigee = d("ARG_OF_PERICENTER") ?: 0.0,
-                    meanAnomaly = d("MEAN_ANOMALY") ?: 0.0
-                )
-            }
+        // Celestrak asks callers to cache and rate-limits those who do not;
+        // a health check caught it answering 403 after a few fetches. So the
+        // catalogue is kept on disk for a day, and if the service refuses,
+        // the last good copy is used rather than emptying the layer.
+        cache?.read(CACHE_KEY, CATALOGUE_TTL_MS)?.let { cached ->
+            parseCatalogue(cached).takeIf { it.isNotEmpty() }?.let { return it }
+        }
+        val body = fetchCatalogue() ?: cache?.readStale(CACHE_KEY) ?: return emptyList()
+        val parsed = parseCatalogue(body)
+        if (parsed.isNotEmpty()) cache?.write(CACHE_KEY, body)
+        return parsed
+    }
+
+    /** Tries the whole catalogue, then progressively smaller groups, so a
+     *  refusal on the big one still leaves the notable objects plotted. */
+    private fun fetchCatalogue(): String? {
+        GROUPS.forEach { group ->
+            val body = runCatching {
+                val request = Request.Builder()
+                    .url("https://celestrak.org/NORAD/elements/gp.php?GROUP=$group&FORMAT=json")
+                    .header("User-Agent", "OSINT-Unified/1.0 (research)")
+                    .build()
+                client.newCall(request).execute().use { resp ->
+                    if (!resp.isSuccessful) null else resp.body?.string()
+                }
+            }.getOrNull()
+            if (!body.isNullOrBlank() && body.trimStart().startsWith("[")) return body
+        }
+        return null
+    }
+
+    private fun parseCatalogue(body: String): List<Elements> {
+        val arr = runCatching { json.parseToJsonElement(body) as? JsonArray }.getOrNull()
+            ?: return emptyList()
+        val fmt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US)
+            .apply { timeZone = TimeZone.getTimeZone("UTC") }
+        return arr.mapNotNull { el ->
+            val o = el as? JsonObject ?: return@mapNotNull null
+            fun d(k: String) = (o[k] as? JsonPrimitive)?.doubleOrNull
+            fun s(k: String) = (o[k] as? JsonPrimitive)?.contentOrNull
+            val epoch = s("EPOCH") ?: return@mapNotNull null
+            val epochMs = runCatching {
+                fmt.parse(epoch.substringBefore('.'))?.time
+            }.getOrNull() ?: return@mapNotNull null
+            Elements(
+                name = s("OBJECT_NAME") ?: "satellite",
+                noradId = (o["NORAD_CAT_ID"] as? JsonPrimitive)?.intOrNull ?: 0,
+                epochMillis = epochMs,
+                meanMotion = d("MEAN_MOTION") ?: return@mapNotNull null,
+                eccentricity = d("ECCENTRICITY") ?: 0.0,
+                inclination = d("INCLINATION") ?: 0.0,
+                raan = d("RA_OF_ASC_NODE") ?: 0.0,
+                argPerigee = d("ARG_OF_PERICENTER") ?: 0.0,
+                meanAnomaly = d("MEAN_ANOMALY") ?: 0.0
+            )
         }
     }
 
@@ -132,6 +160,10 @@ class SatellitesDataSource(private val client: OkHttpClient = Http.client) {
     }
 
     private companion object {
-        const val CATALOGUE_TTL_MS = 6 * 60 * 60 * 1000L
+        const val CATALOGUE_TTL_MS = 24 * 60 * 60 * 1000L
+        const val CACHE_KEY = "celestrak-gp"
+
+        /** Largest first; each is a fallback for the one before it. */
+        val GROUPS = listOf("active", "visual", "stations")
     }
 }
