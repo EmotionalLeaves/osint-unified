@@ -158,6 +158,9 @@ class DirectToolExecutor(
             when (tool.id) {
                 "overpass_turbo" -> overpass(input)
                 "sherlock", "maigret", "blackbird" -> runCatching { usernameChecker.check(input) }
+                "emailaccounts" -> runCatching {
+                    usernameChecker.check(input.substringBefore('@').substringBefore('+').trim())
+                }
                 "phoneinfoga" -> phoneInfo(input)
                 "webcrawl" -> apis.webcrawl(input)
                 "archive" -> apis.archive(input)
