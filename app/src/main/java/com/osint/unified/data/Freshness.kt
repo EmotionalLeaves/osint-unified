@@ -5,7 +5,10 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
+import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
+import java.time.format.DateTimeFormatterBuilder
+import java.util.Locale
 
 /**
  * How recent a feed item is.
@@ -24,33 +27,65 @@ import java.time.format.DateTimeFormatter
  */
 object Freshness {
 
-    private val patterns: List<DateTimeFormatter> = listOf(
+    /**
+     * RFC 1123 without the weekday.
+     *
+     * java.time's own RFC_1123_DATE_TIME insists the weekday agree with the
+     * date, and third-party feeds get that wrong — one stale "Wed" on a
+     * Thursday and java.time refuses the whole timestamp. Since the filter
+     * now treats undated items as not current, a refused timestamp would
+     * silently empty a layer over a detail nothing depends on. The weekday
+     * is dropped before parsing, and both the "GMT" and "+0000" spellings
+     * of the zone are accepted.
+     */
+    private val rfc1123: DateTimeFormatter = DateTimeFormatterBuilder()
+        .parseCaseInsensitive()
+        .appendPattern("d MMM yyyy HH:mm[:ss]")
+        .optionalStart()
+        .appendLiteral(' ')
+        .optionalStart().appendOffset("+HHMM", "GMT").optionalEnd()
+        .optionalStart().appendZoneOrOffsetId().optionalEnd()
+        .optionalEnd()
+        .toFormatter(Locale.US)
+
+    private val weekdayPrefix = Regex("^[A-Za-z]{3,9},\\s*")
+
+    private val isoLike: List<DateTimeFormatter> = listOf(
         DateTimeFormatter.ISO_OFFSET_DATE_TIME,
         DateTimeFormatter.ISO_INSTANT,
-        DateTimeFormatter.RFC_1123_DATE_TIME,
         DateTimeFormatter.ISO_LOCAL_DATE_TIME,
-        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"),
-        DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm:ss"),
+        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss", Locale.US),
+        DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm:ss", Locale.US),
         DateTimeFormatter.ISO_LOCAL_DATE
     )
 
     /** Epoch millis for a timestamp in any of the shapes these feeds use. */
     fun parse(raw: String?): Long? {
         val t = raw?.trim()?.takeIf { it.isNotBlank() } ?: return null
-        patterns.forEach { fmt ->
+
+        isoLike.forEach { fmt ->
             val parsed = runCatching {
                 when (fmt) {
                     DateTimeFormatter.ISO_INSTANT -> Instant.from(fmt.parse(t)).toEpochMilli()
-                    DateTimeFormatter.ISO_OFFSET_DATE_TIME,
-                    DateTimeFormatter.RFC_1123_DATE_TIME ->
+                    DateTimeFormatter.ISO_OFFSET_DATE_TIME ->
                         OffsetDateTime.parse(t, fmt).toInstant().toEpochMilli()
                     DateTimeFormatter.ISO_LOCAL_DATE ->
-                        LocalDate.parse(t, fmt).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+                        LocalDate.parse(t, fmt).atStartOfDay(ZoneOffset.UTC)
+                            .toInstant().toEpochMilli()
                     else ->
                         LocalDateTime.parse(t, fmt).toInstant(ZoneOffset.UTC).toEpochMilli()
                 }
             }.getOrNull()
             if (parsed != null) return parsed
+        }
+
+        val withoutDay = t.replaceFirst(weekdayPrefix, "")
+        runCatching {
+            return ZonedDateTime.parse(withoutDay, rfc1123).toInstant().toEpochMilli()
+        }
+        runCatching {
+            return LocalDateTime.parse(withoutDay, rfc1123)
+                .toInstant(ZoneOffset.UTC).toEpochMilli()
         }
         return null
     }

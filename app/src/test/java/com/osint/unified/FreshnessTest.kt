@@ -25,9 +25,26 @@ class FreshnessTest {
             "2026-10-20T06:00:00Z",
             "2026-10-22T15:39:00.000Z",
             "2026-10-22 13:00:00",
-            "Wed, 22 Oct 2026 09:30:00 GMT",
+            "Thu, 22 Oct 2026 09:30:00 GMT",
+            "Thu, 22 Oct 2026 04:30:00 -0500",
             "2026-10-22"
         ).forEach { assertNotNull("could not parse $it", Freshness.parse(it)) }
+    }
+
+    /**
+     * Feeds get the weekday wrong, and it must not cost them the timestamp.
+     *
+     * 22 October 2026 is a Thursday. java.time's own RFC 1123 parser
+     * refuses the whole string over the mismatch — and since an undated
+     * item is now treated as not current, that would quietly empty a layer
+     * over a detail nothing depends on.
+     */
+    @Test
+    fun aWrongWeekdayDoesNotCostTheTimestamp() {
+        assertEquals(
+            Freshness.parse("Thu, 22 Oct 2026 09:30:00 GMT"),
+            Freshness.parse("Wed, 22 Oct 2026 09:30:00 GMT")
+        )
     }
 
     @Test
