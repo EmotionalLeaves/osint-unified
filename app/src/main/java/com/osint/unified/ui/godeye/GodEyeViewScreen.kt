@@ -28,6 +28,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.NetworkCheck
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -47,6 +49,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -57,6 +60,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -118,6 +122,10 @@ fun GodEyeViewScreen(
     var mode by remember { mutableStateOf(VisualMode.DEFAULT) }
     val context = LocalContext.current
     var inspected by remember { mutableStateOf<Inspected?>(null) }
+    // The panel of search controls and layer pills is most of a phone
+    // screen. On something called a God's Eye View the globe should be the
+    // thing you are looking at, so the panel folds away.
+    var panelOpen by rememberSaveable { mutableStateOf(true) }
     var flightFilter by remember { mutableStateOf("ALL") }
     val god = mode == VisualMode.GOD
     // GOD MODE forces every layer visible.
@@ -162,24 +170,41 @@ fun GodEyeViewScreen(
                 modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 4.dp, top = 10.dp)
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text("OSINT ∷ UNIFIED", style = MaterialTheme.typography.titleSmall, color = Intel.TextHi)
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.size(6.dp).clip(RoundedCornerShape(50)).background(Intel.Success))
-                        Spacer(Modifier.width(5.dp))
+                        Spacer(Modifier.width(6.dp))
                         Text(
-                            "LIVE $utc" + "Z  AIR ${state.aircraft.size} · SEA ${state.vessels.size} · SEIS ${state.quakes.size} · EVT ${state.naturalEvents.size}",
+                            "OSINT ∷ UNIFIED",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = Intel.TextHi
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "$utc" + "Z",
                             style = MaterialTheme.typography.labelSmall,
-                            color = Intel.TextMid
+                            color = Intel.Cyan,
+                            fontFamily = FontFamily.Monospace
                         )
                     }
-                    state.spaceWeather?.let { sw ->
-                        Text(
-                            "SPACE WX ${sw.summary} · ${sw.stormLevel}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (sw.kp >= 5) Intel.Amber else Intel.TextLow,
-                            modifier = Modifier.padding(top = 1.dp)
-                        )
-                    }
+                    // One line, truncated rather than wrapped — the counts
+                    // used to wrap over three lines and push the map down.
+                    Text(
+                        "AIR ${state.aircraft.size} · SEA ${state.vessels.size} · " +
+                            "SAT ${state.satellites.size} · SEIS ${state.quakes.size}" +
+                            (state.spaceWeather?.let { " · Kp %.1f".format(it.kp) } ?: ""),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Intel.TextMid,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 1.dp)
+                    )
+                }
+                IconButton(onClick = { panelOpen = !panelOpen }) {
+                    Icon(
+                        if (panelOpen) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                        contentDescription = if (panelOpen) "Hide controls" else "Show controls",
+                        tint = Intel.Cyan
+                    )
                 }
                 IconButton(onClick = onOpenFramework) {
                     Icon(Icons.Filled.AccountTree, contentDescription = "OSINT Framework", tint = Intel.TextMid)
@@ -198,6 +223,7 @@ fun GodEyeViewScreen(
                 }
             }
 
+            if (panelOpen) {
             // ---- Command search ----
             OutlinedTextField(
                 value = state.query,
@@ -295,7 +321,9 @@ fun GodEyeViewScreen(
                 }
             }
 
-            if (showAircraft || god) {
+            }
+
+            if (panelOpen && (showAircraft || god)) {
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp)
