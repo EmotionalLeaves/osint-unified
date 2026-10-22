@@ -284,9 +284,10 @@ class DirectToolExecutor(
             }
             if (reference.isNotEmpty()) {
                 append("\n── ${reference.size} general tools (open and paste the target) ──\n")
-                reference.take(160).forEach { append(it).append("\n") }
-                if (reference.size > 160) {
-                    append("…and ${reference.size - 160} more in the directory screen.\n")
+                reference.take(50).forEach { append(it).append("\n") }
+                if (reference.size > 50) {
+                    append("…and ${reference.size - 50} more. The directory screen lists them all ")
+                    append("and runs any of them against this target.\n")
                 }
             }
         }
@@ -392,11 +393,11 @@ class DirectToolExecutor(
 
             if (derived.isNotEmpty()) {
                 append("\n── Directory tools that accept this query (${derived.size} total) ──\n")
-                derived.take(120).forEach { t ->
+                derived.take(40).forEach { t ->
                     append("${t.name}: ${t.resolve(target)}\n")
                 }
-                if (derived.size > 120) {
-                    append("\n…and ${derived.size - 120} more in the directory screen, ")
+                if (derived.size > 40) {
+                    append("\n…and ${derived.size - 40} more in the directory screen, ")
                     append("which runs any of them against this target.\n")
                 }
             }
