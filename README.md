@@ -7,14 +7,26 @@ it, fans out across every source that can say something about it, and shows
 the findings in one dossier.
 
 The default screen is the **God's Eye View**: a native satellite-imagery
-globe carrying ~25 live layers, from aircraft and vessels to traffic
-cameras, restricted airspace and submarine cable landings.
+globe carrying 29 live layers, from aircraft and vessels to tropical
+cyclones, tsunami bulletins, FAA ground stops, traffic cameras,
+restricted airspace and submarine cable landings. A long press anywhere
+reports everything every layer holds around that point; the HUD carries a
+one-line **world brief** of what currently matters most.
 
-> **Status:** Working. 84 registered tools, 71 of them keyless and run
-> directly on the device with no backend, no API keys and no accounts —
-> plus thousands of username sites executed natively and thousands of
-> directory tools runnable against a target. The optional `backend/`
-> server only adds the handful that genuinely need credentials.
+> **Status:** Working. 85 registered tools, 72 of them keyless and run
+> directly on the device with no backend, no API keys and no accounts.
+> Beyond those, CI measures what the build actually carries and prints it
+> as a build annotation rather than letting this file claim it:
+>
+> | Measured in CI | Count |
+> |---|---|
+> | Username site rules bundled | 9,389 |
+> | Distinct web tools runnable against a target | 3,240 |
+> | Catalogue entries browsable offline | 7,698 |
+> | Known public breaches searchable offline | 1,047 |
+>
+> The optional `backend/` server only adds the handful that genuinely
+> need credentials.
 
 ## Building the APK with no PC (phone-only)
 
@@ -29,19 +41,56 @@ You don't need Android Studio or a desktop. GitHub builds the APK for you:
 
 Every push rebuilds and produces a fresh APK. No local toolchain required.
 
+## Two checks that stand in for a compiler
+
+The APK is built only in CI, so a one-line Kotlin mistake costs a full
+round trip, and the Android SDK cannot be installed here. Two things close
+most of that gap:
+
+`tools/syntaxcheck.sh` runs stock `kotlinc` over the sources. Most of its
+several thousand diagnostics are the missing SDK and are noise — but parser
+errors, conflicting declarations and `"$name_"` string templates are
+classpath-independent and real. So is a **bare identifier that is declared
+somewhere in this project but not imported into the file using it**: the
+name exists, it is being used where it cannot be seen, and that compiles
+nowhere. Imports are tracked per file, because pooling them is what let four
+missing imports through to CI. Each rule was verified by reintroducing the
+break that originally escaped.
+
+`.github/workflows/build.yml` counts what the APK actually carries — site
+rules, catalogue entries, runnable templates, breach records — and prints it
+as an annotation. That is where the numbers in this file come from. It also
+asserts the fields the breach parser depends on, so a schema change surfaces
+in CI rather than on a phone. The count is why this README no longer claims
+thousands of runnable directory tools derived from catalogue links: the
+measurement said twenty-six, and the real three thousand were the bundled
+username rulesets, which are now in the directory where they belong.
+
 ## Verifying sources actually work
 
 Third-party endpoints rot: they start demanding keys, block datacenter IPs,
 or quietly disappear. `.github/workflows/probe.yml` exists so no source is
 ever wired in on faith.
 
-Put candidate URLs in `.github/probe-urls.txt` (one per line, optionally
-`URL||custom user agent` or `URL@@byte-offset`), run the **Probe endpoints**
-workflow, and each URL's status code, response size and first bytes come
-back as build annotations. Every source in this app was confirmed that way
-before a line of Kotlin was written for it, and the ones that failed —
-FAA's registry, Blockchair, OpenSanctions, OpenAQ, ReliefWeb, phishstats —
-were dropped rather than shipped broken.
+Put candidate URLs in `.github/probe-urls.txt` (the globe feeds) or
+`.github/probe-tools.txt` (every keyless API a tool calls, with a real
+sample input), one per line, optionally `URL||custom user agent` or
+`URL@@byte-offset`. Run the **Probe endpoints** workflow — the `list` input
+picks which file — and each URL's status code, response size and first bytes
+come back as build annotations.
+
+Every source in this app was confirmed that way before a line of Kotlin was
+written for it, and the ones that failed — FAA's registry, Blockchair,
+OpenSanctions, OpenAQ, ReliefWeb, phishstats, CBP border wait times (no
+coordinates) — were dropped rather than shipped broken.
+
+It also catches rot after the fact, which a green build cannot. A sweep of
+the tool endpoints found two sources reporting "nothing found" when they
+meant "no answer": crt.sh answers from a Postgres replica and routinely
+exceeds a 25-second call timeout, and BGPView was not responding at all. The
+first now gets a patient client with Cert Spotter filling in behind it; the
+second falls back to RIPEstat. Neither failure was visible from here any
+other way.
 
 ## The globe
 
@@ -52,10 +101,37 @@ Layers, each toggleable, with the true count in the pill: aircraft (with
 carrier/cargo/military filtering), military ADS-B, LADD (aircraft whose
 owners paid to be hidden from tracking), vessels, satellites, earthquakes,
 seismic stations, natural events, wildfires, volcanoes, GDACS disasters,
-weather alerts, METAR, air quality, aurora, ocean buoys, news volume,
-conflicts, airports, power plants, traffic cameras, restricted airspace,
-submarine cable landings, and your own overlay. A space-weather line in the
-HUD carries the Kp index, X-ray flare class and active SWPC alerts.
+tropical cyclones, tsunami bulletins, FAA ground stops and delay
+programmes, weather alerts, METAR, air quality, radiation, aurora, ocean
+buoys, news volume, conflicts, airports, power plants, traffic cameras,
+restricted airspace, submarine cable landings, and your own overlay. A
+space-weather line in the HUD carries the Kp index, X-ray flare class and
+active SWPC alerts.
+
+Some of those are there because of what they explain about the others.
+When a hundred aircraft are holding over one state the reason is a ground
+stop at the airport they are all aiming for, and that fact lives in one
+small FAA feed and nowhere else on the map. GDACS carries cyclones, but
+only once one is about to hit someone; the NHC publishes the storm itself.
+A tsunami is not an earthquake — most large undersea quakes produce no
+wave — so the bulletin carries its own category word, because the
+difference between "information" and "warning" is the entire message.
+
+**Long-press anywhere** and every loaded layer is swept for a radius
+around that point — scaled to the zoom you pressed at — and reported
+nearest first. Tapping a marker answers "what is this"; the question
+actually asked of a map is "what is going on here", and no single layer
+answers it. It reads state the app already holds, so it needs no network
+and works over open ocean.
+
+**The world brief** is the same idea at global scale. A marker count is
+not a situation — eleven thousand aircraft is an ordinary sky — so every
+loaded layer is ranked by how much it would matter: severity first, then
+recency, then volume, with a red GDACS alert, a tsunami warning or a
+magnitude 6 lifting its whole section above routine traffic. The top line
+sits in the HUD unasked. A layer that has reported and found nothing gets
+a line of its own, because "no disaster alerts anywhere" is information
+and is not the same as a layer that has not run yet.
 
 Tap any marker and the inspector leads with **what it is** — which layer
 it came from — then its label, coordinates, MGRS, a link to the source
@@ -123,13 +199,49 @@ The self-test screen shows the exact per-dataset counts this build carries,
 read from a manifest written at build time, so the numbers are measured on
 your device rather than claimed here.
 
-## Pivots
+## Pivots, and the second pass
 
 Every successful result is scanned for emails, handles, hosts, IPs, phone
 numbers, wallets, tail numbers, coordinates and hashes, ranked by how many
-sources corroborate each. They appear as **PIVOTS** in the dossier — one tap
-starts a fresh investigation. A domain leads to an admin email, which leads
-to a username, which leads to a Keybase proof.
+sources corroborate each. They appear as **PIVOTS** in the dossier.
+
+A lookup can only answer what you typed, and its output names things you
+could not have known to ask about — the IPs a domain resolves to, the hosts
+on its certificate, the handle a profile links to. Chasing those is what an
+analyst does next, and it is the difference between a page of lookups and a
+dossier, so **the app does it without being asked**: one further round,
+quotas per identifier kind, six tools each, never repeating a lookup the
+first pass already made. Those results are kept visibly separate under
+**FOLLOWED UP** and labelled with the identifier they came from, so no claim
+in the dossier is of unclear provenance. Pivots already chased are ticked;
+tapping one still opens a dossier of its own.
+
+## Hits, absences and unreachable sources
+
+Nearly every source answers "no entity named X" with HTTP 200, so a dossier
+that trusts the status column is mostly full-height cards reporting absence
+with the two or three real findings buried among them. `domain/Findings`
+makes that judgement in one place — the screen and the exported report
+cannot disagree about it — and the dossier leads with what was found, then
+collapses the rest to one line naming the sources that looked.
+
+Sources that *could not be reached* are kept apart from sources that said
+no. "This source says nothing is there" and "this source was unreachable"
+support opposite conclusions, and pooling them is how an absence of evidence
+turns into evidence of absence.
+
+## Identification
+
+The decoder bench had fifteen buttons and presumed you already knew which
+one you needed. `domain/Identify` recognises the shape first — length,
+alphabet, octet range, segment count, hash length — and names what the
+string is before offering the decoder that fits: IPv4, IPv6, MAC, UUID,
+JWT, PEM, MGRS, coordinates, Bitcoin and Ethereum addresses, ICAO 24-bit
+aircraft addresses, six hash families, Unix timestamps in either unit,
+base64, base64url and percent-encoding. Where a string honestly is two
+things, both readings are shown with the stronger first rather than one
+being chosen and presented as fact — six hex digits really are both an
+aircraft address and three bytes.
 
 ## Self-test
 
@@ -142,12 +254,12 @@ something breaks in the field, that screen says which source and why.
 | Area | File | What it does |
 |------|------|--------------|
 | Observable router | `domain/ObservableRouter.kt` | Regex classification + tool suggestions |
-| Tool registry | `domain/ToolRegistry.kt` | All 69 tools, single source of truth |
-| God's Eye View | `ui/godeye/` | Native osmdroid globe, ~25 live layers, tap-to-inspect |
+| Tool registry | `domain/ToolRegistry.kt` | All 85 tools, single source of truth |
+| God's Eye View | `ui/godeye/` | Native osmdroid globe, 29 live layers, tap-to-inspect, area report, world brief |
 | Keyless sources | `domain/executor/OsintApis.kt`, `DeepApis.kt` | Every direct API call the app makes |
 | Pivot extraction | `domain/EntityExtractor.kt` | Identifiers pulled out of all results |
 | Storage | `data/db/` | Room: investigations + results, ready for Phase 2 |
-| Tests | `test/.../ObservableRouterTest.kt` | Router classification unit tests |
+| Tests | `app/src/test/` | Router, orbital propagation, freshness, area sweep, world-brief ranking, finding/absence, identification, link building |
 
 ## Architecture
 
@@ -171,8 +283,12 @@ God's Eye View (osmdroid, native)           ▼
   (JSON/CSV/dossier/PDF), investigation history, link graph. ✅
 - **Phase 4 — GEOINT:** maritime (AIS) vessels, tap-to-investigate. ✅
 - **Phase 5 — Automation:** chained workflow (Subfinder → httpx). ✅
-- **Phase 6 — Keyless depth:** 56 direct sources, live-probed in CI before
+- **Phase 6 — Keyless depth:** 72 direct sources, live-probed in CI before
   shipping; object inspector; cross-result pivots. ✅
+- **Phase 7 — Judgement:** automatic second pass on discovered identifiers;
+  hits separated from absences and from unreachable sources, in the screen
+  and the report alike; long-press area report; world brief; structural
+  identification; offline breach catalogue; four more live layers. ✅
 - **Remaining:** signed release build; optional backend for the few
   credentialed tools (Nuclei/GHunt/h8mail/TruffleHog).
 
@@ -217,8 +333,17 @@ Four execution modes (see `domain/ExecutionMode`):
 
 ## Notes & honest limitations
 
-- **Live aircraft** fall back to demo points until you set a tar1090 feed URL
-  in settings; with a URL, it parses the real `aircraft.json`.
+- **No demo data, anywhere.** Earlier versions invented plausible aircraft
+  and ships when a feed failed. On an intelligence map a fabricated contact
+  is indistinguishable from a real one, so the generators were deleted; an
+  empty layer is the honest answer. A tar1090 URL in settings adds your own
+  feed alongside the public ones.
+- **Radiation** is queried around the viewport, not globally — Safecast holds
+  tens of millions of points. Its API ignores sort order and will return a
+  2013 reading first, so the layer filters by capture date in the query and
+  again on the device.
+- **Airport status** is the FAA's, so it covers the US national airspace
+  system and the Canadian airports the FAA lists, not the world.
 - **arm64 only:** bundled binaries target arm64-v8a (essentially all modern
   phones). A 32-bit-only device wouldn't get the on-device tools.
 - **Esri World Imagery** supplies the satellite basemap, keyless — no token
@@ -228,7 +353,7 @@ Four execution modes (see `domain/ExecutionMode`):
 - **Traffic cameras** currently cover Caltrans (California); the coordinate
   tool points elsewhere at other public camera directories.
 
-## Full tool coverage (the 48)
+## Full tool coverage
 
 Every tool below is either implemented, has a functional native/keyless
 equivalent, or is documented as infeasible on a stock phone with the reason.
