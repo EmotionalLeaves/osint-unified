@@ -28,7 +28,7 @@ import java.util.Locale
 enum class ExportFormat(val ext: String, val mime: String) {
     JSON("json", "application/json"),
     CSV("csv", "text/csv"),
-    DOSSIER("txt", "text/plain"),
+    TEXT("txt", "text/plain"),
     PDF("pdf", "application/pdf")
 }
 
@@ -46,15 +46,26 @@ class InvestigationExporter(private val appContext: Context) {
         format: ExportFormat
     ): File = withContext(Dispatchers.IO) {
         val dir = File(appContext.cacheDir, "exports").apply { mkdirs() }
-        val base = observable.raw.replace(Regex("[^A-Za-z0-9._-]"), "_").take(40).ifBlank { "investigation" }
-        val file = File(dir, "osint_${base}_${stamp.format(Date())}.${format.ext}")
+        // Old reports used to accumulate here for ever, each named after the
+        // target — so the share sheet, and every app that received one,
+        // displayed the email address or phone number being investigated.
+        purgeOldExports(dir)
+        val file = File(dir, "osint-case-${stamp.format(Date())}.${format.ext}")
         when (format) {
             ExportFormat.JSON -> file.writeText(toJson(observable, results))
             ExportFormat.CSV -> file.writeText(toCsv(results))
-            ExportFormat.DOSSIER -> file.writeText(toDossier(observable, results))
+            ExportFormat.TEXT -> file.writeText(toDossier(observable, results))
             ExportFormat.PDF -> writePdf(file, observable, results)
         }
         file
+    }
+
+    /** Reports older than a day are not worth the exposure of keeping. */
+    private fun purgeOldExports(dir: File) {
+        val cutoff = System.currentTimeMillis() - 24 * 3600_000L
+        runCatching {
+            dir.listFiles()?.forEach { if (it.lastModified() < cutoff) it.delete() }
+        }
     }
 
     /** Renders the dossier text into a paginated A4 PDF. */
@@ -119,16 +130,19 @@ class InvestigationExporter(private val appContext: Context) {
         val doc = buildJsonObject {
             put("observable", observable.raw)
             put("type", observable.typeLabel)
-            put("generatedAt", System.currentTimeMillis())
+            put("generatedAt", java.time.Instant.now().toString())
+            put("appBuild", com.osint.unified.BuildConfig.VERSION_NAME)
             putJsonArray("results") {
                 results.forEach { r ->
                     addJsonObject {
                         put("tool", r.toolName)
                         put("toolId", r.toolId)
                         put("status", r.status)
+                        put("verdict", verdict(r))
                         put("input", r.input)
-                        put("startedAt", r.startedAt)
-                        r.finishedAt?.let { put("finishedAt", it) }
+                        put("startedAt", iso(r.startedAt))
+                        r.finishedAt?.let { put("finishedAt", iso(it)) }
+                        put("sha256", sha256(r.rawOutput))
                         if (r.status == "error") put("error", r.errorMessage ?: "")
                         else put("output", r.rawOutput)
                     }
@@ -139,18 +153,44 @@ class InvestigationExporter(private val appContext: Context) {
     }
 
     private fun toCsv(results: List<ResultRow>): String {
-        val sb = StringBuilder("tool,status,input,started,finished,output_or_error\n")
+        val sb = StringBuilder(
+            "tool,tool_id,verdict,input,started_utc,finished_utc,sha256,output_or_error\n"
+        )
         results.forEach { r ->
             val payload = if (r.status == "error") (r.errorMessage ?: "") else r.rawOutput
             sb.append(
                 listOf(
-                    r.toolName, r.status, r.input,
-                    r.startedAt.toString(), (r.finishedAt ?: 0L).toString(), payload
+                    r.toolName, r.toolId, verdict(r), r.input,
+                    iso(r.startedAt), r.finishedAt?.let { iso(it) }.orEmpty(),
+                    sha256(r.rawOutput), payload
                 ).joinToString(",") { csv(it) }
             ).append("\n")
         }
         return sb.toString()
     }
+
+    /** Epoch milliseconds are not a time anyone can read or compare. */
+    private fun iso(millis: Long): String =
+        java.time.Instant.ofEpochMilli(millis).toString()
+
+    private fun verdict(r: ResultRow): String = when (Findings.kindOf(r)) {
+        Findings.Kind.HIT -> "found"
+        Findings.Kind.ABSENT -> "nothing found"
+        Findings.Kind.UNREACHABLE -> "could not be reached"
+    }
+
+    /**
+     * A fingerprint of exactly what the source returned.
+     *
+     * Without it an export is a text file anyone could have typed. With it,
+     * two people can confirm they are looking at the same answer, and a
+     * later re-run can be compared to this one.
+     */
+    private fun sha256(text: String): String = runCatching {
+        java.security.MessageDigest.getInstance("SHA-256")
+            .digest(text.toByteArray())
+            .joinToString("") { "%02x".format(Locale.US, it) }
+    }.getOrDefault("")
 
     /**
      * The report someone actually reads.
@@ -178,7 +218,8 @@ class InvestigationExporter(private val appContext: Context) {
         append("===========================\n")
         append("Observable : ${observable.raw}\n")
         append("Type       : ${observable.typeLabel}\n")
-        append("Generated  : ${Date()}\n")
+        append("Generated  : ${java.time.Instant.now()}\n")
+        append("App build  : ${com.osint.unified.BuildConfig.VERSION_NAME}\n")
         append("Sources    : ${results.size} queried — ${sorted.hits.size} returned intel, ")
         append("${sorted.empty.size} found nothing, ${sorted.failed.size} could not be reached\n")
 
@@ -226,11 +267,38 @@ class InvestigationExporter(private val appContext: Context) {
         }
     }
 
+    /**
+     * One result, with enough around it to be checkable later.
+     *
+     * A line of text in a report is not evidence of anything. When it ran,
+     * what it was asked about and the hash of exactly what came back are
+     * what let someone else confirm they are reading the same answer.
+     */
     private fun StringBuilder.appendResult(r: ResultRow) {
-        append("\n--- ${r.toolName} ---\n")
+        append("\n--- ${r.toolName} [${r.toolId}] ---\n")
+        append("asked      : ${r.input}\n")
+        append("ran        : ${iso(r.startedAt)}")
+        r.finishedAt?.let { append(" → ${iso(it)}") }
+        append("\n")
+        append("sha256     : ${sha256(r.rawOutput)}\n\n")
         append(r.rawOutput.ifBlank { "(no output)" })
         append("\n")
     }
 
-    private fun csv(value: String): String = "\"" + value.replace("\"", "\"\"") + "\""
+    /**
+     * A CSV cell, escaped against the spreadsheet as well as the parser.
+     *
+     * Third-party text beginning with =, +, - or @ is executed as a formula
+     * by Excel and Sheets. Since every cell here holds text written by
+     * someone else — the people being investigated among them — that is a
+     * way to run code on the machine of whoever opens the report.
+     */
+    private fun csv(value: String): String {
+        val safe = if (value.firstOrNull() in setOf('=', '+', '-', '@', '\t', '\r')) {
+            "'" + value
+        } else {
+            value
+        }
+        return "\"" + safe.replace("\"", "\"\"") + "\""
+    }
 }
