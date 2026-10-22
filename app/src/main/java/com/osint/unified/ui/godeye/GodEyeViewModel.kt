@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.osint.unified.data.AircraftDataSource
 import com.osint.unified.data.AisDataSource
 import com.osint.unified.data.AppSettings
+import com.osint.unified.data.EarthquakeDataSource
 import com.osint.unified.data.ExportFormat
 import com.osint.unified.data.InvestigationExporter
 import com.osint.unified.data.InvestigationRepository
@@ -33,6 +34,7 @@ data class GodEyeUiState(
     val suggestedTools: List<Tool> = emptyList(),
     val aircraft: List<Aircraft> = emptyList(),
     val vessels: List<Vessel> = emptyList(),
+    val quakes: List<Quake> = emptyList(),
     val results: List<ResultRow> = emptyList(),
     val runningToolIds: Set<String> = emptySet(),
     val workflowName: String? = null,
@@ -48,6 +50,7 @@ class GodEyeViewModel(
     private val repository: InvestigationRepository,
     private val aircraftDataSource: AircraftDataSource,
     private val aisDataSource: AisDataSource,
+    private val earthquakeDataSource: EarthquakeDataSource,
     private val settings: AppSettings,
     private val exporter: InvestigationExporter
 ) : ViewModel() {
@@ -75,6 +78,12 @@ class GodEyeViewModel(
             while (isActive) {
                 _state.update { it.copy(vessels = aisDataSource.fetch()) }
                 delay(10_000)
+            }
+        }
+        viewModelScope.launch {
+            while (isActive) {
+                _state.update { it.copy(quakes = earthquakeDataSource.fetch()) }
+                delay(300_000)
             }
         }
     }
@@ -225,11 +234,12 @@ class GodEyeViewModel(
         private val repository: InvestigationRepository,
         private val aircraftDataSource: AircraftDataSource,
         private val aisDataSource: AisDataSource,
+        private val earthquakeDataSource: EarthquakeDataSource,
         private val settings: AppSettings,
         private val exporter: InvestigationExporter
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            GodEyeViewModel(router, repository, aircraftDataSource, aisDataSource, settings, exporter) as T
+            GodEyeViewModel(router, repository, aircraftDataSource, aisDataSource, earthquakeDataSource, settings, exporter) as T
     }
 }

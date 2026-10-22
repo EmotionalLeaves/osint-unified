@@ -61,17 +61,6 @@ jobs:
           chmod +x "$OUT"/*.so || true
           ls -la "$OUT"
 
-      - name: Bundle web map libraries into assets
-        run: |
-          set -eux
-          V="app/src/main/assets/vendor"
-          mkdir -p "$V"
-          curl -sSL https://unpkg.com/leaflet@1.9.4/dist/leaflet.js -o "$V/leaflet.js"
-          curl -sSL https://unpkg.com/leaflet@1.9.4/dist/leaflet.css -o "$V/leaflet.css"
-          curl -sSL https://cdnjs.cloudflare.com/ajax/libs/satellite.js/5.0.0/satellite.min.js -o "$V/satellite.min.js"
-          ls -la "$V"
-          test -s "$V/leaflet.js" && test -s "$V/leaflet.css"
-
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:

@@ -4,6 +4,7 @@ import android.app.Application
 import com.osint.unified.data.AircraftDataSource
 import com.osint.unified.data.AisDataSource
 import com.osint.unified.data.AppSettings
+import com.osint.unified.data.EarthquakeDataSource
 import com.osint.unified.data.ExifReader
 import com.osint.unified.data.InvestigationExporter
 import com.osint.unified.data.InvestigationRepository
@@ -25,6 +26,7 @@ class OsintApplication : Application() {
     val settings: AppSettings by lazy { AppSettings(this) }
     val aircraftDataSource: AircraftDataSource by lazy { AircraftDataSource(settings) }
     val aisDataSource: AisDataSource by lazy { AisDataSource(settings) }
+    val earthquakeDataSource: EarthquakeDataSource by lazy { EarthquakeDataSource() }
 
     private val executorFactory: ExecutorFactory by lazy {
         ExecutorFactory(
