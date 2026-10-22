@@ -93,6 +93,18 @@ class MainActivity : ComponentActivity() {
         setContent {
             OsintTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
+                    val settings = (application as OsintApplication).settings
+                    var accepted by rememberSaveable { mutableStateOf(settings.termsAccepted) }
+                    if (!accepted) {
+                        // Said once, before the app is used, rather than only
+                        // in a README the user never sees.
+                        com.osint.unified.ui.about.FirstRunScreen {
+                            settings.termsAccepted = true
+                            accepted = true
+                        }
+                        return@Surface
+                    }
+
                     var screen by rememberSaveable { mutableStateOf("godeye") }
                     val godState by godEyeViewModel.state.collectAsStateWithLifecycle()
 
@@ -194,6 +206,9 @@ class MainActivity : ComponentActivity() {
                                 onBack = { screen = "godeye" }
                             )
                         }
+                        "sources" -> com.osint.unified.ui.about.SourcesScreen(
+                            onBack = { screen = "godeye" }
+                        )
                         "framework" -> FrameworkScreen(
                             initialTarget = godState.observable?.raw.orEmpty(),
                             onBack = { screen = "godeye" }
@@ -204,7 +219,8 @@ class MainActivity : ComponentActivity() {
                             onOpenForensics = { screen = "forensics" },
                             onOpenDiagnostics = { screen = "diagnostics" },
                             onOpenFramework = { screen = "framework" },
-                            onOpenWatch = { screen = "watch" }
+                            onOpenWatch = { screen = "watch" },
+                            onOpenSources = { screen = "sources" }
                         )
                     }
                 }

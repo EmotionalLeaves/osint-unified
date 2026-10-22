@@ -32,7 +32,10 @@ object AreaReport {
         val lat: Double,
         val lon: Double,
         val distanceKm: Double,
-        val url: String? = null
+        val url: String? = null,
+        /** The position is a stand-in, so the distance is to that stand-in
+         *  and not to the thing. Shown with a "≈" rather than as a fact. */
+        val approximate: Boolean = false
     )
 
     /** The items of one layer, nearest first. */
@@ -93,7 +96,8 @@ object AreaReport {
             latOf: (T) -> Double,
             lonOf: (T) -> Double,
             labelOf: (T) -> String,
-            urlOf: (T) -> String? = { null }
+            urlOf: (T) -> String? = { null },
+            approximateOf: (T) -> Boolean = { false }
         ) {
             if (source.isEmpty()) return
             val near = ArrayList<Item>()
@@ -103,7 +107,12 @@ object AreaReport {
                 if (tLat.isNaN() || tLon.isNaN()) return@forEach
                 val d = distanceKm(lat, lon, tLat, tLon)
                 if (d > radiusKm) return@forEach
-                near.add(Item(kind, labelOf(t).ifBlank { kind }, tLat, tLon, d, urlOf(t)))
+                near.add(
+                    Item(
+                        kind, labelOf(t).ifBlank { kind }, tLat, tLon, d,
+                        urlOf(t), approximateOf(t)
+                    )
+                )
             }
             if (near.isEmpty()) return
             near.sortBy { it.distanceKm }
@@ -111,7 +120,10 @@ object AreaReport {
         }
 
         fun blips(kind: String, source: List<GeoBlip>) =
-            sweep(kind, source, { it.lat }, { it.lon }, { it.label }, { it.url })
+            sweep(
+                kind, source, { it.lat }, { it.lon }, { it.label }, { it.url },
+                { it.approximate }
+            )
 
         // Ordered so the things that would change a decision come first.
         sweep("Conflict", state.conflicts, { it.lat }, { it.lon }, { it.label }, { it.url })
@@ -162,6 +174,10 @@ object AreaReport {
             .take(4)
             .joinToString(" · ") { "${it.total} ${it.kind.lowercase()}" }
     }
+
+    /** A distance, or an admission that it is only roughly one. */
+    fun fmtDistance(item: Item): String =
+        if (item.approximate) "≈ " + fmtKm(item.distanceKm) else fmtKm(item.distanceKm)
 
     fun fmtKm(km: Double): String = when {
         km < 1 -> "${(km * 1000).toInt()} m"

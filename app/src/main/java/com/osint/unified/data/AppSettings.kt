@@ -48,6 +48,11 @@ class AppSettings(context: Context) {
         get() = prefs.getBoolean(KEY_FOLLOWUP, false)
         set(value) = prefs.edit().putBoolean(KEY_FOLLOWUP, value).apply()
 
+    /** Whether the terms have been shown. Shown once, not on every launch. */
+    var termsAccepted: Boolean
+        get() = prefs.getBoolean(KEY_TERMS, false)
+        set(value) = prefs.edit().putBoolean(KEY_TERMS, value).apply()
+
     /** Bearer token for your own backend. Without it the backend refuses
      *  every request, which is the point: an open scanning service on the
      *  public internet is someone else's abuse report with your name on it. */
@@ -75,6 +80,7 @@ class AppSettings(context: Context) {
         const val KEY_FOLLOWUP = "follow_up_enabled"
         const val KEY_SEC_EMAIL = "sec_contact_email"
         const val KEY_BACKEND_TOKEN = "backend_token"
+        const val KEY_TERMS = "terms_accepted"
         const val DEFAULT_AIS = "https://meri.digitraffic.fi/api/ais/v1/locations"
     }
 }

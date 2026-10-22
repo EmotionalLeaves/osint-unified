@@ -109,7 +109,8 @@ fun GodEyeViewScreen(
     onOpenForensics: () -> Unit,
     onOpenDiagnostics: () -> Unit = {},
     onOpenFramework: () -> Unit = {},
-    onOpenWatch: () -> Unit = {}
+    onOpenWatch: () -> Unit = {},
+    onOpenSources: () -> Unit = {}
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var showSettings by rememberSaveable { mutableStateOf(false) }
@@ -460,6 +461,14 @@ fun GodEyeViewScreen(
                 color = Intel.TextMid,
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp)
             )
+            Text(
+                "data sources & licences ▸",
+                style = MaterialTheme.typography.labelSmall,
+                color = Intel.Cyan,
+                modifier = Modifier
+                    .padding(horizontal = 12.dp, vertical = 2.dp)
+                    .clickable(onClick = onOpenSources)
+            )
 
             }
 
@@ -778,7 +787,7 @@ fun GodEyeViewScreen(
                                     .padding(vertical = 2.dp)
                             ) {
                                 Text(
-                                    AreaReport.fmtKm(item.distanceKm),
+                                    AreaReport.fmtDistance(item),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = Intel.TextLow,
                                     fontFamily = FontFamily.Monospace,

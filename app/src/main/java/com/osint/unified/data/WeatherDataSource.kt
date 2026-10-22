@@ -59,17 +59,20 @@ class WeatherDataSource(private val client: OkHttpClient = Http.client) {
                     val sent = Freshness.parse((props?.get("sent") as? JsonPrimitive)?.contentOrNull)
                     val link = (props?.get("id") as? JsonPrimitive)?.contentOrNull
 
-                    val point = centroidOf(o["geometry"] as? JsonObject)
-                        ?: zonePoint(props, perState)
-                        ?: return@mapNotNull null
+                    // Real geometry where the alert carries it; a state-level
+                    // stand-in otherwise, marked as such.
+                    val exact = centroidOf(o["geometry"] as? JsonObject)
+                    val point = exact ?: zonePoint(props, perState) ?: return@mapNotNull null
+                    val isApproximate = exact == null
 
                     val label = buildString {
                         append(event)
                         if (!severity.isNullOrBlank() && severity != "Unknown") append(" · $severity")
                         if (!area.isNullOrBlank()) append(" · ${area.take(90)}")
                         Freshness.ago(sent)?.let { append(" · $it") }
+                        if (isApproximate) append(" · position approximate (state level)")
                     }
-                    GeoBlip(point.first, point.second, label, link)
+                    GeoBlip(point.first, point.second, label, link, approximate = isApproximate)
                 }.take(3000)
             }
         } catch (e: Exception) {
@@ -95,16 +98,27 @@ class WeatherDataSource(private val client: OkHttpClient = Http.client) {
             }
             else -> null
         } ?: return null
+        // Longitudes are averaged as unit vectors, not as numbers: a shape
+        // straddling the antimeridian has points near +180 and -180, whose
+        // arithmetic mean is 0 — the Gulf of Guinea. Alaska and the Pacific
+        // warning areas both straddle it.
         var sumLat = 0.0
-        var sumLon = 0.0
+        var sumX = 0.0
+        var sumY = 0.0
         var n = 0
         ring.forEach { p ->
             val a = p as? JsonArray ?: return@forEach
             val lon = (a.getOrNull(0) as? JsonPrimitive)?.doubleOrNull ?: return@forEach
             val lat = (a.getOrNull(1) as? JsonPrimitive)?.doubleOrNull ?: return@forEach
-            sumLat += lat; sumLon += lon; n++
+            val rad = Math.toRadians(lon)
+            sumLat += lat
+            sumX += kotlin.math.cos(rad)
+            sumY += kotlin.math.sin(rad)
+            n++
         }
-        return if (n == 0) null else (sumLat / n) to (sumLon / n)
+        if (n == 0) return null
+        val lon = Math.toDegrees(kotlin.math.atan2(sumY / n, sumX / n))
+        return (sumLat / n) to lon
     }
 
     /**

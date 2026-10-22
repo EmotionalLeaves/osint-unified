@@ -19,6 +19,9 @@ import okhttp3.Request
  * military operations areas, from the FAA's own ArcGIS service (keyless).
  *
  * Polygons are reduced to their centroid so they sit on the globe as no-go
+ * markers, and are marked approximate because the centre of an area is not
+ * where the area is: standing inside one, a distance to its centre reads as
+ * though the airspace were somewhere else.
  * markers; the label carries the designator, class and vertical limits.
  */
 class AirspaceDataSource(private val client: OkHttpClient = Http.client) {
@@ -77,7 +80,10 @@ class AirspaceDataSource(private val client: OkHttpClient = Http.client) {
                     s("TIMESOFUSE")?.takeIf { it.isNotBlank() && it != "null" }
                         ?.let { append(" · ${it.take(60)}") }
                 }
-                out.add(GeoBlip(c.first, c.second, label))
+                // The marker is the middle of the area, not the area. A
+                // distance to it is a distance to a point inside something
+                // that may be a hundred kilometres across.
+                out.add(GeoBlip(c.first, c.second, "$label · area centre", approximate = true))
             }
             return out
         }
@@ -97,15 +103,26 @@ class AirspaceDataSource(private val client: OkHttpClient = Http.client) {
             }
             else -> return null
         }
-        var sx = 0.0; var sy = 0.0; var n = 0
+        // Longitudes averaged as unit vectors. The arithmetic mean of a
+        // shape straddling the antimeridian — Alaska, the Pacific warning
+        // areas — is zero, which is the Gulf of Guinea.
+        var sumLat = 0.0
+        var sumX = 0.0
+        var sumY = 0.0
+        var n = 0
         ring.forEach { pt ->
             val a = pt as? JsonArray ?: return@forEach
             val lon = (a.getOrNull(0) as? JsonPrimitive)?.doubleOrNull ?: return@forEach
             val lat = (a.getOrNull(1) as? JsonPrimitive)?.doubleOrNull ?: return@forEach
-            sx += lon; sy += lat; n++
+            val rad = Math.toRadians(lon)
+            sumLat += lat
+            sumX += kotlin.math.cos(rad)
+            sumY += kotlin.math.sin(rad)
+            n++
         }
         if (n == 0) return null
-        val lat = sy / n; val lon = sx / n
+        val lat = sumLat / n
+        val lon = Math.toDegrees(kotlin.math.atan2(sumY / n, sumX / n))
         if (lat !in -90.0..90.0 || lon !in -180.0..180.0) return null
         return lat to lon
     }

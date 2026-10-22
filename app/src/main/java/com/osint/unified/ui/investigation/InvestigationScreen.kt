@@ -262,7 +262,7 @@ fun InvestigationScreen(
                     group.items.take(5).forEach { item ->
                         Row(Modifier.fillMaxWidth().padding(top = 2.dp)) {
                             Text(
-                                AreaReport.fmtKm(item.distanceKm),
+                                AreaReport.fmtDistance(item),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = Intel.TextLow,
                                 fontFamily = FontFamily.Monospace,
