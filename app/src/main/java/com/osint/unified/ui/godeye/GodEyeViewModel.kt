@@ -8,6 +8,7 @@ import com.osint.unified.data.AisDataSource
 import com.osint.unified.data.AppSettings
 import com.osint.unified.data.EarthquakeDataSource
 import com.osint.unified.data.NaturalEventsDataSource
+import com.osint.unified.data.OverlayDataSource
 import com.osint.unified.domain.GeoExtractor
 import com.osint.unified.data.ExportFormat
 import com.osint.unified.data.InvestigationExporter
@@ -38,6 +39,7 @@ data class GodEyeUiState(
     val vessels: List<Vessel> = emptyList(),
     val quakes: List<Quake> = emptyList(),
     val naturalEvents: List<NaturalEvent> = emptyList(),
+    val overlayPoints: List<OverlayPoint> = emptyList(),
     val findings: List<FindingPin> = emptyList(),
     val mapFocus: Pair<Double, Double>? = null,
     val results: List<ResultRow> = emptyList(),
@@ -47,7 +49,8 @@ data class GodEyeUiState(
     val navSignal: Long = 0,
     val backendUrl: String = "",
     val tar1090Url: String = "",
-    val aisUrl: String = ""
+    val aisUrl: String = "",
+    val overlayUrl: String = ""
 )
 
 class GodEyeViewModel(
@@ -57,6 +60,7 @@ class GodEyeViewModel(
     private val aisDataSource: AisDataSource,
     private val earthquakeDataSource: EarthquakeDataSource,
     private val naturalEventsDataSource: NaturalEventsDataSource,
+    private val overlayDataSource: OverlayDataSource,
     private val settings: AppSettings,
     private val exporter: InvestigationExporter
 ) : ViewModel() {
@@ -65,7 +69,8 @@ class GodEyeViewModel(
         GodEyeUiState(
             backendUrl = settings.backendBaseUrl,
             tar1090Url = settings.tar1090Url,
-            aisUrl = settings.aisUrl
+            aisUrl = settings.aisUrl,
+            overlayUrl = settings.overlayUrl
         )
     )
     val state: StateFlow<GodEyeUiState> = _state.asStateFlow()
@@ -77,7 +82,13 @@ class GodEyeViewModel(
         viewModelScope.launch {
             while (isActive) {
                 _state.update { it.copy(aircraft = aircraftDataSource.fetch()) }
-                delay(5_000)
+                delay(15_000)
+            }
+        }
+        viewModelScope.launch {
+            while (isActive) {
+                _state.update { it.copy(overlayPoints = overlayDataSource.fetch()) }
+                delay(60_000)
             }
         }
         viewModelScope.launch {
@@ -246,15 +257,17 @@ class GodEyeViewModel(
         return exporter.export(observable, results, format)
     }
 
-    fun saveSettings(backendUrl: String, tar1090Url: String, aisUrl: String) {
+    fun saveSettings(backendUrl: String, tar1090Url: String, aisUrl: String, overlayUrl: String) {
         settings.backendBaseUrl = backendUrl
         settings.tar1090Url = tar1090Url
         settings.aisUrl = aisUrl
+        settings.overlayUrl = overlayUrl
         _state.update {
             it.copy(
                 backendUrl = settings.backendBaseUrl,
                 tar1090Url = settings.tar1090Url,
-                aisUrl = settings.aisUrl
+                aisUrl = settings.aisUrl,
+                overlayUrl = settings.overlayUrl
             )
         }
     }
@@ -266,11 +279,12 @@ class GodEyeViewModel(
         private val aisDataSource: AisDataSource,
         private val earthquakeDataSource: EarthquakeDataSource,
         private val naturalEventsDataSource: NaturalEventsDataSource,
+        private val overlayDataSource: OverlayDataSource,
         private val settings: AppSettings,
         private val exporter: InvestigationExporter
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            GodEyeViewModel(router, repository, aircraftDataSource, aisDataSource, earthquakeDataSource, naturalEventsDataSource, settings, exporter) as T
+            GodEyeViewModel(router, repository, aircraftDataSource, aisDataSource, earthquakeDataSource, naturalEventsDataSource, overlayDataSource, settings, exporter) as T
     }
 }

@@ -80,6 +80,7 @@ fun GodEyeViewScreen(
     var showVessels by remember { mutableStateOf(true) }
     var showQuakes by remember { mutableStateOf(true) }
     var showEvents by remember { mutableStateOf(true) }
+    var showOverlay by remember { mutableStateOf(true) }
 
     Scaffold(containerColor = Intel.Base) { pad ->
         Column(modifier = Modifier.padding(pad).fillMaxSize()) {
@@ -161,6 +162,9 @@ fun GodEyeViewScreen(
                 LayerPill("SEA", state.vessels.size, Intel.Teal, showVessels) { showVessels = !showVessels }
                 LayerPill("SEIS", state.quakes.size, Intel.Coral, showQuakes) { showQuakes = !showQuakes }
                 LayerPill("EVT", state.naturalEvents.size, Intel.Amber, showEvents) { showEvents = !showEvents }
+                if (state.overlayPoints.isNotEmpty()) {
+                    LayerPill("OVLY", state.overlayPoints.size, Intel.CyanBright, showOverlay) { showOverlay = !showOverlay }
+                }
             }
 
             Box(
@@ -175,6 +179,7 @@ fun GodEyeViewScreen(
                     vessels = if (showVessels) state.vessels else emptyList(),
                     quakes = if (showQuakes) state.quakes else emptyList(),
                     events = if (showEvents) state.naturalEvents else emptyList(),
+                    overlay = if (showOverlay) state.overlayPoints else emptyList(),
                     findings = state.findings,
                     focus = state.mapFocus,
                     onInvestigate = { label ->
@@ -205,8 +210,9 @@ fun GodEyeViewScreen(
             backendUrl = state.backendUrl,
             tar1090Url = state.tar1090Url,
             aisUrl = state.aisUrl,
-            onSave = { backend, tar, ais ->
-                viewModel.saveSettings(backend, tar, ais)
+            overlayUrl = state.overlayUrl,
+            onSave = { backend, tar, ais, overlay ->
+                viewModel.saveSettings(backend, tar, ais, overlay)
                 showSettings = false
             },
             onDismiss = { showSettings = false }
@@ -226,6 +232,7 @@ private fun GlobeMap(
     vessels: List<Vessel>,
     quakes: List<Quake>,
     events: List<NaturalEvent>,
+    overlay: List<OverlayPoint>,
     findings: List<FindingPin>,
     focus: Pair<Double, Double>?,
     onInvestigate: (String) -> Unit,
@@ -284,6 +291,7 @@ private fun GlobeMap(
             }
             quakes.forEach { add(it.lat, it.lon, 0xFFF0997B.toInt(), 8, "M%.1f".format(it.mag), false) }
             events.forEach { add(it.lat, it.lon, 0xFFF2C94C.toInt(), 9, "${it.category}: ${it.title}", false) }
+            overlay.forEach { add(it.lat, it.lon, 0xFF5CE1D6.toInt(), 9, it.label, false) }
             vessels.forEach { add(it.lat, it.lon, 0xFF1D9E75.toInt(), 9, it.name.ifBlank { it.mmsi }, true) }
             aircraft.forEach { add(it.lat, it.lon, 0xFF4FC3F7.toInt(), 9, it.callsign.ifBlank { it.icao }, true) }
             // Investigation findings sit on top, larger and brighter.
@@ -351,34 +359,40 @@ private fun SettingsDialog(
     backendUrl: String,
     tar1090Url: String,
     aisUrl: String,
-    onSave: (String, String, String) -> Unit,
+    overlayUrl: String,
+    onSave: (String, String, String, String) -> Unit,
     onDismiss: () -> Unit
 ) {
     var backend by remember { mutableStateOf(backendUrl) }
     var tar by remember { mutableStateOf(tar1090Url) }
     var ais by remember { mutableStateOf(aisUrl) }
+    var overlay by remember { mutableStateOf(overlayUrl) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = Intel.Surface,
         titleContentColor = Intel.TextHi,
         textContentColor = Intel.TextMid,
-        title = { Text("SETTINGS", style = MaterialTheme.typography.titleSmall, color = Intel.TextHi) },
+        title = { Text("LIVE FEEDS", style = MaterialTheme.typography.titleSmall, color = Intel.TextHi) },
         text = {
             Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                Text(
-                    "Optional feeds. Leave blank to use demo aircraft and vessels — core OSINT works with none of these.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Intel.TextLow,
-                    modifier = Modifier.padding(bottom = 10.dp)
-                )
-                SettingsField(backend, { backend = it }, "Cloud backend URL", "https://your-api.onrender.com")
-                SettingsField(tar, { tar = it }, "tar1090 feed URL", "http://host:8080/data/aircraft.json", top = 10.dp)
-                SettingsField(ais, { ais = it }, "AIS vessel feed URL", "https://host/vessels.json", top = 10.dp)
+                FeedNote("Aircraft are live worldwide via OpenSky (keyless). Earthquakes and events are always live. Everything below is optional.")
+
+                FeedHeader("AIRCRAFT  ·  override")
+                SettingsField(tar, { tar = it }, "tar1090 feed URL", "http://host:8080/data/aircraft.json")
+
+                FeedHeader("VESSELS  ·  override (else demo)")
+                SettingsField(ais, { ais = it }, "AIS vessel feed URL", "https://host/vessels.json")
+
+                FeedHeader("CUSTOM OVERLAY  ·  any GeoJSON points")
+                SettingsField(overlay, { overlay = it }, "GeoJSON points URL", "https://host/points.geojson")
+
+                FeedHeader("CLOUD BACKEND  ·  optional tools")
+                SettingsField(backend, { backend = it }, "Backend URL", "https://your-api.onrender.com")
             }
         },
         confirmButton = {
-            TextButton(onClick = { onSave(backend, tar, ais) }) {
+            TextButton(onClick = { onSave(backend, tar, ais, overlay) }) {
                 Text("SAVE", style = MaterialTheme.typography.labelMedium, color = Intel.Cyan)
             }
         },
@@ -387,6 +401,26 @@ private fun SettingsDialog(
                 Text("CANCEL", style = MaterialTheme.typography.labelMedium, color = Intel.TextMid)
             }
         }
+    )
+}
+
+@Composable
+private fun FeedNote(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.bodySmall,
+        color = Intel.TextLow,
+        modifier = Modifier.padding(bottom = 6.dp)
+    )
+}
+
+@Composable
+private fun FeedHeader(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.labelSmall,
+        color = Intel.Cyan,
+        modifier = Modifier.padding(top = 14.dp, bottom = 2.dp)
     )
 }
 

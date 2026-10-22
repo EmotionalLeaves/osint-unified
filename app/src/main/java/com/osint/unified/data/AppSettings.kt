@@ -21,9 +21,15 @@ class AppSettings(context: Context) {
         get() = prefs.getString(KEY_AIS, "").orEmpty()
         set(value) = prefs.edit().putString(KEY_AIS, value.trim()).apply()
 
+    /** Any GeoJSON points URL the user wants plotted as a custom globe layer. */
+    var overlayUrl: String
+        get() = prefs.getString(KEY_OVERLAY, "").orEmpty()
+        set(value) = prefs.edit().putString(KEY_OVERLAY, value.trim()).apply()
+
     private companion object {
         const val KEY_BACKEND = "backend_base_url"
         const val KEY_TAR1090 = "tar1090_url"
         const val KEY_AIS = "ais_url"
+        const val KEY_OVERLAY = "overlay_url"
     }
 }

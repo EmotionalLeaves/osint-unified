@@ -6,6 +6,7 @@ import com.osint.unified.data.AisDataSource
 import com.osint.unified.data.AppSettings
 import com.osint.unified.data.EarthquakeDataSource
 import com.osint.unified.data.NaturalEventsDataSource
+import com.osint.unified.data.OverlayDataSource
 import com.osint.unified.data.ExifReader
 import com.osint.unified.data.InvestigationExporter
 import com.osint.unified.data.InvestigationRepository
@@ -29,6 +30,7 @@ class OsintApplication : Application() {
     val aisDataSource: AisDataSource by lazy { AisDataSource(settings) }
     val earthquakeDataSource: EarthquakeDataSource by lazy { EarthquakeDataSource() }
     val naturalEventsDataSource: NaturalEventsDataSource by lazy { NaturalEventsDataSource() }
+    val overlayDataSource: OverlayDataSource by lazy { OverlayDataSource(settings) }
 
     private val executorFactory: ExecutorFactory by lazy {
         ExecutorFactory(
