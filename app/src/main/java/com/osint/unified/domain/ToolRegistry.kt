@@ -114,6 +114,12 @@ object ToolRegistry {
         Tool("exif", "EXIF / GPS", FORENSICS, "image", "text", DIRECT,
             "Extracts EXIF GPS and camera metadata from an image URL (native).",
             "https://github.com/exiftool/exiftool"),
+        Tool("wikinearby", "Wikipedia nearby", GEOINT, "coordinate", "text", DIRECT,
+            "Notable places within 10 km of a coordinate (Wikipedia GeoSearch).",
+            "https://en.wikipedia.org"),
+        Tool("gdelt", "GDELT news geo", GEOINT, "any", "geojson", DIRECT,
+            "Geolocated global-news hotspots mentioning the query (GDELT 2.0).",
+            "https://www.gdeltproject.org"),
     )
 
     private val byId: Map<String, Tool> = all.associateBy { it.id }

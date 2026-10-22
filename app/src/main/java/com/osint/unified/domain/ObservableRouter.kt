@@ -63,10 +63,10 @@ class ObservableRouter {
             is Observable.Domain -> listOf("subfinder", "crtsh", "dns", "httpx", "shodan", "webcrawl", "wayback", "archive", "dorks", "amass", "nuclei")
             is Observable.IpAddress -> listOf("ipinfo", "shodan", "httpx", "nuclei")
             is Observable.PhoneNumber -> listOf("phoneinfoga", "dorks")
-            is Observable.Coordinate -> listOf("overpass_turbo", "revgeo")
+            is Observable.Coordinate -> listOf("revgeo", "wikinearby", "overpass_turbo")
             is Observable.Url -> listOf("webcrawl", "wayback", "archive", "dorks")
             is Observable.ImageUrl -> listOf("exif", "reverseimage", "archive")
-            is Observable.Name -> listOf("dorks", "geocode")
+            is Observable.Name -> listOf("geocode", "gdelt", "dorks")
             is Observable.Unknown -> emptyList()
         }
         return ids.mapNotNull { ToolRegistry.byId(it) }

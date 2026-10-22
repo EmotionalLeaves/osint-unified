@@ -12,15 +12,20 @@ object GeoExtractor {
         Regex("""maps\?q=(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)""")
     )
 
-    fun firstCoordinate(text: String): Pair<Double, Double>? {
+    fun firstCoordinate(text: String): Pair<Double, Double>? = allCoordinates(text).firstOrNull()
+
+    /** Every distinct, valid coordinate in the text, in order of appearance. */
+    fun allCoordinates(text: String): List<Pair<Double, Double>> {
+        val out = LinkedHashSet<Pair<Double, Double>>()
         for (p in patterns) {
-            val m = p.find(text) ?: continue
-            val lat = m.groupValues[1].toDoubleOrNull() ?: continue
-            val lon = m.groupValues[2].toDoubleOrNull() ?: continue
-            if (lat in -90.0..90.0 && lon in -180.0..180.0 && !(lat == 0.0 && lon == 0.0)) {
-                return lat to lon
+            p.findAll(text).forEach { m ->
+                val lat = m.groupValues[1].toDoubleOrNull() ?: return@forEach
+                val lon = m.groupValues[2].toDoubleOrNull() ?: return@forEach
+                if (lat in -90.0..90.0 && lon in -180.0..180.0 && !(lat == 0.0 && lon == 0.0)) {
+                    out.add(lat to lon)
+                }
             }
         }
-        return null
+        return out.toList()
     }
 }

@@ -170,6 +170,8 @@ class DirectToolExecutor(
                 "shodan" -> apis.shodan(input)
                 "dorks" -> apis.dorks(input)
                 "geocode" -> apis.geocode(input)
+                "wikinearby" -> apis.wikiNearby(input)
+                "gdelt" -> apis.gdeltNews(input)
                 "reverseimage" -> apis.reverseImage(input)
                 "exif" -> runCatching { exifReader.fromUrl(input) }
                 else -> Result.failure(IllegalStateException("${tool.name} has no direct implementation."))

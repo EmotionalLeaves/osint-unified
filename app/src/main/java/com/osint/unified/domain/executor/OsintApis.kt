@@ -208,6 +208,45 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
             }
     }
 
+    /** Wikipedia GeoSearch: notable places near a coordinate. */
+    fun wikiNearby(input: String): Result<String> = runCatching {
+        val parts = input.split(",").map { it.trim() }
+        require(parts.size == 2) { "Expected 'lat, lon'." }
+        val url = "https://en.wikipedia.org/w/api.php?action=query&list=geosearch" +
+            "&gscoord=${parts[0]}%7C${parts[1]}&gsradius=10000&gslimit=25&format=json"
+        val arr = json.parseToJsonElement(getBody(url))
+            .jsonObject["query"]?.jsonObject?.get("geosearch")?.jsonArray
+        if (arr == null || arr.isEmpty()) "No Wikipedia places within 10 km." else
+            "Nearby notable places (${arr.size}):\n\n" + arr.joinToString("\n") { el ->
+                val o = el.jsonObject
+                fun s(k: String) = (o[k] as? JsonPrimitive)?.contentOrNull
+                val title = s("title") ?: "?"
+                val plat = s("lat").orEmpty()
+                val plon = s("lon").orEmpty()
+                val dist = (o["dist"] as? JsonPrimitive)?.contentOrNull
+                val slug = URLEncoder.encode(title.replace(" ", "_"), "UTF-8")
+                "• $title${if (dist != null) " (${dist}m)" else ""}\n  Coords: $plat, $plon\n  https://en.wikipedia.org/wiki/$slug"
+            }
+    }
+
+    /** GDELT 2.0 geolocated news: places in global news mentioning the query. */
+    fun gdeltNews(query: String): Result<String> = runCatching {
+        val url = "https://api.gdeltproject.org/api/v2/geo/geo?query=" +
+            URLEncoder.encode(query, "UTF-8") + "&format=GeoJSON"
+        val feats = json.parseToJsonElement(getBody(url)).jsonObject["features"]?.jsonArray
+        if (feats == null || feats.isEmpty()) "No geolocated news for \"$query\" (last 24h)." else
+            "News hotspots for \"$query\" (${feats.size}):\n\n" + feats.take(25).joinToString("\n") { f ->
+                val o = f.jsonObject
+                val props = o["properties"] as? JsonObject
+                val name = (props?.get("name") as? JsonPrimitive)?.contentOrNull ?: "?"
+                val count = (props?.get("count") as? JsonPrimitive)?.contentOrNull
+                val coords = (o["geometry"] as? JsonObject)?.get("coordinates")?.jsonArray
+                val lon = (coords?.getOrNull(0) as? JsonPrimitive)?.contentOrNull.orEmpty()
+                val lat = (coords?.getOrNull(1) as? JsonPrimitive)?.contentOrNull.orEmpty()
+                "• $name${if (!count.isNullOrEmpty()) " ($count mentions)" else ""}\n  Coords: $lat, $lon"
+            }
+    }
+
     /** Reverse image search links across the major engines. */
     fun reverseImage(url: String): Result<String> = runCatching {
         val e = URLEncoder.encode(url, "UTF-8")

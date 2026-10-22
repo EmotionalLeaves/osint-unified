@@ -221,10 +221,10 @@ class GodEyeViewModel(
             repository.observeResults(id).collect { rows ->
                 // Plot any result that carries a location, and focus the globe
                 // on the first one if the search didn't already set a focus.
-                val findings = rows.mapNotNull { r ->
-                    if (r.status != "success") return@mapNotNull null
-                    val c = GeoExtractor.firstCoordinate(r.rawOutput) ?: return@mapNotNull null
-                    FindingPin(c.first, c.second, r.toolName)
+                val findings = rows.flatMap { r ->
+                    if (r.status != "success") emptyList()
+                    else GeoExtractor.allCoordinates(r.rawOutput).take(30)
+                        .map { FindingPin(it.first, it.second, r.toolName) }
                 }
                 _state.update { st ->
                     st.copy(
