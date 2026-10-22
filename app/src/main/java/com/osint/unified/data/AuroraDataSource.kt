@@ -19,7 +19,7 @@ import java.io.IOException
  * probability. We keep only strong cells and sample them so the globe shows
  * where aurora is likely right now, without thousands of markers.
  */
-class AuroraDataSource(private val client: OkHttpClient = Http.client) {
+class AuroraDataSource(private val client: OkHttpClient = Http.feedClient) {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 

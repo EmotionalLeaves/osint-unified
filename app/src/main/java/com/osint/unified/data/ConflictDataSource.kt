@@ -28,7 +28,7 @@ import java.net.URLEncoder
  * for it, and the result is checked again here: a source that changes its
  * mind should not be able to put 1939 back on the globe.
  */
-class ConflictDataSource(private val client: OkHttpClient = Http.client) {
+class ConflictDataSource(private val client: OkHttpClient = Http.feedClient) {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
     private val pointRegex = Regex("""Point\(([-\d.]+)\s+([-\d.]+)\)""")

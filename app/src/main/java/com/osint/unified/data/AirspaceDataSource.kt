@@ -24,7 +24,7 @@ import okhttp3.Request
  * though the airspace were somewhere else.
  * markers; the label carries the designator, class and vertical limits.
  */
-class AirspaceDataSource(private val client: OkHttpClient = Http.client) {
+class AirspaceDataSource(private val client: OkHttpClient = Http.feedClient) {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
     private val base =

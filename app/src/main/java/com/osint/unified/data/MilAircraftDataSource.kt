@@ -19,7 +19,7 @@ import java.io.IOException
  * Live military-class ADS-B tracks worldwide from adsb.fi open data (keyless):
  * aircraft squawking military/interesting codes. Plotted as the MIL layer.
  */
-class MilAircraftDataSource(private val client: OkHttpClient = Http.client) {
+class MilAircraftDataSource(private val client: OkHttpClient = Http.feedClient) {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 

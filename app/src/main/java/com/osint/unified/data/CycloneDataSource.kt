@@ -28,7 +28,7 @@ import java.util.Locale
  *
  * Keyless, small, and updated with each advisory.
  */
-class CycloneDataSource(private val client: OkHttpClient = Http.client) {
+class CycloneDataSource(private val client: OkHttpClient = Http.feedClient) {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 

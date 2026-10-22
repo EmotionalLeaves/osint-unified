@@ -46,7 +46,7 @@ data class SpaceWeather(
  * NOAA SWPC, keyless: planetary K index, GOES X-ray flux (converted to the
  * familiar A/B/C/M/X class) and the live space weather warning feed.
  */
-class SpaceWeatherDataSource(private val client: OkHttpClient = Http.client) {
+class SpaceWeatherDataSource(private val client: OkHttpClient = Http.feedClient) {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 

@@ -19,7 +19,7 @@ import java.io.IOException
  */
 class SeismicStationDataSource(
     private val cache: DiskCache? = null,
-    private val client: OkHttpClient = Http.client
+    private val client: OkHttpClient = Http.feedClient
 ) {
 
     suspend fun fetch(): List<GeoBlip> = withContext(Dispatchers.IO) {

@@ -38,7 +38,7 @@ import kotlin.math.abs
  */
 class SatellitesDataSource(
     private val cache: DiskCache? = null,
-    private val client: OkHttpClient = Http.client
+    private val client: OkHttpClient = Http.feedClient
 ) {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }

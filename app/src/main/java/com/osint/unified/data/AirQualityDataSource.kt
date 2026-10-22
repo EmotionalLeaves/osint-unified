@@ -16,7 +16,7 @@ import okhttp3.Request
  * Air-quality (European AQI) at major world cities via Open-Meteo (keyless),
  * fetched in one multi-location request and plotted as the AQI layer.
  */
-class AirQualityDataSource(private val client: OkHttpClient = Http.client) {
+class AirQualityDataSource(private val client: OkHttpClient = Http.feedClient) {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 

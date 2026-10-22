@@ -23,7 +23,7 @@ import java.io.IOException
  */
 class OverlayDataSource(
     private val settings: AppSettings,
-    private val client: OkHttpClient = Http.client
+    private val client: OkHttpClient = Http.feedClient
 ) {
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 

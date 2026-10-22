@@ -18,7 +18,7 @@ import java.io.IOException
  * feed carries the same events with georss coordinates and needs no
  * parameters, so that is what is parsed here.
  */
-class GdacsDataSource(private val client: OkHttpClient = Http.client) {
+class GdacsDataSource(private val client: OkHttpClient = Http.feedClient) {
 
     private val typeNames = mapOf(
         "EQ" to "Quake", "TC" to "Cyclone", "FL" to "Flood",

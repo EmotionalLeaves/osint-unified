@@ -25,7 +25,7 @@ import java.io.IOException
 class AirportStatusDataSource(
     private val appContext: Context,
     private val airports: BundledPointsDataSource,
-    private val client: OkHttpClient = Http.client
+    private val client: OkHttpClient = Http.feedClient
 ) {
 
     private val delayTypeRegex = Regex("<Delay_type>(.*?)</Delay_type>", RegexOption.DOT_MATCHES_ALL)

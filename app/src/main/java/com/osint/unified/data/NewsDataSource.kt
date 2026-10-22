@@ -27,7 +27,7 @@ import java.net.URLEncoder
  * a weaker claim than "the event happened here", and labelling it as the
  * event location would be a lie the map would tell convincingly.
  */
-class NewsDataSource(private val client: OkHttpClient = Http.client) {
+class NewsDataSource(private val client: OkHttpClient = Http.feedClient) {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 

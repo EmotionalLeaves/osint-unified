@@ -21,7 +21,7 @@ import java.io.IOException
  * Alerts carry a polygon; we plot each at the polygon's centroid, labelled by
  * event type (Tornado Warning, Severe Thunderstorm Warning, …).
  */
-class WeatherDataSource(private val client: OkHttpClient = Http.client) {
+class WeatherDataSource(private val client: OkHttpClient = Http.feedClient) {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 

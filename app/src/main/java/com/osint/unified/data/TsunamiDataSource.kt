@@ -25,7 +25,7 @@ import java.io.IOException
  * Atlantic, Caribbean) and the Pacific centre (Hawaii and the Pacific
  * basin). Both are a couple of kilobytes.
  */
-class TsunamiDataSource(private val client: OkHttpClient = Http.client) {
+class TsunamiDataSource(private val client: OkHttpClient = Http.feedClient) {
 
     private val feeds = listOf(
         "https://www.tsunami.gov/events/xml/PAAQAtom.xml" to "NTWC",

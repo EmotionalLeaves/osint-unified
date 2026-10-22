@@ -20,7 +20,7 @@ import java.io.IOException
  * Open natural events worldwide from NASA EONET v3 (keyless): wildfires,
  * severe storms, volcanoes, floods, icebergs, etc. Used as a live globe layer.
  */
-class NaturalEventsDataSource(private val client: OkHttpClient = Http.client) {
+class NaturalEventsDataSource(private val client: OkHttpClient = Http.feedClient) {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 

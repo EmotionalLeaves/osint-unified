@@ -42,6 +42,7 @@ import com.osint.unified.domain.executor.DirectToolExecutor
 import com.osint.unified.domain.executor.ExecutorFactory
 import com.osint.unified.domain.executor.LocalToolExecutor
 import com.osint.unified.domain.executor.UsernameChecker
+import com.osint.unified.network.Http
 
 /**
  * Minimal manual DI container. Hilt can replace this later; for now a
@@ -51,6 +52,8 @@ class OsintApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // Before any request: the feed cache needs somewhere to live.
+        Http.init(this)
         configureMapTileCache()
         // Idempotent and cheap: with no watched targets the worker returns
         // immediately, so there is nothing to turn on or off.

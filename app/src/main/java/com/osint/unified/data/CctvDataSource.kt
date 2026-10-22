@@ -23,7 +23,7 @@ import okhttp3.Request
  * Each blip carries the JPEG URL so the object inspector can open the live
  * view for that camera.
  */
-class CctvDataSource(private val client: OkHttpClient = Http.client) {
+class CctvDataSource(private val client: OkHttpClient = Http.feedClient) {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
     private val districts = listOf("3", "4", "5", "6", "7", "8", "10", "11", "12")

@@ -20,7 +20,7 @@ import java.io.IOException
  * keyless) — where intercontinental internet traffic physically comes ashore.
  * Critical infrastructure, and a standing target in conflict analysis.
  */
-class CableLandingDataSource(private val client: OkHttpClient = Http.client) {
+class CableLandingDataSource(private val client: OkHttpClient = Http.feedClient) {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 

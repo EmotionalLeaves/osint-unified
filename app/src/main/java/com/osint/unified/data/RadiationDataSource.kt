@@ -33,7 +33,7 @@ import java.util.TimeZone
  * without `captured_after` this layer would plot thirteen-year-old
  * measurements as current.
  */
-class RadiationDataSource(private val client: OkHttpClient = Http.client) {
+class RadiationDataSource(private val client: OkHttpClient = Http.feedClient) {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
     private val day = SimpleDateFormat("yyyy-MM-dd", Locale.US)

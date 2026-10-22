@@ -12,7 +12,7 @@ import java.io.IOException
  * NOAA NDBC ocean buoy network (keyless): latest observations for every active
  * buoy worldwide. We plot each buoy's position from the fixed-column text feed.
  */
-class BuoyDataSource(private val client: OkHttpClient = Http.client) {
+class BuoyDataSource(private val client: OkHttpClient = Http.feedClient) {
 
     suspend fun fetch(): List<GeoBlip> = withContext(Dispatchers.IO) {
         try {

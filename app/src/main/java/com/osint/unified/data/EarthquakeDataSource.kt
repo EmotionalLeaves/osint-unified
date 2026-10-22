@@ -17,7 +17,7 @@ import okhttp3.Request
 import java.io.IOException
 
 /** Fetches recent earthquakes (USGS, last 24h) for the native globe. */
-class EarthquakeDataSource(private val client: OkHttpClient = Http.client) {
+class EarthquakeDataSource(private val client: OkHttpClient = Http.feedClient) {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 

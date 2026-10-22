@@ -17,7 +17,7 @@ import okhttp3.Request
 import java.io.IOException
 
 /** Active volcanoes worldwide from NASA EONET (keyless), as their own layer. */
-class VolcanoDataSource(private val client: OkHttpClient = Http.client) {
+class VolcanoDataSource(private val client: OkHttpClient = Http.feedClient) {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 

@@ -19,7 +19,7 @@ import okhttp3.Request
  * METAR airport-weather observations from the Aviation Weather Center (keyless):
  * station position plus flight category (VFR/MVFR/IFR/LIFR) and temperature.
  */
-class MetarDataSource(private val client: OkHttpClient = Http.client) {
+class MetarDataSource(private val client: OkHttpClient = Http.feedClient) {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 

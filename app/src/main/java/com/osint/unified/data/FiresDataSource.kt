@@ -17,7 +17,7 @@ import okhttp3.Request
 import java.io.IOException
 
 /** Active wildfires worldwide from NASA EONET (keyless), as their own layer. */
-class FiresDataSource(private val client: OkHttpClient = Http.client) {
+class FiresDataSource(private val client: OkHttpClient = Http.feedClient) {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
