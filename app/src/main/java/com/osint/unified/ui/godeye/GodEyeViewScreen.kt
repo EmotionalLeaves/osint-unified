@@ -94,6 +94,8 @@ fun GodEyeViewScreen(
     var showFires by remember { mutableStateOf(true) }
     var showSats by remember { mutableStateOf(true) }
     var showNews by remember { mutableStateOf(false) }
+    var showGdacs by remember { mutableStateOf(true) }
+    var showVolcanoes by remember { mutableStateOf(true) }
 
     Scaffold(containerColor = Intel.Base) { pad ->
         Column(modifier = Modifier.padding(pad).fillMaxSize()) {
@@ -195,6 +197,8 @@ fun GodEyeViewScreen(
                 LayerPill("WX", state.weather.size, Color(0xFF7FB2FF), showWeather) { showWeather = !showWeather }
                 LayerPill("FIRE", state.fires.size, Color(0xFFFF5A4D), showFires) { showFires = !showFires }
                 LayerPill("SAT", state.satellites.size, Color(0xFFC0A8FF), showSats) { showSats = !showSats }
+                LayerPill("HAZARD", state.gdacs.size, Color(0xFFFF8A3D), showGdacs) { showGdacs = !showGdacs }
+                LayerPill("VOLC", state.volcanoes.size, Color(0xFFFF4D4D), showVolcanoes) { showVolcanoes = !showVolcanoes }
                 LayerPill("NEWS", state.news.size, Color(0xFFFF79C6), showNews) { showNews = !showNews }
                 if (state.overlayPoints.isNotEmpty()) {
                     LayerPill("OVLY", state.overlayPoints.size, Intel.CyanBright, showOverlay) { showOverlay = !showOverlay }
@@ -218,6 +222,8 @@ fun GodEyeViewScreen(
                     fires = if (showFires) state.fires else emptyList(),
                     satellites = if (showSats) state.satellites else emptyList(),
                     news = if (showNews) state.news else emptyList(),
+                    gdacs = if (showGdacs) state.gdacs else emptyList(),
+                    volcanoes = if (showVolcanoes) state.volcanoes else emptyList(),
                     findings = state.findings,
                     focus = state.mapFocus,
                     onInvestigate = { label ->
@@ -275,6 +281,8 @@ private fun GlobeMap(
     fires: List<GeoBlip>,
     satellites: List<GeoBlip>,
     news: List<GeoBlip>,
+    gdacs: List<GeoBlip>,
+    volcanoes: List<GeoBlip>,
     findings: List<FindingPin>,
     focus: Pair<Double, Double>?,
     onInvestigate: (String) -> Unit,
@@ -334,6 +342,8 @@ private fun GlobeMap(
             quakes.forEach { add(it.lat, it.lon, 0xFFF0997B.toInt(), 8, "M%.1f".format(it.mag), false) }
             events.forEach { add(it.lat, it.lon, 0xFFF2C94C.toInt(), 9, "${it.category}: ${it.title}", false) }
             news.forEach { add(it.lat, it.lon, 0xFFFF79C6.toInt(), 7, it.label, false) }
+            gdacs.forEach { add(it.lat, it.lon, 0xFFFF8A3D.toInt(), 10, it.label, false) }
+            volcanoes.forEach { add(it.lat, it.lon, 0xFFFF4D4D.toInt(), 9, it.label, false) }
             weather.forEach { add(it.lat, it.lon, 0xFF7FB2FF.toInt(), 9, it.label, false) }
             fires.forEach { add(it.lat, it.lon, 0xFFFF5A4D.toInt(), 8, it.label, false) }
             overlay.forEach { add(it.lat, it.lon, 0xFF5CE1D6.toInt(), 9, it.label, false) }

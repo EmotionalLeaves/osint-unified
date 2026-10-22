@@ -7,10 +7,12 @@ import com.osint.unified.data.AisDataSource
 import com.osint.unified.data.AppSettings
 import com.osint.unified.data.EarthquakeDataSource
 import com.osint.unified.data.FiresDataSource
+import com.osint.unified.data.GdacsDataSource
 import com.osint.unified.data.NaturalEventsDataSource
 import com.osint.unified.data.NewsDataSource
 import com.osint.unified.data.OverlayDataSource
 import com.osint.unified.data.SatellitesDataSource
+import com.osint.unified.data.VolcanoDataSource
 import com.osint.unified.data.WeatherDataSource
 import com.osint.unified.data.ExifReader
 import com.osint.unified.data.InvestigationExporter
@@ -40,6 +42,8 @@ class OsintApplication : Application() {
     val firesDataSource: FiresDataSource by lazy { FiresDataSource() }
     val satellitesDataSource: SatellitesDataSource by lazy { SatellitesDataSource() }
     val newsDataSource: NewsDataSource by lazy { NewsDataSource() }
+    val gdacsDataSource: GdacsDataSource by lazy { GdacsDataSource() }
+    val volcanoDataSource: VolcanoDataSource by lazy { VolcanoDataSource() }
 
     val executorFactory: ExecutorFactory by lazy {
         ExecutorFactory(
