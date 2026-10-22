@@ -35,9 +35,19 @@
       }
 
       const map = L.map("map", { worldCopyJump: true, attributionControl: false }).setView([20, 0], 2);
-      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
-      map.whenReady(function () { statusEl.style.display = "none"; });
-      setTimeout(function () { statusEl.style.display = "none"; }, 5000);
+      // Carto dark tiles: app-friendly, reliable, and match the dark theme.
+      const tiles = L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png", {
+        subdomains: "abcd", maxZoom: 19
+      });
+      let gotTile = false;
+      tiles.on("tileload", function () {
+        if (!gotTile) { gotTile = true; statusEl.style.display = "none"; }
+      });
+      tiles.on("tileerror", function () {
+        if (!gotTile) statusEl.textContent = "Tiles not loading (WebView network blocked?)";
+      });
+      tiles.addTo(map);
+      setTimeout(function () { if (gotTile) statusEl.style.display = "none"; }, 6000);
 
       const groups = {
         aircraft: L.layerGroup().addTo(map),

@@ -18,6 +18,7 @@ import com.osint.unified.domain.Tool
 import com.osint.unified.domain.ToolRegistry
 import com.osint.unified.domain.workflow.Workflows
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -111,23 +112,11 @@ class GodEyeViewModel(
      * picture. Cloud tools and redundant username checks are left to tap.
      */
     private fun autoRun() {
-        val observable = _state.value.observable ?: return
         val redundant = setOf("maigret", "blackbird")
         val tools = _state.value.suggestedTools.filter {
             it.executionMode != ExecutionMode.CLOUD && it.id !in redundant
         }
-        if (tools.isEmpty()) return
-        viewModelScope.launch {
-            val investigationId = ensureInvestigation(observable)
-            for (tool in tools) {
-                _state.update { it.copy(runningToolIds = it.runningToolIds + tool.id) }
-                try {
-                    repository.runTool(investigationId, tool, observable.raw)
-                } finally {
-                    _state.update { it.copy(runningToolIds = it.runningToolIds - tool.id) }
-                }
-            }
-        }
+        runToolsInParallel(tools)
     }
 
     /** Runs the chained workflow for the current observable, piping each
@@ -170,19 +159,28 @@ class GodEyeViewModel(
         }
     }
 
-    /** Runs every suggested tool for the current observable, in sequence. */
+    /** Runs every suggested tool for the current observable, in parallel. */
     fun onRunAll() {
+        runToolsInParallel(_state.value.suggestedTools)
+    }
+
+    /** Runs the given tools concurrently so findings appear as fast as each
+     *  tool returns, rather than trickling in one at a time. */
+    private fun runToolsInParallel(tools: List<Tool>) {
         val observable = _state.value.observable ?: return
-        val tools = _state.value.suggestedTools
         if (tools.isEmpty()) return
         viewModelScope.launch {
             val investigationId = ensureInvestigation(observable)
-            for (tool in tools) {
-                _state.update { it.copy(runningToolIds = it.runningToolIds + tool.id) }
-                try {
-                    repository.runTool(investigationId, tool, observable.raw)
-                } finally {
-                    _state.update { it.copy(runningToolIds = it.runningToolIds - tool.id) }
+            _state.update { it.copy(runningToolIds = it.runningToolIds + tools.map { t -> t.id }) }
+            coroutineScope {
+                tools.forEach { tool ->
+                    launch {
+                        try {
+                            repository.runTool(investigationId, tool, observable.raw)
+                        } finally {
+                            _state.update { it.copy(runningToolIds = it.runningToolIds - tool.id) }
+                        }
+                    }
                 }
             }
         }
