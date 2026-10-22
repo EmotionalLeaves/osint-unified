@@ -48,17 +48,53 @@ were dropped rather than shipped broken.
 A native osmdroid `MapView` over keyless Esri World Imagery — earlier
 WebView attempts (CesiumJS, MapLibre, Leaflet) all rendered blank on device.
 
-Layers, each toggleable, counts live in the pill: aircraft (with
+Layers, each toggleable, with the true count in the pill: aircraft (with
 carrier/cargo/military filtering), military ADS-B, LADD (aircraft whose
 owners paid to be hidden from tracking), vessels, satellites, earthquakes,
 seismic stations, natural events, wildfires, volcanoes, GDACS disasters,
-weather alerts, METAR, air quality, aurora, ocean buoys, news hotspots,
+weather alerts, METAR, air quality, aurora, ocean buoys, news volume,
 conflicts, airports, power plants, traffic cameras, restricted airspace,
 submarine cable landings, and your own overlay. A space-weather line in the
 HUD carries the Kp index, X-ray flare class and active SWPC alerts.
 
-Tap any marker for an object panel with its label, coordinates and MGRS,
-then investigate it or re-centre on it.
+Tap any marker and the inspector leads with **what it is** — which layer
+it came from — then its label, coordinates, MGRS, a link to the source
+where the layer has one, and what INVESTIGATE will actually search for.
+Layers whose caption is not an identifier offer a location search instead
+of one that cannot work.
+
+### Showing everything, drawing only what is visible
+
+Layers hold tens of thousands of points. Markers are culled to the visible
+viewport and thinned to a budget with an even stride, so what is off
+screen costs nothing and what remains stays spread out rather than
+clumping. The pill shows the real count; the map draws what it can.
+
+Feeds that cost bandwidth per region follow the viewport too. The ADS-B
+sweep takes a spread sample of busy regions when zoomed out and the
+nearest hubs when zoomed in — querying every hub against every provider
+each refresh would pull gigabytes an hour of mobile data.
+
+### Live means live
+
+Several feeds keep items "open" long after they stop mattering — EONET
+wildfires stay open for months. Events are filtered by observation date,
+METAR drops anything over two hours old, and every label carries its age.
+A four-month-old fire shown as current is the map lying.
+
+There is no demo data anywhere. Earlier versions invented plausible
+aircraft and ships when a feed failed; on an intelligence map a fabricated
+contact is indistinguishable from a real one. An empty layer is the
+honest answer.
+
+### Satellite positions
+
+Celestrak publishes mean orbital elements for the whole active catalogue,
+keyless, and positions are computed on device: Kepler's equation plus the
+J2 secular drift of the node and perigee. Not full SGP4 — `OrbitPropagator`
+is tested against an observed ISS position and holds to 19 km of ground
+track at 38 hours of element age, which is well under a pixel at the zoom
+a globe is viewed at.
 
 ## Thousands of tools, actually executed
 
