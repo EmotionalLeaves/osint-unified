@@ -9,19 +9,52 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
 
-/** Downloads an image and extracts its EXIF metadata (GPS, camera, timestamps). */
+/**
+ * Downloads an image and extracts its EXIF metadata (GPS, camera, times).
+ *
+ * Three things this has to get right. The fetch happens from the
+ * investigator's own address and the target's server logs it, so it is an
+ * active source and declares itself one. The response is streamed with a
+ * cap, because `bytes()` on an endless response is an out-of-memory crash
+ * waiting for a hostile URL. And each read gets its own temporary file,
+ * deleted afterwards: a single shared name was raced by two callers and
+ * left the image sitting in the cache.
+ */
 class ExifReader(
     private val appContext: Context,
     private val client: OkHttpClient = Http.client
 ) {
+    private companion object {
+        /** Larger than any photograph worth reading EXIF from, and small
+         *  enough that an endless response cannot exhaust memory. */
+        const val MAX_IMAGE_BYTES = 25L * 1024 * 1024
+    }
+
     suspend fun fromUrl(url: String): String = withContext(Dispatchers.IO) {
         try {
             val request = Request.Builder().url(url).build()
             client.newCall(request).execute().use { resp ->
                 if (!resp.isSuccessful) return@withContext "HTTP ${resp.code}"
-                val bytes = resp.body?.bytes() ?: return@withContext "Empty response"
-                val file = File(appContext.cacheDir, "exif_tmp.img")
-                file.writeBytes(bytes)
+                val body = resp.body ?: return@withContext "Empty response"
+                val file = File.createTempFile("exif", ".img", appContext.cacheDir)
+                try {
+                    var written = 0L
+                    body.byteStream().use { input ->
+                        file.outputStream().use { output ->
+                            val buf = ByteArray(64 * 1024)
+                            while (true) {
+                                val n = input.read(buf)
+                                if (n < 0) break
+                                written += n
+                                if (written > MAX_IMAGE_BYTES) {
+                                    return@withContext "Refusing to read more than " +
+                                        "${MAX_IMAGE_BYTES / (1024 * 1024)} MB from this URL."
+                                }
+                                output.write(buf, 0, n)
+                            }
+                        }
+                    }
+                    if (written == 0L) return@withContext "Empty response"
 
                 val exif = ExifInterface(file.absolutePath)
                 val sb = StringBuilder()
@@ -48,7 +81,10 @@ class ExifReader(
                 val h = exif.getAttributeInt(ExifInterface.TAG_IMAGE_LENGTH, 0)
                 if (w > 0 && h > 0) sb.append("Dimensions: ${w}x$h\n")
 
-                sb.toString().ifBlank { "No EXIF metadata found." }
+                    sb.toString().ifBlank { "No EXIF metadata found." }
+                } finally {
+                    runCatching { file.delete() }
+                }
             }
         } catch (e: Exception) {
             "Error: ${e.message}"

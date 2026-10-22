@@ -45,6 +45,7 @@ import com.osint.unified.domain.ObservableRouter
 import com.osint.unified.domain.Tool
 import com.osint.unified.domain.ToolRegistry
 import com.osint.unified.domain.workflow.Workflows
+import kotlinx.coroutines.async
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.sync.Mutex
@@ -103,7 +104,15 @@ data class GodEyeUiState(
     val findings: List<FindingPin> = emptyList(),
     val mapFocus: Pair<Double, Double>? = null,
     val results: List<ResultRow> = emptyList(),
-    val runningToolIds: Set<String> = emptySet(),
+    /**
+     * What is in flight, counted per tool rather than held as a set.
+     *
+     * The second pass runs the same tool against several identifiers at
+     * once. With a set, the first to finish removed the tool and the UI
+     * showed it idle while two more were still running — and a ghost entry
+     * left RUN ALL disabled for the next dossier.
+     */
+    val runningTools: Map<String, Int> = emptyMap(),
     val workflowName: String? = null,
     val workflowRunning: Boolean = false,
     /** The second pass is chasing what the first pass turned up. */
@@ -511,7 +520,7 @@ class GodEyeViewModel(
                 results = emptyList(),
                 findings = emptyList(),
                 mapFocus = focus,
-                runningToolIds = emptySet(),
+                runningTools = emptyMap(),
                 enrichmentRunning = false,
                 enriching = emptyList(),
                 breadcrumb = emptyList(),
@@ -557,7 +566,7 @@ class GodEyeViewModel(
         searchJobs.clear()
         _state.update {
             it.copy(
-                runningToolIds = emptySet(),
+                runningTools = emptyMap(),
                 enrichmentRunning = false,
                 enriching = emptyList(),
                 workflowRunning = false
@@ -579,9 +588,9 @@ class GodEyeViewModel(
                     val tool = ToolRegistry.byId(step.toolId) ?: continue
                     val input = if (step.fromPreviousHosts) previousHosts.joinToString("\n") else observable.raw
                     if (step.fromPreviousHosts && previousHosts.isEmpty()) continue
-                    _state.update { it.copy(runningToolIds = it.runningToolIds + tool.id) }
+                    _state.update { it.copy(runningTools = it.runningTools.plusRunning(listOf(tool.id))) }
                     val row = repository.runTool(investigationId, tool, input)
-                    _state.update { it.copy(runningToolIds = it.runningToolIds - tool.id) }
+                    _state.update { it.copy(runningTools = it.runningTools.minusRunning(tool.id)) }
                     if (row.status == "success") {
                         previousHosts = Workflows.extractHosts(tool.id, row.rawOutput)
                     }
@@ -596,11 +605,11 @@ class GodEyeViewModel(
         val observable = _state.value.observable ?: return
         viewModelScope.launch {
             val investigationId = ensureInvestigation(observable)
-            _state.update { it.copy(runningToolIds = it.runningToolIds + tool.id) }
+            _state.update { it.copy(runningTools = it.runningTools.plusRunning(listOf(tool.id))) }
             try {
                 repository.runTool(investigationId, tool, observable.raw)
             } finally {
-                _state.update { it.copy(runningToolIds = it.runningToolIds - tool.id) }
+                _state.update { it.copy(runningTools = it.runningTools.minusRunning(tool.id)) }
             }
         }
     }
@@ -637,19 +646,23 @@ class GodEyeViewModel(
         }
         searchJobs += viewModelScope.launch {
             val investigationId = ensureInvestigation(observable)
-            _state.update { it.copy(runningToolIds = it.runningToolIds + fresh.map { t -> t.id }) }
-            coroutineScope {
-                fresh.forEach { tool ->
-                    launch {
+            _state.update { it.copy(runningTools = it.runningTools.plusRunning(fresh.map { t -> t.id })) }
+            val produced = coroutineScope {
+                fresh.map { tool ->
+                    async {
                         try {
                             repository.runTool(investigationId, tool, observable.raw)
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            null
                         } finally {
-                            _state.update { it.copy(runningToolIds = it.runningToolIds - tool.id) }
+                            _state.update { it.copy(runningTools = it.runningTools.minusRunning(tool.id)) }
                         }
                     }
-                }
+                }.map { it.await() }
             }
-            if (thenEnrich) enrich(observable)
+            if (thenEnrich) enrich(observable, produced.filterNotNull())
         }
     }
 
@@ -667,12 +680,13 @@ class GodEyeViewModel(
      * chasing everything would fan out without bound and spend the whole
      * budget on the noisiest kind of identifier.
      */
-    private suspend fun enrich(seed: Observable) {
+    private suspend fun enrich(seed: Observable, firstPass: List<ResultRow> = emptyList()) {
         if (!settings.followUpEnabled) return
-        // Results arrive through the Room flow, so give the last insert a
-        // moment to land before reading what the pass produced.
-        delay(400)
-        val rows = _state.value.results
+        // The rows from the pass that just finished, handed over directly.
+        // This used to sleep 400ms and then read UI state, hoping the Room
+        // flow had caught up — on a slow phone it read a partial set and
+        // missed pivots.
+        val rows = (firstPass + _state.value.results).distinctBy { it.id }
         if (rows.isEmpty()) return
 
         val quota = mapOf("IP" to 3, "HOST" to 3, "EMAIL" to 2, "HANDLE" to 2, "WALLET" to 1)
@@ -701,7 +715,7 @@ class GodEyeViewModel(
                     .take(TOOLS_PER_PIVOT)
                     .filter { dispatched.add("${it.id}|${pivot.value}") }
                 if (tools.isEmpty()) continue
-                _state.update { it.copy(runningToolIds = it.runningToolIds + tools.map { t -> t.id }) }
+                _state.update { it.copy(runningTools = it.runningTools.plusRunning(tools.map { t -> t.id })) }
                 coroutineScope {
                     tools.forEach { tool ->
                         launch {
@@ -709,7 +723,7 @@ class GodEyeViewModel(
                                 repository.runTool(investigationId, tool, pivot.value)
                             } finally {
                                 _state.update { st ->
-                                    st.copy(runningToolIds = st.runningToolIds - tool.id)
+                                    st.copy(runningTools = st.runningTools.minusRunning(tool.id))
                                 }
                             }
                         }

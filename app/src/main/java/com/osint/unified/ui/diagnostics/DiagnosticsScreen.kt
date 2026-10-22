@@ -144,8 +144,12 @@ fun DiagnosticsScreen(executors: ExecutorFactory, feeds: List<FeedProbe>, onBack
             .map { tool ->
                 Probe(tool.name, "TOOLS") {
                     val input = sampleFor(tool)
+                    // Timed here. The column used to be hard-coded to zero,
+                    // so a self-test that exists to find slow sources
+                    // reported every one of them as instant.
+                    val t0 = System.currentTimeMillis()
                     val r = runCatching { executors.forTool(tool).execute(tool, input) }.getOrNull()
-                    toResult(r)
+                    toResult(r, System.currentTimeMillis() - t0)
                 }
             }
         val feedProbes = feeds.map { f ->
@@ -186,7 +190,9 @@ fun DiagnosticsScreen(executors: ExecutorFactory, feeds: List<FeedProbe>, onBack
         }
     }
 
-    LaunchedEffect(Unit) { runAll() }
+    // It used to run on open, and again on every rotation: about a hundred
+    // requests, including lookups of real third-party accounts, fired
+    // because someone looked at a screen. It waits to be asked.
 
     Scaffold(
         containerColor = Intel.Base,
@@ -209,7 +215,8 @@ fun DiagnosticsScreen(executors: ExecutorFactory, feeds: List<FeedProbe>, onBack
             val ok = results.values.count { it.status == "ok" }
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
                 Text(
-                    "$ok / ${probes.size} sources returning data",
+                    if (results.isEmpty()) "${probes.size} sources — nothing run yet"
+                    else "$ok / ${probes.size} sources returning data",
                     style = MaterialTheme.typography.labelMedium, color = Intel.TextMid,
                     modifier = Modifier.weight(1f)
                 )
@@ -221,7 +228,7 @@ fun DiagnosticsScreen(executors: ExecutorFactory, feeds: List<FeedProbe>, onBack
                         .padding(horizontal = 12.dp, vertical = 7.dp)
                 ) {
                     Text(
-                        if (running) "RUNNING…" else "RE-RUN",
+                        if (running) "RUNNING…" else if (results.isEmpty()) "RUN" else "RE-RUN",
                         style = MaterialTheme.typography.labelMedium,
                         color = if (running) Intel.TextLow else Intel.Base
                     )
@@ -245,14 +252,23 @@ fun DiagnosticsScreen(executors: ExecutorFactory, feeds: List<FeedProbe>, onBack
     }
 }
 
-private fun toResult(r: Result<String>?): DiagResult = when {
-    r == null -> DiagResult("fail", 0, "error")
+private fun toResult(r: Result<String>?, ms: Long): DiagResult = when {
+    r == null -> DiagResult("fail", ms, "error")
     r.isSuccess -> {
         val out = r.getOrNull().orEmpty()
         val line = out.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() } ?: ""
-        if (out.isBlank()) DiagResult("empty", 0, "no data") else DiagResult("ok", 0, line.take(80))
+        when {
+            out.isBlank() -> DiagResult("empty", ms, "no data")
+            // The same judgement the dossier uses, so the self-test and the
+            // dossier cannot disagree about whether a source found anything.
+            com.osint.unified.domain.Findings.saysUnreachable(out) ->
+                DiagResult("fail", ms, line.take(80))
+            com.osint.unified.domain.Findings.saysNothing(out) ->
+                DiagResult("empty", ms, line.take(80))
+            else -> DiagResult("ok", ms, line.take(80))
+        }
     }
-    else -> DiagResult("fail", 0, (r.exceptionOrNull()?.message ?: "error").take(80))
+    else -> DiagResult("fail", ms, (r.exceptionOrNull()?.message ?: "error").take(80))
 }
 
 @Composable
@@ -276,7 +292,13 @@ private fun DiagRow(name: String, res: DiagResult?) {
             Spacer(Modifier.width(8.dp))
             Text(name, style = MaterialTheme.typography.titleSmall, color = Intel.TextHi, modifier = Modifier.weight(1f))
             Text(
-                res?.let { if (it.status == "running") "…" else it.status.uppercase() } ?: "",
+                res?.let {
+                    when {
+                        it.status == "running" -> "…"
+                        it.ms > 0 -> "${it.status.uppercase()} ${it.ms}ms"
+                        else -> it.status.uppercase()
+                    }
+                } ?: "",
                 style = MaterialTheme.typography.labelSmall, color = color
             )
         }

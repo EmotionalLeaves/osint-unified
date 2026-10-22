@@ -19,11 +19,17 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Probe
+        env:
+          INPUT_URLS: ${{ github.event.inputs.urls }}
+          INPUT_LIST: ${{ github.event.inputs.list }}
         run: |
           set +e
-          LIST="${{ github.event.inputs.urls }}"
+          # Through the environment, never interpolated into the script: a
+          # workflow input pasted straight into bash is a command injection
+          # by anyone who can dispatch the workflow.
+          LIST="$INPUT_URLS"
           FILE=.github/probe-urls.txt
-          if [ "${{ github.event.inputs.list }}" = "tools" ]; then FILE=.github/probe-tools.txt; fi
+          if [ "$INPUT_LIST" = "tools" ]; then FILE=.github/probe-tools.txt; fi
           if [ -z "$LIST" ] && [ -f "$FILE" ]; then
             LIST=$(cat "$FILE")
           fi

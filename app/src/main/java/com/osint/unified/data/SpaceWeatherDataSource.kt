@@ -30,6 +30,10 @@ data class SpaceWeather(
     /** Geomagnetic storm level from the planetary K index. */
     val stormLevel: String
         get() = when {
+            // The scale stopped at G4, so the largest storm there is —
+            // the one that puts aurora over the tropics and takes grids
+            // down — was reported as the second largest.
+            kp >= 9 -> "G5 EXTREME"
             kp >= 8 -> "G4 SEVERE"
             kp >= 7 -> "G3 STRONG"
             kp >= 6 -> "G2 MODERATE"

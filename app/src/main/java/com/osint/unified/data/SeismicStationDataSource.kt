@@ -12,6 +12,11 @@ import java.io.IOException
  * Global seismic-station network (IRIS FDSN station metadata, keyless): active
  * station positions, as the STATIONS layer.
  */
+/*
+ * Without `endafter`, IRIS returns every station it has ever listed,
+ * including ones decommissioned decades ago — so the map showed
+ * instruments that are not there.
+ */
 class SeismicStationDataSource(
     private val cache: DiskCache? = null,
     private val client: OkHttpClient = Http.client
@@ -58,7 +63,7 @@ class SeismicStationDataSource(
 
     private fun download(): String? = runCatching {
         val request = Request.Builder()
-            .url("https://service.iris.edu/fdsnws/station/1/query?format=text&level=station&nodata=404")
+            .url("https://service.iris.edu/fdsnws/station/1/query?format=text&level=station&nodata=404&endafter=2026-01-01")
             .header("User-Agent", "OSINT-Unified/1.0 (research)")
             .build()
         Http.bulkClient.newCall(request).execute().use { resp ->

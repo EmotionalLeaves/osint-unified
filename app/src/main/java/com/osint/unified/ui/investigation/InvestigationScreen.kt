@@ -127,7 +127,7 @@ fun InvestigationScreen(
             return@Scaffold
         }
 
-        val anyRunning = state.runningToolIds.isNotEmpty() || state.workflowRunning ||
+        val anyRunning = state.runningTools.isNotEmpty() || state.workflowRunning ||
             state.enrichmentRunning
 
         // What the globe already knows about this place, right now.
@@ -464,7 +464,7 @@ fun InvestigationScreen(
             state.suggestedTools.groupBy { it.category }.forEach { (category, tools) ->
                 SectionHeader(category.name, categoryColor(category))
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    tools.forEach { tool -> SourceChip(tool, tool.id in state.runningToolIds, viewModel) }
+                    tools.forEach { tool -> SourceChip(tool, tool.id in state.runningTools, viewModel) }
                 }
             }
 
