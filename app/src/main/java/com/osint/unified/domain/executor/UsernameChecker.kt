@@ -64,7 +64,12 @@ class UsernameChecker(private val appContext: Context) {
             .replace("{}", username)
     }
 
-    @Volatile private var cached: List<SiteRule>? = null
+    private companion object {
+        // Parsing three rulesets costs several megabytes of JSON, so the
+        // merged result is shared across every UsernameChecker instance
+        // rather than rebuilt per use.
+        @Volatile var sharedRules: List<SiteRule>? = null
+    }
 
     suspend fun check(username: String): String = withContext(Dispatchers.IO) {
         val sites = loadRules()
@@ -151,7 +156,7 @@ class UsernameChecker(private val appContext: Context) {
     // ------------------------------------------------------------------
 
     private fun loadRules(): List<SiteRule> {
-        cached?.let { return it }
+        sharedRules?.let { return it }
         val merged = LinkedHashMap<String, SiteRule>()
         fun add(rules: List<SiteRule>) {
             rules.forEach { r ->
@@ -168,7 +173,7 @@ class UsernameChecker(private val appContext: Context) {
         add(parseSherlock(asset("sherlock.json")))
         add(parseMaigret(asset("maigret.json")))
         val all = merged.values.toList()
-        if (all.isNotEmpty()) cached = all
+        if (all.isNotEmpty()) sharedRules = all
         return all
     }
 

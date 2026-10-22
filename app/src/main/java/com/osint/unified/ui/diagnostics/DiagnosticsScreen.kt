@@ -30,12 +30,15 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
@@ -87,14 +90,19 @@ private fun sampleFor(tool: Tool): String = when (tool.inputType) {
 @Composable
 private fun BundleManifest() {
     val context = LocalContext.current
-    val lines = remember {
-        val manifest = runCatching {
-            context.assets.open("bundle-manifest.txt").bufferedReader().use { it.readText() }
-        }.getOrNull()?.lines()?.filter { it.isNotBlank() } ?: emptyList()
-        val live = runCatching {
-            com.osint.unified.domain.executor.UsernameChecker(context).rulesetSummary()
-        }.getOrNull()
-        manifest + listOfNotNull(live?.let { "On this device: $it" })
+    // Merging the rulesets parses several megabytes of JSON and can touch
+    // the network, so it never runs on the main thread — the panel fills in
+    // when the work finishes.
+    val lines by produceState(initialValue = emptyList<String>(), context) {
+        value = withContext(Dispatchers.IO) {
+            val manifest = runCatching {
+                context.assets.open("bundle-manifest.txt").bufferedReader().use { it.readText() }
+            }.getOrNull()?.lines()?.filter { it.isNotBlank() } ?: emptyList()
+            val live = runCatching {
+                com.osint.unified.domain.executor.UsernameChecker(context).rulesetSummary()
+            }.getOrNull()
+            manifest + listOfNotNull(live?.let { "On this device: $it" })
+        }
     }
     if (lines.isEmpty()) return
     Column(
