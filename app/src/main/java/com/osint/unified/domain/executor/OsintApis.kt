@@ -362,7 +362,6 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
             isEmail -> {
                 add("Exact mentions", g("\"$v\""))
                 add("Have I Been Pwned", "https://haveibeenpwned.com/account/${enc(v)}")
-                add("Breach search (IntelX)", "https://intelx.io/?s=${enc(v)}")
                 add("Paste / code", g("\"$v\" (site:pastebin.com OR site:github.com OR site:gist.github.com)"))
                 add("Documents", g("\"$v\" (filetype:pdf OR filetype:xls OR filetype:docx)"))
                 add("Google", g(v))
@@ -498,18 +497,14 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
     /** Reverse image search links across the major engines. */
     fun reverseImage(url: String): Result<String> = runCatching {
         val e = URLEncoder.encode(url, "UTF-8")
-        // General reverse-image engines (image URL pre-filled) plus the
-        // face-search services, which you run yourself under your own account.
+        // Free reverse-image engines only (no paywalled services). Yandex is
+        // the strongest of these for faces.
         buildString {
-            append("Reverse image search:\n")
+            append("Reverse image search (all free):\n")
             append("Google Lens: https://lens.google.com/uploadbyurl?url=$e\n")
-            append("Yandex: https://yandex.com/images/search?rpt=imageview&url=$e\n")
+            append("Yandex (best for faces): https://yandex.com/images/search?rpt=imageview&url=$e\n")
             append("Bing: https://www.bing.com/images/search?view=detailv2&iss=sbi&q=imgurl:$e\n")
             append("TinEye: https://tineye.com/search?url=$e\n")
-            append("Lenso.ai: https://lenso.ai/en/search/url?url=$e\n")
-            append("\nFace search (upload the image there, your own account):\n")
-            append("PimEyes: https://pimeyes.com/en\n")
-            append("FaceCheck.id: https://facecheck.id\n")
         }
     }
 
