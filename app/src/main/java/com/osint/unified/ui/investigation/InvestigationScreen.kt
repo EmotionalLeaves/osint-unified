@@ -114,6 +114,13 @@ fun InvestigationScreen(viewModel: GodEyeViewModel, onBack: () -> Unit) {
         val pivots = remember(state.results) {
             EntityExtractor.extract(state.results, observable.raw)
         }
+        // Identifiers the second pass has already run tools against.
+        val alreadyChased = remember(state.results) {
+            val seed = observable.raw.trim().lowercase()
+            state.results.map { it.input }
+                .filter { it.trim().lowercase() != seed }
+                .toSet()
+        }
 
         Column(
             modifier = Modifier.padding(pad).fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp)
@@ -214,7 +221,11 @@ fun InvestigationScreen(viewModel: GodEyeViewModel, onBack: () -> Unit) {
             if (pivots.isNotEmpty()) {
                 SectionHeader("PIVOTS — ${pivots.size} identifiers found", Intel.CyanBright)
                 Text(
-                    "Tap any to start a fresh investigation on it.",
+                    if (alreadyChased.isEmpty())
+                        "Tap any to start a fresh investigation on it."
+                    else
+                        "✓ marks the ones the second pass already looked up — " +
+                            "their results are under FOLLOWED UP below.",
                     style = MaterialTheme.typography.labelSmall,
                     color = Intel.TextLow,
                     modifier = Modifier.padding(bottom = 6.dp)
@@ -237,7 +248,7 @@ fun InvestigationScreen(viewModel: GodEyeViewModel, onBack: () -> Unit) {
                             modifier = Modifier.weight(1f)
                         ) {
                             items.forEach { p ->
-                                PivotChip(p) {
+                                PivotChip(p, chased = p.value in alreadyChased) {
                                     viewModel.onQueryChange(p.value)
                                     viewModel.onSearch()
                                 }
@@ -375,19 +386,38 @@ fun InvestigationScreen(viewModel: GodEyeViewModel, onBack: () -> Unit) {
 }
 
 @Composable
-private fun PivotChip(pivot: EntityExtractor.Pivot, onClick: () -> Unit) {
+private fun PivotChip(
+    pivot: EntityExtractor.Pivot,
+    chased: Boolean = false,
+    onClick: () -> Unit
+) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .background(Intel.Elevated, RoundedCornerShape(7.dp))
-            .border(1.dp, Intel.Hairline, RoundedCornerShape(7.dp))
+            .border(
+                1.dp,
+                if (chased) Intel.Cyan else Intel.Hairline,
+                RoundedCornerShape(7.dp)
+            )
             .clickable(onClick = onClick)
             .padding(horizontal = 9.dp, vertical = 6.dp)
     ) {
+        // The second pass has already looked this one up, and its results
+        // are below under FOLLOWED UP. Tapping still works — it opens a
+        // dossier of its own — but it is no longer unexplored ground, and
+        // the chip should not invite the same work twice.
+        if (chased) {
+            Text(
+                "✓ ",
+                style = MaterialTheme.typography.labelMedium,
+                color = Intel.Cyan
+            )
+        }
         Text(
             pivot.value,
             style = MaterialTheme.typography.labelMedium,
-            color = Intel.CyanBright,
+            color = if (chased) Intel.Cyan else Intel.CyanBright,
             fontFamily = FontFamily.Monospace
         )
         if (pivot.count > 1) {

@@ -27,23 +27,26 @@ IMPORTED = re.compile(r"^\s*import\s+[\w.]*?\.([A-Za-z_][A-Za-z0-9_]*)(?:\s+as\s
 DIAG = re.compile(r"^(?:e: )?(?:file://)?(\S+\.kt):(\d+):(\d+): error: unresolved reference: ([A-Za-z_][A-Za-z0-9_]*)")
 
 
-def project_declarations(roots):
-    """Names this project declares, minus anything it also imports.
+def scan(roots):
+    """Names this project declares, and what each file imports.
 
-    An extension receiver reads like a declaration ("fun JsonObject?.str"),
-    and a name the project imports from a library is that library's, not
-    ours — both would otherwise be reported for every file that lacks the
-    SDK. Excluding imported names costs nothing real: a project symbol
-    does not need importing to be used where it belongs.
+    Imports are tracked per file, not pooled. A name imported in one file
+    and used bare in another *without* its import is precisely the mistake
+    worth catching — pooling them hides it, which is how four missing
+    imports reached CI. An extension receiver reads like a declaration
+    ("fun JsonObject?.str"), so the declaration pattern refuses a name
+    followed by a dot.
     """
     names = set()
-    imported = set()
+    per_file = {}
     for root in roots:
         for dirpath, _, files in os.walk(root):
             for f in files:
                 if not f.endswith(".kt"):
                     continue
-                with open(os.path.join(dirpath, f), encoding="utf-8", errors="replace") as fh:
+                full = os.path.join(dirpath, f)
+                imported = set()
+                with open(full, encoding="utf-8", errors="replace") as fh:
                     for line in fh:
                         m = IMPORTED.match(line)
                         if m:
@@ -52,12 +55,13 @@ def project_declarations(roots):
                         m = DECL.match(line)
                         if m:
                             names.add(m.group(1))
-    return names - imported
+                per_file[os.path.realpath(full)] = imported
+    return names, per_file
 
 
 def main():
     root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    declared = project_declarations([
+    declared, imports_by_file = scan([
         os.path.join(root, "app/src/main/java"),
         os.path.join(root, "app/src/test/java"),
     ])
@@ -84,6 +88,9 @@ def main():
             continue
         if not os.path.isabs(path):
             path = os.path.join(root, path)
+        # Imported into THIS file, so the name here is the library's.
+        if name in imports_by_file.get(os.path.realpath(path), ()):  # noqa: SIM118
+            continue
         if path not in sources:
             try:
                 with open(path, encoding="utf-8", errors="replace") as fh:
