@@ -90,8 +90,9 @@ jobs:
           # Curated tool catalogues, merged into the in-app directory.
           curl -sSL https://raw.githubusercontent.com/jivoi/awesome-osint/master/README.md -o "$A/awesome-osint.md" || true
           curl -sSL https://raw.githubusercontent.com/cipher387/osint_stuff_tool_collection/main/README.md -o "$A/osint-stuff.md" || true
-          curl -sSL https://raw.githubusercontent.com/The-Osint-Toolbox/OSINT-Toolbox/main/README.md -o "$A/osint-toolbox.md" || true
-          for f in sherlock.json maigret.json un-sanctions.xml breaches.json awesome-osint.md osint-stuff.md osint-toolbox.md; do
+          curl -sSL https://raw.githubusercontent.com/Astrosp/Awesome-OSINT-For-Everything/main/README.md -o "$A/osint-everything.md" || true
+          curl -sSL https://raw.githubusercontent.com/Ph055a/OSINT_Collection/master/README.md -o "$A/osint-collection.md" || true
+          for f in sherlock.json maigret.json un-sanctions.xml breaches.json awesome-osint.md osint-stuff.md osint-everything.md osint-collection.md; do
             if [ -s "$A/$f" ]; then
               echo "bundled $f ($(wc -c < "$A/$f") bytes)"
             else
@@ -145,6 +146,7 @@ jobs:
             SUMMARY="${SUMMARY}$(basename "$f") $(wc -c < "$f") bytes%0A"
           done
           echo "::error title=bundled-assets::${SUMMARY}"
+          echo "::error title=rule-counts::$(python3 .github/count-assets.py)"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4

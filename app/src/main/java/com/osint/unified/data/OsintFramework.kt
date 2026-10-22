@@ -48,7 +48,8 @@ object OsintFramework {
     private val CATALOGUES = listOf(
         "awesome-osint.md" to "awesome-osint",
         "osint-stuff.md" to "osint_stuff_tool_collection",
-        "osint-toolbox.md" to "OSINT Toolbox"
+        "osint-everything.md" to "Awesome OSINT For Everything",
+        "osint-collection.md" to "OSINT Collection"
     )
 
     /**
