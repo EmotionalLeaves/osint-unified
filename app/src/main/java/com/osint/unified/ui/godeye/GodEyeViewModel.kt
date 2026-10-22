@@ -376,6 +376,10 @@ class GodEyeViewModel(
     }
 
     fun onSearch() {
+        // Tapping search with an empty box used to navigate to the dossier's
+        // "enter something" placeholder, which is the app answering a
+        // question nobody asked.
+        if (_state.value.query.isBlank()) return
         val type = _state.value.searchType
         val observable = if (type == "auto") router.classify(_state.value.query)
             else router.classifyAs(_state.value.query, type)

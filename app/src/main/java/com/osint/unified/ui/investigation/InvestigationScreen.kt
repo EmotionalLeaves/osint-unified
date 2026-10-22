@@ -62,6 +62,7 @@ import com.osint.unified.domain.Tool
 import com.osint.unified.domain.ToolCategory
 import com.osint.unified.ui.common.GraphDialog
 import com.osint.unified.ui.common.ResultCard
+import com.osint.unified.ui.godeye.AreaReport
 import com.osint.unified.ui.godeye.GodEyeViewModel
 import com.osint.unified.ui.theme.Intel
 import com.osint.unified.ui.theme.categoryColor
@@ -86,8 +87,15 @@ fun InvestigationScreen(
     // Whether this target is already being followed. Read once per target
     // rather than observed: it only changes when the button below is used.
     var watched by remember(observable?.raw) { mutableStateOf(false) }
+    var watchBusy by remember(observable?.raw) { mutableStateOf(false) }
+    // Followed rather than read once: the watch screen can remove a target,
+    // after which a one-shot read would leave this button claiming to be
+    // watching something that is no longer in the list.
     LaunchedEffect(observable?.raw) {
-        watched = observable?.let { runCatching { watchRepository.isWatched(it.raw) }.getOrDefault(false) } ?: false
+        val raw = observable?.raw ?: return@LaunchedEffect
+        watchRepository.observeAll().collect { list ->
+            if (!watchBusy) watched = list.any { it.observable == raw }
+        }
     }
 
     Scaffold(
@@ -120,7 +128,28 @@ fun InvestigationScreen(
 
         val anyRunning = state.runningToolIds.isNotEmpty() || state.workflowRunning ||
             state.enrichmentRunning
-        val done = state.results.count { it.status == "success" || it.status == "error" }
+
+        // What the globe already knows about this place, right now.
+        //
+        // Every source a coordinate dossier queries answers about the place
+        // in general — its address, what is mapped there, what the weather
+        // was. None of them answers the question that makes a live map worth
+        // having: what is there at this moment. The app is already tracking
+        // the aircraft overhead and the vessels offshore; it simply was not
+        // telling the dossier.
+        val liveNow = remember(observable.raw, state.aircraft, state.vessels, state.quakes) {
+            (observable as? Observable.Coordinate)?.let {
+                AreaReport.build(state, it.lat, it.lon, radiusKm = 50.0)
+            }
+        }
+
+        // The counter must not count the second pass's rows against the
+        // seed's tool list, or it reads "34/12 sources".
+        val seedRaw = observable.raw.trim().lowercase()
+        val done = state.results.count {
+            it.input.trim().lowercase() == seedRaw &&
+                (it.status == "success" || it.status == "error")
+        }
         val found = state.results.count { it.status == "success" }
         val facts = remember(state.results) { IntelSummary.synthesize(state.results) }
         val pivots = remember(state.results) {
@@ -207,6 +236,44 @@ fun InvestigationScreen(
                 }
             }
 
+            // ---- What is there right now ----
+            if (liveNow != null && liveNow.total > 0) {
+                SectionHeader("RIGHT NOW WITHIN 50 KM — ${liveNow.total}", Intel.Amber)
+                liveNow.groups.forEach { group ->
+                    Text(
+                        "${group.kind} · ${group.total}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Intel.Cyan,
+                        modifier = Modifier.padding(top = 6.dp)
+                    )
+                    group.items.take(5).forEach { item ->
+                        Row(Modifier.fillMaxWidth().padding(top = 2.dp)) {
+                            Text(
+                                AreaReport.fmtKm(item.distanceKm),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Intel.TextLow,
+                                fontFamily = FontFamily.Monospace,
+                                modifier = Modifier.width(58.dp)
+                            )
+                            Text(
+                                item.label,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Intel.TextHi,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                    if (group.total > group.items.take(5).size) {
+                        Text(
+                            "…and ${group.total - group.items.take(5).size} more",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Intel.TextLow
+                        )
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+            }
+
             // ---- Actions ----
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -222,13 +289,21 @@ fun InvestigationScreen(
                 }
                 // A dossier is a snapshot; this is where you decide the
                 // target is worth asking about again.
-                ConsoleButton(if (watched) "✓ WATCHING" else "WATCH") {
+                ConsoleButton(
+                    if (watchBusy) "…" else if (watched) "✓ WATCHING" else "WATCH",
+                    enabled = !watchBusy
+                ) {
+                    watchBusy = true
                     scope.launch {
-                        runCatching {
+                        // The label follows what was saved, not what was
+                        // attempted: a failed write used to leave the button
+                        // reading WATCHING over an empty watch list.
+                        val ok = runCatching {
                             if (watched) watchRepository.removeByObservable(observable.raw)
                             else watchRepository.add(observable)
-                        }
-                        watched = !watched
+                        }.isSuccess
+                        if (ok) watched = !watched
+                        watchBusy = false
                     }
                 }
                 if (state.results.isNotEmpty()) {

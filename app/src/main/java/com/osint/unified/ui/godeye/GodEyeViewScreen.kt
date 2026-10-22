@@ -105,7 +105,7 @@ fun GodEyeViewScreen(
     onOpenWatch: () -> Unit = {}
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    var showSettings by remember { mutableStateOf(false) }
+    var showSettings by rememberSaveable { mutableStateOf(false) }
     var showAircraft by remember { mutableStateOf(true) }
     var showVessels by remember { mutableStateOf(true) }
     var showQuakes by remember { mutableStateOf(true) }

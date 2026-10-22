@@ -398,13 +398,20 @@ class DirectToolExecutor(
                 }
             }
 
-            if (derived.isNotEmpty()) {
-                append("\n── Directory tools that accept this query (${derived.size} total) ──\n")
-                derived.take(40).forEach { t ->
+            // The username rulesets are thousands of profile-URL templates,
+            // and printing a page of them here would be a page of guesses:
+            // whether an account exists at any of those sites is the
+            // username sweep's job, and it checks rather than guessing. A
+            // dossier should carry links that lead somewhere, so only the
+            // catalogue's own search URLs appear, and only a handful.
+            val catalogue = derived.filter { it.source != "username rulesets" }
+            if (catalogue.isNotEmpty()) {
+                append("\n── Directory searches for this target (${catalogue.size} available) ──\n")
+                catalogue.take(12).forEach { t ->
                     append("${t.name}: ${t.resolve(target)}\n")
                 }
-                if (derived.size > 40) {
-                    append("\n…and ${derived.size - 40} more in the directory screen, ")
+                if (catalogue.size > 12) {
+                    append("\n…and ${catalogue.size - 12} more in the directory screen, ")
                     append("which runs any of them against this target.\n")
                 }
             }

@@ -96,11 +96,12 @@ fun WatchScreen(
                     color = Intel.TextMid,
                     modifier = Modifier.weight(1f)
                 )
+                val canCheck = !checking && list.isNotEmpty()
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(7.dp))
-                        .background(if (checking) Intel.Elevated else Intel.Cyan)
-                        .clickable(enabled = !checking && list.isNotEmpty()) {
+                        .background(if (canCheck) Intel.Cyan else Intel.Elevated)
+                        .clickable(enabled = canCheck) {
                             checking = true
                             scope.launch {
                                 runCatching { repository.checkAll() }
@@ -112,7 +113,7 @@ fun WatchScreen(
                     Text(
                         if (checking) "CHECKING…" else "CHECK NOW",
                         style = MaterialTheme.typography.labelMedium,
-                        color = if (checking) Intel.TextLow else Intel.Base
+                        color = if (canCheck) Intel.Base else Intel.TextLow
                     )
                 }
             }
