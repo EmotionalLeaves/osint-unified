@@ -162,6 +162,12 @@ jobs:
           PY
           ls -la "$A"
           test -s "$A/arf.json"
+          # Each dataset parsed and measured before it is allowed into the
+          # APK, and hashed once it is. Every one of these arrives from a
+          # third party's main branch with `|| true` behind it, so without
+          # this the build happily bundles an error page and the app
+          # reports "nothing found" for want of any rules to check.
+          python3 .github/verify-assets.py
           # Ship the inventory inside the APK, so the self-test screen can
           # show on-device exactly which datasets this build carries.
           COUNTS=$(python3 .github/count-assets.py)

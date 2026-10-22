@@ -108,7 +108,23 @@ private fun BundleManifest() {
             val live = runCatching {
                 com.osint.unified.domain.executor.UsernameChecker(context).rulesetSummary()
             }.getOrNull()
-            manifest + listOfNotNull(live?.let { "On this device: $it" })
+            // The checksums CI recorded for every file it bundled, so a
+            // dataset can be verified against its upstream rather than
+            // taken on trust. Collapsed to a count here; the file ships
+            // whole inside the APK for anyone who wants to check one.
+            val checksums = runCatching {
+                context.assets.open("dataset-checksums.txt").bufferedReader()
+                    .use { it.readText() }
+            }.getOrNull()?.lines()?.filter { it.isNotBlank() } ?: emptyList()
+            manifest +
+                listOfNotNull(live?.let { "On this device: $it" }) +
+                checksums.map { line ->
+                    // "<sha256>  <bytes>  <name>" -> "<name>  sha256 <first 12>"
+                    val parts = line.trim().split(Regex("\\s+"))
+                    if (parts.size >= 3) {
+                        "${parts.drop(2).joinToString(" ")}  sha256 ${parts[0].take(12)}…"
+                    } else line
+                }
         }
     }
     if (lines.isEmpty()) return
