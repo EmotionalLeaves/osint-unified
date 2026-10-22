@@ -73,6 +73,12 @@ class OsintApplication : Application() {
     val spaceWeatherDataSource: SpaceWeatherDataSource by lazy { SpaceWeatherDataSource() }
     val laddAircraftDataSource: LaddAircraftDataSource by lazy { LaddAircraftDataSource() }
     val cableLandingDataSource: CableLandingDataSource by lazy { CableLandingDataSource() }
+    val cycloneDataSource: CycloneDataSource by lazy { CycloneDataSource() }
+    val tsunamiDataSource: TsunamiDataSource by lazy { TsunamiDataSource() }
+    val radiationDataSource: RadiationDataSource by lazy { RadiationDataSource() }
+    val airportStatusDataSource: AirportStatusDataSource by lazy {
+        AirportStatusDataSource(this, airportDataSource)
+    }
 
     val executorFactory: ExecutorFactory by lazy {
         ExecutorFactory(

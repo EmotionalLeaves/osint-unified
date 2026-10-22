@@ -11,7 +11,11 @@ import com.osint.unified.data.AuroraDataSource
 import com.osint.unified.data.BundledPointsDataSource
 import com.osint.unified.data.AirspaceDataSource
 import com.osint.unified.data.BuoyDataSource
+import com.osint.unified.data.AirportStatusDataSource
 import com.osint.unified.data.CableLandingDataSource
+import com.osint.unified.data.CycloneDataSource
+import com.osint.unified.data.RadiationDataSource
+import com.osint.unified.data.TsunamiDataSource
 import com.osint.unified.data.CctvDataSource
 import com.osint.unified.data.LaddAircraftDataSource
 import com.osint.unified.data.SpaceWeather
@@ -80,6 +84,10 @@ data class GodEyeUiState(
     val airspace: List<GeoBlip> = emptyList(),
     val ladd: List<GeoBlip> = emptyList(),
     val cables: List<GeoBlip> = emptyList(),
+    val cyclones: List<GeoBlip> = emptyList(),
+    val tsunamis: List<GeoBlip> = emptyList(),
+    val radiation: List<GeoBlip> = emptyList(),
+    val airportStatus: List<GeoBlip> = emptyList(),
     val spaceWeather: SpaceWeather? = null,
     /** Which feeds have completed a first fetch. A layer that has not run
      *  yet is not the same as a layer that ran and found nothing, and the
@@ -132,6 +140,10 @@ class GodEyeViewModel(
     private val spaceWeatherDataSource: SpaceWeatherDataSource,
     private val laddAircraftDataSource: LaddAircraftDataSource,
     private val cableLandingDataSource: CableLandingDataSource,
+    private val cycloneDataSource: CycloneDataSource,
+    private val tsunamiDataSource: TsunamiDataSource,
+    private val radiationDataSource: RadiationDataSource,
+    private val airportStatusDataSource: AirportStatusDataSource,
     private val availableLocalTools: Set<String>,
     private val settings: AppSettings,
     private val exporter: InvestigationExporter
@@ -191,6 +203,9 @@ class GodEyeViewModel(
         poll(900, 900_000, "spaceWeather", { spaceWeatherDataSource.fetch() }) { s, v -> s.copy(spaceWeather = v) }
         poll(1050, 120_000, "ladd", { laddAircraftDataSource.fetch() }) { s, v -> s.copy(ladd = v) }
         poll(1200, 86_400_000, "cables", { cableLandingDataSource.fetch() }) { s, v -> s.copy(cables = v) }
+        poll(700, 600_000, "cyclones", { cycloneDataSource.fetch() }) { s, v -> s.copy(cyclones = v) }
+        poll(800, 600_000, "tsunamis", { tsunamiDataSource.fetch() }) { s, v -> s.copy(tsunamis = v) }
+        poll(1500, 180_000, "airportStatus", { airportStatusDataSource.fetch() }) { s, v -> s.copy(airportStatus = v) }
     }
 
     // Startup delays only exist so twenty requests do not begin on the same
@@ -233,10 +248,17 @@ class GodEyeViewModel(
     fun onViewportChanged(lat: Double, lon: Double, zoom: Double) {
         focus = lat to lon
         wideView = zoom < 5.0
+        zoomLevel = zoom
+        // Radiation is queried around where you are looking, so moving the
+        // map is what asks for it — but only once the layer is on.
+        if (radiationOn) ensureRadiation()
     }
 
     private var camerasJob: Job? = null
     private var airspaceJob: Job? = null
+    private var radiationJob: Job? = null
+    private var zoomLevel: Double = 2.5
+    private var radiationOn: Boolean = false
 
     /** The camera inventory is several megabytes, so it is only fetched when
      *  the user actually turns the layer on, and then cached for the session. */
@@ -254,6 +276,32 @@ class GodEyeViewModel(
         airspaceJob = viewModelScope.launch {
             val v = runCatching { airspaceDataSource.fetch() }.getOrDefault(emptyList())
             _state.update { it.copy(airspace = v) }
+        }
+    }
+
+    /**
+     * Radiation readings around the current view.
+     *
+     * Safecast holds tens of millions of points, so there is no global
+     * fetch to make — the query is the viewport. It is only asked for while
+     * the layer is on, and re-asked when the view moves far enough that the
+     * previous answer no longer covers it.
+     */
+    fun ensureRadiation(on: Boolean? = null) {
+        on?.let { radiationOn = it }
+        if (!radiationOn) {
+            radiationJob?.cancel()
+            radiationJob = null
+            return
+        }
+        if (radiationJob?.isActive == true) return
+        val (lat, lon) = focus ?: (20.0 to 0.0)
+        val zoom = zoomLevel
+        radiationJob = viewModelScope.launch {
+            val v = runCatching { radiationDataSource.fetch(lat, lon, zoom) }
+                .getOrDefault(emptyList())
+            _state.update { it.copy(radiation = v, loaded = it.loaded + "radiation") }
+            radiationJob = null
         }
     }
 
@@ -522,13 +570,17 @@ class GodEyeViewModel(
         private val spaceWeatherDataSource: SpaceWeatherDataSource,
         private val laddAircraftDataSource: LaddAircraftDataSource,
         private val cableLandingDataSource: CableLandingDataSource,
+        private val cycloneDataSource: CycloneDataSource,
+        private val tsunamiDataSource: TsunamiDataSource,
+        private val radiationDataSource: RadiationDataSource,
+        private val airportStatusDataSource: AirportStatusDataSource,
         private val availableLocalTools: Set<String>,
         private val settings: AppSettings,
         private val exporter: InvestigationExporter
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            GodEyeViewModel(router, repository, aircraftDataSource, aisDataSource, earthquakeDataSource, naturalEventsDataSource, overlayDataSource, weatherDataSource, firesDataSource, satellitesDataSource, newsDataSource, gdacsDataSource, volcanoDataSource, auroraDataSource, buoyDataSource, metarDataSource, milAircraftDataSource, airQualityDataSource, seismicStationDataSource, conflictDataSource, airportDataSource, powerPlantDataSource, cctvDataSource, airspaceDataSource, spaceWeatherDataSource, laddAircraftDataSource, cableLandingDataSource, availableLocalTools, settings, exporter) as T
+            GodEyeViewModel(router, repository, aircraftDataSource, aisDataSource, earthquakeDataSource, naturalEventsDataSource, overlayDataSource, weatherDataSource, firesDataSource, satellitesDataSource, newsDataSource, gdacsDataSource, volcanoDataSource, auroraDataSource, buoyDataSource, metarDataSource, milAircraftDataSource, airQualityDataSource, seismicStationDataSource, conflictDataSource, airportDataSource, powerPlantDataSource, cctvDataSource, airspaceDataSource, spaceWeatherDataSource, laddAircraftDataSource, cableLandingDataSource, cycloneDataSource, tsunamiDataSource, radiationDataSource, airportStatusDataSource, availableLocalTools, settings, exporter) as T
     }
 
     private companion object {

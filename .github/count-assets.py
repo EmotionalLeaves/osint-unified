@@ -135,7 +135,31 @@ def main():
         urls = catalogue_urls()
         fillable = {u for u in urls if is_fillable(u)}
         rows.append(("Distinct catalogue URLs", len(urls)))
-        rows.append(("  runnable against a target", len(fillable)))
+        rows.append(("  with a fillable query", len(fillable)))
+
+        # The username rulesets are exact profile-URL templates, which is
+        # what actually makes thousands of web tools runnable; catalogue
+        # links are mostly homepages with nothing to fill in. Counting only
+        # the catalogues made the app look far less capable than it is.
+        runnable = set(fillable)
+        for name, key in (("wmn-data.json", "sites"), ("sherlock.json", None),
+                          ("maigret.json", None)):
+            try:
+                data = json.load(open(path(name), encoding="utf-8"))
+                entries = data[key] if key else (
+                    data.get("sites", data) if isinstance(data, dict) else data)
+                seq = entries.values() if isinstance(entries, dict) else entries
+                for e in seq:
+                    if not isinstance(e, dict):
+                        continue
+                    u = e.get("uri_check") or e.get("url")
+                    if isinstance(u, str) and u.startswith("http") and (
+                            "{account}" in u or "{}" in u or "{username}" in u):
+                        runnable.add(
+                            u.replace("{account}", "{}").replace("{username}", "{}"))
+            except Exception:
+                pass
+        rows.append(("TOTAL runnable against a target", len(runnable)))
     except Exception:
         pass
 

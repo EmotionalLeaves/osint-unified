@@ -50,6 +50,12 @@ fun FrameworkScreen(initialTarget: String = "", onBack: () -> Unit) {
     val context = LocalContext.current
     val root = remember { OsintFramework.load(context) }
     val allLeaves = remember(root) { root?.let { OsintFramework.leaves(it) } ?: emptyList() }
+    // The directory tree is catalogue links — mostly homepages, which cannot
+    // be pointed at anything. The runnable tools are the bundled username
+    // rulesets: thousands of exact profile URLs, each one a site that will
+    // show you an account if there is one. They are searched alongside the
+    // tree rather than hidden behind the username sweep.
+    val templates = remember { ToolTemplates.derived(context) }
     val stack = remember { mutableStateListOf<ArfNode>().apply { root?.let { add(it) } } }
     var query by remember { mutableStateOf("") }
     // Carried over from whatever the dossier is open on, so arriving here
@@ -100,7 +106,12 @@ fun FrameworkScreen(initialTarget: String = "", onBack: () -> Unit) {
                 value = query,
                 onValueChange = { query = it },
                 singleLine = true,
-                placeholder = { Text("search ${allLeaves.size} resources…", style = MaterialTheme.typography.bodySmall) },
+                placeholder = {
+                    Text(
+                        "search ${allLeaves.size + templates.size} tools…",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                },
                 textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
                 shape = RoundedCornerShape(10.dp),
                 colors = OutlinedTextFieldDefaults.colors(
@@ -149,12 +160,24 @@ fun FrameworkScreen(initialTarget: String = "", onBack: () -> Unit) {
                     it.first.contains(q, true) || it.third.contains(q, true) ||
                         it.second.contains(q, true)
                 }.take(300)
+                val tmplMatches = templates.filter {
+                    it.name.contains(q, true) || it.url.contains(q, true)
+                }.take(300)
                 Text(
-                    "${matches.size} matches",
+                    "${matches.size} directory · ${tmplMatches.size} runnable",
                     style = MaterialTheme.typography.labelSmall, color = Intel.TextLow,
                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp)
                 )
                 LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
+                    items(tmplMatches) { t ->
+                        val resolved = if (target.isBlank()) null
+                        else ToolTemplates.resolve(t, target.trim())
+                        LeafRow(
+                            t.name,
+                            t.source.ifBlank { "runnable" },
+                            resolved?.let { r -> { open(r) } }
+                        ) { open(resolved ?: t.url.replace("{}", "")) }
+                    }
                     items(matches) { (name, url, path) ->
                         LeafRow(name, path, runnable(url)?.let { r -> { open(r) } }) { open(url) }
                     }

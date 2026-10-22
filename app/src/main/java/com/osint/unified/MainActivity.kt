@@ -29,7 +29,7 @@ class MainActivity : ComponentActivity() {
 
     private val godEyeViewModel: GodEyeViewModel by viewModels {
         val app = application as OsintApplication
-        GodEyeViewModel.Factory(app.router, app.repository, app.aircraftDataSource, app.aisDataSource, app.earthquakeDataSource, app.naturalEventsDataSource, app.overlayDataSource, app.weatherDataSource, app.firesDataSource, app.satellitesDataSource, app.newsDataSource, app.gdacsDataSource, app.volcanoDataSource, app.auroraDataSource, app.buoyDataSource, app.metarDataSource, app.milAircraftDataSource, app.airQualityDataSource, app.seismicStationDataSource, app.conflictDataSource, app.airportDataSource, app.powerPlantDataSource, app.cctvDataSource, app.airspaceDataSource, app.spaceWeatherDataSource, app.laddAircraftDataSource, app.cableLandingDataSource, app.availableLocalTools, app.settings, app.exporter)
+        GodEyeViewModel.Factory(app.router, app.repository, app.aircraftDataSource, app.aisDataSource, app.earthquakeDataSource, app.naturalEventsDataSource, app.overlayDataSource, app.weatherDataSource, app.firesDataSource, app.satellitesDataSource, app.newsDataSource, app.gdacsDataSource, app.volcanoDataSource, app.auroraDataSource, app.buoyDataSource, app.metarDataSource, app.milAircraftDataSource, app.airQualityDataSource, app.seismicStationDataSource, app.conflictDataSource, app.airportDataSource, app.powerPlantDataSource, app.cctvDataSource, app.airspaceDataSource, app.spaceWeatherDataSource, app.laddAircraftDataSource, app.cableLandingDataSource, app.cycloneDataSource, app.tsunamiDataSource, app.radiationDataSource, app.airportStatusDataSource, app.availableLocalTools, app.settings, app.exporter)
     }
 
     private val historyViewModel: HistoryViewModel by viewModels {
@@ -88,6 +88,10 @@ class MainActivity : ComponentActivity() {
                                     FeedProbe("Space weather (SWPC)") { app.spaceWeatherDataSource.fetch().alerts.size + 1 },
                                     FeedProbe("Blocked aircraft (LADD)") { app.laddAircraftDataSource.fetch().size },
                                     FeedProbe("Cable landings") { app.cableLandingDataSource.fetch().size },
+                                    FeedProbe("Tropical cyclones (NHC)") { app.cycloneDataSource.fetch().size },
+                                    FeedProbe("Tsunami bulletins (NTWC/PTWC)") { app.tsunamiDataSource.fetch().size },
+                                    FeedProbe("Airport status (FAA)") { app.airportStatusDataSource.fetch().size },
+                                    FeedProbe("Radiation (Safecast)") { app.radiationDataSource.fetch(35.65, 139.84, 8.0).size },
                                     FeedProbe("Custom overlay") { app.overlayDataSource.fetch().size }
                                 ),
                                 onBack = { screen = "godeye" }

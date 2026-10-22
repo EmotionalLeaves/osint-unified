@@ -120,6 +120,10 @@ fun GodEyeViewScreen(
     var showMetar by remember { mutableStateOf(false) }
     var showMil by remember { mutableStateOf(true) }
     var showConflict by remember { mutableStateOf(true) }
+    var showCyclones by remember { mutableStateOf(true) }
+    var showTsunami by remember { mutableStateOf(true) }
+    var showAirportStatus by remember { mutableStateOf(true) }
+    var showRadiation by remember { mutableStateOf(false) }
     var mode by remember { mutableStateOf(VisualMode.DEFAULT) }
     val context = LocalContext.current
     var inspected by remember { mutableStateOf<Inspected?>(null) }
@@ -330,6 +334,16 @@ fun GodEyeViewScreen(
                 }
                 LayerPill("LADD", state.ladd.size, Color(0xFFFFD166), showLadd, loaded = "ladd" in state.loaded) { showLadd = !showLadd }
                 LayerPill("CABLE", state.cables.size, Color(0xFF7FFFD4), showCables, loaded = "cables" in state.loaded) { showCables = !showCables }
+                LayerPill("CYCLONE", state.cyclones.size, Color(0xFFFF7AC6), showCyclones, loaded = "cyclones" in state.loaded) { showCyclones = !showCyclones }
+                LayerPill("TSUNAMI", state.tsunamis.size, Color(0xFF4DF0FF), showTsunami, loaded = "tsunamis" in state.loaded) { showTsunami = !showTsunami }
+                LayerPill("ATC", state.airportStatus.size, Color(0xFFFFA64D), showAirportStatus, loaded = "airportStatus" in state.loaded) { showAirportStatus = !showAirportStatus }
+                LayerPill(
+                    "RAD", state.radiation.size, Color(0xFFD4FF4D), showRadiation,
+                    loadsOnDemand = true
+                ) {
+                    showRadiation = !showRadiation
+                    viewModel.ensureRadiation(showRadiation)
+                }
                 LayerPill(
                     "SUA", state.airspace.size, Color(0xFFFF5370), showAirspace,
                     loadsOnDemand = true
@@ -395,6 +409,10 @@ fun GodEyeViewScreen(
                     airspace = vis(showAirspace, state.airspace),
                     ladd = vis(showLadd, state.ladd),
                     cables = vis(showCables, state.cables),
+                    cyclones = vis(showCyclones, state.cyclones),
+                    tsunamis = vis(showTsunami, state.tsunamis),
+                    airportStatus = vis(showAirportStatus, state.airportStatus),
+                    radiation = vis(showRadiation, state.radiation),
                     findings = state.findings,
                     focus = state.mapFocus,
                     onInspect = { inspected = it },
@@ -774,6 +792,10 @@ private fun GlobeMap(
     airspace: List<GeoBlip>,
     ladd: List<GeoBlip>,
     cables: List<GeoBlip>,
+    cyclones: List<GeoBlip>,
+    tsunamis: List<GeoBlip>,
+    airportStatus: List<GeoBlip>,
+    radiation: List<GeoBlip>,
     findings: List<FindingPin>,
     focus: Pair<Double, Double>?,
     onInspect: (Inspected) -> Unit,
@@ -955,6 +977,10 @@ private fun GlobeMap(
             weather.forEach { add("Weather alert", it.lat, it.lon, 0xFF7FB2FF.toInt(), 9, it.label, true, it.url) }
             fires.forEach { add("Wildfire", it.lat, it.lon, 0xFFFF5A4D.toInt(), 8, it.label, true, it.url) }
             overlay.forEach { add("Custom overlay", it.lat, it.lon, 0xFF5CE1D6.toInt(), 9, it.label, false) }
+            radiation.forEach { add("Radiation", it.lat, it.lon, 0xFFD4FF4D.toInt(), 7, it.label, false, it.url) }
+            airportStatus.forEach { add("Airport status", it.lat, it.lon, 0xFFFFA64D.toInt(), 10, it.label, true, it.url) }
+            cyclones.forEach { add("Tropical cyclone", it.lat, it.lon, 0xFFFF7AC6.toInt(), 14, it.label, true, it.url) }
+            tsunamis.forEach { add("Tsunami bulletin", it.lat, it.lon, 0xFF4DF0FF.toInt(), 13, it.label, true, it.url) }
             satellites.forEach { add("Satellite", it.lat, it.lon, 0xFFC0A8FF.toInt(), 11, it.label, true, it.url) }
             vessels.forEach { add("Vessel", it.lat, it.lon, 0xFF1D9E75.toInt(), 9, it.name.ifBlank { it.mmsi }, true) }
             aircraft.forEach { add("Aircraft", it.lat, it.lon, 0xFF4FC3F7.toInt(), 9, it.callsign.ifBlank { it.icao }, true) }

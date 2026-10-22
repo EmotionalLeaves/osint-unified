@@ -109,6 +109,24 @@ object WorldBrief {
         }
 
         blips("CONFLICT", state.conflicts, 10)
+        // A tsunami warning outranks everything else on the map, and the
+        // bulletin's own category word is what says whether it is one.
+        blips("TSUNAMI BULLETINS", state.tsunamis, 10, rank = { b ->
+            val l = b.label.lowercase()
+            when {
+                l.contains("warning") -> 3
+                l.contains("watch") || l.contains("advisory") -> 2
+                else -> 1
+            }
+        })
+        blips("TROPICAL CYCLONES", state.cyclones, 9, rank = { b ->
+            val l = b.label.lowercase()
+            when {
+                l.contains("typhoon") || l.contains("hurricane") -> 3
+                l.contains("storm") -> 2
+                else -> 1
+            }
+        })
         blips("DISASTER ALERTS", state.gdacs, 9)
         blips("VOLCANOES", state.volcanoes, 7)
 
@@ -135,6 +153,9 @@ object WorldBrief {
         blips("WILDFIRES", state.fires, 5)
         blips("MILITARY AIRCRAFT", state.milAircraft, 5, rank = { 1 })
         blips("HIDDEN-OWNER AIRCRAFT", state.ladd, 4, rank = { 1 })
+        blips("AIRPORT STATUS", state.airportStatus, 4, rank = { b ->
+            if (b.label.contains("GROUND STOP") || b.label.contains("CLOSED")) 3 else 1
+        })
         blips("NEWS HOTSPOTS", state.news, 3, rank = { 1 })
 
         if (state.aircraft.isNotEmpty() || state.vessels.isNotEmpty()) {
@@ -157,6 +178,9 @@ object WorldBrief {
         maybeQuiet("fires", "wildfires", state.fires.size)
         maybeQuiet("weather", "severe weather", state.weather.size)
         maybeQuiet("milAircraft", "military aircraft", state.milAircraft.size)
+        maybeQuiet("cyclones", "tropical cyclones", state.cyclones.size)
+        maybeQuiet("tsunamis", "tsunami bulletins", state.tsunamis.size)
+        maybeQuiet("airportStatus", "US airport delays", state.airportStatus.size)
 
         return Brief(sections.sortedByDescending { it.severity }, quiet)
     }

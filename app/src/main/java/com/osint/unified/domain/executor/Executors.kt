@@ -368,7 +368,10 @@ class DirectToolExecutor(
 
         // The wider directory, pointed at this target.
         val derived = runCatching {
-            com.osint.unified.domain.ToolTemplates.derived(appContext)
+            com.osint.unified.domain.ToolTemplates.derived(
+                appContext,
+                com.osint.unified.domain.ToolTemplates.typeOf(observable)
+            )
         }.getOrDefault(emptyList())
 
         buildString {

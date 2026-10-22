@@ -181,6 +181,25 @@ class UsernameChecker(private val appContext: Context) {
         return keep + candidates.filter { it !in probed }
     }
 
+    /**
+     * The merged rulesets as plain URL templates, `{}` where the username
+     * belongs.
+     *
+     * These are the only large set of genuinely runnable web tools the app
+     * has: thousands of exact profile URLs, each one a site that will show
+     * you an account if there is one. The directory screen was offering
+     * twenty-six runnable entries out of six thousand catalogue links,
+     * because a catalogue link is a homepage and a homepage has no query to
+     * fill in — while nine thousand exact templates sat here, used only by
+     * the sweep. They belong in the directory too.
+     */
+    fun siteTemplates(): List<Pair<String, String>> = loadRules().mapNotNull { r ->
+        val t = r.urlTemplate
+            .replace("{account}", "{}")
+            .replace("{username}", "{}")
+        if (!t.startsWith("http") || !t.contains("{}")) null else r.name to t
+    }
+
     /** How many site rules this build actually merged, and from where.
      *  Shown in the self-test so the count is observable on-device rather
      *  than taken on trust. */

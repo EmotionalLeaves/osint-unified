@@ -114,6 +114,8 @@ object AreaReport {
 
         // Ordered so the things that would change a decision come first.
         sweep("Conflict", state.conflicts, { it.lat }, { it.lon }, { it.label }, { it.url })
+        blips("Tsunami bulletin", state.tsunamis)
+        blips("Tropical cyclone", state.cyclones)
         blips("Disaster alert", state.gdacs)
         blips("Weather alert", state.weather)
         sweep("Earthquake", state.quakes, { it.lat }, { it.lon }, { "M%.1f".format(it.mag) })
@@ -125,7 +127,9 @@ object AreaReport {
         sweep("Aircraft", state.aircraft, { it.lat }, { it.lon },
             { it.callsign.ifBlank { it.icao } })
         sweep("Vessel", state.vessels, { it.lat }, { it.lon }, { it.name.ifBlank { it.mmsi } })
+        blips("Airport status", state.airportStatus)
         blips("Restricted airspace", state.airspace)
+        blips("Radiation", state.radiation)
         blips("News hotspot", state.news)
         blips("Airport", state.airports)
         blips("Power plant", state.powerPlants)

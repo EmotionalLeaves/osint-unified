@@ -260,16 +260,41 @@ object ToolTemplates {
      * a runnable template. These open in the in-app browser already pointed
      * at the target.
      */
-    fun derived(context: Context): List<Template> {
+    /** [type] filters the result: "username" templates are profile URLs and
+     *  mean nothing pointed at a domain or an IP. */
+    fun derived(context: Context, type: String? = null): List<Template> =
+        allDerived(context).let { all ->
+            if (type == null) all else all.filter { it.type == type || it.type == "any" }
+        }
+
+    private fun allDerived(context: Context): List<Template> {
         cachedDerived?.let { return it }
-        val root = OsintFramework.load(context) ?: return emptyList()
         val out = LinkedHashMap<String, Template>()
-        OsintFramework.leaves(root).forEach { (name, url, path) ->
-            val template = templatise(url) ?: return@forEach
-            if (!out.containsKey(template)) {
-                out[template] = Template(name, template, "any", false, path.substringBefore(" ›"))
+
+        // The username rulesets are thousands of exact profile URLs — the
+        // largest set of web tools the app can genuinely point at a target.
+        // A catalogue link, by contrast, is usually a homepage with no query
+        // to fill in, which is why deriving from the catalogues alone yielded
+        // a few dozen runnable entries out of six thousand.
+        runCatching {
+            com.osint.unified.domain.executor.UsernameChecker(context).siteTemplates()
+        }.getOrDefault(emptyList()).forEach { (name, template) ->
+            out.putIfAbsent(
+                template,
+                Template(name, template, "username", false, "username rulesets")
+            )
+        }
+
+        OsintFramework.load(context)?.let { root ->
+            OsintFramework.leaves(root).forEach { (name, url, path) ->
+                val template = templatise(url) ?: return@forEach
+                out.putIfAbsent(
+                    template,
+                    Template(name, template, "any", false, path.substringBefore(" ›"))
+                )
             }
         }
+
         val list = out.values.toList()
         cachedDerived = list
         return list
