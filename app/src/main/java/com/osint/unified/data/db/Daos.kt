@@ -23,10 +23,27 @@ interface InvestigationDao {
 
     @Query("DELETE FROM investigations WHERE id = :id")
     suspend fun delete(id: Long)
+
+    /** The chain back to the first thing that was searched. */
+    @Query("SELECT * FROM investigations WHERE id = :id")
+    suspend fun byId(id: Long): Investigation?
+
+    /** Everything that came out of this investigation. */
+    @Query("SELECT * FROM investigations WHERE parentId = :id ORDER BY createdAt")
+    suspend fun children(id: Long): List<Investigation>
+
+    @Query("UPDATE investigations SET notes = :notes, updatedAt = :at WHERE id = :id")
+    suspend fun setNotes(id: Long, notes: String, at: Long = System.currentTimeMillis())
 }
 
 @Dao
 interface ResultDao {
+    @Query(
+        "SELECT * FROM results WHERE investigationId = :investigationId " +
+            "AND toolId = :toolId AND input = :input LIMIT 1"
+    )
+    suspend fun existing(investigationId: Long, toolId: String, input: String): Result?
+
     @Query("SELECT * FROM results WHERE investigationId = :investigationId ORDER BY startedAt DESC")
     fun observeForInvestigation(investigationId: Long): Flow<List<Result>>
 

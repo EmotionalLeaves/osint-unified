@@ -187,6 +187,19 @@ fun InvestigationScreen(
                         color = Intel.Cyan
                     )
                 }
+                if (state.breadcrumb.size > 1) {
+                    // Where this came from, and one tap back to it.
+                    Text(
+                        state.breadcrumb.joinToString("  →  "),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Intel.TextLow,
+                        fontFamily = FontFamily.Monospace,
+                        maxLines = 2,
+                        modifier = Modifier
+                            .padding(top = 4.dp)
+                            .clickable { viewModel.onOpenParent() }
+                    )
+                }
                 SelectionContainer {
                     Text(
                         observable.raw,
@@ -438,8 +451,7 @@ fun InvestigationScreen(
                         ) {
                             items.forEach { p ->
                                 PivotChip(p, chased = p.value in alreadyChased) {
-                                    viewModel.onQueryChange(p.value)
-                                    viewModel.onSearch()
+                                    viewModel.onPivot(p.value)
                                 }
                             }
                         }
@@ -496,10 +508,7 @@ fun InvestigationScreen(
                     byCategory.forEach { (category, rows) ->
                         SectionHeader(category.name, categoryColor(category))
                         rows.forEach { row ->
-                            ResultCard(row, onPivot = { value ->
-                                viewModel.onQueryChange(value)
-                                viewModel.onSearch()
-                            })
+                            ResultCard(row, onPivot = { value -> viewModel.onPivot(value) })
                             Spacer(Modifier.height(10.dp))
                         }
                     }
@@ -519,10 +528,7 @@ fun InvestigationScreen(
                             modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
                         )
                         rows.forEach { row ->
-                            ResultCard(row, onPivot = { value ->
-                                viewModel.onQueryChange(value)
-                                viewModel.onSearch()
-                            })
+                            ResultCard(row, onPivot = { value -> viewModel.onPivot(value) })
                             Spacer(Modifier.height(10.dp))
                         }
                     }

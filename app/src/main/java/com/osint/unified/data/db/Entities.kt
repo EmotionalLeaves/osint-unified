@@ -16,7 +16,18 @@ data class Investigation(
     val observableType: String,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
-    val notes: String = ""
+    val notes: String = "",
+    /**
+     * The investigation this one came out of.
+     *
+     * Tapping a pivot used to create a new, unrelated investigation, so a
+     * real enquiry — a handle leading to an address leading to a host —
+     * came apart into a flat list of disconnected seeds with nothing
+     * recording that any of them had anything to do with each other.
+     */
+    val parentId: Long? = null,
+    /** The identifier in the parent's results that led here. */
+    val viaPivot: String? = null
 )
 
 /**

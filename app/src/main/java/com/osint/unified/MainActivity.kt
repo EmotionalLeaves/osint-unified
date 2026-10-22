@@ -113,7 +113,15 @@ class MainActivity : ComponentActivity() {
                     // like its toolbar arrow does, not leap to the globe
                     // from three folders deep.
                     BackHandler(enabled = screen != "godeye" && screen != "framework") {
-                        screen = "godeye"
+                        // From a dossier reached by a pivot, back belongs to
+                        // the investigation it came out of. An enquiry is a
+                        // chain, and leaping to the globe from three steps in
+                        // loses the thread.
+                        if (screen == "investigation" && godState.breadcrumb.size > 1) {
+                            godEyeViewModel.onOpenParent()
+                        } else {
+                            screen = "godeye"
+                        }
                     }
 
                     // Anything the app found opens here rather than in the

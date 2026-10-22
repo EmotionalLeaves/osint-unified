@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [Investigation::class, Result::class, Watch::class],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -48,13 +48,27 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Records where an investigation came from.
+         *
+         * Added rather than rebuilt, so the cases someone has already run
+         * survive the upgrade.
+         */
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `investigations` ADD COLUMN `parentId` INTEGER")
+                db.execSQL("ALTER TABLE `investigations` ADD COLUMN `viaPivot` TEXT")
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
                     "osint-unified.db"
-                ).addMigrations(MIGRATION_1_2).build().also { INSTANCE = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    .build().also { INSTANCE = it }
             }
     }
 }

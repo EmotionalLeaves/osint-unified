@@ -111,6 +111,8 @@ data class GodEyeUiState(
     /** Identifiers the first pass discovered and the second pass is looking
      *  up in their own right — shown so the derivation is never a mystery. */
     val enriching: List<String> = emptyList(),
+    /** The chain back to the first thing searched: "jdoe → jdoe@x.com → 1.2.3.4". */
+    val breadcrumb: List<String> = emptyList(),
     val navSignal: Long = 0,
     val backendUrl: String = "",
     val tar1090Url: String = "",
@@ -232,6 +234,10 @@ class GodEyeViewModel(
     val state: StateFlow<GodEyeUiState> = _state.asStateFlow()
 
     private var currentInvestigationId: Long? = null
+
+    /** Set by [onPivot] so the next investigation records its parent. */
+    private var pendingParentId: Long? = null
+    private var pendingPivot: String? = null
     private var resultsJob: Job? = null
 
     init {
@@ -426,7 +432,19 @@ class GodEyeViewModel(
     }
 
     fun onMapClick(lat: Double, lon: Double) {
+        pendingParentId = null
+        pendingPivot = null
         onQueryChange("$lat, $lon")
+        onSearch()
+    }
+
+    /** Back to the investigation this one came out of. */
+    fun onOpenParent() {
+        val chain = _state.value.breadcrumb
+        if (chain.size < 2) return
+        pendingParentId = null
+        pendingPivot = null
+        onQueryChange(chain[chain.size - 2])
         onSearch()
     }
 
@@ -446,6 +464,20 @@ class GodEyeViewModel(
 
     fun onTypeSelected(type: String) {
         _state.update { it.copy(searchType = type) }
+    }
+
+    /**
+     * A search that came out of the current one.
+     *
+     * Tapping a pivot used to start an unrelated investigation, so an
+     * enquiry that actually was a chain came apart into disconnected
+     * seeds. This records the edge.
+     */
+    fun onPivot(value: String) {
+        pendingParentId = currentInvestigationId
+        pendingPivot = value
+        onQueryChange(value)
+        onSearch()
     }
 
     fun onSearch() {
@@ -482,6 +514,7 @@ class GodEyeViewModel(
                 runningToolIds = emptySet(),
                 enrichmentRunning = false,
                 enriching = emptyList(),
+                breadcrumb = emptyList(),
                 navSignal = it.navSignal + 1
             )
         }
@@ -693,8 +726,14 @@ class GodEyeViewModel(
 
     private suspend fun ensureInvestigationLocked(observable: Observable): Long {
         currentInvestigationId?.let { return it }
-        val id = repository.createInvestigation(observable)
+        val id = repository.createInvestigation(observable, pendingParentId, pendingPivot)
+        pendingParentId = null
+        pendingPivot = null
         currentInvestigationId = id
+        viewModelScope.launch {
+            val chain = runCatching { repository.lineage(id) }.getOrDefault(emptyList())
+            _state.update { st -> st.copy(breadcrumb = chain.map { it.seedObservable }) }
+        }
         resultsJob?.cancel()
         resultsJob = viewModelScope.launch {
             repository.observeResults(id).collect { rows ->

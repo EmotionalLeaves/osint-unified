@@ -24,7 +24,11 @@ class InvestigationRepository(
     private val investigationDao = db.investigationDao()
     private val resultDao = db.resultDao()
 
-    suspend fun createInvestigation(observable: Observable): Long {
+    suspend fun createInvestigation(
+        observable: Observable,
+        parentId: Long? = null,
+        viaPivot: String? = null
+    ): Long {
         val now = System.currentTimeMillis()
         return investigationDao.insert(
             Investigation(
@@ -32,10 +36,32 @@ class InvestigationRepository(
                 seedObservable = observable.raw,
                 observableType = observable.typeLabel,
                 createdAt = now,
-                updatedAt = now
+                updatedAt = now,
+                parentId = parentId,
+                viaPivot = viaPivot
             )
         )
     }
+
+    /**
+     * The chain back to the first thing searched, oldest first.
+     *
+     * A real enquiry is a tree — a handle leads to an address leads to a
+     * host — and the app used to throw the edges away, leaving a flat list
+     * of seeds with nothing recording that any of them were related.
+     */
+    suspend fun lineage(id: Long): List<Investigation> {
+        val chain = ArrayList<Investigation>()
+        var current = investigationDao.byId(id)
+        val seen = HashSet<Long>()
+        while (current != null && seen.add(current.id)) {
+            chain.add(current)
+            current = current.parentId?.let { investigationDao.byId(it) }
+        }
+        return chain.reversed()
+    }
+
+    suspend fun setNotes(id: Long, notes: String) = investigationDao.setNotes(id, notes)
 
     fun observeResults(investigationId: Long): Flow<List<ResultRow>> =
         resultDao.observeForInvestigation(investigationId)
@@ -49,8 +75,13 @@ class InvestigationRepository(
      *  returns the final stored row (so a workflow can chain on its output). */
     suspend fun runTool(investigationId: Long, tool: Tool, input: String): ResultRow {
         val started = System.currentTimeMillis()
+        // Re-running a tool replaces its row rather than adding a second
+        // one. RUN ALL used to duplicate every result, which doubled the
+        // pivot counts and printed everything twice in the export.
+        val previous = resultDao.existing(investigationId, tool.id, input)
         val rowId = resultDao.insert(
             ResultRow(
+                id = previous?.id ?: 0,
                 investigationId = investigationId,
                 toolId = tool.id,
                 toolName = tool.name,
