@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.osint.unified.data.AircraftDataSource
 import com.osint.unified.data.AisDataSource
 import com.osint.unified.data.AppSettings
+import com.osint.unified.data.AuroraDataSource
 import com.osint.unified.data.EarthquakeDataSource
 import com.osint.unified.data.FiresDataSource
 import com.osint.unified.data.GdacsDataSource
@@ -52,6 +53,7 @@ data class GodEyeUiState(
     val news: List<GeoBlip> = emptyList(),
     val gdacs: List<GeoBlip> = emptyList(),
     val volcanoes: List<GeoBlip> = emptyList(),
+    val aurora: List<GeoBlip> = emptyList(),
     val findings: List<FindingPin> = emptyList(),
     val mapFocus: Pair<Double, Double>? = null,
     val results: List<ResultRow> = emptyList(),
@@ -80,6 +82,7 @@ class GodEyeViewModel(
     private val newsDataSource: NewsDataSource,
     private val gdacsDataSource: GdacsDataSource,
     private val volcanoDataSource: VolcanoDataSource,
+    private val auroraDataSource: AuroraDataSource,
     private val availableLocalTools: Set<String>,
     private val settings: AppSettings,
     private val exporter: InvestigationExporter
@@ -155,6 +158,12 @@ class GodEyeViewModel(
             while (isActive) {
                 _state.update { it.copy(volcanoes = volcanoDataSource.fetch()) }
                 delay(600_000)
+            }
+        }
+        viewModelScope.launch {
+            while (isActive) {
+                _state.update { it.copy(aurora = auroraDataSource.fetch()) }
+                delay(300_000)
             }
         }
         viewModelScope.launch {
@@ -358,12 +367,13 @@ class GodEyeViewModel(
         private val newsDataSource: NewsDataSource,
         private val gdacsDataSource: GdacsDataSource,
         private val volcanoDataSource: VolcanoDataSource,
+        private val auroraDataSource: AuroraDataSource,
         private val availableLocalTools: Set<String>,
         private val settings: AppSettings,
         private val exporter: InvestigationExporter
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            GodEyeViewModel(router, repository, aircraftDataSource, aisDataSource, earthquakeDataSource, naturalEventsDataSource, overlayDataSource, weatherDataSource, firesDataSource, satellitesDataSource, newsDataSource, gdacsDataSource, volcanoDataSource, availableLocalTools, settings, exporter) as T
+            GodEyeViewModel(router, repository, aircraftDataSource, aisDataSource, earthquakeDataSource, naturalEventsDataSource, overlayDataSource, weatherDataSource, firesDataSource, satellitesDataSource, newsDataSource, gdacsDataSource, volcanoDataSource, auroraDataSource, availableLocalTools, settings, exporter) as T
     }
 }

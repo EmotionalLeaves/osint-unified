@@ -5,6 +5,7 @@ import java.io.File
 import com.osint.unified.data.AircraftDataSource
 import com.osint.unified.data.AisDataSource
 import com.osint.unified.data.AppSettings
+import com.osint.unified.data.AuroraDataSource
 import com.osint.unified.data.EarthquakeDataSource
 import com.osint.unified.data.FiresDataSource
 import com.osint.unified.data.GdacsDataSource
@@ -44,6 +45,7 @@ class OsintApplication : Application() {
     val newsDataSource: NewsDataSource by lazy { NewsDataSource() }
     val gdacsDataSource: GdacsDataSource by lazy { GdacsDataSource() }
     val volcanoDataSource: VolcanoDataSource by lazy { VolcanoDataSource() }
+    val auroraDataSource: AuroraDataSource by lazy { AuroraDataSource() }
 
     val executorFactory: ExecutorFactory by lazy {
         ExecutorFactory(
