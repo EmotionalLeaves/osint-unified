@@ -110,13 +110,23 @@ class SatellitesDataSource(
             ?: return emptyList()
         val fmt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US)
             .apply { timeZone = TimeZone.getTimeZone("UTC") }
+        // The epoch carries fractional seconds and they were being thrown
+        // away. A satellite in low orbit covers 7.7 km every second, so
+        // discarding up to one of them moved the whole prediction by a town.
+        fun fractionMillis(epoch: String): Long {
+            val dot = epoch.indexOf('.')
+            if (dot < 0) return 0L
+            val digits = epoch.substring(dot + 1).takeWhile { it.isDigit() }
+            if (digits.isEmpty()) return 0L
+            return (("0." + digits).toDoubleOrNull() ?: 0.0).times(1000.0).toLong()
+        }
         return arr.mapNotNull { el ->
             val o = el as? JsonObject ?: return@mapNotNull null
             fun d(k: String) = (o[k] as? JsonPrimitive)?.doubleOrNull
             fun s(k: String) = (o[k] as? JsonPrimitive)?.contentOrNull
             val epoch = s("EPOCH") ?: return@mapNotNull null
             val epochMs = runCatching {
-                fmt.parse(epoch.substringBefore('.'))?.time
+                fmt.parse(epoch.substringBefore('.'))?.time?.plus(fractionMillis(epoch))
             }.getOrNull() ?: return@mapNotNull null
             Elements(
                 name = s("OBJECT_NAME") ?: "satellite",
@@ -134,8 +144,15 @@ class SatellitesDataSource(
 
     /** Sub-satellite point and altitude at [nowMillis]. */
     private fun propagate(e: Elements, nowMillis: Long): GeoBlip? {
-        // Elements older than a fortnight have drifted too far to plot.
-        if (abs(nowMillis - e.epochMillis) > 14L * 86_400_000L) return null
+        val age = abs(nowMillis - e.epochMillis)
+        // How fast a stale element set goes wrong depends on the orbit.
+        // Something circling fourteen times a day is dragged by the
+        // atmosphere and its along-track error grows by hundreds of
+        // kilometres a day; a geostationary object barely moves relative to
+        // its own prediction. One fortnight-long cut-off for both plotted
+        // low-orbit objects that had not been where the map said for a week.
+        val limit = if (e.meanMotion >= LEO_REVS_PER_DAY) LEO_MAX_AGE_MS else HIGH_MAX_AGE_MS
+        if (age > limit) return null
         val p = OrbitPropagator.propagate(
             OrbitPropagator.Elements(
                 meanMotion = e.meanMotion,
@@ -152,9 +169,13 @@ class SatellitesDataSource(
         val altitude = p.altitudeKm.toInt()
         // Decayed objects and junk element sets produce impossible orbits.
         if (altitude < 80 || altitude > 100_000) return null
+        // Past a day old, the age is part of the reading: the marker is
+        // where the elements say the object should be, not where anything
+        // saw it.
+        val staleness = if (age > 86_400_000L) " · elements ${age / 86_400_000L}d old" else ""
         return GeoBlip(
             p.lat, p.lon,
-            "${e.name} · ${altitude}km",
+            "${e.name} · ${altitude}km$staleness",
             "https://celestrak.org/satcat/table-satcat.php?CATNR=${e.noradId}"
         )
     }
@@ -162,6 +183,17 @@ class SatellitesDataSource(
     private companion object {
         const val CATALOGUE_TTL_MS = 24 * 60 * 60 * 1000L
         const val CACHE_KEY = "celestrak-gp"
+
+        /** Above this many revolutions a day an object is low enough for
+         *  the atmosphere to drag it off a drag-free prediction. */
+        const val LEO_REVS_PER_DAY = 10.0
+
+        /** Four days of a low orbit is already tens of kilometres of
+         *  along-track error; a fortnight is a different continent. */
+        const val LEO_MAX_AGE_MS = 4L * 86_400_000L
+
+        /** Higher orbits drift slowly enough to stay useful for longer. */
+        const val HIGH_MAX_AGE_MS = 21L * 86_400_000L
 
         /** Largest first; each is a fallback for the one before it. */
         val GROUPS = listOf("active", "visual", "stations")

@@ -55,13 +55,16 @@ class OrbitPropagatorTest {
         assertNotNull(p)
         p!!
         val error = greatCircleKm(p.lat, p.lon, observedLat, observedLon)
-        // The elements were 38 hours old at this point. A simplified
-        // propagator drifts; the bar is that it stays far inside a pixel at
-        // the zoom a globe is viewed at, not that it rivals SGP4.
-        assertTrue("ground error ${error.toInt()} km", error < 60.0)
+        // The elements were 38 hours old at this point, and a simplified
+        // propagator drifts. Reporting geodetic rather than geocentric
+        // latitude took this pair from 19 km to 3.6 km and the altitude
+        // from 9 km low to 3.6 km low, so the bar is set where the
+        // measurement is rather than where it used to have to be. A
+        // regression past 10 km means something broke.
+        assertTrue("ground error ${error.toInt()} km", error < 10.0)
         assertTrue(
             "altitude ${p.altitudeKm.toInt()} km",
-            kotlin.math.abs(p.altitudeKm - observedAltKm) < 40.0
+            kotlin.math.abs(p.altitudeKm - observedAltKm) < 10.0
         )
     }
 
@@ -94,6 +97,39 @@ class OrbitPropagatorTest {
     fun rejectsJunkElements() {
         assertNull(OrbitPropagator.propagate(iss.copy(meanMotion = 0.0), observedAt))
         assertNull(OrbitPropagator.propagate(iss.copy(eccentricity = 1.4), observedAt))
+    }
+
+    /**
+     * The geodetic conversion has an exact inverse, so it can be checked
+     * against itself rather than against a hope: build the Cartesian
+     * position a known latitude and height imply, hand it back, and the
+     * same latitude and height must come out.
+     */
+    @Test
+    fun geodeticLatitudeRoundTrips() {
+        val f = 1.0 / 298.257223563
+        val e2 = f * (2 - f)
+        val re = OrbitPropagator.EARTH_RADIUS_KM
+        listOf(-89.9, -60.0, -45.0, -10.0, 0.0, 10.0, 45.0, 51.63, 60.0, 89.9)
+            .forEach { lat ->
+                listOf(0.0, 400.0, 2_000.0, 35_786.0).forEach { height ->
+                    val rad = Math.toRadians(lat)
+                    val n = re / sqrt(1 - e2 * sin(rad) * sin(rad))
+                    val hyp = (n + height) * cos(rad)
+                    val z = ((1 - e2) * n + height) * sin(rad)
+                    val (gotLat, gotHeight) = OrbitPropagator.geodetic(hyp, z)
+                    assertEquals("lat $lat at $height km", lat, gotLat, 1e-6)
+                    assertEquals("height $height km at $lat", height, gotHeight, 1e-4)
+                }
+            }
+    }
+
+    /** A satellite over the equator or a pole has no flattening correction
+     *  to make, and the two latitudes must agree there exactly. */
+    @Test
+    fun geodeticAndGeocentricAgreeAtTheEquatorAndPoles() {
+        assertEquals(0.0, OrbitPropagator.geodetic(6_778.137, 0.0).first, 1e-9)
+        assertEquals(90.0, OrbitPropagator.geodetic(0.0, 6_756.0).first, 1e-9)
     }
 
     @Test
