@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -122,6 +123,9 @@ fun GodEyeViewScreen(
     var mode by remember { mutableStateOf(VisualMode.DEFAULT) }
     val context = LocalContext.current
     var inspected by remember { mutableStateOf<Inspected?>(null) }
+    // What a long press on the globe turned up: every loaded layer, swept
+    // for a radius around that point.
+    var area by remember { mutableStateOf<AreaReport.Report?>(null) }
     // The panel of search controls and layer pills is most of a phone
     // screen. On something called a God's Eye View the globe should be the
     // thing you are looking at, so the panel folds away.
@@ -321,6 +325,14 @@ fun GodEyeViewScreen(
                 }
             }
 
+            Text(
+                "tap a marker to identify it · tap the map to investigate a point · " +
+                    "long-press for everything in the area",
+                style = MaterialTheme.typography.labelSmall,
+                color = Intel.TextLow,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp)
+            )
+
             }
 
             if (panelOpen && (showAircraft || god)) {
@@ -371,6 +383,9 @@ fun GodEyeViewScreen(
                     onInspect = { inspected = it },
                     onViewport = viewModel::onViewportChanged,
                     onMapTap = { lat, lon -> viewModel.onMapClick(lat, lon) },
+                    onAreaPress = { lat, lon, zoom ->
+                        area = AreaReport.build(state, lat, lon, AreaReport.radiusForZoom(zoom))
+                    },
                     modifier = Modifier.fillMaxSize().clipToBounds()
                 )
                 // Tactical display filter over the imagery.
@@ -419,6 +434,109 @@ fun GodEyeViewScreen(
                 }
             }
         }
+    }
+
+    area?.let { report ->
+        AlertDialog(
+            onDismissRequest = { area = null },
+            containerColor = Intel.Surface,
+            titleContentColor = Intel.TextHi,
+            textContentColor = Intel.TextMid,
+            title = {
+                Column {
+                    Text(
+                        "AREA · ${AreaReport.fmtKm(report.radiusKm)} RADIUS",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = Intel.Cyan
+                    )
+                    Text(
+                        "%.4f, %.4f".format(report.lat, report.lon),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Intel.TextLow,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+            },
+            text = {
+                Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
+                    Text(
+                        if (report.total == 0) AreaReport.headline(report)
+                        else "${report.total} within range · ${AreaReport.headline(report)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Intel.TextMid
+                    )
+                    com.osint.unified.domain.Mgrs.from(report.lat, report.lon)?.let { grid ->
+                        Text(
+                            grid,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Intel.TextLow,
+                            fontFamily = FontFamily.Monospace,
+                            modifier = Modifier.padding(top = 2.dp)
+                        )
+                    }
+                    report.groups.forEach { group ->
+                        Text(
+                            "${group.kind.uppercase()} · ${group.total}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Intel.Cyan,
+                            modifier = Modifier.padding(top = 12.dp, bottom = 2.dp)
+                        )
+                        group.items.forEach { item ->
+                            Row(
+                                verticalAlignment = Alignment.Top,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        inspected = Inspected(
+                                            item.kind, item.label, item.lat, item.lon, item.url
+                                        )
+                                        area = null
+                                    }
+                                    .padding(vertical = 2.dp)
+                            ) {
+                                Text(
+                                    AreaReport.fmtKm(item.distanceKm),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Intel.TextLow,
+                                    fontFamily = FontFamily.Monospace,
+                                    modifier = Modifier.width(58.dp)
+                                )
+                                Text(
+                                    item.label,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Intel.TextHi,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+                        if (group.total > group.items.size) {
+                            Text(
+                                "…and ${group.total - group.items.size} more",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Intel.TextLow
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.onMapClick(report.lat, report.lon)
+                    area = null
+                }) {
+                    Text(
+                        "INVESTIGATE POINT",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Intel.Cyan
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { area = null }) {
+                    Text("CLOSE", style = MaterialTheme.typography.labelMedium, color = Intel.TextMid)
+                }
+            }
+        )
     }
 
     inspected?.let { obj ->
@@ -525,8 +643,9 @@ fun GodEyeViewScreen(
 /**
  * Native OpenStreetMap globe via osmdroid. No WebView and no WebGL — tiles
  * are drawn directly by Android, which renders reliably where the embedded
- * web map libraries did not. Tap the map to investigate a coordinate; tap a
- * marker to investigate that aircraft/vessel.
+ * web map libraries did not. Tap the map to investigate a coordinate, tap a
+ * marker to investigate that aircraft or vessel, and long-press anywhere for
+ * everything every loaded layer holds around that point.
  */
 @Composable
 private fun GlobeMap(
@@ -559,6 +678,7 @@ private fun GlobeMap(
     onInspect: (Inspected) -> Unit,
     onViewport: (Double, Double, Double) -> Unit,
     onMapTap: (Double, Double) -> Unit,
+    onAreaPress: (Double, Double, Double) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val appliedFocus = remember { mutableStateOf<Pair<Double, Double>?>(null) }
@@ -597,7 +717,10 @@ private fun GlobeMap(
                         onMapTap(p.latitude, p.longitude)
                         return true
                     }
-                    override fun longPressHelper(p: GeoPoint): Boolean = false
+                    override fun longPressHelper(p: GeoPoint): Boolean {
+                        onAreaPress(p.latitude, p.longitude, zoomLevelDouble)
+                        return true
+                    }
                 }
                 overlays.add(MapEventsOverlay(receiver))
                 // Debounced so a fling triggers one rebuild, not fifty.
