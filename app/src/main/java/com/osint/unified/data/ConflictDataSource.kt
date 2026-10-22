@@ -26,14 +26,19 @@ class ConflictDataSource(private val client: OkHttpClient = Http.client) {
 
     suspend fun fetch(): List<GeoBlip> = withContext(Dispatchers.IO) {
         try {
+            // Conflicts with no recorded end date. "Ongoing" in Wikidata
+            // can still mean a conflict that began decades ago, so the start
+            // date comes back too and is shown in the label rather than
+            // letting every marker read as though it flared up this week.
             val query = """
-                SELECT ?cLabel ?coord WHERE {
-                  ?c wdt:P31 wd:Q350604 .
+                SELECT ?cLabel ?coord ?start WHERE {
+                  ?c wdt:P31/wdt:P279* wd:Q350604 .
                   ?c wdt:P625 ?coord .
                   OPTIONAL { ?c wdt:P582 ?end . }
+                  OPTIONAL { ?c wdt:P580 ?start . }
                   FILTER(!BOUND(?end))
                   SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
-                } LIMIT 250
+                } LIMIT 600
             """.trimIndent()
             val url = "https://query.wikidata.org/sparql?format=json&query=" + URLEncoder.encode(query, "UTF-8")
             val request = Request.Builder()
@@ -54,7 +59,10 @@ class ConflictDataSource(private val client: OkHttpClient = Http.client) {
                     val lon = m.groupValues[1].toDoubleOrNull() ?: return@mapNotNull null
                     val lat = m.groupValues[2].toDoubleOrNull() ?: return@mapNotNull null
                     val label = ((o["cLabel"] as? JsonObject)?.get("value") as? JsonPrimitive)?.contentOrNull ?: "conflict"
-                    GeoBlip(lat, lon, label)
+                    val started = ((o["start"] as? JsonObject)?.get("value") as? JsonPrimitive)
+                        ?.contentOrNull?.take(4)?.toIntOrNull()
+                    val full = if (started != null) "$label · since $started" else label
+                    GeoBlip(lat, lon, full, "https://www.wikidata.org/w/index.php?search=" + URLEncoder.encode(label, "UTF-8"))
                 }
             }
         } catch (e: Exception) {

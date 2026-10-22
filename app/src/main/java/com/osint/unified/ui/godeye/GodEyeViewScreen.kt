@@ -274,13 +274,19 @@ fun GodEyeViewScreen(
                 LayerPill("BUOY", state.buoys.size, Color(0xFF4DD0E1), showBuoys) { showBuoys = !showBuoys }
                 LayerPill("METAR", state.metar.size, Color(0xFF9FE8FF), showMetar) { showMetar = !showMetar }
                 LayerPill("NEWS", state.news.size, Color(0xFFFF79C6), showNews) { showNews = !showNews }
-                LayerPill("CCTV", state.cameras.size, Color(0xFFB388FF), showCameras) {
+                LayerPill(
+                    "CCTV", state.cameras.size, Color(0xFFB388FF), showCameras,
+                    loadsOnDemand = true
+                ) {
                     showCameras = !showCameras
                     if (showCameras) viewModel.ensureCameras()
                 }
                 LayerPill("LADD", state.ladd.size, Color(0xFFFFD166), showLadd) { showLadd = !showLadd }
                 LayerPill("CABLE", state.cables.size, Color(0xFF7FFFD4), showCables) { showCables = !showCables }
-                LayerPill("SUA", state.airspace.size, Color(0xFFFF5370), showAirspace) {
+                LayerPill(
+                    "SUA", state.airspace.size, Color(0xFFFF5370), showAirspace,
+                    loadsOnDemand = true
+                ) {
                     showAirspace = !showAirspace
                     if (showAirspace) viewModel.ensureAirspace()
                 }
@@ -800,7 +806,16 @@ private fun ExamplePill(text: String, onClick: () -> Unit) {
 }
 
 @Composable
-private fun LayerPill(label: String, count: Int, color: Color, on: Boolean, onClick: () -> Unit) {
+private fun LayerPill(
+    label: String,
+    count: Int,
+    color: Color,
+    on: Boolean,
+    /** Layers that only fetch when switched on. Until then they have no
+     *  count, and showing "0" would read as "this layer is broken". */
+    loadsOnDemand: Boolean = false,
+    onClick: () -> Unit
+) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
@@ -812,8 +827,14 @@ private fun LayerPill(label: String, count: Int, color: Color, on: Boolean, onCl
     ) {
         Box(Modifier.size(7.dp).clip(RoundedCornerShape(50)).background(if (on) color else Intel.TextLow))
         Spacer(Modifier.width(6.dp))
+        val shown = when {
+            count > 0 -> "$count"
+            loadsOnDemand && !on -> "tap"
+            loadsOnDemand && on -> "…"
+            else -> "0"
+        }
         Text(
-            "$label $count",
+            "$label $shown",
             style = MaterialTheme.typography.labelSmall,
             color = if (on) Intel.TextHi else Intel.TextLow
         )
