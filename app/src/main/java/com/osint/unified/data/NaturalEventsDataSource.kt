@@ -1,0 +1,55 @@
+package com.osint.unified.data
+
+import com.osint.unified.network.Http
+import com.osint.unified.ui.godeye.NaturalEvent
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import okhttp3.OkHttpClient
+import okhttp3.Request
+
+/**
+ * Open natural events worldwide from NASA EONET v3 (keyless): wildfires,
+ * severe storms, volcanoes, floods, icebergs, etc. Used as a live globe layer.
+ */
+class NaturalEventsDataSource(private val client: OkHttpClient = Http.client) {
+
+    private val json = Json { ignoreUnknownKeys = true; isLenient = true }
+
+    suspend fun fetch(): List<NaturalEvent> = withContext(Dispatchers.IO) {
+        try {
+            val request = Request.Builder()
+                .url("https://eonet.gsfc.nasa.gov/api/v3/events?status=open&limit=200")
+                .build()
+            client.newCall(request).execute().use { resp ->
+                val body = resp.body?.string()
+                if (!resp.isSuccessful || body.isNullOrBlank()) return@withContext emptyList()
+                val events = json.parseToJsonElement(body).jsonObject["events"]?.jsonArray
+                    ?: return@withContext emptyList()
+                events.mapNotNull { e ->
+                    val o = e.jsonObject
+                    val title = (o["title"] as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
+                    val category = (o["categories"] as? JsonArray)?.firstOrNull()
+                        ?.jsonObject?.get("title")?.let { (it as? JsonPrimitive)?.contentOrNull } ?: "Event"
+                    // Use the most recent Point geometry.
+                    val geom = (o["geometry"] as? JsonArray)?.lastOrNull { g ->
+                        ((g as? JsonObject)?.get("type") as? JsonPrimitive)?.contentOrNull == "Point"
+                    } ?: return@mapNotNull null
+                    val coords = (geom as JsonObject)["coordinates"]?.jsonArray ?: return@mapNotNull null
+                    val lon = (coords.getOrNull(0) as? JsonPrimitive)?.doubleOrNull ?: return@mapNotNull null
+                    val lat = (coords.getOrNull(1) as? JsonPrimitive)?.doubleOrNull ?: return@mapNotNull null
+                    NaturalEvent(lat, lon, title, category)
+                }
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+}

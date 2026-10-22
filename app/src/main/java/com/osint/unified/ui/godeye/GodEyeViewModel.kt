@@ -7,6 +7,8 @@ import com.osint.unified.data.AircraftDataSource
 import com.osint.unified.data.AisDataSource
 import com.osint.unified.data.AppSettings
 import com.osint.unified.data.EarthquakeDataSource
+import com.osint.unified.data.NaturalEventsDataSource
+import com.osint.unified.domain.GeoExtractor
 import com.osint.unified.data.ExportFormat
 import com.osint.unified.data.InvestigationExporter
 import com.osint.unified.data.InvestigationRepository
@@ -35,6 +37,9 @@ data class GodEyeUiState(
     val aircraft: List<Aircraft> = emptyList(),
     val vessels: List<Vessel> = emptyList(),
     val quakes: List<Quake> = emptyList(),
+    val naturalEvents: List<NaturalEvent> = emptyList(),
+    val findings: List<FindingPin> = emptyList(),
+    val mapFocus: Pair<Double, Double>? = null,
     val results: List<ResultRow> = emptyList(),
     val runningToolIds: Set<String> = emptySet(),
     val workflowName: String? = null,
@@ -51,6 +56,7 @@ class GodEyeViewModel(
     private val aircraftDataSource: AircraftDataSource,
     private val aisDataSource: AisDataSource,
     private val earthquakeDataSource: EarthquakeDataSource,
+    private val naturalEventsDataSource: NaturalEventsDataSource,
     private val settings: AppSettings,
     private val exporter: InvestigationExporter
 ) : ViewModel() {
@@ -86,6 +92,12 @@ class GodEyeViewModel(
                 delay(300_000)
             }
         }
+        viewModelScope.launch {
+            while (isActive) {
+                _state.update { it.copy(naturalEvents = naturalEventsDataSource.fetch()) }
+                delay(600_000)
+            }
+        }
     }
 
     fun onMapClick(lat: Double, lon: Double) {
@@ -102,12 +114,17 @@ class GodEyeViewModel(
         // New search = fresh investigation context.
         currentInvestigationId = null
         resultsJob?.cancel()
+        // A coordinate search focuses the globe immediately; other types get a
+        // focus once a tool returns a location (see the results collector).
+        val focus = (observable as? Observable.Coordinate)?.let { it.lat to it.lon }
         _state.update {
             it.copy(
                 observable = observable,
                 suggestedTools = router.suggestTools(observable),
                 workflowName = Workflows.forObservable(observable)?.name,
                 results = emptyList(),
+                findings = emptyList(),
+                mapFocus = focus,
                 runningToolIds = emptySet(),
                 navSignal = it.navSignal + 1
             )
@@ -202,7 +219,20 @@ class GodEyeViewModel(
         resultsJob?.cancel()
         resultsJob = viewModelScope.launch {
             repository.observeResults(id).collect { rows ->
-                _state.update { it.copy(results = rows) }
+                // Plot any result that carries a location, and focus the globe
+                // on the first one if the search didn't already set a focus.
+                val findings = rows.mapNotNull { r ->
+                    if (r.status != "success") return@mapNotNull null
+                    val c = GeoExtractor.firstCoordinate(r.rawOutput) ?: return@mapNotNull null
+                    FindingPin(c.first, c.second, r.toolName)
+                }
+                _state.update { st ->
+                    st.copy(
+                        results = rows,
+                        findings = findings,
+                        mapFocus = st.mapFocus ?: findings.firstOrNull()?.let { it.lat to it.lon }
+                    )
+                }
             }
         }
         return id
@@ -235,11 +265,12 @@ class GodEyeViewModel(
         private val aircraftDataSource: AircraftDataSource,
         private val aisDataSource: AisDataSource,
         private val earthquakeDataSource: EarthquakeDataSource,
+        private val naturalEventsDataSource: NaturalEventsDataSource,
         private val settings: AppSettings,
         private val exporter: InvestigationExporter
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            GodEyeViewModel(router, repository, aircraftDataSource, aisDataSource, earthquakeDataSource, settings, exporter) as T
+            GodEyeViewModel(router, repository, aircraftDataSource, aisDataSource, earthquakeDataSource, naturalEventsDataSource, settings, exporter) as T
     }
 }

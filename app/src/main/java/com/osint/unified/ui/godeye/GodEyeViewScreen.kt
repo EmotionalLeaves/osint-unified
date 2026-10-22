@@ -40,7 +40,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
@@ -70,6 +69,7 @@ fun GodEyeViewScreen(
     var showAircraft by remember { mutableStateOf(true) }
     var showVessels by remember { mutableStateOf(true) }
     var showQuakes by remember { mutableStateOf(true) }
+    var showEvents by remember { mutableStateOf(true) }
 
     Scaffold(
         topBar = {
@@ -130,6 +130,8 @@ fun GodEyeViewScreen(
                     label = { Text("Vessels ${state.vessels.size}") })
                 FilterChip(selected = showQuakes, onClick = { showQuakes = !showQuakes },
                     label = { Text("Quakes ${state.quakes.size}") })
+                FilterChip(selected = showEvents, onClick = { showEvents = !showEvents },
+                    label = { Text("Events ${state.naturalEvents.size}") })
             }
 
             Box(modifier = Modifier.fillMaxWidth().weight(1f).padding(top = 6.dp)) {
@@ -137,6 +139,9 @@ fun GodEyeViewScreen(
                     aircraft = if (showAircraft) state.aircraft else emptyList(),
                     vessels = if (showVessels) state.vessels else emptyList(),
                     quakes = if (showQuakes) state.quakes else emptyList(),
+                    events = if (showEvents) state.naturalEvents else emptyList(),
+                    findings = state.findings,
+                    focus = state.mapFocus,
                     onInvestigate = { label ->
                         viewModel.onQueryChange(label)
                         viewModel.onSearch()
@@ -185,11 +190,14 @@ private fun GlobeMap(
     aircraft: List<Aircraft>,
     vessels: List<Vessel>,
     quakes: List<Quake>,
+    events: List<NaturalEvent>,
+    findings: List<FindingPin>,
+    focus: Pair<Double, Double>?,
     onInvestigate: (String) -> Unit,
     onMapTap: (Double, Double) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
+    val appliedFocus = remember { mutableStateOf<Pair<Double, Double>?>(null) }
     AndroidView(
         modifier = modifier,
         factory = { ctx ->
@@ -237,8 +245,18 @@ private fun GlobeMap(
                 map.overlays.add(m)
             }
             quakes.forEach { add(it.lat, it.lon, 0xFFF0997B.toInt(), 8, "M%.1f".format(it.mag), false) }
+            events.forEach { add(it.lat, it.lon, 0xFFF2C94C.toInt(), 9, "${it.category}: ${it.title}", false) }
             vessels.forEach { add(it.lat, it.lon, 0xFF1D9E75.toInt(), 9, it.name.ifBlank { it.mmsi }, true) }
             aircraft.forEach { add(it.lat, it.lon, 0xFF4FC3F7.toInt(), 9, it.callsign.ifBlank { it.icao }, true) }
+            // Investigation findings sit on top, larger and brighter.
+            findings.forEach { add(it.lat, it.lon, 0xFFE24FD6.toInt(), 14, it.label, false) }
+
+            // Fly to a newly-focused location (coordinate search or first geo finding).
+            if (focus != null && focus != appliedFocus.value) {
+                map.controller.animateTo(GeoPoint(focus.first, focus.second))
+                map.controller.setZoom(9.0)
+                appliedFocus.value = focus
+            }
             map.invalidate()
         }
     )
