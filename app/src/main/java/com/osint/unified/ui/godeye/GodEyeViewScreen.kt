@@ -255,25 +255,25 @@ fun GodEyeViewScreen(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)
             ) {
-                LayerPill("AIR", state.aircraft.size, Intel.NetCyan, showAircraft) { showAircraft = !showAircraft }
-                LayerPill("MIL", state.milAircraft.size, Color(0xFFFFD23F), showMil) { showMil = !showMil }
-                LayerPill("SEA", state.vessels.size, Intel.Teal, showVessels) { showVessels = !showVessels }
-                LayerPill("SEIS", state.quakes.size, Intel.Coral, showQuakes) { showQuakes = !showQuakes }
-                LayerPill("EVT", state.naturalEvents.size, Intel.Amber, showEvents) { showEvents = !showEvents }
-                LayerPill("WX", state.weather.size, Color(0xFF7FB2FF), showWeather) { showWeather = !showWeather }
-                LayerPill("FIRE", state.fires.size, Color(0xFFFF5A4D), showFires) { showFires = !showFires }
-                LayerPill("SAT", state.satellites.size, Color(0xFFC0A8FF), showSats) { showSats = !showSats }
-                LayerPill("HAZARD", state.gdacs.size, Color(0xFFFF8A3D), showGdacs) { showGdacs = !showGdacs }
-                LayerPill("VOLC", state.volcanoes.size, Color(0xFFFF4D4D), showVolcanoes) { showVolcanoes = !showVolcanoes }
-                LayerPill("CONFLICT", state.conflicts.size, Color(0xFFFF2E2E), showConflict) { showConflict = !showConflict }
-                LayerPill("AQI", state.airQuality.size, Color(0xFFB4E66B), showAqi) { showAqi = !showAqi }
-                LayerPill("STATIONS", state.stations.size, Color(0xFF9AB0C0), showStations) { showStations = !showStations }
-                LayerPill("APT", state.airports.size, Color(0xFF8FD3FF), showAirports) { showAirports = !showAirports }
-                LayerPill("POWER", state.powerPlants.size, Color(0xFFFFC14D), showPower) { showPower = !showPower }
-                LayerPill("AURORA", state.aurora.size, Color(0xFF66FFB2), showAurora) { showAurora = !showAurora }
-                LayerPill("BUOY", state.buoys.size, Color(0xFF4DD0E1), showBuoys) { showBuoys = !showBuoys }
-                LayerPill("METAR", state.metar.size, Color(0xFF9FE8FF), showMetar) { showMetar = !showMetar }
-                LayerPill("NEWS", state.news.size, Color(0xFFFF79C6), showNews) { showNews = !showNews }
+                LayerPill("AIR", state.aircraft.size, Intel.NetCyan, showAircraft, loaded = "aircraft" in state.loaded) { showAircraft = !showAircraft }
+                LayerPill("MIL", state.milAircraft.size, Color(0xFFFFD23F), showMil, loaded = "milAircraft" in state.loaded) { showMil = !showMil }
+                LayerPill("SEA", state.vessels.size, Intel.Teal, showVessels, loaded = "vessels" in state.loaded) { showVessels = !showVessels }
+                LayerPill("SEIS", state.quakes.size, Intel.Coral, showQuakes, loaded = "quakes" in state.loaded) { showQuakes = !showQuakes }
+                LayerPill("EVT", state.naturalEvents.size, Intel.Amber, showEvents, loaded = "naturalEvents" in state.loaded) { showEvents = !showEvents }
+                LayerPill("WX", state.weather.size, Color(0xFF7FB2FF), showWeather, loaded = "weather" in state.loaded) { showWeather = !showWeather }
+                LayerPill("FIRE", state.fires.size, Color(0xFFFF5A4D), showFires, loaded = "fires" in state.loaded) { showFires = !showFires }
+                LayerPill("SAT", state.satellites.size, Color(0xFFC0A8FF), showSats, loaded = "satellites" in state.loaded) { showSats = !showSats }
+                LayerPill("HAZARD", state.gdacs.size, Color(0xFFFF8A3D), showGdacs, loaded = "gdacs" in state.loaded) { showGdacs = !showGdacs }
+                LayerPill("VOLC", state.volcanoes.size, Color(0xFFFF4D4D), showVolcanoes, loaded = "volcanoes" in state.loaded) { showVolcanoes = !showVolcanoes }
+                LayerPill("CONFLICT", state.conflicts.size, Color(0xFFFF2E2E), showConflict, loaded = "conflicts" in state.loaded) { showConflict = !showConflict }
+                LayerPill("AQI", state.airQuality.size, Color(0xFFB4E66B), showAqi, loaded = "airQuality" in state.loaded) { showAqi = !showAqi }
+                LayerPill("STATIONS", state.stations.size, Color(0xFF9AB0C0), showStations, loaded = "stations" in state.loaded) { showStations = !showStations }
+                LayerPill("APT", state.airports.size, Color(0xFF8FD3FF), showAirports, loaded = "airports" in state.loaded) { showAirports = !showAirports }
+                LayerPill("POWER", state.powerPlants.size, Color(0xFFFFC14D), showPower, loaded = "powerPlants" in state.loaded) { showPower = !showPower }
+                LayerPill("AURORA", state.aurora.size, Color(0xFF66FFB2), showAurora, loaded = "aurora" in state.loaded) { showAurora = !showAurora }
+                LayerPill("BUOY", state.buoys.size, Color(0xFF4DD0E1), showBuoys, loaded = "buoys" in state.loaded) { showBuoys = !showBuoys }
+                LayerPill("METAR", state.metar.size, Color(0xFF9FE8FF), showMetar, loaded = "metar" in state.loaded) { showMetar = !showMetar }
+                LayerPill("NEWS", state.news.size, Color(0xFFFF79C6), showNews, loaded = "news" in state.loaded) { showNews = !showNews }
                 LayerPill(
                     "CCTV", state.cameras.size, Color(0xFFB388FF), showCameras,
                     loadsOnDemand = true
@@ -281,8 +281,8 @@ fun GodEyeViewScreen(
                     showCameras = !showCameras
                     if (showCameras) viewModel.ensureCameras()
                 }
-                LayerPill("LADD", state.ladd.size, Color(0xFFFFD166), showLadd) { showLadd = !showLadd }
-                LayerPill("CABLE", state.cables.size, Color(0xFF7FFFD4), showCables) { showCables = !showCables }
+                LayerPill("LADD", state.ladd.size, Color(0xFFFFD166), showLadd, loaded = "ladd" in state.loaded) { showLadd = !showLadd }
+                LayerPill("CABLE", state.cables.size, Color(0xFF7FFFD4), showCables, loaded = "cables" in state.loaded) { showCables = !showCables }
                 LayerPill(
                     "SUA", state.airspace.size, Color(0xFFFF5370), showAirspace,
                     loadsOnDemand = true
@@ -291,7 +291,7 @@ fun GodEyeViewScreen(
                     if (showAirspace) viewModel.ensureAirspace()
                 }
                 if (state.overlayPoints.isNotEmpty()) {
-                    LayerPill("OVLY", state.overlayPoints.size, Intel.CyanBright, showOverlay) { showOverlay = !showOverlay }
+                    LayerPill("OVLY", state.overlayPoints.size, Intel.CyanBright, showOverlay, loaded = "overlayPoints" in state.loaded) { showOverlay = !showOverlay }
                 }
             }
 
@@ -818,6 +818,9 @@ private fun LayerPill(
     /** Layers that only fetch when switched on. Until then they have no
      *  count, and showing "0" would read as "this layer is broken". */
     loadsOnDemand: Boolean = false,
+    /** False until the feed has completed its first fetch. A layer that has
+     *  not run yet is not the same as one that ran and found nothing. */
+    loaded: Boolean = true,
     onClick: () -> Unit
 ) {
     Row(
@@ -835,6 +838,7 @@ private fun LayerPill(
             count > 0 -> "$count"
             loadsOnDemand && !on -> "tap"
             loadsOnDemand && on -> "…"
+            !loaded -> "…"
             else -> "0"
         }
         Text(

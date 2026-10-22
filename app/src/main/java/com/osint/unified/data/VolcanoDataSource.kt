@@ -23,7 +23,7 @@ class VolcanoDataSource(private val client: OkHttpClient = Http.client) {
     suspend fun fetch(): List<GeoBlip> = withContext(Dispatchers.IO) {
         try {
             val request = Request.Builder()
-                .url("https://eonet.gsfc.nasa.gov/api/v3/events?category=volcanoes&status=open&days=30&limit=2000")
+                .url("https://eonet.gsfc.nasa.gov/api/v3/events?category=volcanoes&status=open&days=180&limit=2000")
                 .build()
             client.newCall(request).execute().use { resp ->
                 val body = resp.body?.string()
@@ -43,7 +43,7 @@ class VolcanoDataSource(private val client: OkHttpClient = Http.client) {
                     // so the last observation date decides whether this is
                     // still live, and the label carries the age.
                     val seen = Freshness.parse((geom["date"] as? JsonPrimitive)?.contentOrNull)
-                    if (!Freshness.within(seen, 720)) return@mapNotNull null
+                    if (!Freshness.within(seen, 180 * 24)) return@mapNotNull null
                     val age = Freshness.ago(seen)
                     GeoBlip(lat, lon, if (age != null) "$title · $age" else title)
                 }

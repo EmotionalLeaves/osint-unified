@@ -80,6 +80,10 @@ data class GodEyeUiState(
     val ladd: List<GeoBlip> = emptyList(),
     val cables: List<GeoBlip> = emptyList(),
     val spaceWeather: SpaceWeather? = null,
+    /** Which feeds have completed a first fetch. A layer that has not run
+     *  yet is not the same as a layer that ran and found nothing, and the
+     *  pills say which is which instead of both reading "0". */
+    val loaded: Set<String> = emptySet(),
     val findings: List<FindingPin> = emptyList(),
     val mapFocus: Pair<Double, Double>? = null,
     val results: List<ResultRow> = emptyList(),
@@ -154,31 +158,35 @@ class GodEyeViewModel(
         // Staggered start-up so launch doesn't fire every feed at once (which
         // spiked memory/CPU). Each poll is exception-guarded so one bad fetch
         // can't kill its loop, and updates stay atomic per field.
-        poll(0, 15_000, { aircraftDataSource.fetch(focus, wideView) }) { s, v -> s.copy(aircraft = v) }
-        poll(400, 30_000, { aisDataSource.fetch() }) { s, v -> s.copy(vessels = v) }
-        poll(800, 15_000, { satellitesDataSource.fetch() }) { s, v -> s.copy(satellites = v) }
-        poll(1_500, 300_000, { earthquakeDataSource.fetch() }) { s, v -> s.copy(quakes = v) }
-        poll(2_500, 600_000, { naturalEventsDataSource.fetch() }) { s, v -> s.copy(naturalEvents = v) }
-        poll(3_500, 60_000, { overlayDataSource.fetch() }) { s, v -> s.copy(overlayPoints = v) }
-        poll(4_500, 600_000, { firesDataSource.fetch() }) { s, v -> s.copy(fires = v) }
-        poll(5_500, 600_000, { volcanoDataSource.fetch() }) { s, v -> s.copy(volcanoes = v) }
-        poll(6_500, 600_000, { gdacsDataSource.fetch() }) { s, v -> s.copy(gdacs = v) }
-        poll(7_500, 300_000, { weatherDataSource.fetch() }) { s, v -> s.copy(weather = v) }
-        poll(8_500, 300_000, { auroraDataSource.fetch() }) { s, v -> s.copy(aurora = v) }
-        poll(9_500, 300_000, { newsDataSource.fetch() }) { s, v -> s.copy(news = v) }
-        poll(11_000, 600_000, { buoyDataSource.fetch() }) { s, v -> s.copy(buoys = v) }
-        poll(13_000, 600_000, { metarDataSource.fetch() }) { s, v -> s.copy(metar = v) }
-        poll(2_000, 20_000, { milAircraftDataSource.fetch() }) { s, v -> s.copy(milAircraft = v) }
-        poll(14_000, 900_000, { airQualityDataSource.fetch() }) { s, v -> s.copy(airQuality = v) }
-        poll(15_000, 21_600_000, { seismicStationDataSource.fetch() }) { s, v -> s.copy(stations = v) }
-        poll(16_000, 1_800_000, { conflictDataSource.fetch() }) { s, v -> s.copy(conflicts = v) }
-        poll(1_200, 3_600_000, { airportDataSource.fetch() }) { s, v -> s.copy(airports = v) }
-        poll(1_800, 3_600_000, { powerPlantDataSource.fetch() }) { s, v -> s.copy(powerPlants = v) }
-        poll(3_600, 900_000, { spaceWeatherDataSource.fetch() }) { s, v -> s.copy(spaceWeather = v) }
-        poll(4_200, 120_000, { laddAircraftDataSource.fetch() }) { s, v -> s.copy(ladd = v) }
-        poll(4_800, 86_400_000, { cableLandingDataSource.fetch() }) { s, v -> s.copy(cables = v) }
+        poll(0, 15_000, "aircraft", { aircraftDataSource.fetch(focus, wideView) }) { s, v -> s.copy(aircraft = v) }
+        poll(100, 30_000, "vessels", { aisDataSource.fetch() }) { s, v -> s.copy(vessels = v) }
+        poll(200, 15_000, "satellites", { satellitesDataSource.fetch() }) { s, v -> s.copy(satellites = v) }
+        poll(375, 300_000, "quakes", { earthquakeDataSource.fetch() }) { s, v -> s.copy(quakes = v) }
+        poll(625, 600_000, "naturalEvents", { naturalEventsDataSource.fetch() }) { s, v -> s.copy(naturalEvents = v) }
+        poll(875, 60_000, "overlayPoints", { overlayDataSource.fetch() }) { s, v -> s.copy(overlayPoints = v) }
+        poll(1125, 600_000, "fires", { firesDataSource.fetch() }) { s, v -> s.copy(fires = v) }
+        poll(1375, 600_000, "volcanoes", { volcanoDataSource.fetch() }) { s, v -> s.copy(volcanoes = v) }
+        poll(1625, 600_000, "gdacs", { gdacsDataSource.fetch() }) { s, v -> s.copy(gdacs = v) }
+        poll(1875, 300_000, "weather", { weatherDataSource.fetch() }) { s, v -> s.copy(weather = v) }
+        poll(2125, 300_000, "aurora", { auroraDataSource.fetch() }) { s, v -> s.copy(aurora = v) }
+        poll(2375, 300_000, "news", { newsDataSource.fetch() }) { s, v -> s.copy(news = v) }
+        poll(2750, 600_000, "buoys", { buoyDataSource.fetch() }) { s, v -> s.copy(buoys = v) }
+        poll(3250, 600_000, "metar", { metarDataSource.fetch() }) { s, v -> s.copy(metar = v) }
+        poll(500, 20_000, "milAircraft", { milAircraftDataSource.fetch() }) { s, v -> s.copy(milAircraft = v) }
+        poll(3500, 900_000, "airQuality", { airQualityDataSource.fetch() }) { s, v -> s.copy(airQuality = v) }
+        poll(3750, 21_600_000, "stations", { seismicStationDataSource.fetch() }) { s, v -> s.copy(stations = v) }
+        poll(4000, 1_800_000, "conflicts", { conflictDataSource.fetch() }) { s, v -> s.copy(conflicts = v) }
+        poll(300, 3_600_000, "airports", { airportDataSource.fetch() }) { s, v -> s.copy(airports = v) }
+        poll(450, 3_600_000, "powerPlants", { powerPlantDataSource.fetch() }) { s, v -> s.copy(powerPlants = v) }
+        poll(900, 900_000, "spaceWeather", { spaceWeatherDataSource.fetch() }) { s, v -> s.copy(spaceWeather = v) }
+        poll(1050, 120_000, "ladd", { laddAircraftDataSource.fetch() }) { s, v -> s.copy(ladd = v) }
+        poll(1200, 86_400_000, "cables", { cableLandingDataSource.fetch() }) { s, v -> s.copy(cables = v) }
     }
 
+    // Startup delays only exist so twenty requests do not begin on the same
+    // millisecond. They used to spread over sixteen seconds, which left half
+    // the layers reading "0" long enough to look broken.
+    //
     // Intervals are set by how often the data actually changes, not by how
     // live it would be nice to look. The NWS alert feed is nearly two
     // megabytes and alerts do not change by the minute; AIS positions for
@@ -187,6 +195,7 @@ class GodEyeViewModel(
     private fun <T> poll(
         initialDelayMs: Long,
         intervalMs: Long,
+        key: String,
         fetch: suspend () -> T,
         apply: (GodEyeUiState, T) -> GodEyeUiState
     ) {
@@ -194,7 +203,13 @@ class GodEyeViewModel(
             if (initialDelayMs > 0) delay(initialDelayMs)
             while (isActive) {
                 val result = runCatching { fetch() }.getOrNull()
-                if (result != null) _state.update { apply(it, result) }
+                // The attempt is recorded whether or not it returned
+                // anything, so a genuinely empty feed reads as 0 rather than
+                // staying on the loading marker forever.
+                _state.update { state ->
+                    val marked = state.copy(loaded = state.loaded + key)
+                    if (result != null) apply(marked, result) else marked
+                }
                 delay(intervalMs)
             }
         }

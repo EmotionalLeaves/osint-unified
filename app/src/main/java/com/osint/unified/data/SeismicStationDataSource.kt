@@ -57,7 +57,7 @@ class SeismicStationDataSource(
             .url("https://service.iris.edu/fdsnws/station/1/query?format=text&level=station&nodata=404")
             .header("User-Agent", "OSINT-Unified/1.0 (research)")
             .build()
-        client.newCall(request).execute().use { resp ->
+        Http.bulkClient.newCall(request).execute().use { resp ->
             if (!resp.isSuccessful) null else resp.body?.string()?.takeIf { it.isNotBlank() }
         }
     }.getOrNull()

@@ -96,7 +96,7 @@ class SatellitesDataSource(
                     .url("https://celestrak.org/NORAD/elements/gp.php?GROUP=$group&FORMAT=json")
                     .header("User-Agent", "OSINT-Unified/1.0 (research)")
                     .build()
-                client.newCall(request).execute().use { resp ->
+                Http.bulkClient.newCall(request).execute().use { resp ->
                     if (!resp.isSuccessful) null else resp.body?.string()
                 }
             }.getOrNull()

@@ -43,7 +43,7 @@ class ConflictDataSource(private val client: OkHttpClient = Http.client) {
             val url = "https://query.wikidata.org/sparql?format=json&query=" + URLEncoder.encode(query, "UTF-8")
             val request = Request.Builder()
                 .url(url)
-                .header("User-Agent", "OSINT-Unified/1.0 (research; contact via app)")
+                .header("User-Agent", "OSINT-Unified/1.0 (https://github.com/EmotionalLeaves/osint-unified)")
                 .header("Accept", "application/sparql-results+json")
                 .build()
             client.newCall(request).execute().use { resp ->
