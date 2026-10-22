@@ -32,7 +32,7 @@ jobs:
             case "$U" in *'||'*) UA="${U##*||}"; U="${U%%||*}";; esac
             SKIP=1
             case "$U" in *'@@'*) SKIP="${U##*@@}"; U="${U%%@@*}";; esac
-            CODE=$(curl -sS -o /tmp/body -w '%{http_code}' -m 25 \
+            CODE=$(curl -sSL -o /tmp/body -w '%{http_code}' -m 25 \
               -H "User-Agent: $UA" \
               -H 'Accept: application/json,text/html,*/*' \
               "$U" 2>/tmp/err)
