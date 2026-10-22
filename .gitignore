@@ -14,3 +14,6 @@ app/build/
 
 # CI-built native tool binaries (bundled at build time, not committed)
 app/src/main/jniLibs/
+
+# CI-fetched web libraries (bundled at build time)
+app/src/main/assets/vendor/
