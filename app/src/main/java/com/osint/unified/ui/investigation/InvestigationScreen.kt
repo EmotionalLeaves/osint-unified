@@ -32,6 +32,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -605,7 +606,8 @@ private fun PivotChip(
                 RoundedCornerShape(7.dp)
             )
             .clickable(onClick = onClick)
-            .padding(horizontal = 9.dp, vertical = 6.dp)
+            .minimumInteractiveComponentSize()
+            .padding(horizontal = 11.dp, vertical = 10.dp)
     ) {
         // The second pass has already looked this one up, and its results
         // are below under FOLLOWED UP. Tapping still works — it opens a
@@ -698,7 +700,8 @@ private fun ConsoleButton(
             .background(if (enabled) bg else Intel.Elevated, RoundedCornerShape(7.dp))
             .border(1.dp, if (enabled) border else Intel.Hairline, RoundedCornerShape(7.dp))
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .minimumInteractiveComponentSize()
+            .padding(horizontal = 14.dp, vertical = 10.dp)
     ) {
         Text(
             label,

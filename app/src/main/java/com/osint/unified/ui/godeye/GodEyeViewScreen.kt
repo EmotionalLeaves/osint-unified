@@ -1,12 +1,16 @@
 package com.osint.unified.ui.godeye
 
 import android.graphics.drawable.Drawable
-import android.graphics.drawable.ShapeDrawable
-import android.graphics.drawable.shapes.OvalShape
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -443,10 +447,17 @@ fun GodEyeViewScreen(
             }
 
             Text(
-                "tap a marker to identify it · tap the map to investigate a point · " +
+                "tap a marker to identify it · tap the map for options · " +
                     "long-press for everything in the area",
                 style = MaterialTheme.typography.labelSmall,
                 color = Intel.TextLow,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp)
+            )
+            Text(
+                "▲ hazard   ◆ infrastructure   ■ reading   ➤ aircraft   " +
+                    "⌁ vessel   ● finding",
+                style = MaterialTheme.typography.labelSmall,
+                color = Intel.TextMid,
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp)
             )
 
@@ -1009,7 +1020,7 @@ private fun GlobeMap(
     // the map trying to draw them all.
     var viewport by remember { mutableStateOf<BoundingBox?>(null) }
     // Cache marker dot drawables by colour+size so a rebuild of hundreds of
-    // markers doesn't allocate a fresh ShapeDrawable each time.
+    // markers doesn't allocate a fresh icon each time.
     val dotCache = remember { HashMap<Long, Drawable>() }
     AndroidView(
         modifier = modifier,
@@ -1159,8 +1170,10 @@ private fun GlobeMap(
                 }
                 keep.forEach { pm ->
                     val px = (pm.sizeDp * density).toInt()
-                    val key = (pm.color.toLong() shl 8) xor px.toLong()
-                    val icon = dotCache.getOrPut(key) { dot(pm.color, px) }
+                    val shape = shapeFor(pm.kind)
+                    val key = (pm.color.toLong() shl 16) xor
+                        (px.toLong() shl 4) xor shape.ordinal.toLong()
+                    val icon = dotCache.getOrPut(key) { markerIcon(shape, pm.color, px) }
                     val m = Marker(map)
                     m.position = GeoPoint(pm.lat, pm.lon)
                     m.icon = icon
@@ -1304,16 +1317,6 @@ private fun filterFlights(list: List<Aircraft>, filter: String): List<Aircraft> 
     }
 }
 
-/** A filled circle marker icon built at runtime (no drawable resources). */
-private fun dot(color: Int, sizePx: Int): Drawable {
-    val size = sizePx.coerceAtLeast(6)
-    return ShapeDrawable(OvalShape()).apply {
-        paint.color = color
-        intrinsicWidth = size
-        intrinsicHeight = size
-        setBounds(0, 0, size, size)
-    }
-}
 
 @Composable
 private fun TypeChip(label: String, selected: Boolean, onClick: () -> Unit) {
@@ -1365,16 +1368,29 @@ private fun LayerPill(
     trouble: Boolean = false,
     onClick: () -> Unit
 ) {
+    // A screen reader could not tell whether a layer was on: the pill was a
+    // plain clickable with the state carried only by colour, which is also
+    // invisible to roughly one man in twelve.
+    val stateWord = when {
+        trouble -> "not reporting"
+        on -> "on"
+        else -> "off"
+    }
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .clip(RoundedCornerShape(50))
             .background(if (on) Intel.Elevated else Intel.Surface)
             .border(1.dp, if (on) color else Intel.Hairline, RoundedCornerShape(50))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 5.dp)
+            .toggleable(value = on, role = Role.Switch) { onClick() }
+            .semantics {
+                stateDescription = "$stateWord, $count items"
+                contentDescription = "$label layer"
+            }
+            .minimumInteractiveComponentSize()
+            .padding(horizontal = 10.dp, vertical = 7.dp)
     ) {
-        Box(Modifier.size(7.dp).clip(RoundedCornerShape(50)).background(if (on) color else Intel.TextLow))
+        Box(Modifier.size(8.dp).clip(RoundedCornerShape(50)).background(if (on) color else Intel.TextLow))
         Spacer(Modifier.width(6.dp))
         val shown = when {
             trouble && count > 0 -> "$count!"

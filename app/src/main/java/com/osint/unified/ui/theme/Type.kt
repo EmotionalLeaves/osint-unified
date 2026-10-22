@@ -45,13 +45,17 @@ val IntelTypography = Typography(
     labelMedium = TextStyle(
         fontFamily = FontFamily.Monospace,
         fontWeight = FontWeight.Medium,
-        fontSize = 12.sp,
-        letterSpacing = 0.8.sp
+        fontSize = 13.sp,
+        lineHeight = 16.sp,
+        letterSpacing = 0.6.sp
     ),
+    // 10sp monospace carried most of the HUD. A console is read at arm's
+    // length, under pressure, often outdoors; 12 is the floor.
     labelSmall = TextStyle(
         fontFamily = FontFamily.Monospace,
         fontWeight = FontWeight.Medium,
-        fontSize = 10.sp,
-        letterSpacing = 1.sp
+        fontSize = 12.sp,
+        lineHeight = 15.sp,
+        letterSpacing = 0.6.sp
     )
 )
