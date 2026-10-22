@@ -1,5 +1,7 @@
 package com.osint.unified.ui.forensics
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -23,6 +25,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -34,6 +37,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.osint.unified.data.ExifReader
 import com.osint.unified.domain.DecoderEngine
+import com.osint.unified.domain.Identify
+import com.osint.unified.ui.theme.Intel
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -45,14 +50,23 @@ fun ForensicsScreen(exifReader: ExifReader, onBack: () -> Unit) {
     var exifBusy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(modifier = Modifier.fillMaxSize().background(Intel.Base)) {
         TopAppBar(
-            title = { Text("Forensics & decoders") },
+            title = {
+                Text(
+                    "FORENSICS & DECODERS",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = Intel.TextHi
+                )
+            },
             navigationIcon = {
                 IconButton(onClick = onBack) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                 }
-            }
+            },
+            colors = TopAppBarDefaults.topAppBarColors(
+                containerColor = Intel.Base, navigationIconContentColor = Intel.Cyan
+            )
         )
 
         Column(
@@ -65,6 +79,56 @@ fun ForensicsScreen(exifReader: ExifReader, onBack: () -> Unit) {
                 minLines = 3,
                 modifier = Modifier.fillMaxWidth()
             )
+
+            // What is it? Choosing the right decoder presumes you already
+            // know, and an analyst with a string out of a header or a URL
+            // usually does not. Recognition is structural — length,
+            // alphabet, range — so this says what the string is before
+            // offering to decode it, and offers every honest reading when
+            // the shape is genuinely ambiguous.
+            val guesses = remember(input) { Identify.of(input) }
+            if (guesses.isNotEmpty()) {
+                Column(Modifier.fillMaxWidth().padding(top = 10.dp)) {
+                    Text(
+                        "LOOKS LIKE",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Intel.Cyan
+                    )
+                    guesses.forEach { g ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 4.dp)
+                                .let { m ->
+                                    val id = g.decoderId
+                                    if (id == null) m
+                                    else m.clickable { output = DecoderEngine.run(id, input) }
+                                }
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    g.label,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = Intel.CyanBright
+                                )
+                                Text(
+                                    g.detail,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Intel.TextMid
+                                )
+                            }
+                            if (g.decoderId != null) {
+                                Text(
+                                    "DECODE ▸",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = Intel.Amber,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                        }
+                    }
+                }
+            }
 
             Row(
                 modifier = Modifier.fillMaxWidth()

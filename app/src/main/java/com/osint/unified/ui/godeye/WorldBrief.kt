@@ -75,8 +75,9 @@ object WorldBrief {
             title: String,
             source: List<GeoBlip>,
             severity: Int,
-            rank: (GeoBlip) -> Int = { alertRank(it.label) },
-            note: String? = null
+            note: String? = null,
+            // Last, so a trailing lambda binds here rather than to `note`.
+            rank: (GeoBlip) -> Int = { alertRank(it.label) }
         ) {
             if (source.isEmpty()) return
             val top = source
@@ -132,9 +133,9 @@ object WorldBrief {
 
         blips("SEVERE WEATHER", state.weather, 6)
         blips("WILDFIRES", state.fires, 5)
-        blips("MILITARY AIRCRAFT", state.milAircraft, 5) { 1 }
-        blips("HIDDEN-OWNER AIRCRAFT", state.ladd, 4) { 1 }
-        blips("NEWS HOTSPOTS", state.news, 3) { 1 }
+        blips("MILITARY AIRCRAFT", state.milAircraft, 5, rank = { 1 })
+        blips("HIDDEN-OWNER AIRCRAFT", state.ladd, 4, rank = { 1 })
+        blips("NEWS HOTSPOTS", state.news, 3, rank = { 1 })
 
         if (state.aircraft.isNotEmpty() || state.vessels.isNotEmpty()) {
             val entries = ArrayList<Entry>()
