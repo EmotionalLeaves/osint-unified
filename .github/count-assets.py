@@ -29,6 +29,51 @@ def count_markdown_links(name):
     return len(set(re.findall(r"\]\((https?://[^)\s]+)\)", text)))
 
 
+# Kept in step with ToolTemplates.QUERY_KEYS: a catalogue URL whose query
+# carries one of these can be opened with the target already filled in, which
+# is what "executable" means for a web tool.
+QUERY_KEYS = {
+    "q", "query", "search", "s", "term", "keyword", "keywords", "text",
+    "name", "user", "username", "account", "handle", "domain", "host",
+    "ip", "addr", "address", "email", "mail", "phone", "number", "lookup",
+    "target", "input", "value", "url", "site",
+}
+
+
+def is_fillable(url):
+    if "?" not in url or url.endswith("?"):
+        return False
+    query = url.split("?", 1)[1]
+    return any(part.split("=", 1)[0].lower() in QUERY_KEYS for part in query.split("&"))
+
+
+def catalogue_urls():
+    """Every distinct tool URL across the bundled catalogues and the tree."""
+    urls = set()
+    for name in ("awesome-osint.md", "osint-stuff.md", "osint-everything.md",
+                 "osint-collection.md"):
+        try:
+            text = open(path(name), encoding="utf-8", errors="ignore").read()
+            urls.update(re.findall(r"\]\((https?://[^)\s]+)\)", text))
+        except Exception:
+            pass
+
+    def walk(node):
+        children = node.get("children") or []
+        if not children:
+            if node.get("url"):
+                urls.add(node["url"])
+            return
+        for c in children:
+            walk(c)
+
+    try:
+        walk(json.load(open(path("arf.json"), encoding="utf-8")))
+    except Exception:
+        pass
+    return urls
+
+
 def count_tree_leaves(node):
     children = node.get("children") or []
     if not children:
@@ -80,6 +125,17 @@ def main():
         ]
         rows.append(("Breach catalogue entries", len(breaches)))
         rows.append(("  with domain+date+fields", len(usable)))
+    except Exception:
+        pass
+
+    # How many directory entries the app can actually run against a target,
+    # rather than merely link to. Claimed counts are worthless; this one is
+    # derived from the same rule the app applies at runtime.
+    try:
+        urls = catalogue_urls()
+        fillable = {u for u in urls if is_fillable(u)}
+        rows.append(("Distinct catalogue URLs", len(urls)))
+        rows.append(("  runnable against a target", len(fillable)))
     except Exception:
         pass
 
