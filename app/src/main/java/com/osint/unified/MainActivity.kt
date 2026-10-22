@@ -29,7 +29,7 @@ class MainActivity : ComponentActivity() {
 
     private val godEyeViewModel: GodEyeViewModel by viewModels {
         val app = application as OsintApplication
-        GodEyeViewModel.Factory(app.router, app.repository, app.aircraftDataSource, app.aisDataSource, app.earthquakeDataSource, app.naturalEventsDataSource, app.overlayDataSource, app.weatherDataSource, app.firesDataSource, app.satellitesDataSource, app.newsDataSource, app.gdacsDataSource, app.volcanoDataSource, app.auroraDataSource, app.buoyDataSource, app.metarDataSource, app.milAircraftDataSource, app.availableLocalTools, app.settings, app.exporter)
+        GodEyeViewModel.Factory(app.router, app.repository, app.aircraftDataSource, app.aisDataSource, app.earthquakeDataSource, app.naturalEventsDataSource, app.overlayDataSource, app.weatherDataSource, app.firesDataSource, app.satellitesDataSource, app.newsDataSource, app.gdacsDataSource, app.volcanoDataSource, app.auroraDataSource, app.buoyDataSource, app.metarDataSource, app.milAircraftDataSource, app.airQualityDataSource, app.seismicStationDataSource, app.conflictDataSource, app.availableLocalTools, app.settings, app.exporter)
     }
 
     private val historyViewModel: HistoryViewModel by viewModels {
@@ -78,6 +78,9 @@ class MainActivity : ComponentActivity() {
                                     FeedProbe("Ocean buoys (NDBC)") { app.buoyDataSource.fetch().size },
                                     FeedProbe("METAR (AWC)") { app.metarDataSource.fetch().size },
                                     FeedProbe("Satellites (wheretheiss)") { app.satellitesDataSource.fetch().size },
+                                    FeedProbe("Air quality (Open-Meteo)") { app.airQualityDataSource.fetch().size },
+                                    FeedProbe("Seismic stations (IRIS)") { app.seismicStationDataSource.fetch().size },
+                                    FeedProbe("Conflicts (Wikidata)") { app.conflictDataSource.fetch().size },
                                     FeedProbe("Custom overlay") { app.overlayDataSource.fetch().size }
                                 ),
                                 onBack = { screen = "godeye" }

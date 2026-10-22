@@ -3,10 +3,13 @@ package com.osint.unified
 import android.app.Application
 import java.io.File
 import com.osint.unified.data.AircraftDataSource
+import com.osint.unified.data.AirQualityDataSource
 import com.osint.unified.data.AisDataSource
 import com.osint.unified.data.AppSettings
 import com.osint.unified.data.AuroraDataSource
 import com.osint.unified.data.BuoyDataSource
+import com.osint.unified.data.ConflictDataSource
+import com.osint.unified.data.SeismicStationDataSource
 import com.osint.unified.data.EarthquakeDataSource
 import com.osint.unified.data.FiresDataSource
 import com.osint.unified.data.GdacsDataSource
@@ -52,6 +55,9 @@ class OsintApplication : Application() {
     val buoyDataSource: BuoyDataSource by lazy { BuoyDataSource() }
     val metarDataSource: MetarDataSource by lazy { MetarDataSource() }
     val milAircraftDataSource: MilAircraftDataSource by lazy { MilAircraftDataSource() }
+    val airQualityDataSource: AirQualityDataSource by lazy { AirQualityDataSource() }
+    val seismicStationDataSource: SeismicStationDataSource by lazy { SeismicStationDataSource() }
+    val conflictDataSource: ConflictDataSource by lazy { ConflictDataSource() }
 
     val executorFactory: ExecutorFactory by lazy {
         ExecutorFactory(

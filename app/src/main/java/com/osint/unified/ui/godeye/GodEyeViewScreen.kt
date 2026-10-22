@@ -100,6 +100,9 @@ fun GodEyeViewScreen(
     var showBuoys by remember { mutableStateOf(false) }
     var showMetar by remember { mutableStateOf(false) }
     var showMil by remember { mutableStateOf(true) }
+    var showConflict by remember { mutableStateOf(true) }
+    var showAqi by remember { mutableStateOf(false) }
+    var showStations by remember { mutableStateOf(false) }
 
     Scaffold(containerColor = Intel.Base) { pad ->
         Column(modifier = Modifier.padding(pad).fillMaxSize()) {
@@ -216,6 +219,9 @@ fun GodEyeViewScreen(
                 LayerPill("SAT", state.satellites.size, Color(0xFFC0A8FF), showSats) { showSats = !showSats }
                 LayerPill("HAZARD", state.gdacs.size, Color(0xFFFF8A3D), showGdacs) { showGdacs = !showGdacs }
                 LayerPill("VOLC", state.volcanoes.size, Color(0xFFFF4D4D), showVolcanoes) { showVolcanoes = !showVolcanoes }
+                LayerPill("CONFLICT", state.conflicts.size, Color(0xFFFF2E2E), showConflict) { showConflict = !showConflict }
+                LayerPill("AQI", state.airQuality.size, Color(0xFFB4E66B), showAqi) { showAqi = !showAqi }
+                LayerPill("STATIONS", state.stations.size, Color(0xFF9AB0C0), showStations) { showStations = !showStations }
                 LayerPill("AURORA", state.aurora.size, Color(0xFF66FFB2), showAurora) { showAurora = !showAurora }
                 LayerPill("BUOY", state.buoys.size, Color(0xFF4DD0E1), showBuoys) { showBuoys = !showBuoys }
                 LayerPill("METAR", state.metar.size, Color(0xFF9FE8FF), showMetar) { showMetar = !showMetar }
@@ -248,6 +254,9 @@ fun GodEyeViewScreen(
                     buoys = if (showBuoys) state.buoys else emptyList(),
                     metar = if (showMetar) state.metar else emptyList(),
                     milAircraft = if (showMil) state.milAircraft else emptyList(),
+                    conflicts = if (showConflict) state.conflicts else emptyList(),
+                    airQuality = if (showAqi) state.airQuality else emptyList(),
+                    stations = if (showStations) state.stations else emptyList(),
                     findings = state.findings,
                     focus = state.mapFocus,
                     onInvestigate = { label ->
@@ -311,6 +320,9 @@ private fun GlobeMap(
     buoys: List<GeoBlip>,
     metar: List<GeoBlip>,
     milAircraft: List<GeoBlip>,
+    conflicts: List<GeoBlip>,
+    airQuality: List<GeoBlip>,
+    stations: List<GeoBlip>,
     findings: List<FindingPin>,
     focus: Pair<Double, Double>?,
     onInvestigate: (String) -> Unit,
@@ -378,8 +390,11 @@ private fun GlobeMap(
             events.forEach { add(it.lat, it.lon, 0xFFF2C94C.toInt(), 9, "${it.category}: ${it.title}", false) }
             news.forEach { add(it.lat, it.lon, 0xFFFF79C6.toInt(), 7, it.label, false) }
             aurora.forEach { add(it.lat, it.lon, 0xFF66FFB2.toInt(), 6, it.label, false) }
+            stations.forEach { add(it.lat, it.lon, 0xFF9AB0C0.toInt(), 5, it.label, false) }
+            airQuality.forEach { add(it.lat, it.lon, 0xFFB4E66B.toInt(), 9, it.label, false) }
             buoys.forEach { add(it.lat, it.lon, 0xFF4DD0E1.toInt(), 6, it.label, false) }
             metar.forEach { add(it.lat, it.lon, 0xFF9FE8FF.toInt(), 6, it.label, false) }
+            conflicts.forEach { add(it.lat, it.lon, 0xFFFF2E2E.toInt(), 11, it.label, false) }
             gdacs.forEach { add(it.lat, it.lon, 0xFFFF8A3D.toInt(), 10, it.label, false) }
             volcanoes.forEach { add(it.lat, it.lon, 0xFFFF4D4D.toInt(), 9, it.label, false) }
             weather.forEach { add(it.lat, it.lon, 0xFF7FB2FF.toInt(), 9, it.label, false) }

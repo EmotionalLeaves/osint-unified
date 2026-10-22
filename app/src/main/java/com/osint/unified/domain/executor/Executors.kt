@@ -252,6 +252,8 @@ class DirectToolExecutor(
             val body = ("data=" + java.net.URLEncoder.encode(query, "UTF-8")).toRequestBody(formUrlEncoded)
             val request = Request.Builder()
                 .url("https://overpass-api.de/api/interpreter")
+                .header("User-Agent", "OSINT-Unified/1.0 (research)")
+                .header("Accept", "application/json")
                 .post(body)
                 .build()
             client.newCall(request).execute().use { resp ->
