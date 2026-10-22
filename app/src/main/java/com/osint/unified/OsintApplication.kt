@@ -11,6 +11,7 @@ import com.osint.unified.data.EarthquakeDataSource
 import com.osint.unified.data.FiresDataSource
 import com.osint.unified.data.GdacsDataSource
 import com.osint.unified.data.MetarDataSource
+import com.osint.unified.data.MilAircraftDataSource
 import com.osint.unified.data.NaturalEventsDataSource
 import com.osint.unified.data.NewsDataSource
 import com.osint.unified.data.OverlayDataSource
@@ -50,6 +51,7 @@ class OsintApplication : Application() {
     val auroraDataSource: AuroraDataSource by lazy { AuroraDataSource() }
     val buoyDataSource: BuoyDataSource by lazy { BuoyDataSource() }
     val metarDataSource: MetarDataSource by lazy { MetarDataSource() }
+    val milAircraftDataSource: MilAircraftDataSource by lazy { MilAircraftDataSource() }
 
     val executorFactory: ExecutorFactory by lazy {
         ExecutorFactory(

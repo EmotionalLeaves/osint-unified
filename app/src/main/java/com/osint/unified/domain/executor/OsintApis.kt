@@ -134,15 +134,25 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
         return "Latest snapshot${ts?.let { " ($it)" } ?: ""}:\n${url.replace("http://", "https://")}"
     }
 
-    /** Reverse geocoding (OpenStreetMap Nominatim). */
+    /** Reverse geocoding (OpenStreetMap Nominatim) + MGRS military grid. */
     fun revgeo(input: String): Result<String> = runCatching {
         val parts = input.split(",").map { it.trim() }
         require(parts.size == 2) { "Expected 'lat, lon'." }
+        val lat = parts[0].toDouble()
+        val lon = parts[1].toDouble()
         val o = json.parseToJsonElement(
-            getBody("https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${parts[0]}&lon=${parts[1]}")
+            getBody("https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=$lat&lon=$lon")
         ).jsonObject
         val display = (o["display_name"] as? JsonPrimitive)?.contentOrNull ?: "(no address found)"
-        "Address: $display"
+        val mgrs = runCatching {
+            mil.nga.mgrs.MGRS.from(mil.nga.grid.features.Point.point(lon, lat)).coordinate()
+        }.getOrNull()
+        buildString {
+            append("Address: $display\n")
+            append("Lat/Lon: $lat, $lon\n")
+            if (mgrs != null) append("MGRS: $mgrs\n")
+            append("Map: https://www.openstreetmap.org/?mlat=$lat&mlon=$lon#map=14/$lat/$lon")
+        }
     }
 
     /** Shodan InternetDB: open ports, hostnames, CPEs and CVEs for an IP

@@ -99,9 +99,22 @@ fun GodEyeViewScreen(
     var showAurora by remember { mutableStateOf(true) }
     var showBuoys by remember { mutableStateOf(false) }
     var showMetar by remember { mutableStateOf(false) }
+    var showMil by remember { mutableStateOf(true) }
 
     Scaffold(containerColor = Intel.Base) { pad ->
         Column(modifier = Modifier.padding(pad).fillMaxSize()) {
+            // Classification banner (tactical console convention; green = UNCLASS).
+            Box(
+                modifier = Modifier.fillMaxWidth().background(Color(0xFF14361B)).padding(vertical = 3.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    "UNCLASSIFIED // OSINT // FOR OFFICIAL RESEARCH USE",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFF8FE88F)
+                )
+            }
+
             // ---- Console header + live telemetry ----
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -194,6 +207,7 @@ fun GodEyeViewScreen(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)
             ) {
                 LayerPill("AIR", state.aircraft.size, Intel.NetCyan, showAircraft) { showAircraft = !showAircraft }
+                LayerPill("MIL", state.milAircraft.size, Color(0xFFFFD23F), showMil) { showMil = !showMil }
                 LayerPill("SEA", state.vessels.size, Intel.Teal, showVessels) { showVessels = !showVessels }
                 LayerPill("SEIS", state.quakes.size, Intel.Coral, showQuakes) { showQuakes = !showQuakes }
                 LayerPill("EVT", state.naturalEvents.size, Intel.Amber, showEvents) { showEvents = !showEvents }
@@ -233,6 +247,7 @@ fun GodEyeViewScreen(
                     aurora = if (showAurora) state.aurora else emptyList(),
                     buoys = if (showBuoys) state.buoys else emptyList(),
                     metar = if (showMetar) state.metar else emptyList(),
+                    milAircraft = if (showMil) state.milAircraft else emptyList(),
                     findings = state.findings,
                     focus = state.mapFocus,
                     onInvestigate = { label ->
@@ -295,6 +310,7 @@ private fun GlobeMap(
     aurora: List<GeoBlip>,
     buoys: List<GeoBlip>,
     metar: List<GeoBlip>,
+    milAircraft: List<GeoBlip>,
     findings: List<FindingPin>,
     focus: Pair<Double, Double>?,
     onInvestigate: (String) -> Unit,
@@ -372,6 +388,7 @@ private fun GlobeMap(
             satellites.forEach { add(it.lat, it.lon, 0xFFC0A8FF.toInt(), 11, it.label, false) }
             vessels.forEach { add(it.lat, it.lon, 0xFF1D9E75.toInt(), 9, it.name.ifBlank { it.mmsi }, true) }
             aircraft.forEach { add(it.lat, it.lon, 0xFF4FC3F7.toInt(), 9, it.callsign.ifBlank { it.icao }, true) }
+            milAircraft.forEach { add(it.lat, it.lon, 0xFFFFD23F.toInt(), 10, it.label, true) }
             // Investigation findings sit on top, larger and brighter.
             findings.forEach { add(it.lat, it.lon, 0xFFE24FD6.toInt(), 14, it.label, false) }
 

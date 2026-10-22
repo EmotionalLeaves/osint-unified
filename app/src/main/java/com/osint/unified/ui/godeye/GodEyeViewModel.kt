@@ -12,6 +12,7 @@ import com.osint.unified.data.EarthquakeDataSource
 import com.osint.unified.data.FiresDataSource
 import com.osint.unified.data.GdacsDataSource
 import com.osint.unified.data.MetarDataSource
+import com.osint.unified.data.MilAircraftDataSource
 import com.osint.unified.data.NaturalEventsDataSource
 import com.osint.unified.data.NewsDataSource
 import com.osint.unified.data.OverlayDataSource
@@ -58,6 +59,7 @@ data class GodEyeUiState(
     val aurora: List<GeoBlip> = emptyList(),
     val buoys: List<GeoBlip> = emptyList(),
     val metar: List<GeoBlip> = emptyList(),
+    val milAircraft: List<GeoBlip> = emptyList(),
     val findings: List<FindingPin> = emptyList(),
     val mapFocus: Pair<Double, Double>? = null,
     val results: List<ResultRow> = emptyList(),
@@ -89,6 +91,7 @@ class GodEyeViewModel(
     private val auroraDataSource: AuroraDataSource,
     private val buoyDataSource: BuoyDataSource,
     private val metarDataSource: MetarDataSource,
+    private val milAircraftDataSource: MilAircraftDataSource,
     private val availableLocalTools: Set<String>,
     private val settings: AppSettings,
     private val exporter: InvestigationExporter
@@ -135,6 +138,7 @@ class GodEyeViewModel(
         poll(9_500, 300_000, { newsDataSource.fetch() }) { s, v -> s.copy(news = v) }
         poll(11_000, 600_000, { buoyDataSource.fetch() }) { s, v -> s.copy(buoys = v) }
         poll(13_000, 600_000, { metarDataSource.fetch() }) { s, v -> s.copy(metar = v) }
+        poll(2_000, 20_000, { milAircraftDataSource.fetch() }) { s, v -> s.copy(milAircraft = v) }
     }
 
     private fun <T> poll(
@@ -337,12 +341,13 @@ class GodEyeViewModel(
         private val auroraDataSource: AuroraDataSource,
         private val buoyDataSource: BuoyDataSource,
         private val metarDataSource: MetarDataSource,
+        private val milAircraftDataSource: MilAircraftDataSource,
         private val availableLocalTools: Set<String>,
         private val settings: AppSettings,
         private val exporter: InvestigationExporter
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            GodEyeViewModel(router, repository, aircraftDataSource, aisDataSource, earthquakeDataSource, naturalEventsDataSource, overlayDataSource, weatherDataSource, firesDataSource, satellitesDataSource, newsDataSource, gdacsDataSource, volcanoDataSource, auroraDataSource, buoyDataSource, metarDataSource, availableLocalTools, settings, exporter) as T
+            GodEyeViewModel(router, repository, aircraftDataSource, aisDataSource, earthquakeDataSource, naturalEventsDataSource, overlayDataSource, weatherDataSource, firesDataSource, satellitesDataSource, newsDataSource, gdacsDataSource, volcanoDataSource, auroraDataSource, buoyDataSource, metarDataSource, milAircraftDataSource, availableLocalTools, settings, exporter) as T
     }
 }
