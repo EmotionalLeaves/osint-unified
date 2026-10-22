@@ -53,7 +53,14 @@ object OsintFramework {
         val byUrl = LinkedHashMap<String, String>() // url -> name, dedupes
         root.children.forEach { c ->
             if (names.any { c.name.contains(it, ignoreCase = true) }) {
-                leaves(c).forEach { byUrl.putIfAbsent(it.second, it.first) }
+                leaves(c).forEach { (name, url, _) ->
+                    // OSINT Framework marks registration-required with (R) and
+                    // paid with $ — exclude those so searches only include
+                    // resources usable with no account.
+                    if (!name.contains("(R)") && !name.contains("(R*)") && !name.contains("$")) {
+                        byUrl.putIfAbsent(url, name)
+                    }
+                }
             }
         }
         return byUrl.map { (url, name) -> name to url }

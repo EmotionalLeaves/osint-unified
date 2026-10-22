@@ -370,7 +370,6 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
                 val digits = v.filter { it.isDigit() || it == '+' }
                 add("Exact number", g("\"$v\""))
                 add("Digits", g("\"$digits\""))
-                add("TrueCaller", "https://www.truecaller.com/search/us/${enc(digits)}")
                 add("Reverse lookup", g("$digits (site:truecaller.com OR site:whitepages.com OR site:spydialer.com)"))
                 add("Social mentions", g("\"$v\" (site:facebook.com OR site:linkedin.com)"))
             }
@@ -383,8 +382,6 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
                 add("Config / backups", g("site:$v (ext:env OR ext:bak OR ext:sql OR ext:log OR ext:conf)"))
                 add("crt.sh certs", "https://crt.sh/?q=${enc(v)}")
                 add("urlscan.io", "https://urlscan.io/domain/$v")
-                add("VirusTotal", "https://www.virustotal.com/gui/domain/$v")
-                add("Shodan", "https://www.shodan.io/search?query=${enc("hostname:$v")}")
                 add("Wayback", "https://web.archive.org/web/*/$v*")
             }
             isName -> {
