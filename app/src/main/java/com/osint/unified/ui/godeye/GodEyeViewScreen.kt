@@ -323,10 +323,10 @@ fun GodEyeViewScreen(
                 // forty dots is the map disagreeing with itself.
                 LayerPill("AIR", visibleAircraft.size, Intel.NetCyan, showAircraft || god, loaded = "aircraft" in state.loaded, trouble = "aircraft" in state.feedTrouble) { showAircraft = !showAircraft }
                 LayerPill("MIL", state.milAircraft.size, Color(0xFFFFD23F), showMil || god, loaded = "milAircraft" in state.loaded, trouble = "milAircraft" in state.feedTrouble) { showMil = !showMil }
-                LayerPill("SEA", state.vessels.size, Intel.Teal, showVessels || god, loaded = "vessels" in state.loaded, trouble = "vessels" in state.feedTrouble) { showVessels = !showVessels }
+                LayerPill("SEA·BALTIC", state.vessels.size, Intel.Teal, showVessels || god, loaded = "vessels" in state.loaded, trouble = "vessels" in state.feedTrouble) { showVessels = !showVessels }
                 LayerPill("SEIS", state.quakes.size, Intel.Coral, showQuakes || god, loaded = "quakes" in state.loaded, trouble = "quakes" in state.feedTrouble) { showQuakes = !showQuakes }
                 LayerPill("EVT", state.naturalEvents.size, Intel.Amber, showEvents || god, loaded = "naturalEvents" in state.loaded, trouble = "naturalEvents" in state.feedTrouble) { showEvents = !showEvents }
-                LayerPill("WX", state.weather.size, Color(0xFF7FB2FF), showWeather || god, loaded = "weather" in state.loaded, trouble = "weather" in state.feedTrouble) { showWeather = !showWeather }
+                LayerPill("WX·US", state.weather.size, Color(0xFF7FB2FF), showWeather || god, loaded = "weather" in state.loaded, trouble = "weather" in state.feedTrouble) { showWeather = !showWeather }
                 LayerPill("FIRE", state.fires.size, Color(0xFFFF5A4D), showFires || god, loaded = "fires" in state.loaded, trouble = "fires" in state.feedTrouble) { showFires = !showFires }
                 LayerPill("SAT", state.satellites.size, Color(0xFFC0A8FF), showSats || god, loaded = "satellites" in state.loaded, trouble = "satellites" in state.feedTrouble) { showSats = !showSats }
                 LayerPill("HAZARD", state.gdacs.size, Color(0xFFFF8A3D), showGdacs || god, loaded = "gdacs" in state.loaded, trouble = "gdacs" in state.feedTrouble) { showGdacs = !showGdacs }
@@ -341,7 +341,7 @@ fun GodEyeViewScreen(
                 LayerPill("METAR", state.metar.size, Color(0xFF9FE8FF), showMetar || god, loaded = "metar" in state.loaded, trouble = "metar" in state.feedTrouble) { showMetar = !showMetar }
                 LayerPill("NEWS", state.news.size, Color(0xFFFF79C6), showNews || god, loaded = "news" in state.loaded, trouble = "news" in state.feedTrouble) { showNews = !showNews }
                 LayerPill(
-                    "CCTV", state.cameras.size, Color(0xFFB388FF), showCameras || god,
+                    "CCTV·CA", state.cameras.size, Color(0xFFB388FF), showCameras || god,
                     loadsOnDemand = true, loaded = "cameras" in state.loaded,
                     trouble = "cameras" in state.feedTrouble
                 ) {
@@ -349,9 +349,9 @@ fun GodEyeViewScreen(
                     if (showCameras) viewModel.ensureCameras()
                 }
                 LayerPill("CABLE", state.cables.size, Color(0xFF7FFFD4), showCables || god, loaded = "cables" in state.loaded, trouble = "cables" in state.feedTrouble) { showCables = !showCables }
-                LayerPill("CYCLONE", state.cyclones.size, Color(0xFFFF7AC6), showCyclones || god, loaded = "cyclones" in state.loaded, trouble = "cyclones" in state.feedTrouble) { showCyclones = !showCyclones }
-                LayerPill("TSUNAMI", state.tsunamis.size, Color(0xFF4DF0FF), showTsunami || god, loaded = "tsunamis" in state.loaded, trouble = "tsunamis" in state.feedTrouble) { showTsunami = !showTsunami }
-                LayerPill("ATC", state.airportStatus.size, Color(0xFFFFA64D), showAirportStatus || god, loaded = "airportStatus" in state.loaded, trouble = "airportStatus" in state.feedTrouble) { showAirportStatus = !showAirportStatus }
+                LayerPill("CYCLONE·ATL/EPAC", state.cyclones.size, Color(0xFFFF7AC6), showCyclones || god, loaded = "cyclones" in state.loaded, trouble = "cyclones" in state.feedTrouble) { showCyclones = !showCyclones }
+                LayerPill("TSUNAMI·PAC", state.tsunamis.size, Color(0xFF4DF0FF), showTsunami || god, loaded = "tsunamis" in state.loaded, trouble = "tsunamis" in state.feedTrouble) { showTsunami = !showTsunami }
+                LayerPill("ATC·US", state.airportStatus.size, Color(0xFFFFA64D), showAirportStatus || god, loaded = "airportStatus" in state.loaded, trouble = "airportStatus" in state.feedTrouble) { showAirportStatus = !showAirportStatus }
                 LayerPill(
                     "RAD", state.radiation.size, Color(0xFFD4FF4D), showRadiation || god,
                     loadsOnDemand = true, loaded = "radiation" in state.loaded,
@@ -361,7 +361,7 @@ fun GodEyeViewScreen(
                     viewModel.ensureRadiation(showRadiation)
                 }
                 LayerPill(
-                    "SUA", state.airspace.size, Color(0xFFFF5370), showAirspace || god,
+                    "SUA·US", state.airspace.size, Color(0xFFFF5370), showAirspace || god,
                     loadsOnDemand = true, loaded = "airspace" in state.loaded,
                     trouble = "airspace" in state.feedTrouble
                 ) {
@@ -834,8 +834,9 @@ fun GodEyeViewScreen(
             tar1090Url = state.tar1090Url,
             aisUrl = state.aisUrl,
             overlayUrl = state.overlayUrl,
-            onSave = { backend, tar, ais, overlay ->
-                viewModel.saveSettings(backend, tar, ais, overlay)
+            secEmail = state.secContactEmail,
+            onSave = { backend, tar, ais, overlay, sec ->
+                viewModel.saveSettings(backend, tar, ais, overlay, sec)
                 showSettings = false
             },
             onDismiss = { showSettings = false }
@@ -1293,13 +1294,15 @@ private fun SettingsDialog(
     tar1090Url: String,
     aisUrl: String,
     overlayUrl: String,
-    onSave: (String, String, String, String) -> Unit,
+    secEmail: String,
+    onSave: (String, String, String, String, String) -> Unit,
     onDismiss: () -> Unit
 ) {
     var backend by remember { mutableStateOf(backendUrl) }
     var tar by remember { mutableStateOf(tar1090Url) }
     var ais by remember { mutableStateOf(aisUrl) }
     var overlay by remember { mutableStateOf(overlayUrl) }
+    var sec by remember { mutableStateOf(secEmail) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1309,12 +1312,28 @@ private fun SettingsDialog(
         title = { Text("LIVE FEEDS", style = MaterialTheme.typography.titleSmall, color = Intel.TextHi) },
         text = {
             Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                FeedNote("Aircraft are live worldwide via OpenSky (keyless). Earthquakes and events are always live. Everything below is optional.")
+                FeedNote(
+                    "Several layers cover a region rather than the world, and " +
+                        "the pill says which. Add your own feed to widen one."
+                )
 
-                FeedHeader("AIRCRAFT  ·  override")
+                FeedHeader("SEC EDGAR  ·  your contact address")
+                FeedNote(
+                    "EDGAR refuses anonymous requests and wants a contact " +
+                        "address. Yours is sent only to sec.gov, and the " +
+                        "EDGAR source stays off until you add one."
+                )
+                SettingsField(sec, { sec = it }, "Contact email for SEC", "you@example.com")
+
+                FeedHeader("AIRCRAFT  ·  add your own receiver")
                 SettingsField(tar, { tar = it }, "tar1090 feed URL", "http://host:8080/data/aircraft.json")
 
-                FeedHeader("VESSELS  ·  override (else demo)")
+                FeedHeader("VESSELS  ·  Baltic only by default")
+                FeedNote(
+                    "The default AIS feed is Digitraffic, which covers Finnish " +
+                        "waters and the Baltic. There is no free global AIS, so " +
+                        "an empty sea elsewhere means no coverage, not no ships."
+                )
                 SettingsField(ais, { ais = it }, "AIS vessel feed URL", "https://host/vessels.json")
 
                 FeedHeader("CUSTOM OVERLAY  ·  any GeoJSON points")
@@ -1325,7 +1344,7 @@ private fun SettingsDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = { onSave(backend, tar, ais, overlay) }) {
+            TextButton(onClick = { onSave(backend, tar, ais, overlay, sec) }) {
                 Text("SAVE", style = MaterialTheme.typography.labelMedium, color = Intel.Cyan)
             }
         },

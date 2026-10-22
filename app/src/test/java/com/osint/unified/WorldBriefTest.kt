@@ -20,6 +20,35 @@ class WorldBriefTest {
         assertNull(WorldBrief.ageMinutes("KC135 · K35R"))
     }
 
+    /**
+     * A standing conflict is not today's news.
+     *
+     * It used to outscore a magnitude 6 quake and carried no age, so the
+     * same war held the headline for months — and a headline that never
+     * changes stops being read.
+     */
+    @Test
+    fun aStandingConflictDoesNotOwnTheHeadline() {
+        val state = GodEyeUiState(
+            conflicts = listOf(GeoBlip(1.0, 1.0, "Some war · since 2014")),
+            quakes = listOf(Quake(2.0, 2.0, 6.3))
+        )
+        val brief = WorldBrief.build(state)
+        assertTrue(brief.sections.first().title.startsWith("EARTHQUAKES"))
+    }
+
+    /** The category word decides, not the bulletin's prose. */
+    @Test
+    fun anInformationStatementIsNotAWarning() {
+        assertEquals("INFORMATION", WorldBrief.categoryWord(
+            "NTWC INFORMATION: 5 miles SE of Sand Point, Alaska · 2h ago"))
+        assertEquals("WARNING", WorldBrief.categoryWord("PTWC WARNING: offshore Honshu · 10m ago"))
+        // The issuing body's name contains "Warning Center"; that must not
+        // promote an information statement to a live warning.
+        assertEquals("INFORMATION", WorldBrief.categoryWord(
+            "NTWC INFORMATION: issued by the National Tsunami Warning Center"))
+    }
+
     /** A red alert must outrank a larger pile of ordinary ones. */
     @Test
     fun severityBeatsVolume() {

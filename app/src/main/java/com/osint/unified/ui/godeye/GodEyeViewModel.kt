@@ -116,7 +116,12 @@ data class GodEyeUiState(
     val tar1090Url: String = "",
     val aisUrl: String = "",
     val overlayUrl: String = "",
-    val searchType: String = "auto"
+    val secContactEmail: String = "",
+    val searchType: String = "auto",
+    /** Off by default: a search must not contact the target without asking. */
+    val activeRecon: Boolean = false,
+    /** Off by default: the second pass reaches things nobody named. */
+    val followUp: Boolean = false
 )
 
 class GodEyeViewModel(
@@ -184,7 +189,10 @@ class GodEyeViewModel(
             backendUrl = settings.backendBaseUrl,
             tar1090Url = settings.tar1090Url,
             aisUrl = settings.aisUrl,
-            overlayUrl = settings.overlayUrl
+            overlayUrl = settings.overlayUrl,
+            secContactEmail = settings.secContactEmail,
+            activeRecon = settings.activeReconEnabled,
+            followUp = settings.followUpEnabled
         )
     )
     val state: StateFlow<GodEyeUiState> = _state.asStateFlow()
@@ -386,6 +394,16 @@ class GodEyeViewModel(
         _state.update { it.copy(query = value) }
     }
 
+    fun setActiveRecon(on: Boolean) {
+        settings.activeReconEnabled = on
+        _state.update { it.copy(activeRecon = on) }
+    }
+
+    fun setFollowUp(on: Boolean) {
+        settings.followUpEnabled = on
+        _state.update { it.copy(followUp = on) }
+    }
+
     fun onTypeSelected(type: String) {
         _state.update { it.copy(searchType = type) }
     }
@@ -431,16 +449,47 @@ class GodEyeViewModel(
     }
 
     /**
-     * Fans out automatically: runs every suggested tool that needs no backend
-     * (DIRECT + on-device LOCAL), so a search immediately returns a broad
-     * picture. Cloud tools and redundant username checks are left to tap.
+     * Fans out automatically — but only over sources that do not announce
+     * you to the person you are investigating.
+     *
+     * Pressing search used to connect to the target's own servers, resolve
+     * their hosts, fetch their files and request nine thousand profile URLs,
+     * all from the investigator's own address, with no warning and nothing
+     * asked. That is the first thing an investigation tool must not do. The
+     * active tools are still one tap away, behind a switch that says what
+     * they will touch.
      */
     private fun autoRun() {
         val redundant = setOf("maigret", "blackbird")
         val tools = _state.value.suggestedTools.filter {
-            it.executionMode != ExecutionMode.CLOUD && it.id !in redundant
+            it.executionMode != ExecutionMode.CLOUD &&
+                it.id !in redundant &&
+                (!it.touchesTarget || settings.activeReconEnabled)
         }
-        runToolsInParallel(tools, thenEnrich = true)
+        runToolsInParallel(tools, thenEnrich = settings.followUpEnabled)
+    }
+
+    /** Runs the active tools for the current target, on request. */
+    fun onRunActive() {
+        val tools = _state.value.suggestedTools.filter {
+            it.executionMode != ExecutionMode.CLOUD && it.touchesTarget
+        }
+        runToolsInParallel(tools, force = true)
+    }
+
+    /** Stops everything in flight. Rows already dispatched are marked
+     *  cancelled by the repository rather than left spinning. */
+    fun onStop() {
+        searchJobs.forEach { it.cancel() }
+        searchJobs.clear()
+        _state.update {
+            it.copy(
+                runningToolIds = emptySet(),
+                enrichmentRunning = false,
+                enriching = emptyList(),
+                workflowRunning = false
+            )
+        }
     }
 
     /** Runs the chained workflow for the current observable, piping each
@@ -546,6 +595,7 @@ class GodEyeViewModel(
      * budget on the noisiest kind of identifier.
      */
     private suspend fun enrich(seed: Observable) {
+        if (!settings.followUpEnabled) return
         // Results arrive through the Room flow, so give the last insert a
         // moment to land before reading what the pass produced.
         delay(400)
@@ -635,17 +685,25 @@ class GodEyeViewModel(
         return exporter.export(observable, results, format)
     }
 
-    fun saveSettings(backendUrl: String, tar1090Url: String, aisUrl: String, overlayUrl: String) {
+    fun saveSettings(
+        backendUrl: String,
+        tar1090Url: String,
+        aisUrl: String,
+        overlayUrl: String,
+        secContactEmail: String
+    ) {
         settings.backendBaseUrl = backendUrl
         settings.tar1090Url = tar1090Url
         settings.aisUrl = aisUrl
         settings.overlayUrl = overlayUrl
+        settings.secContactEmail = secContactEmail
         _state.update {
             it.copy(
                 backendUrl = settings.backendBaseUrl,
                 tar1090Url = settings.tar1090Url,
                 aisUrl = settings.aisUrl,
-                overlayUrl = settings.overlayUrl
+                overlayUrl = settings.overlayUrl,
+                secContactEmail = settings.secContactEmail
             )
         }
     }

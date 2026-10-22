@@ -17,12 +17,42 @@ class AppSettings(context: Context) {
         get() = prefs.getString(KEY_TAR1090, "").orEmpty()
         set(value) = prefs.edit().putString(KEY_TAR1090, value.trim()).apply()
 
-    // Defaults to Finland's Digitraffic open AIS (keyless, real live vessels in
-    // the Baltic) so the vessel layer shows real ships out of the box. There is
-    // no free global AIS feed; replace with your own for other regions.
+    // Digitraffic's open AIS: keyless and real, but Finnish waters and the
+    // Baltic only. The SEA pill says so, because a layer labelled only "SEA"
+    // reads as global coverage and the absence of a ship anywhere else then
+    // looks like information.
     var aisUrl: String
         get() = prefs.getString(KEY_AIS, DEFAULT_AIS).orEmpty()
         set(value) = prefs.edit().putString(KEY_AIS, value.trim()).apply()
+
+    /**
+     * Whether a search may connect to the target's own infrastructure.
+     *
+     * Off by default, and that default is the point. Passive sources ask
+     * third parties what they already know; active ones put the
+     * investigator's address in the target's logs. Which of those happens
+     * when you press search should be a decision, not a surprise.
+     */
+    var activeReconEnabled: Boolean
+        get() = prefs.getBoolean(KEY_ACTIVE, false)
+        set(value) = prefs.edit().putBoolean(KEY_ACTIVE, value).apply()
+
+    /**
+     * Whether the app may chase the identifiers it finds.
+     *
+     * The second pass reaches infrastructure the person never named, on
+     * the strength of a string scraped out of someone else's output. It is
+     * useful, and it should be chosen.
+     */
+    var followUpEnabled: Boolean
+        get() = prefs.getBoolean(KEY_FOLLOWUP, false)
+        set(value) = prefs.edit().putBoolean(KEY_FOLLOWUP, value).apply()
+
+    /** Contact address sent to SEC EDGAR, which requires one. Empty means
+     *  the EDGAR tool stays off rather than borrowing someone else's. */
+    var secContactEmail: String
+        get() = prefs.getString(KEY_SEC_EMAIL, "").orEmpty()
+        set(value) = prefs.edit().putString(KEY_SEC_EMAIL, value.trim()).apply()
 
     /** Any GeoJSON points URL the user wants plotted as a custom globe layer. */
     var overlayUrl: String
@@ -34,6 +64,9 @@ class AppSettings(context: Context) {
         const val KEY_TAR1090 = "tar1090_url"
         const val KEY_AIS = "ais_url"
         const val KEY_OVERLAY = "overlay_url"
+        const val KEY_ACTIVE = "active_recon_enabled"
+        const val KEY_FOLLOWUP = "follow_up_enabled"
+        const val KEY_SEC_EMAIL = "sec_contact_email"
         const val DEFAULT_AIS = "https://meri.digitraffic.fi/api/ais/v1/locations"
     }
 }

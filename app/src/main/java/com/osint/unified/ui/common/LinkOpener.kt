@@ -6,13 +6,21 @@ import android.net.Uri
 import androidx.browser.customtabs.CustomTabsIntent
 
 /**
- * Opens links inside the app via Chrome Custom Tabs (an in-app browser tab —
- * back returns straight to the app), so investigations never kick you out to
- * a separate browser. Falls back to a normal view intent if Custom Tabs
- * aren't available.
+ * Where a link goes.
+ *
+ * Everything the app finds opens in the isolated browser by default: a
+ * page the target controls should not be loaded with the investigator's
+ * own session cookies attached. Opening in the real browser is still one
+ * tap away, from a screen that says what it costs.
  */
 object LinkOpener {
+    /** The default route for anything the app surfaced. */
     fun open(context: Context, raw: String) {
+        PrivateBrowserHost.open(raw)
+    }
+
+    /** The signed-in browser, chosen deliberately. */
+    fun openInRealBrowser(context: Context, raw: String) {
         val url = sanitize(raw)
         if (url.isBlank()) return
         val uri = runCatching { Uri.parse(url) }.getOrNull() ?: return

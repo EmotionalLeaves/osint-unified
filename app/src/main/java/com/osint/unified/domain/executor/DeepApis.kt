@@ -39,7 +39,11 @@ import kotlin.math.tan
  * Every endpoint here was probed live from CI before being wired in. None of
  * them take an API key and none require an account.
  */
-class DeepApis(private val client: OkHttpClient = Http.client) {
+class DeepApis(
+    /** Where the SEC contact address comes from; empty means EDGAR is off. */
+    private val secContactEmail: () -> String = { "" },
+    private val client: OkHttpClient = Http.client
+) {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
     private val ua = "OSINT-Unified/1.0 (research)"
@@ -869,10 +873,13 @@ class DeepApis(private val client: OkHttpClient = Http.client) {
     /** SEC EDGAR company search — filings, CIK, business address, officers. */
     fun secEdgar(name: String): Result<String> = runCatching {
         val q = URLEncoder.encode(name.trim(), "UTF-8")
-        // SEC requires a descriptive UA with contact details.
+        // SEC requires a descriptive UA carrying a contact address, and it
+        // must be the person's own rather than one baked into the build.
+        val agent = SecAgent.userAgent(secContactEmail())
+            ?: return@runCatching SecAgent.NOT_SET
         val xml = get(
             "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&company=$q&type=&dateb=&owner=include&count=20&output=atom",
-            SEC_USER_AGENT
+            agent
         )
         val sb = StringBuilder("SEC EDGAR — '$name'\n")
         val ciks = Regex("""CIK=(\d{10})""").findAll(xml).map { it.groupValues[1] }.distinct().toList()

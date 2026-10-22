@@ -234,8 +234,9 @@ class DirectToolExecutor(
     private val appContext: android.content.Context,
     private val usernameChecker: UsernameChecker,
     private val exifReader: com.osint.unified.data.ExifReader,
+    private val settings: AppSettings,
     private val apis: OsintApis = OsintApis(),
-    private val deep: DeepApis = DeepApis(),
+    private val deep: DeepApis = DeepApis({ settings.secContactEmail }),
     private val client: OkHttpClient = Http.client
 ) : ToolExecutor {
 
@@ -423,7 +424,8 @@ class DirectToolExecutor(
                         // The SEC rejects generic agents outright, and asks
                         // for a descriptive one with contact details.
                         val agent = if (url.contains("sec.gov")) {
-                            SEC_USER_AGENT
+                            SecAgent.userAgent(settings.secContactEmail)
+                                ?: return@runCatching null
                         } else {
                             "OSINT-Unified/1.0 (research)"
                         }

@@ -19,5 +19,18 @@ data class Tool(
     val executionMode: ExecutionMode,
     val description: String,
     val repoUrl: String,
-    val timeoutMs: Long = 30_000L
+    val timeoutMs: Long = 30_000L,
+    /**
+     * Whether running this tool connects to the target's own infrastructure.
+     *
+     * The distinction an investigator cares about most: a passive lookup
+     * asks a third party what it already knows, while an active one
+     * announces your interest to the person you are investigating, from
+     * your own address, in their logs. The app used to fire both the
+     * moment you pressed search.
+     *
+     * Asking a registry about a domain is passive. Resolving its hosts,
+     * fetching its files or probing its ports is not.
+     */
+    val touchesTarget: Boolean = false
 )

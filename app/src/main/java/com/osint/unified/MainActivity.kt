@@ -99,6 +99,16 @@ class MainActivity : ComponentActivity() {
                         screen = "godeye"
                     }
 
+                    // Anything the app found opens here rather than in the
+                    // signed-in browser.
+                    val privateUrl by com.osint.unified.ui.common.PrivateBrowserHost
+                        .url.collectAsStateWithLifecycle()
+                    privateUrl?.let { u ->
+                        com.osint.unified.ui.common.PrivateBrowserDialog(u) {
+                            com.osint.unified.ui.common.PrivateBrowserHost.close()
+                        }
+                    }
+
                     when (screen) {
                         "investigation" -> InvestigationScreen(
                             godEyeViewModel,

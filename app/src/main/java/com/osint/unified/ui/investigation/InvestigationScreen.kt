@@ -33,6 +33,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -273,13 +274,100 @@ fun InvestigationScreen(
                 Spacer(Modifier.height(4.dp))
             }
 
+            // ---- What this search will and will not touch ----
+            //
+            // The difference between asking a third party what it already
+            // knows and knocking on the target's own door is the thing an
+            // investigator most needs to control, and the app used to do
+            // both the moment you pressed search.
+            val activeTools = remember(state.suggestedTools) {
+                state.suggestedTools.filter { it.touchesTarget }
+            }
+            if (activeTools.isNotEmpty()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 12.dp)
+                        .background(Intel.Surface, RoundedCornerShape(10.dp))
+                        .border(
+                            1.dp,
+                            if (state.activeRecon) Intel.Danger else Intel.Hairline,
+                            RoundedCornerShape(10.dp)
+                        )
+                        .padding(12.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            if (state.activeRecon) "ACTIVE RECON ON" else "PASSIVE ONLY",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (state.activeRecon) Intel.Danger else Intel.Success,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Switch(
+                            checked = state.activeRecon,
+                            onCheckedChange = { viewModel.setActiveRecon(it) }
+                        )
+                    }
+                    Text(
+                        if (state.activeRecon) {
+                            "${activeTools.size} sources will connect to the target " +
+                                "or to profile URLs from this device's address."
+                        } else {
+                            "${activeTools.size} sources are held back because they " +
+                                "would contact the target from this device's address."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Intel.TextMid,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                    Text(
+                        activeTools.joinToString(", ") { it.name },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Intel.TextLow,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                    if (!state.activeRecon) {
+                        Text(
+                            "RUN THEM ONCE ▸",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = Intel.Amber,
+                            modifier = Modifier
+                                .padding(top = 8.dp)
+                                .clickable { viewModel.onRunActive() }
+                        )
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(top = 10.dp)
+                    ) {
+                        Text(
+                            "Chase identifiers found in the results",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Intel.TextMid,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Switch(
+                            checked = state.followUp,
+                            onCheckedChange = { viewModel.setFollowUp(it) }
+                        )
+                    }
+                }
+            }
+
             // ---- Actions ----
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.padding(top = 12.dp)
             ) {
-                ConsoleButton("▶ RUN ALL ${state.suggestedTools.size}", primary = true, enabled = !anyRunning) {
-                    viewModel.onRunAll()
+                if (anyRunning) {
+                    // Forty tools, then up to eleven pivots with six each,
+                    // and the only way to stop it used to be starting
+                    // another search.
+                    ConsoleButton("■ STOP", primary = true) { viewModel.onStop() }
+                } else {
+                    ConsoleButton("▶ RUN ALL ${state.suggestedTools.size}", primary = true) {
+                        viewModel.onRunAll()
+                    }
                 }
                 state.workflowName?.let { wf ->
                     ConsoleButton(if (state.workflowRunning) "$wf…" else "CHAIN: $wf", enabled = !anyRunning) {

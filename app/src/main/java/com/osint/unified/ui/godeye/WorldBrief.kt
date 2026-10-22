@@ -118,7 +118,11 @@ object WorldBrief {
             sections.add(Section("SPACE WEATHER", if (sw.kp >= 5) 9 else 2, entries))
         }
 
-        blips("CONFLICT", state.conflicts, 10)
+        // A conflict is real but it is not news: it scored above a
+        // magnitude 6 and carried no age, so the headline showed the same
+        // war for months and stopped being read. It stays in the brief,
+        // below the things that changed today.
+        blips("CONFLICT", state.conflicts, 3, rank = { 1 })
         // A tsunami warning outranks everything else on the map — but only
         // the bulletin's own category word may decide that. These bulletins
         // routinely name the issuing body ("National Tsunami Warning
@@ -126,14 +130,14 @@ object WorldBrief {
         // "warning" promoted every information statement to a live warning.
         // The category is the second token, written in capitals by
         // TsunamiDataSource.
-        blips("TSUNAMI BULLETINS", state.tsunamis, 10, rank = { b ->
+        blips("TSUNAMI BULLETINS · PAC/CARIB", state.tsunamis, 10, rank = { b ->
             when (categoryWord(b.label)) {
                 "WARNING" -> 3
                 "WATCH", "ADVISORY" -> 2
                 else -> 1
             }
         })
-        blips("TROPICAL CYCLONES", state.cyclones, 9, rank = { b ->
+        blips("TROPICAL CYCLONES · ATL/EPAC", state.cyclones, 9, rank = { b ->
             val l = b.label.lowercase()
             when {
                 l.contains("typhoon") || l.contains("hurricane") -> 3
@@ -163,10 +167,10 @@ object WorldBrief {
             )
         }
 
-        blips("SEVERE WEATHER", state.weather, 6)
+        blips("SEVERE WEATHER · US", state.weather, 6)
         blips("WILDFIRES", state.fires, 5)
         blips("MILITARY AIRCRAFT", state.milAircraft, 5, rank = { 1 })
-        blips("AIRPORT STATUS", state.airportStatus, 4, rank = { b ->
+        blips("AIRPORT STATUS · US", state.airportStatus, 4, rank = { b ->
             if (b.label.contains("GROUND STOP") || b.label.contains("CLOSED")) 3 else 1
         })
         blips("NEWS HOTSPOTS", state.news, 3, rank = { 1 })
@@ -196,10 +200,13 @@ object WorldBrief {
         maybeQuiet("conflicts", "conflicts", state.conflicts.size)
         maybeQuiet("volcanoes", "volcanoes", state.volcanoes.size)
         maybeQuiet("fires", "wildfires", state.fires.size)
-        maybeQuiet("weather", "severe weather", state.weather.size)
+        maybeQuiet("weather", "US severe-weather alerts", state.weather.size)
         maybeQuiet("milAircraft", "military aircraft", state.milAircraft.size)
-        maybeQuiet("cyclones", "tropical cyclones", state.cyclones.size)
-        maybeQuiet("tsunamis", "tsunami bulletins", state.tsunamis.size)
+        // Named by their real coverage. A regional source reporting nothing
+        // is not the world reporting nothing, and "no tropical cyclones"
+        // during a West Pacific typhoon is a lie the NHC never told.
+        maybeQuiet("cyclones", "cyclones in the Atlantic or east Pacific", state.cyclones.size)
+        maybeQuiet("tsunamis", "Pacific and Caribbean tsunami bulletins", state.tsunamis.size)
         maybeQuiet("airportStatus", "US airport delays", state.airportStatus.size)
 
         if (troubled.isNotEmpty()) {
