@@ -48,6 +48,13 @@ class AppSettings(context: Context) {
         get() = prefs.getBoolean(KEY_FOLLOWUP, false)
         set(value) = prefs.edit().putBoolean(KEY_FOLLOWUP, value).apply()
 
+    /** Bearer token for your own backend. Without it the backend refuses
+     *  every request, which is the point: an open scanning service on the
+     *  public internet is someone else's abuse report with your name on it. */
+    var backendToken: String
+        get() = prefs.getString(KEY_BACKEND_TOKEN, "").orEmpty()
+        set(value) = prefs.edit().putString(KEY_BACKEND_TOKEN, value.trim()).apply()
+
     /** Contact address sent to SEC EDGAR, which requires one. Empty means
      *  the EDGAR tool stays off rather than borrowing someone else's. */
     var secContactEmail: String
@@ -67,6 +74,7 @@ class AppSettings(context: Context) {
         const val KEY_ACTIVE = "active_recon_enabled"
         const val KEY_FOLLOWUP = "follow_up_enabled"
         const val KEY_SEC_EMAIL = "sec_contact_email"
+        const val KEY_BACKEND_TOKEN = "backend_token"
         const val DEFAULT_AIS = "https://meri.digitraffic.fi/api/ais/v1/locations"
     }
 }

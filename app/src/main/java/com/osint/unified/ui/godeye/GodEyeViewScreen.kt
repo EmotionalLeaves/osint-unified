@@ -836,8 +836,9 @@ fun GodEyeViewScreen(
             aisUrl = state.aisUrl,
             overlayUrl = state.overlayUrl,
             secEmail = state.secContactEmail,
-            onSave = { backend, tar, ais, overlay, sec ->
-                viewModel.saveSettings(backend, tar, ais, overlay, sec)
+            backendToken = state.backendToken,
+            onSave = { backend, tar, ais, overlay, sec, token ->
+                viewModel.saveSettings(backend, tar, ais, overlay, sec, token)
                 showSettings = false
             },
             onDismiss = { showSettings = false }
@@ -1296,7 +1297,8 @@ private fun SettingsDialog(
     aisUrl: String,
     overlayUrl: String,
     secEmail: String,
-    onSave: (String, String, String, String, String) -> Unit,
+    backendToken: String,
+    onSave: (String, String, String, String, String, String) -> Unit,
     onDismiss: () -> Unit
 ) {
     var backend by remember { mutableStateOf(backendUrl) }
@@ -1304,6 +1306,7 @@ private fun SettingsDialog(
     var ais by remember { mutableStateOf(aisUrl) }
     var overlay by remember { mutableStateOf(overlayUrl) }
     var sec by remember { mutableStateOf(secEmail) }
+    var token by remember { mutableStateOf(backendToken) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1341,11 +1344,18 @@ private fun SettingsDialog(
                 SettingsField(overlay, { overlay = it }, "GeoJSON points URL", "https://host/points.geojson")
 
                 FeedHeader("CLOUD BACKEND  ·  optional tools")
+                FeedNote(
+                    "Your backend refuses unauthenticated requests, so it needs " +
+                        "the same token you set as OSINT_BACKEND_TOKEN there. " +
+                        "Without that, anyone who found its URL could run scans " +
+                        "from your account."
+                )
                 SettingsField(backend, { backend = it }, "Backend URL", "https://your-api.onrender.com")
+                SettingsField(token, { token = it }, "Backend token", "the value of OSINT_BACKEND_TOKEN")
             }
         },
         confirmButton = {
-            TextButton(onClick = { onSave(backend, tar, ais, overlay, sec) }) {
+            TextButton(onClick = { onSave(backend, tar, ais, overlay, sec, token) }) {
                 Text("SAVE", style = MaterialTheme.typography.labelMedium, color = Intel.Cyan)
             }
         },

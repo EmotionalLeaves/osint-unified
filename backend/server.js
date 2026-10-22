@@ -89,6 +89,38 @@ const handlers = {
     res.status(501).json({ error: "OpenSanctions needs a local yente/dataset index. See backend/README.md." }),
 };
 
+/**
+ * Nobody but you may run these tools.
+ *
+ * This service shells out to nuclei, httpx and trufflehog against whatever
+ * it is handed. Unauthenticated, anyone who finds the URL can point them at
+ * third parties from your account, and the abuse reports arrive at your
+ * door. The token is a Render secret and the same value goes in the app's
+ * settings; without one set, the service refuses to start rather than
+ * coming up open.
+ */
+const TOKEN = process.env.OSINT_BACKEND_TOKEN || "";
+if (!TOKEN) {
+  console.error(
+    "OSINT_BACKEND_TOKEN is not set. Refusing to start an open scanning " +
+      "service on the public internet. Set it as a secret and put the same " +
+      "value in the app under Settings."
+  );
+  process.exit(1);
+}
+
+function authorised(req) {
+  const header = req.get("authorization") || "";
+  const presented = header.startsWith("Bearer ") ? header.slice(7) : "";
+  if (presented.length !== TOKEN.length) return false;
+  // Constant time, so the token cannot be recovered a character at a time.
+  let diff = 0;
+  for (let i = 0; i < TOKEN.length; i += 1) {
+    diff |= presented.charCodeAt(i) ^ TOKEN.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
 app.get("/health", (_req, res) => res.json({ status: "ok", ts: Date.now() }));
 
 app.get("/", (_req, res) =>
@@ -96,6 +128,8 @@ app.get("/", (_req, res) =>
 );
 
 app.post("/:tool", (req, res) => {
+  if (!authorised(req)) return res.status(401).json({ error: "Unauthorised." });
+
   const handler = handlers[req.params.tool];
   if (!handler) return res.status(404).json({ error: `Unknown tool: ${req.params.tool}` });
 
@@ -106,6 +140,16 @@ app.post("/:tool", (req, res) => {
   // but this keeps obviously malformed observables out.
   if (/[;&|`$<>\n\r]/.test(input)) {
     return res.status(400).json({ error: "Input contains disallowed characters." });
+  }
+
+  // The metacharacter filter above assumes a shell, which execFile avoids.
+  // What it misses is that these tools read a leading dash as a flag, so an
+  // input of "-oJ /tmp/x" rewrites their command line from the body.
+  if (input.startsWith("-")) {
+    return res.status(400).json({ error: "Input may not begin with '-'." });
+  }
+  if (input.length > 512) {
+    return res.status(400).json({ error: "Input too long." });
   }
 
   try {

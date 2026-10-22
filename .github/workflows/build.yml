@@ -83,9 +83,22 @@ jobs:
           mkdir -p "$A"
           # OSINT Framework directory (hundreds of resources, categorized).
           curl -sSL https://raw.githubusercontent.com/lockfale/osint-framework/master/public/arf.json -o "$A/arf.json" || true
-          # US Treasury OFAC Specially Designated Nationals, searched offline in-app.
+          # US Treasury OFAC Specially Designated Nationals, searched offline
+          # in-app — plus ALT.CSV, the alias list, which is where most real
+          # matches live and which was not being bundled at all.
+          #
+          # A failed download used to write the word "placeholder" into the
+          # file, after which every sanctions search in every build came back
+          # clean. A sanctions list that silently is not there is worse than
+          # one that is missing loudly, so the build fails instead.
           curl -sSL https://sanctionslistservice.ofac.treas.gov/api/PublicationPreview/exports/SDN.CSV -o "$A/sdn.csv" || true
-          if [ ! -s "$A/sdn.csv" ]; then echo "placeholder" > "$A/sdn.csv"; fi
+          curl -sSL https://sanctionslistservice.ofac.treas.gov/api/PublicationPreview/exports/ALT.CSV -o "$A/sdn-alt.csv" || true
+          SDN_BYTES=$(wc -c < "$A/sdn.csv" 2>/dev/null || echo 0)
+          if [ "$SDN_BYTES" -lt 1000000 ]; then
+            echo "::error::OFAC SDN list is ${SDN_BYTES} bytes — refusing to ship a build whose sanctions search would answer 'clean' to everything."
+            exit 1
+          fi
+          date -u +"%Y-%m-%d" > "$A/sanctions-asof.txt"
           # WhatsMyName ruleset for on-device account enumeration (offline-ready).
           curl -sSL https://raw.githubusercontent.com/WebBreacher/WhatsMyName/main/wmn-data.json -o "$A/wmn-data.json" || true
           # Sherlock and Maigret are site rulesets underneath; the app runs

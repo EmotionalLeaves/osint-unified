@@ -10,18 +10,76 @@ package com.osint.unified.domain
  */
 class ObservableRouter {
 
+    private companion object {
+        /** Common generic TLDs; any two-letter label is treated as a country
+         *  code, which covers the rest without shipping the IANA list. */
+        val KNOWN_TLDS = setOf(
+            "com", "org", "net", "edu", "gov", "mil", "int", "info", "biz",
+            "name", "pro", "aero", "coop", "museum", "jobs", "mobi", "travel",
+            "xxx", "asia", "cat", "tel", "post", "app", "dev", "io", "ai",
+            "co", "me", "tv", "cc", "ws", "xyz", "site", "online", "store",
+            "tech", "cloud", "space", "website", "press", "blog", "wiki",
+            "live", "life", "world", "today", "news", "media", "studio",
+            "agency", "systems", "solutions", "network", "digital", "email",
+            "group", "team", "zone", "works", "company", "center", "services",
+            "shop", "page", "link", "click", "fyi", "gg", "sh", "to", "ly",
+            "onion", "local", "lan", "test", "example", "invalid", "localhost"
+        )
+    }
+
     private val emailRegex = Regex("""^[^\s@]+@[^\s@]+\.[^\s@]+$""")
     private val coordinateRegex = Regex("""^-?\d{1,3}(?:\.\d+)?\s*,\s*-?\d{1,3}(?:\.\d+)?$""")
     private val ipv4Regex = Regex("""^(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:/\d{1,2})?$""")
     private val ipv6Regex = Regex("""^(?:[0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}(?:/\d{1,3})?$""")
-    private val phoneRegex = Regex("""^\+\d{8,15}$""")
+    // A phone number typed the way people write them. The old pattern
+    // demanded a leading + and no separators, so "(415) 555-0123" and
+    // "+44 20 7946 0958" were both investigated as a person's name.
+    private val phoneShapeRegex = Regex("""^\+?[\d(][\d\s().\-]{6,22}$""")
+    // "2026-10-22" has the same alphabet and would otherwise be a phone
+    // number, and so would a plain year range.
+    private val dateLikeRegex = Regex("""^\d{4}-\d{1,2}-\d{1,2}$""")
     private val domainRegex = Regex("""^(?=.{1,253}$)(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$""")
     private val usernameRegex = Regex("""^[a-zA-Z0-9_.-]{3,30}$""")
     private val btcRegex = Regex("""^(?:bc1[a-z0-9]{25,62}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})$""")
     private val ethRegex = Regex("""^0x[a-fA-F0-9]{40}$""")
     private val modeSRegex = Regex("""^[0-9A-Fa-f]{6}$""")
-    private val tailRegex = Regex("""^(?:N[0-9]{1,5}[A-Z]{0,2}|[A-Z]{1,2}-[A-Z0-9]{3,5})$""")
+    // Tail numbers, with the hyphenated form restricted to real
+    // registration prefixes. "jo-anna" matched [A-Z]{1,2}-[A-Z0-9]{3,5}
+    // once uppercased, so a name was investigated as an aircraft.
+    // At least two digits and four characters: "n42" is far more often a
+    // handle than an aircraft, and it was being investigated as one.
+    private val tailRegex = Regex("""^N[0-9]{2,5}[A-Z]{0,2}$""")
+    private val hyphenTailRegex = Regex(
+        "^(?:" + listOf(
+            "G", "D", "F", "I", "EC", "PH", "OO", "OE", "HB", "SE", "LN", "OY",
+            "SP", "OK", "HA", "YR", "LZ", "SX", "TC", "CS", "EI", "C", "VH",
+            "ZK", "ZS", "JA", "HL", "B", "VT", "PP", "PR", "LV", "CC", "XA",
+            "A6", "A7", "9V", "9M", "HS", "PK", "RA", "UR", "4X", "TF", "LX",
+            "LY", "YL", "ES", "S5", "9A", "Z3", "T7", "M", "2"
+        ).joinToString("|") + ")-[A-Z0-9]{3,5}$"
+    )
     private val imageExtRegex = Regex(""".*\.(?:jpe?g|png|gif|webp|bmp|tiff?)(?:\?.*)?$""", RegexOption.IGNORE_CASE)
+
+    /**
+     * Whether the last label is a top-level domain anyone actually uses.
+     *
+     * Not the full IANA list — that is 1,400 entries and changes — but
+     * enough that a two-part personal name stops being read as a hostname.
+     * Anything ending in an unknown label falls through to the username and
+     * name checks, which is where "john.doe" belonged all along.
+     */
+    /** A phone number, as opposed to a date or a bare identifier. */
+    private fun looksLikePhone(input: String): Boolean {
+        if (!phoneShapeRegex.matches(input)) return false
+        if (dateLikeRegex.matches(input)) return false
+        val digits = input.count { it.isDigit() }
+        return digits in 7..15
+    }
+
+    private fun hasKnownTld(input: String): Boolean {
+        val tld = input.substringAfterLast('.').lowercase()
+        return tld in KNOWN_TLDS || (tld.length == 2 && tld.all { it.isLetter() })
+    }
 
     fun classify(rawInput: String): Observable {
         val input = rawInput.trim()
@@ -41,18 +99,23 @@ class ObservableRouter {
                 }
             }
 
-            phoneRegex.matches(input) -> Observable.PhoneNumber(input)
+            looksLikePhone(input) -> Observable.PhoneNumber(input)
 
             btcRegex.matches(input) || ethRegex.matches(input) -> Observable.Wallet(input)
 
-            tailRegex.matches(input.uppercase()) -> Observable.Aircraft(input.uppercase())
+            (tailRegex.matches(input.uppercase()) && input.length >= 4) ||
+                hyphenTailRegex.matches(input.uppercase()) ->
+                Observable.Aircraft(input.uppercase())
 
             input.startsWith("http://", true) || input.startsWith("https://", true) ->
                 if (imageExtRegex.matches(input)) Observable.ImageUrl(input) else Observable.Url(input)
 
             ipv4Regex.matches(input) || ipv6Regex.matches(input) -> Observable.IpAddress(input)
 
-            domainRegex.matches(input) -> Observable.Domain(input)
+            // A domain has to end in a real TLD. "john.doe" matched the
+            // shape and was investigated as a domain, ahead of the username
+            // check, because "doe" looks like a TLD if you never ask.
+            domainRegex.matches(input) && hasKnownTld(input) -> Observable.Domain(input)
 
             usernameRegex.matches(input) -> Observable.Username(input)
 

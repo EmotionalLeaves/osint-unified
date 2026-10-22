@@ -117,6 +117,7 @@ data class GodEyeUiState(
     val aisUrl: String = "",
     val overlayUrl: String = "",
     val secContactEmail: String = "",
+    val backendToken: String = "",
     val searchType: String = "auto",
     /** Off by default: a search must not contact the target without asking. */
     val activeRecon: Boolean = false,
@@ -191,6 +192,7 @@ class GodEyeViewModel(
             aisUrl = settings.aisUrl,
             overlayUrl = settings.overlayUrl,
             secContactEmail = settings.secContactEmail,
+            backendToken = settings.backendToken,
             activeRecon = settings.activeReconEnabled,
             followUp = settings.followUpEnabled
         )
@@ -690,20 +692,23 @@ class GodEyeViewModel(
         tar1090Url: String,
         aisUrl: String,
         overlayUrl: String,
-        secContactEmail: String
+        secContactEmail: String,
+        backendToken: String
     ) {
         settings.backendBaseUrl = backendUrl
         settings.tar1090Url = tar1090Url
         settings.aisUrl = aisUrl
         settings.overlayUrl = overlayUrl
         settings.secContactEmail = secContactEmail
+        settings.backendToken = backendToken
         _state.update {
             it.copy(
                 backendUrl = settings.backendBaseUrl,
                 tar1090Url = settings.tar1090Url,
                 aisUrl = settings.aisUrl,
                 overlayUrl = settings.overlayUrl,
-                secContactEmail = settings.secContactEmail
+                secContactEmail = settings.secContactEmail,
+                backendToken = settings.backendToken
             )
         }
     }

@@ -73,8 +73,19 @@ class CloudToolExecutor(
             }
             try {
                 val payload = buildJsonObject { put("input", input) }.toString()
+                val token = settings.backendToken
+                if (token.isBlank()) {
+                    return@withContext Result.failure(
+                        IllegalStateException(
+                            "No backend token set. Your backend refuses unauthenticated " +
+                                "requests, which is what stops anyone who finds its URL " +
+                                "running scans from your account. Add the token in settings."
+                        )
+                    )
+                }
                 val request = Request.Builder()
                     .url("$base/${tool.id}")
+                    .header("Authorization", "Bearer $token")
                     .post(payload.toRequestBody(jsonMedia))
                     .build()
                 client.newCall(request).execute().use { resp ->
@@ -271,6 +282,7 @@ class DirectToolExecutor(
 
         return when (tool.id) {
             "sanctions" -> when {
+                starts("The OFAC list could not be read") -> Findings.Kind.UNREACHABLE
                 starts("OFAC SDN: no sanctioned entity") -> Findings.Kind.ABSENT
                 starts("Give at least three") -> Findings.Kind.UNREACHABLE
                 starts("OFAC Specially Designated") -> Findings.Kind.HIT
@@ -634,38 +646,111 @@ class DirectToolExecutor(
 
     /** Searches the OFAC SDN list bundled into the APK — works offline. */
     private fun sanctions(input: String): Result<String> = runCatching {
-        val needle = input.trim().lowercase()
-        if (needle.length < 3) return@runCatching "Give at least three characters to search the SDN list."
-        val hits = ArrayList<String>()
+        val query = input.trim()
+        if (query.length < 3) {
+            return@runCatching "Give at least three characters to search the SDN list."
+        }
+        val tokens = normaliseName(query).split(" ").filter { it.length >= 2 }
+        if (tokens.isEmpty()) {
+            return@runCatching "Give at least three characters to search the SDN list."
+        }
+
+        val asOf = runCatching {
+            appContext.assets.open("sanctions-asof.txt").bufferedReader().use { it.readText() }.trim()
+        }.getOrNull()?.takeIf { it.isNotBlank() }
+
+        val hits = LinkedHashMap<String, String>()
         var scanned = 0
-        appContext.assets.open("sdn.csv").bufferedReader().useLines { lines ->
-            for (line in lines) {
-                scanned++
-                if (!line.lowercase().contains(needle)) continue
-                // ent_num,"NAME",type,"PROGRAM",title,…,remarks
-                val cols = splitCsv(line)
-                val name = cols.getOrNull(1)?.trim('"') ?: continue
-                val type = cols.getOrNull(2)?.trim('"')?.takeIf { it != "-0-" }
-                val program = cols.getOrNull(3)?.trim('"')?.takeIf { it != "-0-" }
-                val title = cols.getOrNull(4)?.trim('"')?.takeIf { it != "-0-" }
-                val remarks = cols.lastOrNull()?.trim('"')?.takeIf { it != "-0-" }
-                hits.add(buildString {
-                    append("• $name")
-                    if (type != null) append("  [$type]")
-                    if (program != null) append("\n  Programme: $program")
-                    if (title != null) append("\n  Title: $title")
-                    if (!remarks.isNullOrBlank()) append("\n  ${remarks.take(220)}")
-                })
-                if (hits.size >= 40) break
+
+        // The primary list, and then ALT.CSV — the aliases, which is where
+        // most real matches live and which was not being searched at all.
+        fun scan(asset: String, viaAlias: Boolean) {
+            runCatching {
+                appContext.assets.open(asset).bufferedReader().useLines { lines ->
+                    for (line in lines) {
+                        scanned++
+                        if (hits.size >= 40) break
+                        val cols = splitCsv(line)
+                        val name = cols.getOrNull(if (viaAlias) 3 else 1)?.trim('"') ?: continue
+                        if (name == "-0-" || name.isBlank()) continue
+                        if (!matchesName(tokens, name)) continue
+                        val entNum = cols.getOrNull(0)?.trim('"').orEmpty()
+                        val detail = buildString {
+                            append("• $name")
+                            if (viaAlias) append("  [alias]")
+                            if (!viaAlias) {
+                                cols.getOrNull(2)?.trim('"')?.takeIf { it != "-0-" }
+                                    ?.let { append("  [$it]") }
+                                cols.getOrNull(3)?.trim('"')?.takeIf { it != "-0-" }
+                                    ?.let { append("\n  Programme: $it") }
+                                cols.getOrNull(4)?.trim('"')?.takeIf { it != "-0-" }
+                                    ?.let { append("\n  Title: $it") }
+                                cols.lastOrNull()?.trim('"')?.takeIf { it != "-0-" && it.isNotBlank() }
+                                    ?.let { append("\n  ${it.take(220)}") }
+                            }
+                            if (entNum.isNotBlank()) append("\n  OFAC entity $entNum")
+                        }
+                        hits.putIfAbsent("$entNum|$name", detail)
+                    }
+                }
             }
         }
+
+        scan("sdn.csv", viaAlias = false)
+        scan("sdn-alt.csv", viaAlias = true)
+
+        if (scanned == 0) {
+            return@runCatching "The OFAC list could not be read from this build."
+        }
+
+        val provenance = buildString {
+            append("\n\nSource: US Treasury OFAC SDN and alias lists")
+            if (asOf != null) append(", snapshot of $asOf")
+            append(", bundled in the app.")
+            append("\nThis is a name search against a snapshot, not a compliance ")
+            append("determination: spelling variants, transliterations and ")
+            append("entries added since the snapshot will not appear.")
+        }
+
         if (hits.isEmpty()) {
-            "OFAC SDN: no sanctioned entity matching '$input' (searched $scanned entries offline)."
+            "OFAC SDN: no sanctioned entity matching '$query'" +
+                (if (asOf != null) " in the snapshot of $asOf" else "") +
+                " ($scanned entries searched offline)." + provenance
         } else {
             "OFAC Specially Designated Nationals — ${hits.size} match" +
-                (if (hits.size == 1) "" else "es") + " for '$input':\n\n" + hits.joinToString("\n\n") +
-                "\n\nSource: US Treasury OFAC SDN list, bundled in the app."
+                (if (hits.size == 1) "" else "es") + " for '$query':\n\n" +
+                hits.values.joinToString("\n\n") + provenance
         }
+    }
+
+    /**
+     * A name, reduced to something comparable.
+     *
+     * Accents and punctuation vary between the list and whoever typed the
+     * query, and neither should decide whether a sanctioned person is
+     * found.
+     */
+    private fun normaliseName(raw: String): String {
+        val decomposed = java.text.Normalizer.normalize(raw, java.text.Normalizer.Form.NFKD)
+        return decomposed
+            .replace(Regex("\\p{Mn}+"), "")
+            .lowercase()
+            .replace(Regex("[^a-z0-9 ]+"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+    }
+
+    /**
+     * Whether every token of the query appears as a whole word in the name.
+     *
+     * A raw substring search made "ali" match "Australia" and buried real
+     * matches under junk, while a multi-word query only matched when the
+     * list happened to order the names the same way.
+     */
+    private fun matchesName(tokens: List<String>, candidate: String): Boolean {
+        val words = normaliseName(candidate).split(" ").filter { it.isNotBlank() }
+        if (words.isEmpty()) return false
+        return tokens.all { token -> words.any { it == token } }
     }
 
     /**
