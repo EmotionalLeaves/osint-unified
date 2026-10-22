@@ -53,7 +53,7 @@ class CloudToolExecutor(
         withContext(Dispatchers.IO) {
             val base = settings.backendBaseUrl.trimEnd('/')
             if (base.isBlank()) {
-                return@coroutineScope Result.failure(
+                return@withContext Result.failure(
                     IllegalStateException(
                         "No backend URL set. Open settings (gear icon) and enter your deployed backend URL."
                     )
@@ -95,7 +95,7 @@ class LocalToolExecutor(
         coroutineScope {
             val binary = File(nativeLibraryDir, "lib${tool.id}.so")
             if (!binary.exists()) {
-                return@withContext Result.failure(
+                return@coroutineScope Result.failure(
                     IllegalStateException(
                         "${tool.name} is a local tool but its binary isn't bundled in this build. " +
                             "It ships as jniLibs/arm64-v8a/lib${tool.id}.so once added to the CI build step."

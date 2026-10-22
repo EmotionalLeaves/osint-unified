@@ -54,6 +54,14 @@ grep -iE "error:.*(conflicting declaration|redeclaration|expecting |unexpected t
 grep -n "\${'\$'}{" $(find app/src/main/java app/src/test/java -name '*.kt') 2>/dev/null \
   | sed 's/^/error: literal-dollar template (heredoc damage): /' >> "$WORK/real.txt" || true
 
+# An unresolved LABEL. Labels are resolved without any classpath, so unlike
+# the thousands of unresolved AndroidX symbols this one is always real: it
+# means a `return@foo` naming a scope that does not enclose it. It broke r150,
+# where a return@withContext ended up inside a coroutineScope and vice versa.
+grep -nE "error: unresolved reference: @[A-Za-z]" $(find app/src/main/java app/src/test/java -name '*.kt') 2>/dev/null \
+  | sed 's/^/error: /' >> "$WORK/real.txt" || true
+grep -E "error: unresolved reference: @[A-Za-z]" "$WORK/full.txt" >> "$WORK/real.txt" || true
+
 # A reference ending in an underscore is nearly always "$name_" in a string
 # template, where Kotlin swallows the underscore into the identifier.
 grep -E "error: unresolved reference: [A-Za-z0-9]+_$" "$WORK/full.txt" >> "$WORK/real.txt" || true
