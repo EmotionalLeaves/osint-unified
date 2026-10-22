@@ -97,7 +97,7 @@ class ObservableRouter {
             is Observable.Domain -> listOf("subfinder", "crtsh", "subsweep", "commoncrawl", "dns", "tlscert", "mailsec", "headers", "sitefiles", "rdap", "hostintel", "otx", "typosquat", "httpx", "shodan", "urlscan", "waybackurls", "gau", "webcrawl", "wayback", "archive", "dorks", "toolrun", "framework", "amass", "nuclei")
             is Observable.IpAddress -> listOf("ipinfo", "ptr", "iprep", "torexit", "torrelay", "shodan", "bgpview", "asnintel", "otx", "rdap", "hostintel", "dorks", "toolrun", "framework", "httpx", "nuclei")
             is Observable.PhoneNumber -> listOf("phoneinfoga", "websearch", "dorks", "toolrun", "framework")
-            is Observable.Coordinate -> listOf("revgeo", "sunterrain", "photosnear", "wikinearby", "overpass_turbo", "milsites", "cctvnear", "ukcrime", "histweather", "framework")
+            is Observable.Coordinate -> listOf("revgeo", "sunterrain", "photosnear", "wikinearby", "overpass_turbo", "osmrecon", "milsites", "cctvnear", "ukcrime", "histweather", "framework")
             is Observable.Url -> listOf("webcrawl", "wayback", "archive", "dorks", "toolrun", "framework")
             is Observable.ImageUrl -> listOf("exif", "reverseimage", "archive", "framework")
             is Observable.Wallet -> listOf("wallet", "websearch", "dorks", "toolrun", "framework")

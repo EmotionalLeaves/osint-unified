@@ -167,6 +167,7 @@ class DirectToolExecutor(
             when (tool.id) {
                 "overpass_turbo" -> overpass(input)
                 "milsites" -> militarySites(input)
+                "osmrecon" -> osmRecon(input)
                 "sherlock", "maigret", "blackbird" -> runCatching { usernameChecker.check(input) }
                 "emailaccounts" -> runCatching {
                     usernameChecker.check(input.substringBefore('@').substringBefore('+').trim())
@@ -514,6 +515,101 @@ class DirectToolExecutor(
             Math.cos(Math.toRadians(aLat)) * Math.cos(Math.toRadians(bLat)) *
             Math.sin(dLon / 2) * Math.sin(dLon / 2)
         return 2 * r * Math.asin(Math.sqrt(h))
+    }
+
+    /**
+     * Physical-infrastructure recon around a coordinate, worldwide, from
+     * OpenStreetMap: surveillance cameras, communication masts, helipads,
+     * border control, substations, bunkers and fuel.
+     *
+     * This is the global counterpart to the Caltrans camera layer — OSM has
+     * surveillance mapped almost everywhere, which matters when you are
+     * working out what would have seen something happen.
+     */
+    private fun osmRecon(input: String): Result<String> {
+        val parts = input.split(",").map { it.trim().toDoubleOrNull() }
+        if (parts.size != 2 || parts.any { it == null }) {
+            return Result.failure(IllegalArgumentException("Expected coordinates as 'lat, lon'."))
+        }
+        val lat = parts[0]!!
+        val lon = parts[1]!!
+        val r = 2000
+        val categories = listOf(
+            "man_made=surveillance" to "Surveillance camera",
+            "man_made=mast" to "Mast",
+            "man_made=communications_tower" to "Comms tower",
+            "aeroway=helipad" to "Helipad",
+            "barrier=border_control" to "Border control",
+            "power=substation" to "Substation",
+            "military=bunker" to "Bunker",
+            "amenity=fuel" to "Fuel",
+            "amenity=police" to "Police",
+            "amenity=hospital" to "Hospital"
+        )
+        val clauses = categories.joinToString("") { (tag, _) ->
+            val (k, v) = tag.split("=")
+            "nwr(around:$r,$lat,$lon)[\"$k\"=\"$v\"];"
+        }
+        val q = "[out:json][timeout:40];($clauses);out center 300;"
+        return try {
+            val body = ("data=" + java.net.URLEncoder.encode(q, "UTF-8")).toRequestBody(formUrlEncoded)
+            val request = Request.Builder()
+                .url("https://overpass-api.de/api/interpreter")
+                .header("User-Agent", "OSINT-Unified/1.0 (research)")
+                .header("Accept", "application/json")
+                .post(body).build()
+            client.newCall(request).execute().use { resp ->
+                val text = resp.body?.string().orEmpty()
+                if (!resp.isSuccessful) return Result.failure(IOException("HTTP ${resp.code}"))
+                val els = runCatching {
+                    kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+                        .parseToJsonElement(text).jsonObject["elements"]?.jsonArray
+                }.getOrNull()
+                if (els.isNullOrEmpty()) {
+                    return Result.success("No mapped infrastructure within ${r}m of $lat, $lon.")
+                }
+                val grouped = LinkedHashMap<String, MutableList<String>>()
+                els.forEach { e ->
+                    val o = e.jsonObject
+                    val tags = o["tags"] as? JsonObject
+                    fun t(k: String) = (tags?.get(k) as? JsonPrimitive)?.contentOrNull
+                    val label = categories.firstOrNull { (tag, _) ->
+                        val (k, v) = tag.split("=")
+                        t(k) == v
+                    }?.second ?: return@forEach
+                    val c = o["center"] as? JsonObject
+                    val la = ((c?.get("lat") ?: o["lat"]) as? JsonPrimitive)?.contentOrNull
+                    val lo = ((c?.get("lon") ?: o["lon"]) as? JsonPrimitive)?.contentOrNull
+                    val name = t("name") ?: t("operator") ?: t("surveillance:type") ?: ""
+                    val detail = buildString {
+                        append("• ")
+                        append(if (name.isNotBlank()) name else "(unnamed)")
+                        t("surveillance")?.let { append(" · $it") }
+                        t("camera:mount")?.let { append(" · mount $it") }
+                        t("camera:direction")?.let { append(" · facing $it°") }
+                        t("tower:type")?.let { append(" · $it") }
+                        t("operator")?.takeIf { it != name }?.let { append(" · $it") }
+                        if (la != null && lo != null) append("\n  $la, $lo")
+                    }
+                    grouped.getOrPut(label) { mutableListOf() }.add(detail)
+                }
+                if (grouped.isEmpty()) {
+                    return Result.success("No mapped infrastructure within ${r}m of $lat, $lon.")
+                }
+                val out = buildString {
+                    append("Infrastructure within ${r}m of %.5f, %.5f\n".format(lat, lon))
+                    append("${grouped.values.sumOf { it.size }} mapped features, from OpenStreetMap.\n")
+                    grouped.forEach { (label, items) ->
+                        append("\n${label.uppercase()} (${items.size}):\n")
+                        items.take(40).forEach { append(it).append("\n") }
+                    }
+                    append("\nOSM coverage varies by area; absence here is not evidence of absence.")
+                }
+                Result.success(out)
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
     }
 
     private fun militarySites(input: String): Result<String> {
