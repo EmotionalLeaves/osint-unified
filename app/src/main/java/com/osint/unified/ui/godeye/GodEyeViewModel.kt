@@ -412,8 +412,6 @@ class GodEyeViewModel(
         private val spaceWeatherDataSource: SpaceWeatherDataSource,
         private val laddAircraftDataSource: LaddAircraftDataSource,
         private val cableLandingDataSource: CableLandingDataSource,
-    private val laddAircraftDataSource: LaddAircraftDataSource,
-    private val cableLandingDataSource: CableLandingDataSource,
         private val availableLocalTools: Set<String>,
         private val settings: AppSettings,
         private val exporter: InvestigationExporter
