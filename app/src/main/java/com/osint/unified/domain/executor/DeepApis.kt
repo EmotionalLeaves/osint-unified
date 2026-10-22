@@ -12,6 +12,8 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.IOException
@@ -1239,16 +1241,22 @@ class DeepApis(private val client: OkHttpClient = Http.client) {
 
         val otherTlds = listOf("com", "net", "org", "co", "info", "online", "site", "xyz", "io", "app")
             .filter { it != tld }.map { "$name.$it" }
-        val candidates = (variants.map { "$it.$tld" } + otherTlds).distinct().take(220)
+        val candidates = (variants.map { "$it.$tld" } + otherTlds).distinct().take(160)
 
+        // A domain search already runs ~20 tools in parallel; this one would
+        // otherwise add 160 simultaneous DNS lookups on a phone radio, so it
+        // is bounded rather than let loose.
+        val gate = Semaphore(24)
         val live = candidates.map { cand ->
             async {
                 val a = runCatching {
-                    val o = json.parseToJsonElement(
-                        get("https://dns.google/resolve?name=$cand&type=A")
-                    ).jsonObject
-                    (o["Answer"] as? JsonArray)?.mapNotNull { (it as? JsonObject).str("data") }
-                        ?.filter { Regex("""^(?:\d{1,3}\.){3}\d{1,3}$""").matches(it) } ?: emptyList()
+                    gate.withPermit {
+                        val o = json.parseToJsonElement(
+                            get("https://dns.google/resolve?name=$cand&type=A")
+                        ).jsonObject
+                        (o["Answer"] as? JsonArray)?.mapNotNull { (it as? JsonObject).str("data") }
+                            ?.filter { Regex("""^(?:\d{1,3}\.){3}\d{1,3}$""").matches(it) } ?: emptyList()
+                    }
                 }.getOrDefault(emptyList())
                 if (a.isEmpty()) null else cand to a.first()
             }
