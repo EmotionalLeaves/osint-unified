@@ -126,6 +126,10 @@ fun GodEyeViewScreen(
     // What a long press on the globe turned up: every loaded layer, swept
     // for a radius around that point.
     var area by remember { mutableStateOf<AreaReport.Report?>(null) }
+    // The world brief is derived from the same state the globe draws, so it
+    // is recomputed rather than fetched, and is never out of step with it.
+    var showBrief by rememberSaveable { mutableStateOf(false) }
+    val brief = remember(state) { WorldBrief.build(state) }
     // The panel of search controls and layer pills is most of a phone
     // screen. On something called a God's Eye View the globe should be the
     // thing you are looking at, so the panel folds away.
@@ -201,6 +205,19 @@ fun GodEyeViewScreen(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.padding(top = 1.dp)
+                    )
+                    // Counts are not a situation: eleven thousand aircraft is
+                    // an ordinary sky. The top of the brief goes here, where
+                    // it is read without being asked for.
+                    Text(
+                        "▸ " + WorldBrief.headline(brief),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Intel.Amber,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .padding(top = 2.dp)
+                            .clickable { showBrief = true }
                     )
                 }
                 IconButton(onClick = { panelOpen = !panelOpen }) {
@@ -434,6 +451,90 @@ fun GodEyeViewScreen(
                 }
             }
         }
+    }
+
+    if (showBrief) {
+        AlertDialog(
+            onDismissRequest = { showBrief = false },
+            containerColor = Intel.Surface,
+            titleContentColor = Intel.TextHi,
+            textContentColor = Intel.TextMid,
+            title = {
+                Column {
+                    Text(
+                        "WORLD BRIEF",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = Intel.Cyan
+                    )
+                    Text(
+                        "$utc" + "Z · from the layers loaded now",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Intel.TextLow,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+            },
+            text = {
+                Column(Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState())) {
+                    if (brief.sections.isEmpty()) {
+                        Text(
+                            "No layer has reported yet. Give the feeds a few seconds.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Intel.TextMid
+                        )
+                    }
+                    brief.sections.forEach { section ->
+                        Text(
+                            section.title,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (section.severity >= 9) Intel.Danger else Intel.Cyan,
+                            modifier = Modifier.padding(top = 12.dp, bottom = 2.dp)
+                        )
+                        section.note?.let {
+                            Text(
+                                it,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Intel.TextLow
+                            )
+                        }
+                        section.entries.forEach { entry ->
+                            Text(
+                                entry.text,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Intel.TextHi,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable(enabled = entry.lat != null) {
+                                        val la = entry.lat
+                                        val lo = entry.lon
+                                        if (la != null && lo != null) {
+                                            inspected = Inspected(
+                                                section.title.substringBefore(" —"),
+                                                entry.text, la, lo, entry.url
+                                            )
+                                        }
+                                        showBrief = false
+                                    }
+                                    .padding(vertical = 2.dp)
+                            )
+                        }
+                    }
+                    if (brief.quiet.isNotEmpty()) {
+                        Text(
+                            "Reported nothing anywhere: " + brief.quiet.joinToString(", "),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Intel.TextLow,
+                            modifier = Modifier.padding(top = 14.dp)
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showBrief = false }) {
+                    Text("CLOSE", style = MaterialTheme.typography.labelMedium, color = Intel.Cyan)
+                }
+            }
+        )
     }
 
     area?.let { report ->
