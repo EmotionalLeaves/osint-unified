@@ -1,0 +1,13 @@
+# Names that are declared in this project AND are also a scope member of an
+# Android or Compose type the local run cannot see — `value` inside
+# produceState, `paint` inside a Canvas draw scope, `item` inside a
+# LazyListScope. The local compiler reports them unresolved for a reason
+# that does not exist in CI, so they are not evidence of anything.
+add
+color
+intent
+item
+paint
+settings
+type
+value

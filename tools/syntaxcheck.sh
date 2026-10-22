@@ -13,6 +13,9 @@
 #     constructor parameter that broke r84
 #   * "$name_" string templates, where Kotlin reads the trailing underscore
 #     as part of the identifier — the bug in the address permutator
+#   * a bare identifier declared in this project but not visible where it
+#     is used — a member added to the wrong class (see
+#     tools/unresolved-locals.py)
 #
 # Everything else (unresolved AndroidX symbols, type inference) needs the
 # SDK and is left to CI, so those diagnostics are counted and ignored.
@@ -44,6 +47,12 @@ grep -iE "error:.*(conflicting declaration|redeclaration|expecting |unexpected t
 # A reference ending in an underscore is nearly always "$name_" in a string
 # template, where Kotlin swallows the underscore into the identifier.
 grep -E "error: unresolved reference: [A-Za-z0-9]+_$" "$WORK/full.txt" >> "$WORK/real.txt" || true
+
+# A bare identifier that is declared somewhere in this project but is not
+# visible where it is used — a member added to the wrong class, an import
+# never written. Unlike the AndroidX noise, this one is genuinely broken,
+# and CI was the only thing catching it.
+python3 "$ROOT/tools/unresolved-locals.py" "$WORK/full.txt" >> "$WORK/real.txt" || true
 
 TOTAL=$(grep -c 'error:' "$WORK/full.txt" || true)
 

@@ -163,6 +163,7 @@ class DirectToolExecutor(
 ) : ToolExecutor {
 
     private val formUrlEncoded = "application/x-www-form-urlencoded".toMediaType()
+    private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
     override suspend fun execute(tool: Tool, input: String): Result<String> =
         withContext(Dispatchers.IO) {
