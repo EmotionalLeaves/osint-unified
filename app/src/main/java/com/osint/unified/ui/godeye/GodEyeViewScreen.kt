@@ -18,7 +18,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -45,6 +47,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
@@ -160,7 +163,13 @@ fun GodEyeViewScreen(
                 LayerPill("EVT", state.naturalEvents.size, Intel.Amber, showEvents) { showEvents = !showEvents }
             }
 
-            Box(modifier = Modifier.fillMaxWidth().weight(1f).padding(top = 2.dp)) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .padding(top = 2.dp)
+                    .clipToBounds()
+            ) {
                 GlobeMap(
                     aircraft = if (showAircraft) state.aircraft else emptyList(),
                     vessels = if (showVessels) state.vessels else emptyList(),
@@ -173,7 +182,7 @@ fun GodEyeViewScreen(
                         viewModel.onSearch()
                     },
                     onMapTap = { lat, lon -> viewModel.onMapClick(lat, lon) },
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize().clipToBounds()
                 )
                 Surface(
                     color = Color(0xCC000000),
@@ -351,41 +360,63 @@ private fun SettingsDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Settings") },
+        containerColor = Intel.Surface,
+        titleContentColor = Intel.TextHi,
+        textContentColor = Intel.TextMid,
+        title = { Text("SETTINGS", style = MaterialTheme.typography.titleSmall, color = Intel.TextHi) },
         text = {
-            Column {
-                OutlinedTextField(
-                    value = backend,
-                    onValueChange = { backend = it },
-                    singleLine = true,
-                    label = { Text("Cloud backend URL") },
-                    placeholder = { Text("https://your-api.onrender.com") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    value = tar,
-                    onValueChange = { tar = it },
-                    singleLine = true,
-                    label = { Text("tar1090 feed URL") },
-                    placeholder = { Text("http://host:8080/data/aircraft.json") },
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-                )
-                OutlinedTextField(
-                    value = ais,
-                    onValueChange = { ais = it },
-                    singleLine = true,
-                    label = { Text("AIS vessel feed URL") },
-                    placeholder = { Text("https://host/vessels.json") },
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-                )
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 Text(
-                    "Leave feeds blank to use demo aircraft and vessels.",
+                    "Optional feeds. Leave blank to use demo aircraft and vessels — core OSINT works with none of these.",
                     style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(top = 8.dp)
+                    color = Intel.TextLow,
+                    modifier = Modifier.padding(bottom = 10.dp)
                 )
+                SettingsField(backend, { backend = it }, "Cloud backend URL", "https://your-api.onrender.com")
+                SettingsField(tar, { tar = it }, "tar1090 feed URL", "http://host:8080/data/aircraft.json", top = 10.dp)
+                SettingsField(ais, { ais = it }, "AIS vessel feed URL", "https://host/vessels.json", top = 10.dp)
             }
         },
-        confirmButton = { TextButton(onClick = { onSave(backend, tar, ais) }) { Text("Save") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        confirmButton = {
+            TextButton(onClick = { onSave(backend, tar, ais) }) {
+                Text("SAVE", style = MaterialTheme.typography.labelMedium, color = Intel.Cyan)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("CANCEL", style = MaterialTheme.typography.labelMedium, color = Intel.TextMid)
+            }
+        }
+    )
+}
+
+@Composable
+private fun SettingsField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    placeholder: String,
+    top: androidx.compose.ui.unit.Dp = 0.dp
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        singleLine = true,
+        label = { Text(label) },
+        placeholder = { Text(placeholder, style = MaterialTheme.typography.bodySmall) },
+        textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+        shape = RoundedCornerShape(8.dp),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = Intel.Cyan,
+            unfocusedBorderColor = Intel.Hairline,
+            cursorColor = Intel.Cyan,
+            focusedLabelColor = Intel.Cyan,
+            unfocusedLabelColor = Intel.TextMid,
+            focusedTextColor = Intel.TextHi,
+            unfocusedTextColor = Intel.TextHi,
+            focusedPlaceholderColor = Intel.TextLow,
+            unfocusedPlaceholderColor = Intel.TextLow
+        ),
+        modifier = Modifier.fillMaxWidth().padding(top = top)
     )
 }
