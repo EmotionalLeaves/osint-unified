@@ -88,16 +88,34 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
 
     /** Wayback Machine snapshot history for a domain. */
     fun wayback(domain: String): Result<String> = runCatching {
-        val url = "https://web.archive.org/cdx/search/cdx?url=" +
-            URLEncoder.encode("$domain*", "UTF-8") + "&output=json&limit=20&collapse=urlkey&fl=timestamp,original"
-        val rows = json.parseToJsonElement(getBody(url)).jsonArray.drop(1)
-        if (rows.isEmpty()) "No Wayback snapshots." else "Wayback — ${rows.size} snapshots:\n" +
-            rows.joinToString("\n") { r ->
+        try {
+            val url = "https://web.archive.org/cdx/search/cdx?url=" +
+                URLEncoder.encode("$domain*", "UTF-8") + "&output=json&limit=20&collapse=urlkey&fl=timestamp,original"
+            val rows = json.parseToJsonElement(getBody(url)).jsonArray.drop(1)
+            if (rows.isEmpty()) waybackLatest(domain)
+            else "Wayback — ${rows.size} snapshots:\n" + rows.joinToString("\n") { r ->
                 val a = r.jsonArray
                 val ts = (a.getOrNull(0) as? JsonPrimitive)?.contentOrNull ?: ""
                 val orig = (a.getOrNull(1) as? JsonPrimitive)?.contentOrNull ?: ""
                 "https://web.archive.org/web/$ts/$orig"
             }
+        } catch (e: Exception) {
+            // CDX is often overloaded (503) — fall back to the availability API.
+            waybackLatest(domain)
+        }
+    }
+
+    /** The single most recent archived snapshot via the availability API. */
+    private fun waybackLatest(input: String): String {
+        val target = if (input.startsWith("http")) input else "https://$input"
+        val o = json.parseToJsonElement(
+            getBody("https://archive.org/wayback/available?url=" + URLEncoder.encode(target, "UTF-8"))
+        ).jsonObject
+        val snap = (o["archived_snapshots"] as? JsonObject)?.get("closest") as? JsonObject
+        val url = (snap?.get("url") as? JsonPrimitive)?.contentOrNull
+            ?: return "No Wayback snapshots found for $target."
+        val ts = (snap["timestamp"] as? JsonPrimitive)?.contentOrNull
+        return "Latest snapshot${ts?.let { " ($it)" } ?: ""}:\n${url.replace("http://", "https://")}"
     }
 
     /** Reverse geocoding (OpenStreetMap Nominatim). */
@@ -181,16 +199,9 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
         }
     }
 
-    /** Preserve a URL via the Wayback Machine's Save Page Now. */
-    fun archive(input: String): Result<String> = runCatching {
-        val target = if (input.startsWith("http")) input else "https://$input"
-        val request = Request.Builder().url("https://web.archive.org/save/$target").header("User-Agent", ua).build()
-        client.newCall(request).execute().use { resp ->
-            val loc = resp.header("Content-Location") ?: resp.header("Location")
-            if (loc != null && loc.startsWith("/web/")) "Archived snapshot:\nhttps://web.archive.org$loc"
-            else "Archive requested for $target (HTTP ${resp.code}).\nView: https://web.archive.org/web/2/$target"
-        }
-    }
+    /** The latest archived copy of a URL (availability API — reliable, unlike
+     *  Save Page Now which frequently returns 503). */
+    fun archive(input: String): Result<String> = runCatching { waybackLatest(input) }
 
     /** Forward geocoding: a place name -> matching locations with coordinates. */
     fun geocode(place: String): Result<String> = runCatching {

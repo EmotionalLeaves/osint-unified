@@ -32,14 +32,14 @@ class AircraftDataSource(
 
     suspend fun fetch(): List<Aircraft> = withContext(Dispatchers.IO) {
         val url = settings.tar1090Url.trim()
-        // A custom tar1090 feed wins; otherwise use keyless OpenSky worldwide,
-        // and only fall back to mock data if both are unavailable.
-        if (url.isBlank()) return@withContext openSky() ?: mock()
+        // Source order: a custom tar1090 feed, then keyless OpenSky (global),
+        // then keyless adsb.fi (hub sweep), and only demo data if all are down.
+        if (url.isBlank()) return@withContext openSky() ?: adsbFi() ?: mock()
         try {
             val request = Request.Builder().url(url).build()
             client.newCall(request).execute().use { resp ->
                 val body = resp.body?.string()
-                if (!resp.isSuccessful || body.isNullOrBlank()) return@withContext openSky() ?: mock()
+                if (!resp.isSuccessful || body.isNullOrBlank()) return@withContext openSky() ?: adsbFi() ?: mock()
                 val envelope = json.decodeFromString<Tar1090Envelope>(body)
                 envelope.aircraft
                     .filter { it.lat != null && it.lon != null }
@@ -54,11 +54,56 @@ class AircraftDataSource(
                             speed = ac.gs ?: 0.0
                         )
                     }
-                    .ifEmpty { openSky() ?: mock() }
+                    .ifEmpty { openSky() ?: adsbFi() ?: mock() }
             }
         } catch (e: Exception) {
-            openSky() ?: mock()
+            openSky() ?: adsbFi() ?: mock()
         }
+    }
+
+    /** Keyless real aircraft from adsb.fi open data, swept across world hubs
+     *  (each a 250nm radius) and merged. Reliable when OpenSky rate-limits. */
+    private fun adsbFi(): List<Aircraft>? {
+        val hubs = listOf(
+            40.0 to -90.0, 34.0 to -118.0, 51.0 to 0.0, 48.0 to 10.0,
+            25.0 to 55.0, 35.0 to 139.0, 1.0 to 104.0, -33.0 to 151.0
+        )
+        val out = LinkedHashMap<String, Aircraft>()
+        for ((lat, lon) in hubs) {
+            if (out.size >= 1000) break
+            try {
+                val request = Request.Builder()
+                    .url("https://opendata.adsb.fi/api/v2/lat/$lat/lon/$lon/dist/250")
+                    .header("User-Agent", "OSINT-Unified/1.0")
+                    .build()
+                client.newCall(request).execute().use { resp ->
+                    val body = resp.body?.string()
+                    if (resp.isSuccessful && !body.isNullOrBlank()) {
+                        val ac = json.parseToJsonElement(body).jsonObject["ac"]?.jsonArray
+                        ac?.forEach { el ->
+                            val o = el as? kotlinx.serialization.json.JsonObject ?: return@forEach
+                            fun d(k: String) = (o[k] as? JsonPrimitive)?.doubleOrNull
+                            fun s(k: String) = (o[k] as? JsonPrimitive)?.contentOrNull
+                            val la = d("lat") ?: return@forEach
+                            val lo = d("lon") ?: return@forEach
+                            val hex = s("hex") ?: return@forEach
+                            out[hex] = Aircraft(
+                                icao = hex,
+                                callsign = s("flight")?.trim().orEmpty(),
+                                lat = la,
+                                lon = lo,
+                                altitude = d("alt_baro") ?: 0.0,
+                                track = d("track") ?: 0.0,
+                                speed = d("gs") ?: 0.0
+                            )
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                // try the next hub
+            }
+        }
+        return if (out.isEmpty()) null else out.values.toList()
     }
 
     /** Keyless global aircraft states from the OpenSky Network. Each state is a
