@@ -897,7 +897,9 @@ class DeepApis(private val client: OkHttpClient = Http.client) {
             filings.forEach { sb.append("• ${it.groupValues[1]} — ${it.groupValues[2]}\n") }
         }
         if (ciks.isEmpty() && names.isEmpty()) sb.append("No registrant matched.\n")
-        sb.append("\nFull-text search: https://efts.sec.gov/LATEST/search-index?q=$q")
+        // efts.sec.gov is the JSON backend and refuses a browser; the page
+        // a person can actually open is EDGAR's own full-text search.
+        sb.append("\nFull-text search: https://www.sec.gov/edgar/search/#/q=$q")
         sb.toString()
     }
 
@@ -1578,14 +1580,24 @@ class DeepApis(private val client: OkHttpClient = Http.client) {
             .map { it.value }.distinct().toList()
 
     private fun get(url: String, agent: String = ua): String {
-        val request = Request.Builder().url(url)
-            .header("User-Agent", agent)
-            .header("Accept", "application/json, text/html;q=0.9, */*;q=0.8")
-            .build()
-        client.newCall(request).execute().use { resp ->
-            val body = resp.body?.string().orEmpty()
-            if (!resp.isSuccessful) throw IOException("HTTP ${resp.code}")
-            return body
+        // A 5xx from these services means "busy", not "no". The Wayback CDX
+        // endpoint in particular sheds load with a 503 under no special
+        // provocation, and one unlucky second was costing the whole lookup.
+        var last: IOException? = null
+        repeat(2) { attempt ->
+            if (attempt > 0) Thread.sleep(700)
+            val request = Request.Builder().url(url)
+                .header("User-Agent", agent)
+                .header("Accept", "application/json, text/html;q=0.9, */*;q=0.8")
+                .build()
+            client.newCall(request).execute().use { resp ->
+                val body = resp.body?.string().orEmpty()
+                if (resp.isSuccessful) return body
+                last = IOException("HTTP ${resp.code}")
+                // A 4xx is an answer; only a 5xx is worth asking again.
+                if (resp.code < 500) throw last!!
+            }
         }
+        throw last ?: IOException("request failed")
     }
 }
