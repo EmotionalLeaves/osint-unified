@@ -29,7 +29,7 @@ class MainActivity : ComponentActivity() {
 
     private val godEyeViewModel: GodEyeViewModel by viewModels {
         val app = application as OsintApplication
-        GodEyeViewModel.Factory(app.router, app.repository, app.aircraftDataSource, app.aisDataSource, app.earthquakeDataSource, app.naturalEventsDataSource, app.overlayDataSource, app.weatherDataSource, app.firesDataSource, app.satellitesDataSource, app.newsDataSource, app.gdacsDataSource, app.volcanoDataSource, app.auroraDataSource, app.buoyDataSource, app.metarDataSource, app.milAircraftDataSource, app.airQualityDataSource, app.seismicStationDataSource, app.conflictDataSource, app.airportDataSource, app.powerPlantDataSource, app.cctvDataSource, app.airspaceDataSource, app.spaceWeatherDataSource, app.availableLocalTools, app.settings, app.exporter)
+        GodEyeViewModel.Factory(app.router, app.repository, app.aircraftDataSource, app.aisDataSource, app.earthquakeDataSource, app.naturalEventsDataSource, app.overlayDataSource, app.weatherDataSource, app.firesDataSource, app.satellitesDataSource, app.newsDataSource, app.gdacsDataSource, app.volcanoDataSource, app.auroraDataSource, app.buoyDataSource, app.metarDataSource, app.milAircraftDataSource, app.airQualityDataSource, app.seismicStationDataSource, app.conflictDataSource, app.airportDataSource, app.powerPlantDataSource, app.cctvDataSource, app.airspaceDataSource, app.spaceWeatherDataSource, app.laddAircraftDataSource, app.cableLandingDataSource, app.availableLocalTools, app.settings, app.exporter)
     }
 
     private val historyViewModel: HistoryViewModel by viewModels {
@@ -86,6 +86,8 @@ class MainActivity : ComponentActivity() {
                                     FeedProbe("Traffic cameras (Caltrans)") { app.cctvDataSource.fetch().size },
                                     FeedProbe("Restricted airspace (FAA)") { app.airspaceDataSource.fetch().size },
                                     FeedProbe("Space weather (SWPC)") { app.spaceWeatherDataSource.fetch().alerts.size + 1 },
+                                    FeedProbe("Blocked aircraft (LADD)") { app.laddAircraftDataSource.fetch().size },
+                                    FeedProbe("Cable landings") { app.cableLandingDataSource.fetch().size },
                                     FeedProbe("Custom overlay") { app.overlayDataSource.fetch().size }
                                 ),
                                 onBack = { screen = "godeye" }

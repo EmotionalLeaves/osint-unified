@@ -131,6 +131,8 @@ fun GodEyeViewScreen(
     var showAirports by remember { mutableStateOf(false) }
     var showCameras by remember { mutableStateOf(false) }
     var showAirspace by remember { mutableStateOf(false) }
+    var showLadd by remember { mutableStateOf(false) }
+    var showCables by remember { mutableStateOf(false) }
     var showPower by remember { mutableStateOf(false) }
 
     Scaffold(containerColor = Intel.Base) { pad ->
@@ -269,6 +271,8 @@ fun GodEyeViewScreen(
                     showCameras = !showCameras
                     if (showCameras) viewModel.ensureCameras()
                 }
+                LayerPill("LADD", state.ladd.size, Color(0xFFFFD166), showLadd) { showLadd = !showLadd }
+                LayerPill("CABLE", state.cables.size, Color(0xFF7FFFD4), showCables) { showCables = !showCables }
                 LayerPill("SUA", state.airspace.size, Color(0xFFFF5370), showAirspace) {
                     showAirspace = !showAirspace
                     if (showAirspace) viewModel.ensureAirspace()
@@ -319,6 +323,8 @@ fun GodEyeViewScreen(
                     powerPlants = vis(showPower, state.powerPlants),
                     cameras = vis(showCameras, state.cameras),
                     airspace = vis(showAirspace, state.airspace),
+                    ladd = vis(showLadd, state.ladd),
+                    cables = vis(showCables, state.cables),
                     findings = state.findings,
                     focus = state.mapFocus,
                     onInspect = { label, la, lo -> inspected = Triple(label, la, lo) },
@@ -454,6 +460,8 @@ private fun GlobeMap(
     powerPlants: List<GeoBlip>,
     cameras: List<GeoBlip>,
     airspace: List<GeoBlip>,
+    ladd: List<GeoBlip>,
+    cables: List<GeoBlip>,
     findings: List<FindingPin>,
     focus: Pair<Double, Double>?,
     onInspect: (String, Double, Double) -> Unit,
@@ -526,6 +534,8 @@ private fun GlobeMap(
             powerPlants.forEach { add(it.lat, it.lon, 0xFFFFC14D.toInt(), 6, it.label, false) }
             cameras.forEach { add(it.lat, it.lon, 0xFFB388FF.toInt(), 6, it.label, true) }
             airspace.forEach { add(it.lat, it.lon, 0xFFFF5370.toInt(), 7, it.label, false) }
+            ladd.forEach { add(it.lat, it.lon, 0xFFFFD166.toInt(), 7, it.label, true) }
+            cables.forEach { add(it.lat, it.lon, 0xFF7FFFD4.toInt(), 5, it.label, false) }
             airQuality.forEach { add(it.lat, it.lon, 0xFFB4E66B.toInt(), 9, it.label, false) }
             buoys.forEach { add(it.lat, it.lon, 0xFF4DD0E1.toInt(), 6, it.label, false) }
             metar.forEach { add(it.lat, it.lon, 0xFF9FE8FF.toInt(), 6, it.label, false) }
