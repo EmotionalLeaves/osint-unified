@@ -12,7 +12,9 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.weight
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -31,6 +33,8 @@ import com.osint.unified.ui.godeye.GodEyeViewScreen
 import com.osint.unified.ui.history.HistoryScreen
 import com.osint.unified.ui.history.HistoryViewModel
 import com.osint.unified.ui.investigation.InvestigationScreen
+import com.osint.unified.ui.about.MoreScreen
+import com.osint.unified.ui.common.OsintNavBar
 import com.osint.unified.ui.watch.WatchScreen
 import com.osint.unified.ui.theme.OsintTheme
 import com.osint.unified.work.WatchWorker
@@ -166,11 +170,27 @@ class MainActivity : ComponentActivity() {
                         // the investigation it came out of. An enquiry is a
                         // chain, and leaping to the globe from three steps in
                         // loses the thread.
-                        if (screen == "investigation" && godState.breadcrumb.size > 1) {
-                            godEyeViewModel.onOpenParent()
-                        } else {
-                            screen = "godeye"
+                        screen = when {
+                            screen == "investigation" && godState.breadcrumb.size > 1 -> {
+                                godEyeViewModel.onOpenParent()
+                                screen
+                            }
+                            // These were opened from MORE, so back belongs
+                            // there and not two levels up at the globe.
+                            screen in setOf("forensics", "diagnostics", "sources") -> "more"
+                            else -> "godeye"
                         }
+                    }
+
+                    // How many changes on watched targets have not been
+                    // looked at, so the bar can say so rather than leaving
+                    // the one time-sensitive thing in the app silent.
+                    var unseenWatches by androidx.compose.runtime.remember {
+                        androidx.compose.runtime.mutableStateOf(0)
+                    }
+                    LaunchedEffect(Unit) {
+                        (application as OsintApplication).watchRepository.observeUnseen()
+                            .collect { rows -> unseenWatches = rows.sumOf { it.unseen } }
                     }
 
                     // Anything the app found opens here rather than in the
@@ -183,6 +203,8 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
+                    Column(Modifier.fillMaxSize()) {
+                    androidx.compose.foundation.layout.Box(Modifier.weight(1f)) {
                     when (screen) {
                         "investigation" -> InvestigationScreen(
                             godEyeViewModel,
@@ -201,7 +223,7 @@ class MainActivity : ComponentActivity() {
                         )
                         "forensics" -> ForensicsScreen(
                             (application as OsintApplication).exifReader,
-                            onBack = { screen = "godeye" }
+                            onBack = { screen = "more" }
                         )
                         "diagnostics" -> {
                             val app = application as OsintApplication
@@ -237,25 +259,33 @@ class MainActivity : ComponentActivity() {
                                     FeedProbe("Radiation (Safecast)") { app.radiationDataSource.fetch(35.65, 139.84, 8.0).size },
                                     FeedProbe("Custom overlay") { app.overlayDataSource.fetch().size }
                                 ),
-                                onBack = { screen = "godeye" }
+                                onBack = { screen = "more" }
                             )
                         }
                         "sources" -> com.osint.unified.ui.about.SourcesScreen(
-                            onBack = { screen = "godeye" }
+                            onBack = { screen = "more" }
+                        )
+                        "more" -> MoreScreen(
+                            onOpenForensics = { screen = "forensics" },
+                            onOpenDiagnostics = { screen = "diagnostics" },
+                            onOpenSources = { screen = "sources" }
                         )
                         "framework" -> FrameworkScreen(
                             initialTarget = godState.observable?.raw.orEmpty(),
                             onBack = { screen = "godeye" }
                         )
-                        else -> GodEyeViewScreen(
-                            godEyeViewModel,
-                            onOpenHistory = { screen = "history" },
-                            onOpenForensics = { screen = "forensics" },
-                            onOpenDiagnostics = { screen = "diagnostics" },
-                            onOpenFramework = { screen = "framework" },
-                            onOpenWatch = { screen = "watch" },
-                            onOpenSources = { screen = "sources" }
-                        )
+                        else -> GodEyeViewScreen(godEyeViewModel)
+                    }
+                    }
+                    // Named destinations along the bottom, within reach of a
+                    // thumb. The framework keeps the whole screen: it has its
+                    // own folder stack and a bar underneath it competes with
+                    // the one it already draws.
+                    if (screen != "framework") {
+                        OsintNavBar(screen, unseenWatches) { target ->
+                            screen = target
+                        }
+                    }
                     }
                 }
             }

@@ -30,13 +30,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccountTree
-import androidx.compose.material.icons.filled.Build
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.NetworkCheck
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
@@ -105,12 +100,6 @@ private val SEARCH_TYPES = listOf(
 @Composable
 fun GodEyeViewScreen(
     viewModel: GodEyeViewModel,
-    onOpenHistory: () -> Unit,
-    onOpenForensics: () -> Unit,
-    onOpenDiagnostics: () -> Unit = {},
-    onOpenFramework: () -> Unit = {},
-    onOpenWatch: () -> Unit = {},
-    onOpenSources: () -> Unit = {}
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var showSettings by rememberSaveable { mutableStateOf(false) }
@@ -310,25 +299,9 @@ fun GodEyeViewScreen(
                         tint = Intel.Cyan
                     )
                 }
-                IconButton(onClick = onOpenFramework) {
-                    Icon(Icons.Filled.AccountTree, contentDescription = "OSINT Framework", tint = Intel.TextMid)
-                }
-                IconButton(onClick = onOpenDiagnostics) {
-                    Icon(Icons.Filled.NetworkCheck, contentDescription = "Self-test", tint = Intel.TextMid)
-                }
-                IconButton(onClick = onOpenForensics) {
-                    Icon(Icons.Filled.Build, contentDescription = "Forensics & decoders", tint = Intel.TextMid)
-                }
-                IconButton(onClick = onOpenWatch) {
-                    Icon(
-                        Icons.Filled.Visibility,
-                        contentDescription = "Watched targets",
-                        tint = Intel.TextMid
-                    )
-                }
-                IconButton(onClick = onOpenHistory) {
-                    Icon(Icons.Filled.History, contentDescription = "History", tint = Intel.TextMid)
-                }
+                // The other five destinations moved to the bar along the
+                // bottom, where they have names. Settings stays here: it
+                // adjusts this screen.
                 IconButton(onClick = { showSettings = true }) {
                     Icon(Icons.Filled.Settings, contentDescription = "Settings", tint = Intel.TextMid)
                 }
@@ -462,12 +435,10 @@ fun GodEyeViewScreen(
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp)
             )
             Text(
-                "data sources & licences ▸",
+                "data sources & licences — under MORE",
                 style = MaterialTheme.typography.labelSmall,
-                color = Intel.Cyan,
-                modifier = Modifier
-                    .padding(horizontal = 12.dp, vertical = 2.dp)
-                    .clickable(onClick = onOpenSources)
+                color = Intel.TextLow,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp)
             )
 
             }
