@@ -61,6 +61,18 @@ jobs:
           chmod +x "$OUT"/*.so || true
           ls -la "$OUT"
 
+      - name: Bundle OSINT datasets into assets
+        run: |
+          set -eux
+          A="app/src/main/assets"
+          mkdir -p "$A"
+          # OSINT Framework directory (hundreds of resources, categorized).
+          curl -sSL https://raw.githubusercontent.com/lockfale/osint-framework/master/public/arf.json -o "$A/arf.json" || true
+          # WhatsMyName ruleset for on-device account enumeration (offline-ready).
+          curl -sSL https://raw.githubusercontent.com/WebBreacher/WhatsMyName/main/wmn-data.json -o "$A/wmn-data.json" || true
+          ls -la "$A"
+          test -s "$A/arf.json"
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:

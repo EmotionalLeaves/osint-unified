@@ -84,13 +84,20 @@ class UsernameChecker(private val appContext: Context) {
     }
 
     private fun loadSites(): List<WmnSite> {
+        // Prefer the copy bundled in the APK (instant, offline), then a cached
+        // download, then fetch live as a last resort.
+        val bundled = runCatching {
+            appContext.assets.open("wmn-data.json").bufferedReader().use { it.readText() }
+        }.getOrNull()
         val cache = File(appContext.cacheDir, "wmn-data.json")
-        val text = if (cache.exists() && cache.length() > 1000) {
-            cache.readText()
-        } else {
-            val downloaded = download() ?: return emptyList()
-            runCatching { cache.writeText(downloaded) }
-            downloaded
+        val text = when {
+            !bundled.isNullOrBlank() && bundled.length > 1000 -> bundled
+            cache.exists() && cache.length() > 1000 -> cache.readText()
+            else -> {
+                val downloaded = download() ?: return emptyList()
+                runCatching { cache.writeText(downloaded) }
+                downloaded
+            }
         }
         return runCatching { json.decodeFromString<WmnRoot>(text).sites }.getOrDefault(emptyList())
     }

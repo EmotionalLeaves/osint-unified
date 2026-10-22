@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.osint.unified.ui.diagnostics.DiagnosticsScreen
 import com.osint.unified.ui.forensics.ForensicsScreen
+import com.osint.unified.ui.framework.FrameworkScreen
 import com.osint.unified.ui.godeye.GodEyeViewModel
 import com.osint.unified.ui.godeye.GodEyeViewScreen
 import com.osint.unified.ui.history.HistoryScreen
@@ -61,11 +62,13 @@ class MainActivity : ComponentActivity() {
                             (application as OsintApplication).executorFactory,
                             onBack = { screen = "godeye" }
                         )
+                        "framework" -> FrameworkScreen(onBack = { screen = "godeye" })
                         else -> GodEyeViewScreen(
                             godEyeViewModel,
                             onOpenHistory = { screen = "history" },
                             onOpenForensics = { screen = "forensics" },
-                            onOpenDiagnostics = { screen = "diagnostics" }
+                            onOpenDiagnostics = { screen = "diagnostics" },
+                            onOpenFramework = { screen = "framework" }
                         )
                     }
                 }

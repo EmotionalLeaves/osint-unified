@@ -24,6 +24,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.NetworkCheck
@@ -79,7 +80,8 @@ fun GodEyeViewScreen(
     viewModel: GodEyeViewModel,
     onOpenHistory: () -> Unit,
     onOpenForensics: () -> Unit,
-    onOpenDiagnostics: () -> Unit = {}
+    onOpenDiagnostics: () -> Unit = {},
+    onOpenFramework: () -> Unit = {}
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var showSettings by remember { mutableStateOf(false) }
@@ -111,6 +113,9 @@ fun GodEyeViewScreen(
                             color = Intel.TextMid
                         )
                     }
+                }
+                IconButton(onClick = onOpenFramework) {
+                    Icon(Icons.Filled.AccountTree, contentDescription = "OSINT Framework", tint = Intel.TextMid)
                 }
                 IconButton(onClick = onOpenDiagnostics) {
                     Icon(Icons.Filled.NetworkCheck, contentDescription = "Self-test", tint = Intel.TextMid)
