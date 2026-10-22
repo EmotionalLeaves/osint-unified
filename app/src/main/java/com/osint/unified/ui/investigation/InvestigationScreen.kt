@@ -21,6 +21,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -44,6 +46,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -247,6 +250,60 @@ fun InvestigationScreen(
                         facts.forEach { FactChip(it) }
                     }
                 }
+            }
+
+            // ---- What the investigator makes of it ----
+            //
+            // Every column in a case was filled by a machine; the one for
+            // what a person concluded has existed since the first version
+            // and nothing could write to it. A dossier without it exports
+            // a pile of answers and no reasoning.
+            var notesOpen by rememberSaveable(observable.raw) {
+                mutableStateOf(state.notes.isNotBlank())
+            }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 12.dp)
+                    .clickable { notesOpen = !notesOpen }
+            ) {
+                Text(
+                    "NOTES" + if (!notesOpen && state.notes.isNotBlank())
+                        " · ${state.notes.length} characters" else "",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (state.notes.isNotBlank()) Intel.CyanBright else Intel.TextMid,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(
+                    if (notesOpen) "▴" else "▾",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Intel.TextLow
+                )
+            }
+            if (notesOpen) {
+                OutlinedTextField(
+                    value = state.notes,
+                    onValueChange = { viewModel.onNotesChange(it) },
+                    placeholder = {
+                        Text(
+                            "What you make of this, and what you have ruled out. " +
+                                "Saved with the case and included in every export.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    },
+                    textStyle = MaterialTheme.typography.bodySmall,
+                    shape = RoundedCornerShape(10.dp),
+                    minLines = 3,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Intel.Cyan, unfocusedBorderColor = Intel.Hairline,
+                        cursorColor = Intel.Cyan, focusedContainerColor = Intel.Surface,
+                        unfocusedContainerColor = Intel.Surface, focusedTextColor = Intel.TextHi,
+                        unfocusedTextColor = Intel.TextHi, focusedPlaceholderColor = Intel.TextLow,
+                        unfocusedPlaceholderColor = Intel.TextLow
+                    ),
+                    modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
+                )
             }
 
             // ---- What is there right now ----

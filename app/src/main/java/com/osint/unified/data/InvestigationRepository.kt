@@ -63,6 +63,9 @@ class InvestigationRepository(
 
     suspend fun setNotes(id: Long, notes: String) = investigationDao.setNotes(id, notes)
 
+    /** What was written about this case, for re-opening it. */
+    suspend fun notesFor(id: Long): String = investigationDao.getById(id)?.notes.orEmpty()
+
     fun observeResults(investigationId: Long): Flow<List<ResultRow>> =
         resultDao.observeForInvestigation(investigationId)
 

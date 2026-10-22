@@ -30,7 +30,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.osint.unified.data.db.Result as ResultRow
@@ -47,6 +50,9 @@ import com.osint.unified.ui.theme.categoryColor
 @Composable
 fun ResultCard(row: ResultRow, onPivot: ((String) -> Unit)? = null) {
     var expanded by remember { mutableStateOf(false) }
+    var showRaw by remember { mutableStateOf(false) }
+    var copied by remember { mutableStateOf(false) }
+    val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
     val open: (String) -> Unit = { url -> LinkOpener.open(context, url) }
     val accent = remember(row.toolId) {
@@ -79,6 +85,39 @@ fun ResultCard(row: ResultRow, onPivot: ((String) -> Unit)? = null) {
                 )
                 if (row.status == "success" && lines.isNotEmpty()) {
                     CountBadge(lines.size, accent)
+                }
+            }
+            // A finding you cannot get out of the app is a finding you
+            // retype by hand into whatever you are actually writing. The
+            // parsed lines are not selectable — every one of them is a tap
+            // target for a link or a pivot — so copying is a button, and
+            // the verbatim output is one tap away and selectable.
+            if (row.status == "success" || row.status == "error") {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(top = 2.dp)
+                ) {
+                    Text(
+                        if (copied) "COPIED" else "COPY",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (copied) Intel.Success else Intel.TextLow,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(5.dp))
+                            .clickable {
+                                clipboard.setText(AnnotatedString(plainText(row, summary)))
+                                copied = true
+                            }
+                            .padding(horizontal = 6.dp, vertical = 3.dp)
+                    )
+                    Text(
+                        if (showRaw) "HIDE RAW" else "RAW",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Intel.TextLow,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(5.dp))
+                            .clickable { showRaw = !showRaw }
+                            .padding(horizontal = 6.dp, vertical = 3.dp)
+                    )
                 }
             }
             summary?.headline?.let {
@@ -134,6 +173,30 @@ fun ResultCard(row: ResultRow, onPivot: ((String) -> Unit)? = null) {
                 }
             }
 
+            if (showRaw) {
+                SelectionContainer {
+                    Text(
+                        // Capped, because some of these answers are a
+                        // megabyte of JSON and a Text that long does not
+                        // lay out.
+                        row.rawOutput.take(RAW_PREVIEW_CHARS) +
+                            if (row.rawOutput.length > RAW_PREVIEW_CHARS)
+                                "\n… ${row.rawOutput.length - RAW_PREVIEW_CHARS} more characters; " +
+                                    "COPY takes the whole thing."
+                            else "",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Intel.TextMid,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Intel.Elevated)
+                            .padding(8.dp)
+                    )
+                }
+            }
+
             if (onPivot != null && row.status == "success") {
                 val pivots = remember(row.id, row.rawOutput) {
                     ObservableExtractor.extract(row.rawOutput, row.input)
@@ -151,6 +214,25 @@ fun ResultCard(row: ResultRow, onPivot: ((String) -> Unit)? = null) {
                 }
             }
         }
+    }
+}
+
+/** Enough to read; short enough that a Text can lay it out. */
+private const val RAW_PREVIEW_CHARS = 4_000
+
+/**
+ * What the clipboard gets: the source, what it was asked, and its answer.
+ *
+ * A pasted finding with no provenance is worth very little an hour later,
+ * so the heading travels with it.
+ */
+private fun plainText(row: ResultRow, summary: ResultFormatter.Summary?): String = buildString {
+    append(row.toolName).append(" — ").append(row.input).append('\n')
+    summary?.headline?.let { append(it).append('\n') }
+    if (row.status == "error") {
+        append(row.errorMessage ?: "Unknown error").append('\n')
+    } else {
+        append(row.rawOutput)
     }
 }
 

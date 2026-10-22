@@ -133,7 +133,9 @@ data class GodEyeUiState(
     /** Off by default: a search must not contact the target without asking. */
     val activeRecon: Boolean = false,
     /** Off by default: the second pass reaches things nobody named. */
-    val followUp: Boolean = false
+    val followUp: Boolean = false,
+    /** What the investigator wrote about this target. */
+    val notes: String = ""
 )
 
 class GodEyeViewModel(
@@ -461,6 +463,30 @@ class GodEyeViewModel(
         _state.update { it.copy(query = value) }
     }
 
+    private var notesJob: Job? = null
+
+    /**
+     * What the investigator concluded, which no source can supply.
+     *
+     * The column has existed since the first version and nothing could
+     * write to it, so an exported case carried every machine answer and
+     * none of the reasoning. Kept in state as it is typed and written to
+     * the database a moment after typing stops, rather than on every
+     * keystroke; the investigation is created on the first character if
+     * no tool has run yet, so a note taken before any search survives.
+     */
+    fun onNotesChange(text: String) {
+        _state.update { it.copy(notes = text) }
+        val observable = _state.value.observable ?: return
+        notesJob?.cancel()
+        notesJob = viewModelScope.launch {
+            delay(NOTES_DEBOUNCE_MS)
+            runCatching {
+                repository.setNotes(ensureInvestigation(observable), text)
+            }
+        }
+    }
+
     fun setActiveRecon(on: Boolean) {
         settings.activeReconEnabled = on
         _state.update { it.copy(activeRecon = on) }
@@ -745,6 +771,11 @@ class GodEyeViewModel(
         pendingPivot = null
         currentInvestigationId = id
         viewModelScope.launch {
+            // Re-opening a case brings its notes back with it.
+            val saved = runCatching { repository.notesFor(id) }.getOrNull().orEmpty()
+            if (saved.isNotBlank()) _state.update { it.copy(notes = saved) }
+        }
+        viewModelScope.launch {
             val chain = runCatching { repository.lineage(id) }.getOrDefault(emptyList())
             _state.update { st -> st.copy(breadcrumb = chain.map { it.seedObservable }) }
         }
@@ -775,7 +806,7 @@ class GodEyeViewModel(
         val observable = _state.value.observable ?: return null
         val results = _state.value.results
         if (results.isEmpty()) return null
-        return exporter.export(observable, results, format)
+        return exporter.export(observable, results, format, _state.value.notes)
     }
 
     fun saveSettings(
@@ -876,6 +907,10 @@ class GodEyeViewModel(
         /** Per discovered identifier, in the second pass. Enough for a real
          *  profile of it; few enough that eleven of them stay affordable. */
         const val TOOLS_PER_PIVOT = 6
+
+        /** Long enough that typing a sentence is one write, short enough
+         *  that leaving the screen cannot lose it. */
+        const val NOTES_DEBOUNCE_MS = 700L
     }
 
 }

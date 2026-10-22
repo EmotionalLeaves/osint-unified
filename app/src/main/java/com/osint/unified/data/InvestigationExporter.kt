@@ -43,7 +43,10 @@ class InvestigationExporter(private val appContext: Context) {
     suspend fun export(
         observable: Observable,
         results: List<ResultRow>,
-        format: ExportFormat
+        format: ExportFormat,
+        /** What the investigator wrote. The one part of a case no source
+         *  produced, and for a long time the one part no export carried. */
+        notes: String = ""
     ): File = withContext(Dispatchers.IO) {
         val dir = File(appContext.cacheDir, "exports").apply { mkdirs() }
         // Old reports used to accumulate here for ever, each named after the
@@ -52,10 +55,10 @@ class InvestigationExporter(private val appContext: Context) {
         purgeOldExports(dir)
         val file = File(dir, "osint-case-${stamp.format(Date())}.${format.ext}")
         when (format) {
-            ExportFormat.JSON -> file.writeText(toJson(observable, results))
+            ExportFormat.JSON -> file.writeText(toJson(observable, results, notes))
             ExportFormat.CSV -> file.writeText(toCsv(results))
-            ExportFormat.TEXT -> file.writeText(toDossier(observable, results))
-            ExportFormat.PDF -> writePdf(file, observable, results)
+            ExportFormat.TEXT -> file.writeText(toDossier(observable, results, notes))
+            ExportFormat.PDF -> writePdf(file, observable, results, notes)
         }
         file
     }
@@ -69,8 +72,13 @@ class InvestigationExporter(private val appContext: Context) {
     }
 
     /** Renders the dossier text into a paginated A4 PDF. */
-    private fun writePdf(file: File, observable: Observable, results: List<ResultRow>) {
-        val text = toDossier(observable, results)
+    private fun writePdf(
+        file: File,
+        observable: Observable,
+        results: List<ResultRow>,
+        notes: String
+    ) {
+        val text = toDossier(observable, results, notes)
         val document = PdfDocument()
         val paint = Paint().apply {
             textSize = 10f
@@ -126,10 +134,15 @@ class InvestigationExporter(private val appContext: Context) {
         return out
     }
 
-    private fun toJson(observable: Observable, results: List<ResultRow>): String {
+    private fun toJson(
+        observable: Observable,
+        results: List<ResultRow>,
+        notes: String
+    ): String {
         val doc = buildJsonObject {
             put("observable", observable.raw)
             put("type", observable.typeLabel)
+            if (notes.isNotBlank()) put("notes", notes)
             put("generatedAt", java.time.Instant.now().toString())
             put("appBuild", com.osint.unified.BuildConfig.VERSION_NAME)
             putJsonArray("results") {
@@ -203,7 +216,11 @@ class InvestigationExporter(private val appContext: Context) {
      * roll call of sources that answered no — which belongs in a dossier,
      * as a record of where someone has already looked, but not at the top.
      */
-    private fun toDossier(observable: Observable, results: List<ResultRow>): String = buildString {
+    private fun toDossier(
+        observable: Observable,
+        results: List<ResultRow>,
+        notes: String
+    ): String = buildString {
         val seed = observable.raw.trim().lowercase()
         val sorted = Findings.sort(results)
         val facts = IntelSummary.synthesize(results)
@@ -222,6 +239,13 @@ class InvestigationExporter(private val appContext: Context) {
         append("App build  : ${com.osint.unified.BuildConfig.VERSION_NAME}\n")
         append("Sources    : ${results.size} queried — ${sorted.hits.size} returned intel, ")
         append("${sorted.empty.size} found nothing, ${sorted.failed.size} could not be reached\n")
+
+        // First, because it is the only part of the document a person
+        // wrote, and the rest is there to support it.
+        if (notes.isNotBlank()) {
+            append("\nANALYST NOTES\n-------------\n")
+            notes.trim().lineSequence().forEach { append(it.trimEnd()).append('\n') }
+        }
 
         if (facts.isNotEmpty()) {
             append("\nSUMMARY\n-------\n")
