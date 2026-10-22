@@ -1,0 +1,46 @@
+name: Probe endpoints
+
+on:
+  workflow_dispatch:
+    inputs:
+      urls:
+        description: "Newline or comma separated URLs to probe"
+        required: false
+        default: ""
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Probe
+        run: |
+          set +e
+          LIST="${{ github.event.inputs.urls }}"
+          if [ -z "$LIST" ] && [ -f .github/probe-urls.txt ]; then
+            LIST=$(cat .github/probe-urls.txt)
+          fi
+          echo "$LIST" | tr ',' '\n' | sed '/^[[:space:]]*$/d' > /tmp/urls.txt
+          OUT=""
+          N=0
+          GROUP=1
+          while read -r U; do
+            U=$(echo "$U" | xargs)
+            [ -z "$U" ] && continue
+            CODE=$(curl -sS -o /tmp/body -w '%{http_code}' -m 25 \
+              -H 'User-Agent: OSINT-Unified/1.0 (+https://github.com/EmotionalLeaves/osint-unified)' \
+              -H 'Accept: application/json,text/html,*/*' \
+              "$U" 2>/tmp/err)
+            SIZE=$(wc -c < /tmp/body 2>/dev/null || echo 0)
+            SNIP=$(head -c 320 /tmp/body | tr -d '\r' | tr '\n' ' ' | sed 's/%/pct/g')
+            [ -z "$CODE" ] && CODE="ERR:$(head -c 60 /tmp/err | tr '\n' ' ')"
+            OUT="${OUT}[$CODE ${SIZE}b] $U%0A    $SNIP%0A"
+            N=$((N+1))
+            if [ $N -ge 5 ]; then
+              echo "::error title=probe-$GROUP::$OUT"
+              OUT=""; N=0; GROUP=$((GROUP+1))
+            fi
+          done < /tmp/urls.txt
+          if [ -n "$OUT" ]; then echo "::error title=probe-$GROUP::$OUT"; fi
+          exit 1
