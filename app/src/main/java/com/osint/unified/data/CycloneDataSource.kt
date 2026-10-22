@@ -13,6 +13,7 @@ import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.jsonObject
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.io.IOException
 
 /**
  * Named tropical cyclones currently in the water, from the US National
@@ -40,17 +41,26 @@ class CycloneDataSource(private val client: OkHttpClient = Http.client) {
         "EX" to "post-tropical cyclone", "LO" to "remnant low"
     )
 
+    /**
+     * Throws when the feed could not be read.
+     *
+     * An empty list has to mean "no named storms in the water", because the
+     * globe and the world brief go on to say so out loud. Returning it for a
+     * failed request as well would have the app announce an all-clear during
+     * an outage, so a failure is raised and the caller leaves the layer
+     * unloaded instead.
+     */
     suspend fun fetch(): List<GeoBlip> = withContext(Dispatchers.IO) {
-        try {
             val request = Request.Builder()
                 .url("https://www.nhc.noaa.gov/CurrentStorms.json")
                 .header("User-Agent", "OSINT-Unified/1.0 (research)")
                 .build()
             client.newCall(request).execute().use { resp ->
                 val body = resp.body?.string()
-                if (!resp.isSuccessful || body.isNullOrBlank()) return@withContext emptyList()
+                if (!resp.isSuccessful) throw IOException("NHC HTTP ${resp.code}")
+                if (body.isNullOrBlank()) throw IOException("NHC returned an empty body")
                 val storms = json.parseToJsonElement(body).jsonObject["activeStorms"] as? JsonArray
-                    ?: return@withContext emptyList()
+                    ?: throw IOException("NHC response had no activeStorms array")
 
                 storms.mapNotNull { el ->
                     val o = el as? JsonObject ?: return@mapNotNull null
@@ -84,8 +94,5 @@ class CycloneDataSource(private val client: OkHttpClient = Http.client) {
                     GeoBlip(lat, lon, label, link)
                 }
             }
-        } catch (e: Exception) {
-            emptyList()
-        }
     }
 }

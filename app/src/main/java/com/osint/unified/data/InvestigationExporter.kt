@@ -167,7 +167,11 @@ class InvestigationExporter(private val appContext: Context) {
         val seed = observable.raw.trim().lowercase()
         val sorted = Findings.sort(results)
         val facts = IntelSummary.synthesize(results)
-        val pivots = EntityExtractor.extract(results, observable.raw)
+        val pivots = EntityExtractor.extract(
+            results,
+            observable.raw,
+            seedIsPlace = observable is Observable.Coordinate
+        )
         val (direct, derived) = sorted.hits.partition { it.input.trim().lowercase() == seed }
 
         append("OSINT INVESTIGATION DOSSIER\n")

@@ -142,7 +142,10 @@ fun GodEyeViewScreen(
         state.conflicts, state.gdacs, state.tsunamis, state.cyclones,
         state.volcanoes, state.quakes, state.weather, state.fires,
         state.milAircraft, state.ladd, state.airportStatus, state.news,
-        state.spaceWeather, state.loaded
+        state.spaceWeather, state.loaded,
+        // The traffic line reads these three, so leaving them out of the key
+        // let the brief quote counts the header beside it had moved past.
+        state.aircraft, state.vessels, state.satellites
     ) { WorldBrief.build(state) }
     // The panel of search controls and layer pills is most of a phone
     // screen. On something called a God's Eye View the globe should be the
@@ -152,6 +155,15 @@ fun GodEyeViewScreen(
     val god = mode == VisualMode.GOD
     // GOD MODE forces every layer visible.
     fun <T> vis(on: Boolean, data: List<T>): List<T> = if (on || god) data else emptyList()
+    // Three layers hold nothing until something asks for them. A mode that
+    // claims to show everything has to ask.
+    LaunchedEffect(god) {
+        if (god) {
+            viewModel.ensureCameras()
+            viewModel.ensureAirspace()
+            viewModel.ensureRadiation(true)
+        }
+    }
 
     // Live UTC clock for the HUD.
     var utc by remember { mutableStateOf("") }
@@ -323,53 +335,56 @@ fun GodEyeViewScreen(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)
             ) {
-                LayerPill("AIR", state.aircraft.size, Intel.NetCyan, showAircraft, loaded = "aircraft" in state.loaded) { showAircraft = !showAircraft }
-                LayerPill("MIL", state.milAircraft.size, Color(0xFFFFD23F), showMil, loaded = "milAircraft" in state.loaded) { showMil = !showMil }
-                LayerPill("SEA", state.vessels.size, Intel.Teal, showVessels, loaded = "vessels" in state.loaded) { showVessels = !showVessels }
-                LayerPill("SEIS", state.quakes.size, Intel.Coral, showQuakes, loaded = "quakes" in state.loaded) { showQuakes = !showQuakes }
-                LayerPill("EVT", state.naturalEvents.size, Intel.Amber, showEvents, loaded = "naturalEvents" in state.loaded) { showEvents = !showEvents }
-                LayerPill("WX", state.weather.size, Color(0xFF7FB2FF), showWeather, loaded = "weather" in state.loaded) { showWeather = !showWeather }
-                LayerPill("FIRE", state.fires.size, Color(0xFFFF5A4D), showFires, loaded = "fires" in state.loaded) { showFires = !showFires }
-                LayerPill("SAT", state.satellites.size, Color(0xFFC0A8FF), showSats, loaded = "satellites" in state.loaded) { showSats = !showSats }
-                LayerPill("HAZARD", state.gdacs.size, Color(0xFFFF8A3D), showGdacs, loaded = "gdacs" in state.loaded) { showGdacs = !showGdacs }
-                LayerPill("VOLC", state.volcanoes.size, Color(0xFFFF4D4D), showVolcanoes, loaded = "volcanoes" in state.loaded) { showVolcanoes = !showVolcanoes }
-                LayerPill("CONFLICT", state.conflicts.size, Color(0xFFFF2E2E), showConflict, loaded = "conflicts" in state.loaded) { showConflict = !showConflict }
-                LayerPill("AQI", state.airQuality.size, Color(0xFFB4E66B), showAqi, loaded = "airQuality" in state.loaded) { showAqi = !showAqi }
-                LayerPill("STATIONS", state.stations.size, Color(0xFF9AB0C0), showStations, loaded = "stations" in state.loaded) { showStations = !showStations }
-                LayerPill("APT", state.airports.size, Color(0xFF8FD3FF), showAirports, loaded = "airports" in state.loaded) { showAirports = !showAirports }
-                LayerPill("POWER", state.powerPlants.size, Color(0xFFFFC14D), showPower, loaded = "powerPlants" in state.loaded) { showPower = !showPower }
-                LayerPill("AURORA", state.aurora.size, Color(0xFF66FFB2), showAurora, loaded = "aurora" in state.loaded) { showAurora = !showAurora }
-                LayerPill("BUOY", state.buoys.size, Color(0xFF4DD0E1), showBuoys, loaded = "buoys" in state.loaded) { showBuoys = !showBuoys }
-                LayerPill("METAR", state.metar.size, Color(0xFF9FE8FF), showMetar, loaded = "metar" in state.loaded) { showMetar = !showMetar }
-                LayerPill("NEWS", state.news.size, Color(0xFFFF79C6), showNews, loaded = "news" in state.loaded) { showNews = !showNews }
+                // When a callsign filter is on, the feed size is not what is
+                // on screen, and a pill reading 11,000 over a map holding
+                // forty dots is the map disagreeing with itself.
+                LayerPill("AIR", filterFlights(state.aircraft, flightFilter).size, Intel.NetCyan, showAircraft || god, loaded = "aircraft" in state.loaded) { showAircraft = !showAircraft }
+                LayerPill("MIL", state.milAircraft.size, Color(0xFFFFD23F), showMil || god, loaded = "milAircraft" in state.loaded) { showMil = !showMil }
+                LayerPill("SEA", state.vessels.size, Intel.Teal, showVessels || god, loaded = "vessels" in state.loaded) { showVessels = !showVessels }
+                LayerPill("SEIS", state.quakes.size, Intel.Coral, showQuakes || god, loaded = "quakes" in state.loaded) { showQuakes = !showQuakes }
+                LayerPill("EVT", state.naturalEvents.size, Intel.Amber, showEvents || god, loaded = "naturalEvents" in state.loaded) { showEvents = !showEvents }
+                LayerPill("WX", state.weather.size, Color(0xFF7FB2FF), showWeather || god, loaded = "weather" in state.loaded) { showWeather = !showWeather }
+                LayerPill("FIRE", state.fires.size, Color(0xFFFF5A4D), showFires || god, loaded = "fires" in state.loaded) { showFires = !showFires }
+                LayerPill("SAT", state.satellites.size, Color(0xFFC0A8FF), showSats || god, loaded = "satellites" in state.loaded) { showSats = !showSats }
+                LayerPill("HAZARD", state.gdacs.size, Color(0xFFFF8A3D), showGdacs || god, loaded = "gdacs" in state.loaded) { showGdacs = !showGdacs }
+                LayerPill("VOLC", state.volcanoes.size, Color(0xFFFF4D4D), showVolcanoes || god, loaded = "volcanoes" in state.loaded) { showVolcanoes = !showVolcanoes }
+                LayerPill("CONFLICT", state.conflicts.size, Color(0xFFFF2E2E), showConflict || god, loaded = "conflicts" in state.loaded) { showConflict = !showConflict }
+                LayerPill("AQI", state.airQuality.size, Color(0xFFB4E66B), showAqi || god, loaded = "airQuality" in state.loaded) { showAqi = !showAqi }
+                LayerPill("STATIONS", state.stations.size, Color(0xFF9AB0C0), showStations || god, loaded = "stations" in state.loaded) { showStations = !showStations }
+                LayerPill("APT", state.airports.size, Color(0xFF8FD3FF), showAirports || god, loaded = "airports" in state.loaded) { showAirports = !showAirports }
+                LayerPill("POWER", state.powerPlants.size, Color(0xFFFFC14D), showPower || god, loaded = "powerPlants" in state.loaded) { showPower = !showPower }
+                LayerPill("AURORA", state.aurora.size, Color(0xFF66FFB2), showAurora || god, loaded = "aurora" in state.loaded) { showAurora = !showAurora }
+                LayerPill("BUOY", state.buoys.size, Color(0xFF4DD0E1), showBuoys || god, loaded = "buoys" in state.loaded) { showBuoys = !showBuoys }
+                LayerPill("METAR", state.metar.size, Color(0xFF9FE8FF), showMetar || god, loaded = "metar" in state.loaded) { showMetar = !showMetar }
+                LayerPill("NEWS", state.news.size, Color(0xFFFF79C6), showNews || god, loaded = "news" in state.loaded) { showNews = !showNews }
                 LayerPill(
-                    "CCTV", state.cameras.size, Color(0xFFB388FF), showCameras,
-                    loadsOnDemand = true
+                    "CCTV", state.cameras.size, Color(0xFFB388FF), showCameras || god,
+                    loadsOnDemand = true, loaded = "cameras" in state.loaded
                 ) {
                     showCameras = !showCameras
                     if (showCameras) viewModel.ensureCameras()
                 }
-                LayerPill("LADD", state.ladd.size, Color(0xFFFFD166), showLadd, loaded = "ladd" in state.loaded) { showLadd = !showLadd }
-                LayerPill("CABLE", state.cables.size, Color(0xFF7FFFD4), showCables, loaded = "cables" in state.loaded) { showCables = !showCables }
-                LayerPill("CYCLONE", state.cyclones.size, Color(0xFFFF7AC6), showCyclones, loaded = "cyclones" in state.loaded) { showCyclones = !showCyclones }
-                LayerPill("TSUNAMI", state.tsunamis.size, Color(0xFF4DF0FF), showTsunami, loaded = "tsunamis" in state.loaded) { showTsunami = !showTsunami }
-                LayerPill("ATC", state.airportStatus.size, Color(0xFFFFA64D), showAirportStatus, loaded = "airportStatus" in state.loaded) { showAirportStatus = !showAirportStatus }
+                LayerPill("LADD", state.ladd.size, Color(0xFFFFD166), showLadd || god, loaded = "ladd" in state.loaded) { showLadd = !showLadd }
+                LayerPill("CABLE", state.cables.size, Color(0xFF7FFFD4), showCables || god, loaded = "cables" in state.loaded) { showCables = !showCables }
+                LayerPill("CYCLONE", state.cyclones.size, Color(0xFFFF7AC6), showCyclones || god, loaded = "cyclones" in state.loaded) { showCyclones = !showCyclones }
+                LayerPill("TSUNAMI", state.tsunamis.size, Color(0xFF4DF0FF), showTsunami || god, loaded = "tsunamis" in state.loaded) { showTsunami = !showTsunami }
+                LayerPill("ATC", state.airportStatus.size, Color(0xFFFFA64D), showAirportStatus || god, loaded = "airportStatus" in state.loaded) { showAirportStatus = !showAirportStatus }
                 LayerPill(
-                    "RAD", state.radiation.size, Color(0xFFD4FF4D), showRadiation,
-                    loadsOnDemand = true
+                    "RAD", state.radiation.size, Color(0xFFD4FF4D), showRadiation || god,
+                    loadsOnDemand = true, loaded = "radiation" in state.loaded
                 ) {
                     showRadiation = !showRadiation
                     viewModel.ensureRadiation(showRadiation)
                 }
                 LayerPill(
-                    "SUA", state.airspace.size, Color(0xFFFF5370), showAirspace,
-                    loadsOnDemand = true
+                    "SUA", state.airspace.size, Color(0xFFFF5370), showAirspace || god,
+                    loadsOnDemand = true, loaded = "airspace" in state.loaded
                 ) {
                     showAirspace = !showAirspace
                     if (showAirspace) viewModel.ensureAirspace()
                 }
                 if (state.overlayPoints.isNotEmpty()) {
-                    LayerPill("OVLY", state.overlayPoints.size, Intel.CyanBright, showOverlay, loaded = "overlayPoints" in state.loaded) { showOverlay = !showOverlay }
+                    LayerPill("OVLY", state.overlayPoints.size, Intel.CyanBright, showOverlay || god, loaded = "overlayPoints" in state.loaded) { showOverlay = !showOverlay }
                 }
             }
 
@@ -959,17 +974,23 @@ private fun GlobeMap(
                     m.icon = icon
                     m.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                     m.title = pm.title
-                    m.setOnMarkerClickListener { _, _ ->
-                        onInspect(
-                            Inspected(
-                                pm.kind,
-                                pm.title.orEmpty().ifBlank { pm.kind },
-                                pm.lat,
-                                pm.lon,
-                                pm.url
+                    // Layers marked non-clickable are fields of readings —
+                    // an aurora cell, an AQI blob. Opening an inspector on
+                    // one produces a dialog whose only content is a disabled
+                    // INVESTIGATE button, which is worse than no dialog.
+                    if (pm.clickable) {
+                        m.setOnMarkerClickListener { _, _ ->
+                            onInspect(
+                                Inspected(
+                                    pm.kind,
+                                    pm.title.orEmpty().ifBlank { pm.kind },
+                                    pm.lat,
+                                    pm.lon,
+                                    pm.url
+                                )
                             )
-                        )
-                        true
+                            true
+                        }
                     }
                     map.overlays.add(m)
                 }
@@ -1164,7 +1185,9 @@ private fun LayerPill(
         val shown = when {
             count > 0 -> "$count"
             loadsOnDemand && !on -> "tap"
-            loadsOnDemand && on -> "…"
+            // A fetch that has answered with nothing says "0"; only one
+            // still in flight says "…". These used to be the same, so a
+            // layer whose fetch failed sat on the loading marker for ever.
             !loaded -> "…"
             else -> "0"
         }

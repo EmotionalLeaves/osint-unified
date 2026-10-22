@@ -8,6 +8,7 @@ import com.osint.unified.domain.Observable
 import com.osint.unified.domain.ObservableRouter
 import com.osint.unified.domain.Tool
 import com.osint.unified.domain.executor.ExecutorFactory
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
@@ -54,7 +55,12 @@ class WatchRepository(
     suspend fun checkAll(): List<String> {
         val changes = ArrayList<String>()
         dao.all().forEach { watch ->
-            runCatching { check(watch) }.getOrNull()?.let { changes.add(it) }
+            val outcome = runCatching { check(watch) }
+            // A cancellation is the work being stopped, not a target
+            // failing. Swallowing it here would carry on through the
+            // remaining watches after the system asked us to stop.
+            outcome.exceptionOrNull()?.let { if (it is CancellationException) throw it }
+            outcome.getOrNull()?.let { changes.add(it) }
         }
         return changes
     }
@@ -67,14 +73,21 @@ class WatchRepository(
             .take(TOOLS_PER_CHECK)
         if (tools.isEmpty()) return null
 
-        val fresh = fingerprint(observable, tools)
-        // Nothing came back at all — the network was down, or every source
+        val outcome = fingerprint(observable, tools)
+        val fresh = outcome.found
+        val now = System.currentTimeMillis()
+
+        // Nothing answered at all — the network was down, or every source
         // timed out. Reporting that as "everything disappeared" would be a
-        // false alarm of the worst kind, so the check is simply abandoned.
-        if (fresh.isEmpty()) return null
+        // false alarm of the worst kind, so the check is abandoned. The
+        // attempt is still recorded, or the watch would read as never
+        // checked while the app had been trying all along.
+        if (outcome.answered.isEmpty()) {
+            dao.update(watch.copy(lastCheckedAt = now, checks = watch.checks + 1))
+            return null
+        }
 
         val previous = parse(watch.digest)
-        val now = System.currentTimeMillis()
 
         // The first check has nothing to compare against. It establishes the
         // baseline and reports no change, which is the honest answer.
@@ -90,13 +103,22 @@ class WatchRepository(
         }
 
         val appeared = fresh.keys.filter { it !in previous }
-        val vanished = previous.keys.filter { it !in fresh }
+        // Only a source that answered can be said to have stopped finding
+        // something. One flaky source out of ten used to produce "no longer
+        // found by X", and then — because its entry was dropped from the
+        // stored digest — "now found by X" on the next successful check: a
+        // watch flapping between two false alarms.
+        val vanished = previous.keys.filter { it in outcome.answered && it !in fresh }
         val altered = fresh.keys.filter { it in previous && fresh[it] != previous[it] }
+
+        // A source that could not be reached keeps its previous
+        // fingerprint, so the baseline survives the outage.
+        val merged = previous.filterKeys { it !in outcome.answered } + fresh
 
         val description = WatchDigest.describe(watch.observable, appeared, vanished, altered)
         dao.update(
             watch.copy(
-                digest = serialise(fresh),
+                digest = serialise(merged),
                 lastCheckedAt = now,
                 checks = watch.checks + 1,
                 lastChange = description ?: watch.lastChange,
@@ -105,6 +127,18 @@ class WatchRepository(
         )
         return description
     }
+
+    /**
+     * What one round of checking produced.
+     *
+     * [answered] is every source that replied at all; [found] is the subset
+     * that replied with something. The difference between them is what keeps
+     * an unreachable source from being reported as a disappearance.
+     */
+    private data class Outcome(
+        val answered: Set<String>,
+        val found: Map<String, String>
+    )
 
     /**
      * Runs the tools and reduces each answer to a short fingerprint.
@@ -118,17 +152,33 @@ class WatchRepository(
     private suspend fun fingerprint(
         observable: Observable,
         tools: List<Tool>
-    ): Map<String, String> = coroutineScope {
-        tools.map { tool ->
+    ): Outcome = coroutineScope {
+        val results = tools.map { tool ->
             async {
                 val output = withTimeoutOrNull(TOOL_TIMEOUT_MS) {
                     runCatching { executors.forTool(tool).execute(tool, observable.raw) }
                         .getOrNull()?.getOrNull()
-                } ?: return@async null
-                if (output.isBlank() || Findings.saysNothing(output)) return@async null
-                tool.id to sha1(WatchDigest.normalise(output))
+                }
+                // null  -> the source could not be reached at all
+                // ""    -> it answered, and found nothing
+                // other -> it answered, and found something
+                val fingerprint: String? = when {
+                    output == null -> null
+                    output.isBlank() -> ""
+                    Findings.saysUnreachable(output) -> null
+                    Findings.saysNothing(output) -> ""
+                    else -> sha1(WatchDigest.normalise(output))
+                }
+                tool.id to fingerprint
             }
-        }.mapNotNull { it.await() }.toMap()
+        }.map { it.await() }
+
+        Outcome(
+            answered = results.filter { it.second != null }.map { it.first }.toSet(),
+            found = results.mapNotNull { (id, fp) ->
+                if (fp.isNullOrEmpty()) null else id to fp
+            }.toMap()
+        )
     }
 
     private fun serialise(digest: Map<String, String>): String =

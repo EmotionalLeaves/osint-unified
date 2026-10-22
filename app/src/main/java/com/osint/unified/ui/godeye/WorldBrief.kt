@@ -39,6 +39,10 @@ object WorldBrief {
     private val RED = listOf("red", "extreme")
     private val ORANGE = listOf("orange", "severe")
 
+    /** The category token TsunamiDataSource writes as "<centre> <WORD>: …". */
+    internal fun categoryWord(label: String): String =
+        label.substringBefore(':').trim().substringAfterLast(' ').uppercase()
+
     private fun alertRank(label: String): Int {
         val l = label.lowercase()
         return when {
@@ -115,13 +119,17 @@ object WorldBrief {
         }
 
         blips("CONFLICT", state.conflicts, 10)
-        // A tsunami warning outranks everything else on the map, and the
-        // bulletin's own category word is what says whether it is one.
+        // A tsunami warning outranks everything else on the map — but only
+        // the bulletin's own category word may decide that. These bulletins
+        // routinely name the issuing body ("National Tsunami Warning
+        // Center") in their title, so searching the whole label for
+        // "warning" promoted every information statement to a live warning.
+        // The category is the second token, written in capitals by
+        // TsunamiDataSource.
         blips("TSUNAMI BULLETINS", state.tsunamis, 10, rank = { b ->
-            val l = b.label.lowercase()
-            when {
-                l.contains("warning") -> 3
-                l.contains("watch") || l.contains("advisory") -> 2
+            when (categoryWord(b.label)) {
+                "WARNING" -> 3
+                "WATCH", "ADVISORY" -> 2
                 else -> 1
             }
         })

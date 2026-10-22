@@ -27,7 +27,12 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.produceState
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -48,19 +53,37 @@ import com.osint.unified.ui.theme.Intel
 @Composable
 fun FrameworkScreen(initialTarget: String = "", onBack: () -> Unit) {
     val context = LocalContext.current
-    val root = remember { OsintFramework.load(context) }
+    // Parsing the bundled directory and several thousand username rules
+    // takes long enough to drop frames, so it happens off the main thread
+    // and the screen fills in when it is ready rather than opening frozen.
+    val root by produceState<ArfNode?>(initialValue = null, context) {
+        value = withContext(Dispatchers.IO) { OsintFramework.load(context) }
+    }
     val allLeaves = remember(root) { root?.let { OsintFramework.leaves(it) } ?: emptyList() }
     // The directory tree is catalogue links — mostly homepages, which cannot
     // be pointed at anything. The runnable tools are the bundled username
     // rulesets: thousands of exact profile URLs, each one a site that will
     // show you an account if there is one. They are searched alongside the
     // tree rather than hidden behind the username sweep.
-    val templates = remember { ToolTemplates.derived(context) }
-    val stack = remember { mutableStateListOf<ArfNode>().apply { root?.let { add(it) } } }
+    val templates by produceState(initialValue = emptyList<ToolTemplates.Template>(), context) {
+        value = withContext(Dispatchers.IO) {
+            runCatching { ToolTemplates.derived(context) }.getOrDefault(emptyList())
+        }
+    }
+    val stack = remember { mutableStateListOf<ArfNode>() }
+    LaunchedEffect(root) { if (stack.isEmpty()) root?.let { stack.add(it) } }
     var query by remember { mutableStateOf("") }
     // Carried over from whatever the dossier is open on, so arriving here
     // mid-investigation does not mean retyping the target.
     var target by remember(initialTarget) { mutableStateOf(initialTarget) }
+
+    var loading by remember { mutableStateOf(true) }
+    LaunchedEffect(root, templates) {
+        if (root != null || templates.isNotEmpty()) loading = false
+    }
+
+    // Back goes up one folder; only at the root does it leave the screen.
+    BackHandler(enabled = stack.size > 1) { stack.removeAt(stack.lastIndex) }
 
     fun open(url: String) = com.osint.unified.ui.common.LinkOpener.open(context, url)
 
@@ -94,9 +117,13 @@ fun FrameworkScreen(initialTarget: String = "", onBack: () -> Unit) {
             )
         }
     ) { pad ->
-        if (root == null) {
+        if (stack.isEmpty()) {
             Box(Modifier.padding(pad).fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
-                Text("Framework directory not bundled in this build.", color = Intel.TextMid)
+                Text(
+                    if (loading) "Loading the directory…"
+                    else "Framework directory not bundled in this build.",
+                    color = Intel.TextMid
+                )
             }
             return@Scaffold
         }

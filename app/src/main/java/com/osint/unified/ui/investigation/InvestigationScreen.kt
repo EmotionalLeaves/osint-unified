@@ -124,7 +124,11 @@ fun InvestigationScreen(
         val found = state.results.count { it.status == "success" }
         val facts = remember(state.results) { IntelSummary.synthesize(state.results) }
         val pivots = remember(state.results) {
-            EntityExtractor.extract(state.results, observable.raw)
+            EntityExtractor.extract(
+                state.results,
+                observable.raw,
+                seedIsPlace = observable is Observable.Coordinate
+            )
         }
         // Identifiers the second pass has already run tools against.
         val alreadyChased = remember(state.results) {

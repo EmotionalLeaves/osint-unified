@@ -46,7 +46,10 @@ import com.osint.unified.domain.ObservableRouter
 import com.osint.unified.domain.Tool
 import com.osint.unified.domain.ToolRegistry
 import com.osint.unified.domain.workflow.Workflows
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -155,6 +158,16 @@ class GodEyeViewModel(
      *  so the enrichment pass never repeats a lookup the first pass did. */
     private val dispatched = HashSet<String>()
 
+    /** Everything the current search has in flight, so a new search can
+     *  stop it rather than letting two searches write to one dossier. */
+    private val searchJobs = mutableListOf<Job>()
+
+    /** ensureInvestigation reads a field, suspends to insert a row, then
+     *  writes the field. Two callers racing through that gap create two
+     *  investigations, and the second one's collector cancels the first —
+     *  so rows written against the first id are never shown. */
+    private val investigationMutex = Mutex()
+
     private fun runnable(tools: List<Tool>): List<Tool> = tools.filter { t ->
         when (t.executionMode) {
             ExecutionMode.DIRECT -> true
@@ -227,13 +240,17 @@ class GodEyeViewModel(
         viewModelScope.launch {
             if (initialDelayMs > 0) delay(initialDelayMs)
             while (isActive) {
-                val result = runCatching { fetch() }.getOrNull()
-                // The attempt is recorded whether or not it returned
-                // anything, so a genuinely empty feed reads as 0 rather than
-                // staying on the loading marker forever.
+                val attempt = runCatching { fetch() }
+                attempt.exceptionOrNull()?.let { if (it is CancellationException) throw it }
+                val result = attempt.getOrNull()
+                // "loaded" means this feed has answered — only then does a
+                // count of zero mean "nothing out there", which is what the
+                // pills and the world brief go on to assert. A failed fetch
+                // leaves the layer unloaded so neither of them claims an
+                // all-clear during an outage.
                 _state.update { state ->
-                    val marked = state.copy(loaded = state.loaded + key)
-                    if (result != null) apply(marked, result) else marked
+                    if (result == null) state
+                    else apply(state.copy(loaded = state.loaded + key), result)
                 }
                 delay(intervalMs)
             }
@@ -250,8 +267,11 @@ class GodEyeViewModel(
         wideView = zoom < 5.0
         zoomLevel = zoom
         // Radiation is queried around where you are looking, so moving the
-        // map is what asks for it — but only once the layer is on.
-        if (radiationOn) ensureRadiation()
+        // map is what asks for it — but only once the layer is on, and only
+        // when the view has moved far enough that the last answer no longer
+        // covers it. Without that test every pan gesture fired a fresh
+        // query on someone's mobile data.
+        if (radiationOn && movedBeyond(lat, lon, zoom)) ensureRadiation()
     }
 
     private var camerasJob: Job? = null
@@ -259,23 +279,38 @@ class GodEyeViewModel(
     private var radiationJob: Job? = null
     private var zoomLevel: Double = 2.5
     private var radiationOn: Boolean = false
+    @Volatile private var radiationCentre: Pair<Double, Double>? = null
+    @Volatile private var radiationZoomBand: Int = -1
 
-    /** The camera inventory is several megabytes, so it is only fetched when
-     *  the user actually turns the layer on, and then cached for the session. */
+    /**
+     * The camera inventory is several megabytes, so it is only fetched when
+     * the layer is turned on, and then kept for the session.
+     *
+     * The job handle is cleared when the fetch ends. It used to be left set,
+     * which meant one failed fetch locked the layer out permanently: the
+     * guard below saw a non-null job, returned, and the pill sat on its
+     * loading marker forever with no way to retry short of restarting.
+     */
     fun ensureCameras() {
-        if (camerasJob != null || _state.value.cameras.isNotEmpty()) return
+        if (camerasJob?.isActive == true || _state.value.cameras.isNotEmpty()) return
         camerasJob = viewModelScope.launch {
-            val v = runCatching { cctvDataSource.fetch() }.getOrDefault(emptyList())
-            _state.update { it.copy(cameras = v) }
+            val v = runCatching { cctvDataSource.fetch() }.getOrNull()
+            _state.update {
+                if (v == null) it else it.copy(cameras = v, loaded = it.loaded + "cameras")
+            }
+            camerasJob = null
         }
     }
 
     /** Likewise the FAA airspace set, which pages through thousands of polygons. */
     fun ensureAirspace() {
-        if (airspaceJob != null || _state.value.airspace.isNotEmpty()) return
+        if (airspaceJob?.isActive == true || _state.value.airspace.isNotEmpty()) return
         airspaceJob = viewModelScope.launch {
-            val v = runCatching { airspaceDataSource.fetch() }.getOrDefault(emptyList())
-            _state.update { it.copy(airspace = v) }
+            val v = runCatching { airspaceDataSource.fetch() }.getOrNull()
+            _state.update {
+                if (v == null) it else it.copy(airspace = v, loaded = it.loaded + "airspace")
+            }
+            airspaceJob = null
         }
     }
 
@@ -287,20 +322,42 @@ class GodEyeViewModel(
      * the layer is on, and re-asked when the view moves far enough that the
      * previous answer no longer covers it.
      */
+    /** True when the view has left the area the last radiation query covered. */
+    private fun movedBeyond(lat: Double, lon: Double, zoom: Double): Boolean {
+        val last = radiationCentre ?: return true
+        if (radiationZoomBand != zoomBand(zoom)) return true
+        // Half the sweep radius: far enough that the previous answer has
+        // stopped describing what is on screen.
+        val limit = AreaReport.radiusForZoom(zoom) / 2
+        return AreaReport.distanceKm(last.first, last.second, lat, lon) > limit
+    }
+
+    private fun zoomBand(zoom: Double): Int = when {
+        zoom >= 11 -> 3
+        zoom >= 8 -> 2
+        zoom >= 5 -> 1
+        else -> 0
+    }
+
     fun ensureRadiation(on: Boolean? = null) {
         on?.let { radiationOn = it }
         if (!radiationOn) {
             radiationJob?.cancel()
             radiationJob = null
+            radiationCentre = null
+            radiationZoomBand = -1
             return
         }
         if (radiationJob?.isActive == true) return
         val (lat, lon) = focus ?: (20.0 to 0.0)
         val zoom = zoomLevel
         radiationJob = viewModelScope.launch {
-            val v = runCatching { radiationDataSource.fetch(lat, lon, zoom) }
-                .getOrDefault(emptyList())
-            _state.update { it.copy(radiation = v, loaded = it.loaded + "radiation") }
+            val v = runCatching { radiationDataSource.fetch(lat, lon, zoom) }.getOrNull()
+            if (v != null) {
+                radiationCentre = lat to lon
+                radiationZoomBand = zoomBand(zoom)
+                _state.update { it.copy(radiation = v, loaded = it.loaded + "radiation") }
+            }
             radiationJob = null
         }
     }
@@ -323,7 +380,15 @@ class GodEyeViewModel(
         val observable = if (type == "auto") router.classify(_state.value.query)
             else router.classifyAs(_state.value.query, type)
         // New search = fresh investigation context.
+        // Everything the previous search still had in flight. Left running,
+        // its enrichment pass would call ensureInvestigation with the OLD
+        // target after currentInvestigationId had been nulled, create a
+        // second investigation for it, and redirect the results collector —
+        // so the header would say the new target while the intel below it
+        // was the old one.
         currentInvestigationId = null
+        searchJobs.forEach { it.cancel() }
+        searchJobs.clear()
         resultsJob?.cancel()
         dispatched.clear()
         // A coordinate search focuses the globe immediately; other types get a
@@ -421,15 +486,15 @@ class GodEyeViewModel(
     ) {
         val observable = _state.value.observable ?: return
         val fresh = if (force) {
-            tools.onEach { dispatched.add("${'$'}{it.id}|${'$'}{observable.raw}") }
+            tools.onEach { dispatched.add("${it.id}|${observable.raw}") }
         } else {
-            tools.filter { dispatched.add("${'$'}{it.id}|${'$'}{observable.raw}") }
+            tools.filter { dispatched.add("${it.id}|${observable.raw}") }
         }
         if (fresh.isEmpty()) {
-            if (thenEnrich) viewModelScope.launch { enrich(observable) }
+            if (thenEnrich) searchJobs += viewModelScope.launch { enrich(observable) }
             return
         }
-        viewModelScope.launch {
+        searchJobs += viewModelScope.launch {
             val investigationId = ensureInvestigation(observable)
             _state.update { it.copy(runningToolIds = it.runningToolIds + fresh.map { t -> t.id }) }
             coroutineScope {
@@ -470,7 +535,12 @@ class GodEyeViewModel(
 
         val quota = mapOf("IP" to 3, "HOST" to 3, "EMAIL" to 2, "HANDLE" to 2, "WALLET" to 1)
         val spent = HashMap<String, Int>()
-        val chase = EntityExtractor.extract(rows, seed.raw, limitPerKind = 8).filter { p ->
+        val chase = EntityExtractor.extract(
+            rows,
+            seed.raw,
+            limitPerKind = 8,
+            seedIsPlace = seed is Observable.Coordinate
+        ).filter { p ->
             val cap = quota[p.kind] ?: return@filter false
             val n = spent[p.kind] ?: 0
             if (n >= cap) false else { spent[p.kind] = n + 1; true }
@@ -487,7 +557,7 @@ class GodEyeViewModel(
                 val tools = runnable(router.suggestTools(observable))
                     .filter { it.executionMode == ExecutionMode.DIRECT }
                     .take(TOOLS_PER_PIVOT)
-                    .filter { dispatched.add("${'$'}{it.id}|${'$'}{pivot.value}") }
+                    .filter { dispatched.add("${it.id}|${pivot.value}") }
                 if (tools.isEmpty()) continue
                 _state.update { it.copy(runningToolIds = it.runningToolIds + tools.map { t -> t.id }) }
                 coroutineScope {
@@ -509,7 +579,10 @@ class GodEyeViewModel(
         }
     }
 
-    private suspend fun ensureInvestigation(observable: Observable): Long {
+    private suspend fun ensureInvestigation(observable: Observable): Long =
+        investigationMutex.withLock { ensureInvestigationLocked(observable) }
+
+    private suspend fun ensureInvestigationLocked(observable: Observable): Long {
         currentInvestigationId?.let { return it }
         val id = repository.createInvestigation(observable)
         currentInvestigationId = id

@@ -26,15 +26,38 @@ object Findings {
         "no subdomain", "nothing found", "no entity", "no bgp data",
         "no routing data", "no registrant matched", "no structured record",
         "no filings", "no photos", "no profile", "no repositories",
-        "no mentions", "no transactions", "no aircraft", "no breach",
-        "could not be read", "is not bundled"
+        "no mentions", "no transactions", "no aircraft", "no breach"
     )
+
+    /**
+     * Openings that mean the source could not be consulted at all.
+     *
+     * These arrive as successes because the executor returns a sentence
+     * rather than throwing, and they were being filed as absences — so a
+     * dossier could state that the UN consolidated sanctions list had been
+     * checked and the target was clear when the list had never loaded.
+     * Treating them as failures is the whole point of keeping "said no" and
+     * "could not be asked" apart.
+     */
+    private val UNREACHABLE = listOf(
+        "could not be read", "is not bundled", "not bundled in this build",
+        "blocked the request", "could not load", "unavailable",
+        "unreachable", "rate limited", "rate-limited"
+    )
+
+    /** True when a "successful" result is really a report of failure. */
+    fun saysUnreachable(output: String): Boolean {
+        val head = output.trimStart().lineSequence()
+            .firstOrNull { it.isNotBlank() }?.lowercase().orEmpty()
+        return UNREACHABLE.any { head.contains(it) }
+    }
 
     /** True when a successful result is really a report of absence. */
     fun saysNothing(output: String): Boolean {
         val head = output.trimStart().lineSequence()
             .firstOrNull { it.isNotBlank() }?.lowercase().orEmpty()
         if (head.isBlank()) return true
+        if (UNREACHABLE.any { head.contains(it) }) return false
         return NOTHING.any { head.contains(it) }
     }
 
@@ -62,6 +85,9 @@ object Findings {
         results.forEach { r ->
             when {
                 r.status != "success" -> failed.add(r)
+                // A source that answered with its own failure belongs with
+                // the unreachable, not with the sources that looked.
+                saysUnreachable(r.rawOutput) -> failed.add(r)
                 saysNothing(r.rawOutput) -> empty.add(r)
                 else -> hits.add(r)
             }

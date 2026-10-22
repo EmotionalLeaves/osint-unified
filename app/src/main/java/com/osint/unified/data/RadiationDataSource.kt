@@ -39,11 +39,31 @@ class RadiationDataSource(private val client: OkHttpClient = Http.client) {
     private val day = SimpleDateFormat("yyyy-MM-dd", Locale.US)
         .apply { timeZone = TimeZone.getTimeZone("UTC") }
 
-    /** How far back a reading may have been taken and still be plotted. */
-    private val windowDays = 120
+    /** How far back a reading may have been taken and still be plotted.
+     *  Crowd-sourced readings are sparse, so this is the longest window
+     *  that can still be called current — and every label carries its age
+     *  so nobody has to take that on trust. */
+    private val windowDays = 30
 
-    @Volatile private var lastKey: String = ""
-    @Volatile private var cached: List<GeoBlip> = emptyList()
+    private companion object {
+        /** Long enough to make panning cheap, short enough that the ages
+         *  printed on the labels are still roughly true. */
+        const val CACHE_TTL_MS = 30 * 60 * 1000L
+    }
+
+    /**
+     * One object, so the key and the readings can never belong to
+     * different places. They were two volatiles written in sequence, which
+     * two overlapping fetches could interleave into a cache hit serving
+     * Fukushima's readings for Nevada.
+     */
+    private data class Cached(
+        val key: String,
+        val points: List<GeoBlip>,
+        val fetchedAt: Long
+    )
+
+    @Volatile private var cached: Cached? = null
 
     suspend fun fetch(lat: Double, lon: Double, zoom: Double): List<GeoBlip> =
         withContext(Dispatchers.IO) {
@@ -57,20 +77,33 @@ class RadiationDataSource(private val client: OkHttpClient = Http.client) {
             }
             val grid = (radiusM / 111_000.0).coerceAtLeast(0.2)
             val key = "${Math.round(lat / grid)}:${Math.round(lon / grid)}:$radiusM"
-            if (key == lastKey && cached.isNotEmpty()) return@withContext cached
+            val held = cached
+            // Expires, because every label carries a "2 days ago" built at
+            // fetch time; a cache with no clock would keep showing an age
+            // that stopped being true hours earlier.
+            if (held != null && held.key == key &&
+                System.currentTimeMillis() - held.fetchedAt < CACHE_TTL_MS
+            ) {
+                return@withContext held.points
+            }
 
             val after = day.format(Date(System.currentTimeMillis() - windowDays * 86_400_000L))
             val url = "https://api.safecast.org/measurements.json" +
                 "?latitude=$lat&longitude=$lon&distance=$radiusM" +
                 "&captured_after=$after"
-            val parsed = try {
+            val parsed = run {
                 val request = Request.Builder()
                     .url(url)
                     .header("User-Agent", "OSINT-Unified/1.0 (research)")
                     .build()
                 client.newCall(request).execute().use { resp ->
                     val body = resp.body?.string()
-                    if (!resp.isSuccessful || body.isNullOrBlank()) return@withContext cached
+                    // Never the previous area's readings. Serving those
+                    // plots Fukushima's numbers while the person is looking
+                    // at Nevada and believes the layer has reported on it —
+                    // the fabricated answer this app exists not to give.
+                    if (!resp.isSuccessful) throw java.io.IOException("Safecast HTTP ${resp.code}")
+                    if (body.isNullOrBlank()) throw java.io.IOException("Safecast returned nothing")
                     json.parseToJsonElement(body).jsonArray.mapNotNull { el ->
                         val o = el as? JsonObject ?: return@mapNotNull null
                         fun d(k: String) = (o[k] as? JsonPrimitive)?.doubleOrNull
@@ -92,11 +125,8 @@ class RadiationDataSource(private val client: OkHttpClient = Http.client) {
                         GeoBlip(mLat, mLon, label, "https://map.safecast.org/")
                     }
                 }
-            } catch (e: Exception) {
-                return@withContext cached
             }
-            lastKey = key
-            cached = parsed
+            cached = Cached(key, parsed, System.currentTimeMillis())
             parsed
         }
 }

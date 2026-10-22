@@ -30,9 +30,22 @@ object Identify {
     private val HEX = Regex("^[0-9a-fA-F]+$")
     private val B64 = Regex("^[A-Za-z0-9+/]+={0,2}$")
     private val B64URL = Regex("^[A-Za-z0-9_-]+$")
-    private val JWT = Regex("^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.?[A-Za-z0-9_-]*$")
+    // Three non-empty base64url segments whose first begins "ey" — which is
+    // base64 for the `{"` that opens every JWT header. Without that test
+    // "www.example.com" satisfied the shape and was reported as a JWT above
+    // the correct answer, for the single most common input this screen sees.
+    private val JWT = Regex("^ey[A-Za-z0-9_-]{6,}\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]*$")
     private val IPV4 = Regex("^(?:(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)$")
-    private val IPV6 = Regex("^(?:[0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}$")
+    // Either a compressed form containing "::", or the full eight hextets.
+    // The looser shape accepted "12:34:56", so an ordinary clock time was
+    // reported as an address.
+    private val IPV6 = Regex(
+        // Full form: eight hextets.
+        "^(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$" +
+            // Compressed form: one "::" with up to seven hextets around it.
+            "|^(?:[0-9a-fA-F]{1,4})?(?::[0-9a-fA-F]{1,4}){0,6}" +
+            "::(?:[0-9a-fA-F]{1,4})?(?::[0-9a-fA-F]{1,4}){0,6}$"
+    )
     private val EMAIL = Regex("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,24}$")
     private val DOMAIN = Regex("^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\\.)+[A-Za-z]{2,24}$")
     private val COORD = Regex("^(-?\\d{1,2}(?:\\.\\d+)?)\\s*,\\s*(-?\\d{1,3}(?:\\.\\d+)?)$")
@@ -64,13 +77,16 @@ object Identify {
             out.add(Guess("PEM block", "A ${it.groupValues[1].lowercase()} in PEM armour.", confidence = 97))
         }
 
-        if (v.count { it == '.' } == 2 && JWT.matches(v)) {
+        if (JWT.matches(v)) {
             out.add(Guess("JWT", "Three dot-separated base64url segments.", "jwt", 95))
         }
 
         if (EMAIL.matches(v)) out.add(Guess("Email address", "Local part and a resolvable-looking domain.", confidence = 95))
         if (IPV4.matches(v)) out.add(Guess("IPv4 address", "Four octets, each in range.", confidence = 97))
-        if (IPV6.matches(v) && v.contains(':')) out.add(Guess("IPv6 address", "Colon-separated hextets.", confidence = 85))
+        val looksIpv6 = IPV6.matches(v) && (v.contains("::") || v.count { it == ':' } == 7)
+        if (looksIpv6) {
+            out.add(Guess("IPv6 address", "Colon-separated hextets.", confidence = 85))
+        }
         if (MAC.matches(v)) out.add(Guess("MAC address", "Six octets; the first three are the vendor OUI.", confidence = 95))
         if (UUID.matches(v)) out.add(Guess("UUID", "8-4-4-4-12 hex. Version ${v[14]}.", confidence = 97))
         if (PHONE.matches(v)) out.add(Guess("Phone number", "E.164-style, with a country prefix.", confidence = 80))

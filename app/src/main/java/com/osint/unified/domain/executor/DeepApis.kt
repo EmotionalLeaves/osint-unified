@@ -1,5 +1,6 @@
 package com.osint.unified.domain.executor
 
+import com.osint.unified.data.Freshness
 import com.osint.unified.network.Http
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -1008,12 +1009,27 @@ class DeepApis(private val client: OkHttpClient = Http.client) {
                 get("https://api.openstreetcam.org/2.0/photo/?lat=$lat&lng=$lon&radius=400")
             ).jsonObject["result"] as? JsonObject)?.get("data") as? JsonArray)
             if (!data.isNullOrEmpty()) {
-                sb.append("\nKartaView street-level — ${data.size} photos within 400 m:\n")
-                data.take(25).forEach { p ->
-                    val o = p as? JsonObject ?: return@forEach
-                    sb.append("• ${o.str("dateAdded")?.substringBefore(' ') ?: "?"}")
+                // KartaView returns its file URLs with a {{sizeprefix}}
+                // placeholder where the size directory belongs; served
+                // verbatim it is a dead link that answers BlobNotFound.
+                // "lth" is the large thumbnail, which is what a person
+                // following one of these actually wants to look at.
+                fun photoUrl(raw: String?) = raw?.replace("{{sizeprefix}}", "lth")
+
+                // Newest first, and the age is spelled out: street-level
+                // imagery is frequently years old, and a six-year-old
+                // photograph offered without its date is the dossier
+                // implying it shows the place as it is now.
+                val sorted = data.mapNotNull { it as? JsonObject }
+                    .sortedByDescending { it.str("dateAdded").orEmpty() }
+                sb.append("\nKartaView street-level — ${data.size} photos within 400 m")
+                sb.append(", newest first:\n")
+                sorted.take(25).forEach { o ->
+                    val taken = o.str("dateAdded")?.substringBefore(' ')
+                    sb.append("• ${taken ?: "date unknown"}")
+                    Freshness.ago(Freshness.parse(taken))?.let { sb.append(" ($it)") }
                     o.str("distance")?.let { sb.append("  ${it}m away") }
-                    o.str("fileurl")?.let { sb.append("\n  $it") }
+                    photoUrl(o.str("fileurl"))?.let { sb.append("\n  $it") }
                     sb.append("\n")
                 }
             }

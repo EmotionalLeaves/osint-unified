@@ -27,31 +27,67 @@ object EntityExtractor {
     private val handle = Regex("""(?:twitter\.com|x\.com|instagram\.com|github\.com|t\.me|tiktok\.com/@|facebook\.com|reddit\.com/user|linkedin\.com/in)/([A-Za-z0-9_.-]{2,30})""")
     private val tail = Regex("""\bN[0-9]{1,5}[A-Z]{0,2}\b""")
 
-    // Hosts that appear in nearly every result and are never the target.
-    private val noise = setOf(
-        "github.com", "twitter.com", "x.com", "google.com", "www.google.com",
-        "lens.google.com", "yandex.com", "bing.com", "www.bing.com", "tineye.com",
-        "wikipedia.org", "en.wikipedia.org", "wikidata.org", "www.wikidata.org",
-        "archive.org", "web.archive.org", "keybase.io", "news.ycombinator.com",
-        "reddit.com", "www.reddit.com", "t.me", "nvd.nist.gov", "exploit-db.com",
-        "www.exploit-db.com", "osintframework.com", "openstreetmap.org",
-        "nominatim.openstreetmap.org", "crt.sh", "urlscan.io", "shodan.io",
-        "internetdb.shodan.io", "hackertarget.com", "api.hackertarget.com",
-        "rapiddns.io", "blockchain.com", "www.blockchain.com", "etherscan.io",
-        "jetphotos.com", "www.jetphotos.com", "adsb.lol", "globe.adsb.lol",
-        "sec.gov", "www.sec.gov", "efts.sec.gov", "fbi.gov", "www.fbi.gov",
-        "api.fbi.gov", "gleif.org", "www.gleif.org", "api.gleif.org",
-        "xposedornot.com", "suncalc.org", "www.suncalc.org", "open-meteo.com",
-        "data.police.uk", "oxt.me", "hexdb.io", "gravatar.com", "example.com",
-        "dns.google", "cwwp2.dot.ca.gov", "first.org", "www.first.org",
-        "cve.circl.lu", "securitytxt.org", "owasp.org", "treas.gov"
+    /**
+     * Hosts that are never the target, matched by registrable domain.
+     *
+     * These are the app's own plumbing: the sites it calls, and the
+     * services whose links it prints. Offering one as a pivot invites the
+     * person to open a dossier on a CDN — "storage13.openstreetcam.org"
+     * was appearing as a lead because a photo link happened to be served
+     * from there. Matching by suffix rather than by exact host is what
+     * catches that whole family at once.
+     */
+    private val noiseDomains = setOf(
+        "github.com", "twitter.com", "x.com", "google.com", "googleapis.com",
+        "yandex.com", "bing.com", "tineye.com", "wikipedia.org", "wikidata.org",
+        "wikimedia.org", "archive.org", "archive.ph", "archive.today",
+        "keybase.io", "ycombinator.com", "reddit.com", "t.me", "telegram.org",
+        "nist.gov", "exploit-db.com", "osintframework.com", "openstreetmap.org",
+        "openstreetcam.org", "kartaview.org", "mapillary.com", "insecam.org",
+        "earthcam.com", "crt.sh", "certspotter.com", "urlscan.io", "shodan.io",
+        "hackertarget.com", "rapiddns.io", "blockchain.com", "blockchain.info",
+        "etherscan.io", "ethplorer.io", "oxt.me", "jetphotos.com", "adsb.lol",
+        "adsbexchange.com", "flightaware.com", "sec.gov", "fbi.gov",
+        "gleif.org", "xposedornot.com", "haveibeenpwned.com", "suncalc.org",
+        "open-meteo.com", "police.uk", "hexdb.io", "gravatar.com",
+        "example.com", "dns.google", "dot.ca.gov", "first.org", "circl.lu",
+        "securitytxt.org", "owasp.org", "treas.gov", "torproject.org",
+        "alienvault.com", "ripe.net", "bgpview.io", "rdap.org", "ipwho.is",
+        "stackexchange.com", "stackoverflow.com", "npmjs.com", "docker.com",
+        "gitlab.com", "bitbucket.org", "mastodon.social", "bsky.app",
+        "nhc.noaa.gov", "noaa.gov", "tsunami.gov", "faa.gov", "safecast.org",
+        "nasa.gov", "usgs.gov", "gdacs.org", "gdeltproject.org",
+        "commoncrawl.org", "hudsonrock.com", "openpgp.org", "ubuntu.com",
+        "w3.org", "schema.org", "creativecommons.org", "gstatic.com",
+        "cloudflare.com", "amazonaws.com", "akamaized.net", "cloudfront.net"
     )
 
+    /** The registrable part of a host, roughly — enough to match a family
+     *  of subdomains without shipping a public-suffix list. */
+    private fun registrable(host: String): String {
+        val parts = host.split(".")
+        if (parts.size < 2) return host
+        val last = parts.takeLast(2).joinToString(".")
+        // Two-part public suffixes that would otherwise collapse to the
+        // suffix itself and match everything under it.
+        val twoPart = setOf("co.uk", "org.uk", "ac.uk", "gov.uk", "com.au",
+            "co.jp", "com.br", "co.za", "com.cn", "co.in", "gov.au")
+        return if (last in twoPart && parts.size >= 3) parts.takeLast(3).joinToString(".") else last
+    }
+
     /**
-     * Pivots across all successful results, most-corroborated first. [seed] is
-     * the current target, which is dropped so it never pivots to itself.
+     * Pivots across all successful results, most-corroborated first.
+     *
+     * [seedIsPlace] drops host pivots entirely: a search for a coordinate
+     * turns up the hostnames of whatever services were consulted about it,
+     * and not one of them is a lead about the place.
      */
-    fun extract(results: List<ResultRow>, seed: String, limitPerKind: Int = 12): List<Pivot> {
+    fun extract(
+        results: List<ResultRow>,
+        seed: String,
+        limitPerKind: Int = 12,
+        seedIsPlace: Boolean = false
+    ): List<Pivot> {
         val text = results.filter { it.status == "success" }.joinToString("\n") { it.rawOutput }
         if (text.isBlank()) return emptyList()
         val seedLower = seed.trim().lowercase()
@@ -71,9 +107,15 @@ object EntityExtractor {
 
         collect("EMAIL", email)
         collect("HANDLE", handle) { it.groupValues.getOrNull(1) }
-        collect("HOST", host, limitPerKind) { m ->
-            val v = m.value.lowercase()
-            if (v in noise || v.endsWith(".png") || v.endsWith(".jpg")) null else v
+        if (!seedIsPlace) {
+            collect("HOST", host, limitPerKind) { m ->
+                val v = m.value.lowercase()
+                when {
+                    registrable(v) in noiseDomains -> null
+                    v.endsWith(".png") || v.endsWith(".jpg") -> null
+                    else -> v
+                }
+            }
         }
         collect("IP", ipv4) { m ->
             // Drop the obvious non-routables, they are never worth a pivot.

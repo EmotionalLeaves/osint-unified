@@ -9,6 +9,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.io.IOException
 
 /**
  * Live tsunami bulletins from the two US warning centres.
@@ -48,25 +49,45 @@ class TsunamiDataSource(private val client: OkHttpClient = Http.client) {
         RegexOption.IGNORE_CASE
     )
 
+    /**
+     * Throws when neither centre could be read.
+     *
+     * An empty list means "no live bulletin anywhere", which the world brief
+     * states as fact. One centre failing is survivable — the other still
+     * answers — but both failing must not read as an all-clear.
+     */
     suspend fun fetch(): List<GeoBlip> = withContext(Dispatchers.IO) {
-        coroutineScope {
-            feeds.map { (url, centre) -> async { one(url, centre) } }.awaitAll().flatten()
+        val answers = coroutineScope {
+            feeds.map { (url, centre) -> async { runCatching { one(url, centre) } } }.awaitAll()
         }
+        if (answers.all { it.isFailure }) {
+            throw IOException(
+                "no tsunami centre answered: " +
+                    answers.mapNotNull { it.exceptionOrNull()?.message }.joinToString("; ")
+            )
+        }
+        answers.mapNotNull { it.getOrNull() }.flatten()
     }
 
-    private fun one(url: String, centre: String): List<GeoBlip> = try {
+    private fun one(url: String, centre: String): List<GeoBlip> = run {
         val request = Request.Builder()
             .url(url)
             .header("User-Agent", "OSINT-Unified/1.0 (research)")
             .build()
         client.newCall(request).execute().use { resp ->
             val body = resp.body?.string()
-            if (!resp.isSuccessful || body.isNullOrBlank()) return emptyList()
+            if (!resp.isSuccessful) throw IOException("$centre HTTP ${resp.code}")
+            if (body.isNullOrBlank()) throw IOException("$centre returned an empty body")
 
             // Some bulletins carry no entries and put the whole message in
-            // the feed header, which still has a title and a point.
-            val blocks = entryRegex.findAll(body).map { it.groupValues[1] }.toList()
-                .ifEmpty { listOf(body) }
+            // the feed header, which still has a title and a point. On that
+            // path the only <updated> is the feed's own, which these centres
+            // refresh independently of the bulletin — so it cannot be used
+            // to decide whether the bulletin is current, and an undated
+            // bulletin is dropped rather than shown as live.
+            val entries = entryRegex.findAll(body).map { it.groupValues[1] }.toList()
+            val wholeFeed = entries.isEmpty()
+            val blocks = if (wholeFeed) listOf(body) else entries
 
             blocks.mapNotNull { block ->
                 val (lat, lon) = coordsOf(block) ?: return@mapNotNull null
@@ -74,6 +95,7 @@ class TsunamiDataSource(private val client: OkHttpClient = Http.client) {
                 val updated = Freshness.parse(tag(block, "updated")?.let(::clean))
                 // These feeds keep the last bulletin up indefinitely, so an
                 // old statement would otherwise read as a live warning.
+                if (updated == null && wholeFeed) return@mapNotNull null
                 if (!Freshness.within(updated, 48)) return@mapNotNull null
                 // "Information", "Advisory", "Watch", "Warning" — the
                 // difference between these is the entire message.
@@ -88,8 +110,6 @@ class TsunamiDataSource(private val client: OkHttpClient = Http.client) {
                 GeoBlip(lat, lon, label, tag(block, "link")?.let(::clean) ?: "https://www.tsunami.gov/")
             }
         }
-    } catch (e: Exception) {
-        emptyList()
     }
 
     /** Either coordinate encoding the bulletin happens to use. */

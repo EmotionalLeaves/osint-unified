@@ -15,9 +15,17 @@ import okhttp3.Request
 import java.net.URLEncoder
 
 /**
- * Ongoing armed conflicts geocoded via Wikidata SPARQL (keyless): items that
- * are an armed conflict with a coordinate and no end date, as the CONFLICT
- * layer.
+ * Armed conflicts under way now, geocoded via Wikidata SPARQL (keyless).
+ *
+ * "No recorded end date" is not the same as "still going on". Wikidata has
+ * thousands of battles and sieges whose end nobody ever filled in, so a
+ * filter on `!BOUND(?end)` alone put the Second World War on a live map —
+ * which is worse than showing nothing, because every other marker beside it
+ * is real and current.
+ *
+ * So a start date is now required, and it has to be recent. The query asks
+ * for it, and the result is checked again here: a source that changes its
+ * mind should not be able to put 1939 back on the globe.
  */
 class ConflictDataSource(private val client: OkHttpClient = Http.client) {
 
@@ -26,17 +34,15 @@ class ConflictDataSource(private val client: OkHttpClient = Http.client) {
 
     suspend fun fetch(): List<GeoBlip> = withContext(Dispatchers.IO) {
         try {
-            // Conflicts with no recorded end date. "Ongoing" in Wikidata
-            // can still mean a conflict that began decades ago, so the start
-            // date comes back too and is shown in the label rather than
-            // letting every marker read as though it flared up this week.
+            val earliest = CURRENT_YEAR - MAX_AGE_YEARS
             val query = """
                 SELECT ?cLabel ?coord ?start WHERE {
                   ?c wdt:P31/wdt:P279* wd:Q350604 .
                   ?c wdt:P625 ?coord .
+                  ?c wdt:P580 ?start .
                   OPTIONAL { ?c wdt:P582 ?end . }
-                  OPTIONAL { ?c wdt:P580 ?start . }
                   FILTER(!BOUND(?end))
+                  FILTER(YEAR(?start) >= $earliest)
                   SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
                 } LIMIT 600
             """.trimIndent()
@@ -60,13 +66,26 @@ class ConflictDataSource(private val client: OkHttpClient = Http.client) {
                     val lat = m.groupValues[2].toDoubleOrNull() ?: return@mapNotNull null
                     val label = ((o["cLabel"] as? JsonObject)?.get("value") as? JsonPrimitive)?.contentOrNull ?: "conflict"
                     val started = ((o["start"] as? JsonObject)?.get("value") as? JsonPrimitive)
-                        ?.contentOrNull?.take(4)?.toIntOrNull()
-                    val full = if (started != null) "$label · since $started" else label
+                        ?.contentOrNull?.take(4)?.toIntOrNull() ?: return@mapNotNull null
+                    // Enforced here as well as in the query: an undated or
+                    // long-finished conflict must never reach the globe.
+                    if (started < CURRENT_YEAR - MAX_AGE_YEARS) return@mapNotNull null
+                    val full = "$label · since $started"
                     GeoBlip(lat, lon, full, "https://www.wikidata.org/w/index.php?search=" + URLEncoder.encode(label, "UTF-8"))
                 }
             }
         } catch (e: Exception) {
             emptyList()
         }
+    }
+
+    private companion object {
+        /** How far back a conflict may have started and still count as
+         *  current. Long enough for the wars that are actually running,
+         *  short enough to keep the twentieth century off the map. */
+        const val MAX_AGE_YEARS = 20
+        val CURRENT_YEAR: Int =
+            java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
+                .get(java.util.Calendar.YEAR)
     }
 }

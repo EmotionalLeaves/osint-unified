@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -66,13 +67,29 @@ class MainActivity : ComponentActivity() {
                     var screen by rememberSaveable { mutableStateOf("godeye") }
                     val godState by godEyeViewModel.state.collectAsStateWithLifecycle()
 
-                    // A new search (from the bar or a globe tap) opens the investigation.
+                    // A new search (from the bar or a globe tap) opens the
+                    // investigation. The signal that was already acted on is
+                    // remembered across configuration changes: without that,
+                    // a new composition after a rotation saw the same
+                    // non-zero signal and forced the dossier open again, so
+                    // once you had searched you could not rotate the phone
+                    // anywhere else in the app.
+                    var handledNav by rememberSaveable { mutableLongStateOf(0L) }
                     LaunchedEffect(godState.navSignal) {
-                        if (godState.navSignal > 0L) screen = "investigation"
+                        if (godState.navSignal > handledNav) {
+                            handledNav = godState.navSignal
+                            screen = "investigation"
+                        }
                     }
 
                     // System back returns to the globe from any sub-screen.
-                    BackHandler(enabled = screen != "godeye") { screen = "godeye" }
+                    // The framework directory is excluded: it has its own
+                    // folder stack, and back there should go up one level
+                    // like its toolbar arrow does, not leap to the globe
+                    // from three folders deep.
+                    BackHandler(enabled = screen != "godeye" && screen != "framework") {
+                        screen = "godeye"
+                    }
 
                     when (screen) {
                         "investigation" -> InvestigationScreen(

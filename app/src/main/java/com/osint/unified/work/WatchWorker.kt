@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.content.pm.PackageManager
+import android.os.Build
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -16,6 +17,7 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.osint.unified.OsintApplication
+import kotlinx.coroutines.CancellationException
 import java.util.concurrent.TimeUnit
 
 /**
@@ -33,8 +35,11 @@ class WatchWorker(
 
     override suspend fun doWork(): Result {
         val app = applicationContext as? OsintApplication ?: return Result.success()
-        val changes = runCatching { app.watchRepository.checkAll() }.getOrNull()
-            ?: return Result.retry()
+        val attempt = runCatching { app.watchRepository.checkAll() }
+        // Being stopped is not a failure to retry; it is the system asking
+        // us to stop.
+        attempt.exceptionOrNull()?.let { if (it is CancellationException) throw it }
+        val changes = attempt.getOrNull() ?: return Result.retry()
         if (changes.isNotEmpty()) notify(changes)
         return Result.success()
     }
@@ -47,11 +52,15 @@ class WatchWorker(
                 .apply { description = "Changes found on targets you are watching" }
         )
 
-        // On Android 13 and later this is refused until the person grants it.
-        // Posting anyway throws; checking keeps the work succeeding quietly.
-        val granted = ActivityCompat.checkSelfPermission(
-            applicationContext, Manifest.permission.POST_NOTIFICATIONS
-        ) == PackageManager.PERMISSION_GRANTED
+        // POST_NOTIFICATIONS exists only from Android 13. Below that the
+        // package manager answers DENIED for a permission that was never
+        // required, so checking it unconditionally silenced the notification
+        // on every device from Android 8 to 12L — the majority of the range
+        // this app supports.
+        val granted = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            ActivityCompat.checkSelfPermission(
+                applicationContext, Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
         if (!granted) return
 
         val title = if (changes.size == 1) "A watched target changed"

@@ -44,6 +44,16 @@ trap 'rm -rf "$WORK"' EXIT
 grep -iE "error:.*(conflicting declaration|redeclaration|expecting |unexpected token|unbalanced|unclosed|syntax error|already defined|expecting an element|expecting a top level|expecting member declaration)" \
   "$WORK/full.txt" > "$WORK/real.txt" || true
 
+# ${'$'}{...} — a literal dollar followed by a brace. This is what a string
+# template becomes when it is written out through a shell heredoc that has
+# already escaped the dollar, and the result compiles: Kotlin reads it as the
+# constant text "${...}" with no interpolation at all. It cost a silent bug
+# where a de-duplication key was the same string every time, so the app ran
+# one source per search instead of twenty. Nothing legitimate needs this
+# form, since a literal dollar before a brace can be written \${.
+grep -n "\${'\$'}{" $(find app/src/main/java app/src/test/java -name '*.kt') 2>/dev/null \
+  | sed 's/^/error: literal-dollar template (heredoc damage): /' >> "$WORK/real.txt" || true
+
 # A reference ending in an underscore is nearly always "$name_" in a string
 # template, where Kotlin swallows the underscore into the identifier.
 grep -E "error: unresolved reference: [A-Za-z0-9]+_$" "$WORK/full.txt" >> "$WORK/real.txt" || true

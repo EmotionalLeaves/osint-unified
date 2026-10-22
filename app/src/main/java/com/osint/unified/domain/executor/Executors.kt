@@ -568,6 +568,58 @@ class DirectToolExecutor(
     private fun stripXml(s: String) =
         s.replace(Regex("<[^>]+>"), " ").replace(Regex("\\s+"), " ").trim()
 
+    /**
+     * Cameras mapped in OpenStreetMap near a point.
+     *
+     * These carry no video feed — OSM records that a camera is there, who
+     * it belongs to and which way it points. That is a real answer about
+     * the place, which is more than a link to a camera directory's front
+     * page ever was.
+     */
+    private fun surveillanceNear(lat: Double, lon: Double): List<String> {
+        val query = "[out:json][timeout:25];" +
+            "(node(around:1000,$lat,$lon)[man_made=surveillance];" +
+            "way(around:1000,$lat,$lon)[man_made=surveillance];);out center 60;"
+        val body = ("data=" + java.net.URLEncoder.encode(query, "UTF-8")).toRequestBody(formUrlEncoded)
+        val request = Request.Builder()
+            .url("https://overpass-api.de/api/interpreter")
+            .header("User-Agent", "OSINT-Unified/1.0 (research)")
+            .header("Accept", "application/json")
+            .post(body)
+            .build()
+        val text = client.newCall(request).execute().use { resp ->
+            if (!resp.isSuccessful) return emptyList()
+            resp.body?.string().orEmpty()
+        }
+        val elements = (json.parseToJsonElement(text).jsonObject["elements"] as? JsonArray)
+            ?: return emptyList()
+        return elements.mapNotNull { el ->
+            val o = el as? JsonObject ?: return@mapNotNull null
+            val centre = o["center"] as? JsonObject
+            val eLat = ((centre ?: o)["lat"] as? JsonPrimitive)?.contentOrNull?.toDoubleOrNull()
+                ?: return@mapNotNull null
+            val eLon = ((centre ?: o)["lon"] as? JsonPrimitive)?.contentOrNull?.toDoubleOrNull()
+                ?: return@mapNotNull null
+            val tags = o["tags"] as? JsonObject
+            fun tag(k: String) = (tags?.get(k) as? JsonPrimitive)?.contentOrNull
+                ?.takeIf { it.isNotBlank() }
+            val id = (o["id"] as? JsonPrimitive)?.contentOrNull
+            val type = (o["type"] as? JsonPrimitive)?.contentOrNull ?: "node"
+            buildString {
+                append("• ")
+                append(tag("name") ?: tag("surveillance:type") ?: "camera")
+                tag("operator")?.let { append(" · $it") }
+                tag("camera:type")?.let { append(" · $it") }
+                tag("surveillance")?.let { append(" · covers $it") }
+                tag("camera:mount")?.let { append(" · $it mounted") }
+                append("\n  %.1f km — %.5f, %.5f".format(
+                    haversineKm(lat, lon, eLat, eLon), eLat, eLon
+                ))
+                if (id != null) append("\n  https://www.openstreetmap.org/$type/$id")
+            }
+        }
+    }
+
     /** Minimal CSV splitter that respects quoted fields. */
     private fun splitCsv(line: String): List<String> {
         val out = ArrayList<String>()
@@ -599,11 +651,25 @@ class DirectToolExecutor(
             .sortedBy { it.second }
             .take(25)
         if (near.isEmpty()) {
-            return@runCatching "No public traffic cameras within 50 km of %.4f, %.4f.\n".format(lat, lon) +
-                "Coverage today is Caltrans (California). Elsewhere, try:\n" +
-                "• https://www.insecam.org/en/bymap/\n" +
-                "• https://www.earthcam.com/network/\n" +
-                "• OpenStreetMap: nwr[man_made=surveillance] near the point"
+            // The old fallback printed two camera-directory homepages and a
+            // sentence describing an OpenStreetMap query. None of the three
+            // was pointed at the place being asked about, so none of them
+            // answered anything — they were links for the sake of having
+            // links. OSM actually holds mapped cameras, so the query is run
+            // rather than described.
+            val mapped = runCatching { surveillanceNear(lat, lon) }.getOrNull().orEmpty()
+            return@runCatching buildString {
+                append("No public traffic-camera feed within 50 km of %.4f, %.4f ".format(lat, lon))
+                append("(live still images today are Caltrans, California only).\n")
+                if (mapped.isEmpty()) {
+                    append("OpenStreetMap has no surveillance cameras mapped within 1 km either.")
+                } else {
+                    append("\nOpenStreetMap has ${mapped.size} surveillance camera")
+                    append(if (mapped.size == 1) "" else "s")
+                    append(" mapped within 1 km — position only, no feed:\n")
+                    mapped.take(25).forEach { append("\n$it") }
+                }
+            }
         }
         buildString {
             append("Public cameras within 50 km of %.4f, %.4f — ${near.size} found:\n".format(lat, lon))

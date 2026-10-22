@@ -7,6 +7,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.io.IOException
 
 /**
  * Ground stops and delay programmes in the US national airspace system.
@@ -28,8 +29,13 @@ class AirportStatusDataSource(
 ) {
 
     private val delayTypeRegex = Regex("<Delay_type>(.*?)</Delay_type>", RegexOption.DOT_MATCHES_ALL)
+    // The FAA names the element differently in each section, and the
+    // closure section holds <Airport> elements inside an
+    // <Airport_Closure_List> wrapper — not <Airport_Closure> elements. A
+    // regex that missed that would silently never show a closed airport,
+    // which is the most serious thing this layer exists to report.
     private val programRegex = Regex(
-        "<(Program|Ground_Delay|Delay|Airport_Closure)>(.*?)</\\1>",
+        "<(Program|Ground_Delay|Delay|Airport_Closure|Airport)>(.*?)</\\1>",
         RegexOption.DOT_MATCHES_ALL
     )
 
@@ -40,30 +46,44 @@ class AirportStatusDataSource(
         index?.let { return it }
         val built = HashMap<String, Triple<Double, Double, String>>()
         airports.fetch().forEach { blip ->
-            // The bundled label is "CODE · Name"; the code is what the FAA
-            // feed speaks.
-            val code = blip.label.substringBefore(" ·").trim().uppercase()
+            // The bundled label is "CODE · Name", but falls back to the bare
+            // name when the dataset has no code. Without requiring the
+            // separator, a short name like "Hilo" was indexed as if it were
+            // an airport code, so a real FAA programme for that code would
+            // be plotted at an unrelated airfield.
+            if (!blip.label.contains(" · ")) return@forEach
+            val code = blip.label.substringBefore(" · ").trim().uppercase()
             if (code.length in 3..4) {
                 built.putIfAbsent(code, Triple(blip.lat, blip.lon, blip.label))
             }
         }
-        index = built
+        // Only cache an index that has something in it. Caching an empty one
+        // after a failed asset read made every later poll drop every
+        // programme, for the life of the process, in silence.
+        if (built.isNotEmpty()) index = built
         return built
     }
 
+    /** Throws rather than returning an empty list when the feed or the
+     *  airport index could not be read — an empty list is a statement that
+     *  nothing is delayed anywhere, which the world brief repeats. */
     suspend fun fetch(): List<GeoBlip> = withContext(Dispatchers.IO) {
-        try {
             val request = Request.Builder()
                 .url("https://nasstatus.faa.gov/api/airport-status-information")
                 .header("User-Agent", "OSINT-Unified/1.0 (research)")
                 .build()
             val body = client.newCall(request).execute().use { resp ->
-                if (!resp.isSuccessful) return@withContext emptyList()
+                if (!resp.isSuccessful) throw IOException("FAA HTTP ${resp.code}")
                 resp.body?.string()
             }
-            if (body.isNullOrBlank()) return@withContext emptyList()
+            if (body.isNullOrBlank()) throw IOException("FAA returned an empty body")
 
-            val coords = airportIndex()
+            // No airports means no join is possible; saying "no ground
+            // stops" would be a claim this cannot support.
+            val coordsOrNone = airportIndex()
+            if (coordsOrNone.isEmpty()) throw IOException("airport coordinates unavailable")
+
+            val coords = coordsOrNone
             val out = LinkedHashMap<String, GeoBlip>()
 
             delayTypeRegex.findAll(body).forEach { typeMatch ->
@@ -98,9 +118,6 @@ class AirportStatusDataSource(
                 }
             }
             out.values.toList()
-        } catch (e: Exception) {
-            emptyList()
-        }
     }
 
     /** The FAA's section names, shortened to fit a marker label. */

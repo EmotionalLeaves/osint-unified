@@ -147,11 +147,18 @@ object AreaReport {
         return Report(lat, lon, radiusKm, groups)
     }
 
-    /** A short headline: the layers worth mentioning, most-populated first. */
+    /**
+     * A short headline, in the order [build] established.
+     *
+     * It used to re-sort by count, which threw that order away and handed
+     * back "47 traffic camera · 31 airport" while the one ground stop or
+     * tsunami bulletin in the report never reached the line anyone reads.
+     * The sweep is already ordered so that what would change a decision
+     * comes first; the headline's job is to keep it.
+     */
     fun headline(report: Report): String {
         if (report.groups.isEmpty()) return "Nothing loaded within ${fmtKm(report.radiusKm)} of here."
         return report.groups
-            .sortedByDescending { it.total }
             .take(4)
             .joinToString(" · ") { "${it.total} ${it.kind.lowercase()}" }
     }
