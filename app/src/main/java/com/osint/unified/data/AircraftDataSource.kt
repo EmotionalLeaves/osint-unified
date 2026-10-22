@@ -38,16 +38,30 @@ class AircraftDataSource(
 ) {
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
-    suspend fun fetch(): List<Aircraft> = withContext(Dispatchers.IO) {
+    /**
+     * [focus] is the centre of the map and [wide] whether it is zoomed out
+     * far enough to be looking at the world rather than a region.
+     *
+     * This matters more than it looks. Each hub response is around half a
+     * megabyte, the layer refreshes every fifteen seconds, and sweeping
+     * every hub against both providers would pull roughly eighty megabytes
+     * a refresh — gigabytes an hour of someone's mobile data, and a quick
+     * route to being rate limited. So the sweep follows the viewport:
+     * a spread sample when zoomed out, the nearby hubs when zoomed in.
+     */
+    suspend fun fetch(
+        focus: Pair<Double, Double>? = null,
+        wide: Boolean = true
+    ): List<Aircraft> = withContext(Dispatchers.IO) {
         val url = settings.tar1090Url.trim()
         // Source order: a custom tar1090 feed, then keyless OpenSky (global),
         // then keyless adsb.fi (hub sweep), and only demo data if all are down.
-        if (url.isBlank()) return@withContext merged()
+        if (url.isBlank()) return@withContext merged(focus, wide)
         try {
             val request = Request.Builder().url(url).build()
             client.newCall(request).execute().use { resp ->
                 val body = resp.body?.string()
-                if (!resp.isSuccessful || body.isNullOrBlank()) return@withContext merged()
+                if (!resp.isSuccessful || body.isNullOrBlank()) return@withContext merged(focus, wide)
                 val envelope = json.decodeFromString<Tar1090Envelope>(body)
                 envelope.aircraft
                     .filter { it.lat != null && it.lon != null }
@@ -62,10 +76,10 @@ class AircraftDataSource(
                             speed = ac.gs ?: 0.0
                         )
                     }
-                    .ifEmpty { merged() }
+                    .ifEmpty { merged(focus, wide) }
             }
         } catch (e: Exception) {
-            merged()
+            merged(focus, wide)
         }
     }
 
@@ -75,9 +89,11 @@ class AircraftDataSource(
      * reliable. Using both covers far more of the sky than either, and the
      * demo positions only appear if every real source is down.
      */
-    private suspend fun merged(): List<Aircraft> {
+    private suspend fun merged(focus: Pair<Double, Double>?, wide: Boolean): List<Aircraft> {
         val byHex = LinkedHashMap<String, Aircraft>()
-        runCatching { adsbSweep() }.getOrNull()?.forEach { byHex[it.icao] = it }
+        runCatching { adsbSweep(focus, wide) }.getOrNull()?.forEach { byHex[it.icao] = it }
+        // OpenSky is one request for the whole planet, so it is always worth
+        // asking even though it rate-limits anonymous callers.
         runCatching { openSky() }.getOrNull()?.forEach { byHex.putIfAbsent(it.icao, it) }
         return byHex.values.toList()
     }
@@ -93,20 +109,39 @@ class AircraftDataSource(
      * error of the planet. Both fixed: both shapes parsed, both providers
      * queried, and enough hubs to cover where aircraft actually are.
      */
-    private suspend fun adsbSweep(): List<Aircraft>? = coroutineScope {
+    private suspend fun adsbSweep(
+        focus: Pair<Double, Double>?,
+        wide: Boolean
+    ): List<Aircraft>? = coroutineScope {
         val out = java.util.concurrent.ConcurrentHashMap<String, Aircraft>()
-        val gate = Semaphore(8)
-        HUBS.map { (lat, lon) ->
+        val gate = Semaphore(6)
+        hubsFor(focus, wide).mapIndexed { index, hub ->
             async(Dispatchers.IO) {
                 gate.withPermit {
-                    PROVIDERS.forEach { provider ->
-                        if (out.size >= 25000) return@withPermit
-                        runCatching { sweepOne(provider, lat, lon, out) }
-                    }
+                    // One provider per hub, alternating, so the two are both
+                    // exercised without doubling the traffic.
+                    val provider = PROVIDERS[index % PROVIDERS.size]
+                    runCatching { sweepOne(provider, hub.first, hub.second, out) }
                 }
             }
         }.forEach { it.await() }
         if (out.isEmpty()) null else out.values.toList()
+    }
+
+    /**
+     * Zoomed out, a spread sample of the busiest regions — enough to show
+     * the world has traffic without downloading all of it. Zoomed in, the
+     * hubs nearest what is on screen, so detail appears where it is being
+     * looked at.
+     */
+    private fun hubsFor(focus: Pair<Double, Double>?, wide: Boolean): List<Pair<Double, Double>> {
+        if (focus == null || wide) return HUBS.filterIndexed { i, _ -> i % 6 == 0 }
+        val (lat, lon) = focus
+        return HUBS.sortedBy { (hLat, hLon) ->
+            val dLat = hLat - lat
+            val dLon = ((hLon - lon + 540) % 360) - 180
+            dLat * dLat + dLon * dLon
+        }.take(6)
     }
 
     private fun sweepOne(

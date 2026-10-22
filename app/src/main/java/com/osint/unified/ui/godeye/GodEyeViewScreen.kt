@@ -341,6 +341,7 @@ fun GodEyeViewScreen(
                     findings = state.findings,
                     focus = state.mapFocus,
                     onInspect = { inspected = it },
+                    onViewport = viewModel::onViewportChanged,
                     onMapTap = { lat, lon -> viewModel.onMapClick(lat, lon) },
                     modifier = Modifier.fillMaxSize().clipToBounds()
                 )
@@ -528,6 +529,7 @@ private fun GlobeMap(
     findings: List<FindingPin>,
     focus: Pair<Double, Double>?,
     onInspect: (Inspected) -> Unit,
+    onViewport: (Double, Double, Double) -> Unit,
     onMapTap: (Double, Double) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -576,11 +578,13 @@ private fun GlobeMap(
                         object : MapListener {
                             override fun onScroll(event: ScrollEvent?): Boolean {
                                 viewport = boundingBox
+                                onViewport(mapCenter.latitude, mapCenter.longitude, zoomLevelDouble)
                                 return false
                             }
 
                             override fun onZoom(event: ZoomEvent?): Boolean {
                                 viewport = boundingBox
+                                onViewport(mapCenter.latitude, mapCenter.longitude, zoomLevelDouble)
                                 return false
                             }
                         },

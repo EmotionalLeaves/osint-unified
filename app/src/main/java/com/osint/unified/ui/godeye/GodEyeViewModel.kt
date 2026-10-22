@@ -154,7 +154,7 @@ class GodEyeViewModel(
         // Staggered start-up so launch doesn't fire every feed at once (which
         // spiked memory/CPU). Each poll is exception-guarded so one bad fetch
         // can't kill its loop, and updates stay atomic per field.
-        poll(0, 15_000, { aircraftDataSource.fetch() }) { s, v -> s.copy(aircraft = v) }
+        poll(0, 15_000, { aircraftDataSource.fetch(focus, wideView) }) { s, v -> s.copy(aircraft = v) }
         poll(400, 10_000, { aisDataSource.fetch() }) { s, v -> s.copy(vessels = v) }
         poll(800, 10_000, { satellitesDataSource.fetch() }) { s, v -> s.copy(satellites = v) }
         poll(1_500, 300_000, { earthquakeDataSource.fetch() }) { s, v -> s.copy(quakes = v) }
@@ -193,6 +193,16 @@ class GodEyeViewModel(
                 delay(intervalMs)
             }
         }
+    }
+
+    /** Where the map is pointed, so feeds that cost bandwidth per region
+     *  can follow it rather than sweeping the planet every refresh. */
+    @Volatile private var focus: Pair<Double, Double>? = null
+    @Volatile private var wideView: Boolean = true
+
+    fun onViewportChanged(lat: Double, lon: Double, zoom: Double) {
+        focus = lat to lon
+        wideView = zoom < 5.0
     }
 
     private var camerasJob: Job? = null
