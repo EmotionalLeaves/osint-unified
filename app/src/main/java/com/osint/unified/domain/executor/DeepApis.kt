@@ -10,6 +10,8 @@ import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.IOException
@@ -294,6 +296,178 @@ class DeepApis(private val client: OkHttpClient = Http.client) {
         sb.toString()
     }
 
+    /**
+     * One username, checked in parallel against eight platforms that answer
+     * without a key or an account: Bluesky, Mastodon, GitLab, Docker Hub,
+     * Stack Overflow, Bitbucket, npm and Wikipedia.
+     *
+     * Each hit carries the detail that matters for identity work — display
+     * name, bio, join date, linked site, publishing email where the platform
+     * exposes one.
+     */
+    suspend fun socialSweep(username: String): String = coroutineScope {
+        val u = username.trim().removePrefix("@")
+        val e = URLEncoder.encode(u, "UTF-8")
+
+        val checks = listOf<Pair<String, suspend () -> String?>>(
+            "Bluesky" to {
+                val o = json.parseToJsonElement(
+                    get("https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=$e.bsky.social")
+                ).jsonObject
+                o.str("handle")?.let { h ->
+                    buildString {
+                        append("@$h")
+                        o.str("displayName")?.let { append(" — $it") }
+                        o.int("followersCount")?.let { append("\n  ${it} followers, ${o.int("followsCount") ?: 0} following, ${o.int("postsCount") ?: 0} posts") }
+                        o.str("description")?.takeIf { it.isNotBlank() }?.let { append("\n  ${it.replace("\n", " ").take(200)}") }
+                        o.str("createdAt")?.let { append("\n  Joined ${it.substringBefore('T')}") }
+                        append("\n  https://bsky.app/profile/$h")
+                    }
+                }
+            },
+            "Mastodon" to {
+                val o = json.parseToJsonElement(
+                    get("https://mastodon.social/api/v1/accounts/lookup?acct=$e")
+                ).jsonObject
+                o.str("username")?.let {
+                    buildString {
+                        append("@${o.str("acct")}")
+                        o.str("display_name")?.takeIf { d -> d.isNotBlank() }?.let { d -> append(" — $d") }
+                        append("\n  ${o.int("followers_count") ?: 0} followers, ${o.int("statuses_count") ?: 0} posts")
+                        o.str("note")?.takeIf { n -> n.isNotBlank() }?.let { n -> append("\n  ${stripTags(n).take(200)}") }
+                        o.str("created_at")?.let { c -> append("\n  Joined ${c.substringBefore('T')}") }
+                        append("\n  ${o.str("url")}")
+                    }
+                }
+            },
+            "GitLab" to {
+                val arr = json.parseToJsonElement(get("https://gitlab.com/api/v4/users?username=$e")) as? JsonArray
+                (arr?.firstOrNull() as? JsonObject)?.let { o ->
+                    buildString {
+                        append(o.str("name") ?: u)
+                        o.str("state")?.let { append(" [$it]") }
+                        append("\n  ${o.str("web_url")}")
+                    }
+                }
+            },
+            "Docker Hub" to {
+                val o = json.parseToJsonElement(get("https://hub.docker.com/v2/users/$e/")).jsonObject
+                o.str("username")?.let {
+                    buildString {
+                        append(o.str("full_name")?.takeIf { f -> f.isNotBlank() } ?: u)
+                        o.str("company")?.takeIf { c -> c.isNotBlank() }?.let { c -> append(" · $c") }
+                        o.str("location")?.takeIf { l -> l.isNotBlank() }?.let { l -> append(" · $l") }
+                        o.str("date_joined")?.let { d -> append("\n  Joined ${d.substringBefore('T')}") }
+                        o.str("profile_url")?.takeIf { p -> p.isNotBlank() }?.let { p -> append("\n  Linked: $p") }
+                        append("\n  https://hub.docker.com/u/$u")
+                    }
+                }
+            },
+            "Stack Overflow" to {
+                val items = json.parseToJsonElement(
+                    get("https://api.stackexchange.com/2.3/users?inname=$e&site=stackoverflow&pagesize=3")
+                ).jsonObject["items"] as? JsonArray
+                items?.takeIf { it.isNotEmpty() }?.let { arr ->
+                    arr.take(3).joinToString("\n") { el ->
+                        val o = el as? JsonObject
+                        "  ${o.str("display_name")} — ${o.int("reputation") ?: 0} rep, " +
+                            "${o.str("location") ?: "no location"}\n  ${o.str("link")}"
+                    }
+                }
+            },
+            "Bitbucket" to {
+                val o = json.parseToJsonElement(get("https://api.bitbucket.org/2.0/users/$e")).jsonObject
+                o.str("display_name")?.let {
+                    "$it\n  https://bitbucket.org/$u"
+                }
+            },
+            "npm" to {
+                val objs = json.parseToJsonElement(
+                    get("https://registry.npmjs.org/-/v1/search?text=author:$e&size=10")
+                ).jsonObject["objects"] as? JsonArray
+                objs?.takeIf { it.isNotEmpty() }?.let { arr ->
+                    val emails = LinkedHashSet<String>()
+                    val names = arr.mapNotNull { el ->
+                        val pkg = (el as? JsonObject)?.get("package") as? JsonObject
+                        ((pkg?.get("publisher") as? JsonObject)).str("email")?.let { emails.add(it) }
+                        pkg.str("name")
+                    }
+                    buildString {
+                        append("  ${arr.size} packages: ${names.take(10).joinToString(", ")}")
+                        if (emails.isNotEmpty()) append("\n  Publishing email: ${emails.joinToString(", ")}")
+                    }
+                }
+            },
+            "Wikipedia" to {
+                val contribs = (json.parseToJsonElement(
+                    get("https://en.wikipedia.org/w/api.php?action=query&list=usercontribs&ucuser=$e&format=json&uclimit=20")
+                ).jsonObject["query"] as? JsonObject)?.get("usercontribs") as? JsonArray
+                contribs?.takeIf { it.isNotEmpty() }?.let { arr ->
+                    val pages = arr.mapNotNull { (it as? JsonObject).str("title") }.distinct()
+                    "  ${arr.size} recent edits\n  Pages: ${pages.take(8).joinToString(", ")}" +
+                        "\n  https://en.wikipedia.org/wiki/Special:Contributions/$u"
+                }
+            }
+        )
+
+        val results = checks.map { (name, probe) ->
+            async { name to runCatching { probe() }.getOrNull() }
+        }.map { it.await() }
+
+        val hits = results.filter { !it.second.isNullOrBlank() }
+        val misses = results.filter { it.second.isNullOrBlank() }.map { it.first }
+
+        buildString {
+            append("Platform sweep — '$u'\n")
+            append("${hits.size} of ${results.size} platforms have an account under this name.\n")
+            hits.forEach { (name, detail) ->
+                append("\n▸ $name\n")
+                append(detail!!.lines().joinToString("\n") { if (it.startsWith("  ")) it else "  $it" })
+                append("\n")
+            }
+            if (misses.isNotEmpty()) append("\nNo account found on: ${misses.joinToString(", ")}")
+            append("\n\nAll eight checked without a key or an account.")
+        }
+    }
+
+    /** OpenStreetMap edit history — where someone maps is often where they
+     *  live. Each changeset carries a bounding box. */
+    fun osmUser(username: String): Result<String> = runCatching {
+        val u = username.trim()
+        val e = URLEncoder.encode(u, "UTF-8")
+        val sets = json.parseToJsonElement(
+            get("https://api.openstreetmap.org/api/0.6/changesets.json?display_name=$e")
+        ).jsonObject["changesets"] as? JsonArray
+        if (sets.isNullOrEmpty()) return@runCatching "OpenStreetMap: no edits by '$u'."
+        val sb = StringBuilder("OpenStreetMap — $u\n${sets.size} recent changesets\n")
+        var total: String? = null
+        val centres = ArrayList<Pair<Double, Double>>()
+        sets.take(25).forEach { el ->
+            val o = el as? JsonObject ?: return@forEach
+            val tags = o["tags"] as? JsonObject
+            total = total ?: tags.str("changesets_count")
+            val minLat = o.dbl("min_lat"); val maxLat = o.dbl("max_lat")
+            val minLon = o.dbl("min_lon"); val maxLon = o.dbl("max_lon")
+            sb.append("\n• ${o.str("created_at")?.substringBefore('T')}")
+            tags.str("comment")?.let { sb.append(" — ${it.take(80)}") }
+            if (minLat != null && maxLat != null && minLon != null && maxLon != null) {
+                val cLat = (minLat + maxLat) / 2; val cLon = (minLon + maxLon) / 2
+                centres.add(cLat to cLon)
+                sb.append("\n  Near %.4f, %.4f".format(cLat, cLon))
+            }
+            tags.str("created_by")?.let { sb.append("\n  Editor: $it") }
+        }
+        total?.let { sb.append("\n\nLifetime changesets: $it") }
+        if (centres.isNotEmpty()) {
+            val aLat = centres.sumOf { it.first } / centres.size
+            val aLon = centres.sumOf { it.second } / centres.size
+            sb.append("\nCentre of recent activity: %.4f, %.4f".format(aLat, aLon))
+            sb.append("\n(People overwhelmingly map where they live and travel.)")
+        }
+        sb.append("\nhttps://www.openstreetmap.org/user/$u")
+        sb.toString()
+    }
+
     // ------------------------------------------------------------------
     // Email
     // ------------------------------------------------------------------
@@ -365,6 +539,17 @@ class DeepApis(private val client: OkHttpClient = Http.client) {
                 .findAll(html).forEach { record(it.groupValues[1], "rapiddns") }
         }
         runCatching {
+            // Cert Spotter indexes certificate transparency independently of crt.sh.
+            val arr = json.parseToJsonElement(
+                get("https://api.certspotter.com/v1/issuances?domain=$d&include_subdomains=true&expand=dns_names")
+            ) as? JsonArray
+            arr?.forEach { el ->
+                ((el as? JsonObject)?.get("dns_names") as? JsonArray)?.forEach { n ->
+                    (n as? JsonPrimitive)?.contentOrNull?.let { record(it, "certspotter") }
+                }
+            }
+        }
+        runCatching {
             // Wayback's CDX index knows hosts that no longer resolve.
             get("https://web.archive.org/cdx/search/cdx?url=*.$d&output=text&fl=original&collapse=urlkey&limit=4000")
                 .lineSequence().forEach { line ->
@@ -404,6 +589,242 @@ class DeepApis(private val client: OkHttpClient = Http.client) {
             }
         }
         if (sb.length < 30) "Host intel: no data returned for $t." else sb.toString()
+    }
+
+    /**
+     * IP reputation across open DNS blocklists, queried over DNS-over-HTTPS.
+     *
+     * Several lists (Spamhaus, SpamCop) refuse queries that arrive via a
+     * public resolver and answer with a 127.255.255.x code instead of a real
+     * listing. That is reported as "refused", never as a hit — a false
+     * positive here would be worse than no answer.
+     */
+    fun ipReputation(input: String): Result<String> = runCatching {
+        val ip = input.trim()
+        if (!Regex("""^(?:\d{1,3}\.){3}\d{1,3}$""").matches(ip)) {
+            return@runCatching "IP reputation needs an IPv4 address."
+        }
+        val reversed = ip.split(".").reversed().joinToString(".")
+        val lists = listOf(
+            "dnsbl.dronebl.org" to "DroneBL (bots, proxies, shells)",
+            "all.s5h.net" to "s5h (spam sources)",
+            "b.barracudacentral.org" to "Barracuda",
+            "zen.spamhaus.org" to "Spamhaus ZEN",
+            "dnsbl-1.uceprotect.net" to "UCEPROTECT level 1",
+            "bl.blocklist.de" to "blocklist.de (attack reports)"
+        )
+        val listed = ArrayList<String>()
+        val clean = ArrayList<String>()
+        val refused = ArrayList<String>()
+        lists.forEach { (zone, label) ->
+            val answers = runCatching {
+                val o = json.parseToJsonElement(get("https://dns.google/resolve?name=$reversed.$zone&type=A")).jsonObject
+                (o["Answer"] as? JsonArray)?.mapNotNull { (it as? JsonObject).str("data") } ?: emptyList()
+            }.getOrDefault(emptyList())
+            when {
+                answers.isEmpty() -> clean.add(label)
+                answers.any { it.startsWith("127.255.255.") } -> refused.add(label)
+                else -> listed.add("$label → ${answers.joinToString(", ")}")
+            }
+        }
+        buildString {
+            append("IP reputation — $ip\n")
+            if (listed.isEmpty()) {
+                append("\nNot listed on any blocklist that answered.\n")
+            } else {
+                append("\nLISTED on ${listed.size} blocklist(s):\n")
+                listed.forEach { append("• $it\n") }
+            }
+            if (clean.isNotEmpty()) append("\nClean on: ${clean.joinToString(", ")}\n")
+            if (refused.isNotEmpty()) {
+                append("\nNo answer (these lists refuse public-resolver queries, ")
+                append("so this is not a clean result): ${refused.joinToString(", ")}\n")
+            }
+            append("\nChecked over DNS-over-HTTPS. 127.0.0.x codes mean a listing; ")
+            append("each list documents what its codes mean.")
+        }
+    }
+
+    /**
+     * Who actually runs the network an address sits on: the RIR abuse
+     * contact, how much space the AS announces, and its PeeringDB record
+     * (org, traffic profile, exchanges, facilities).
+     */
+    fun asnIntel(input: String): Result<String> = runCatching {
+        val t = input.trim().uppercase().removePrefix("AS").let { if (it.all(Char::isDigit)) "AS$it" else input.trim() }
+        val sb = StringBuilder("Network intel — $t\n")
+
+        runCatching {
+            val d = json.parseToJsonElement(
+                get("https://stat.ripe.net/data/abuse-contact-finder/data.json?resource=${URLEncoder.encode(t, "UTF-8")}")
+            ).jsonObject["data"]?.jsonObject
+            (d?.get("abuse_contacts") as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+                ?.takeIf { it.isNotEmpty() }
+                ?.let { sb.append("Abuse contact: ${it.joinToString(", ")}\n") }
+            d.str("authoritative_rir")?.let { sb.append("RIR: ${it.uppercase()}\n") }
+        }
+
+        // Resolve an IP to its AS so the PeeringDB lookup has something to use.
+        var asn = Regex("""^AS(\d+)$""").find(t)?.groupValues?.get(1)
+        if (asn == null) {
+            runCatching {
+                val d = json.parseToJsonElement(
+                    get("https://stat.ripe.net/data/network-info/data.json?resource=${URLEncoder.encode(t, "UTF-8")}")
+                ).jsonObject["data"]?.jsonObject
+                d.str("prefix")?.let { sb.append("Prefix: $it\n") }
+                asn = (d?.get("asns") as? JsonArray)?.firstOrNull()
+                    ?.let { (it as? JsonPrimitive)?.contentOrNull }
+            }
+        }
+
+        asn?.let { a ->
+            sb.append("ASN: AS$a\n")
+            runCatching {
+                val prefixes = (json.parseToJsonElement(
+                    get("https://stat.ripe.net/data/announced-prefixes/data.json?resource=AS$a")
+                ).jsonObject["data"]?.jsonObject?.get("prefixes") as? JsonArray)
+                prefixes?.let { sb.append("Announced prefixes: ${it.size}\n") }
+            }
+            runCatching {
+                val net = (json.parseToJsonElement(get("https://www.peeringdb.com/api/net?asn=$a"))
+                    .jsonObject["data"] as? JsonArray)?.firstOrNull()?.jsonObject
+                if (net != null) {
+                    sb.append("\nPeeringDB:\n")
+                    net.str("name")?.let { sb.append("• Operator: $it\n") }
+                    net.str("aka")?.takeIf { it.isNotBlank() }?.let { sb.append("• Also known as: $it\n") }
+                    net.str("website")?.takeIf { it.isNotBlank() }?.let { sb.append("• Website: $it\n") }
+                    net.str("info_type")?.let { sb.append("• Network type: $it\n") }
+                    net.str("info_scope")?.let { sb.append("• Scope: $it\n") }
+                    net.str("info_traffic")?.takeIf { it.isNotBlank() }?.let { sb.append("• Traffic: $it\n") }
+                    net.int("ix_count")?.let { sb.append("• Internet exchanges: $it\n") }
+                    net.int("fac_count")?.let { sb.append("• Facilities: $it\n") }
+                    net.str("policy_general")?.let { sb.append("• Peering policy: $it\n") }
+                }
+            }
+        }
+        if (sb.length < 40) "No network data for $t." else sb.toString()
+    }
+
+    /** AlienVault OTX, keyless: passive DNS, hosted URLs and malware seen on
+     *  a domain or IP. */
+    fun threatExchange(input: String): Result<String> = runCatching {
+        val t = input.trim().lowercase().removePrefix("https://").removePrefix("http://").substringBefore("/")
+        val kind = if (Regex("""^(?:\d{1,3}\.){3}\d{1,3}$""").matches(t)) "IPv4" else "domain"
+        val base = "https://otx.alienvault.com/api/v1/indicators/$kind/$t"
+        val sb = StringBuilder("Threat exchange (OTX) — $t\n")
+
+        runCatching {
+            val o = json.parseToJsonElement(get("$base/general")).jsonObject
+            o.int("pulse_count")?.let { sb.append("Threat reports mentioning it: $it\n") }
+            val pulses = ((o["pulse_info"] as? JsonObject)?.get("pulses") as? JsonArray)
+            pulses?.take(8)?.forEach { p ->
+                val po = p as? JsonObject ?: return@forEach
+                sb.append("• ${po.str("name")?.take(90)}")
+                po.str("created")?.let { sb.append(" (${it.substringBefore('T')})") }
+                sb.append("\n")
+            }
+            (o["validation"] as? JsonArray)?.mapNotNull { (it as? JsonObject).str("message") }
+                ?.takeIf { it.isNotEmpty() }?.let { sb.append("Reputation notes: ${it.joinToString("; ")}\n") }
+        }
+
+        runCatching {
+            val rows = json.parseToJsonElement(get("$base/passive_dns"))
+                .jsonObject["passive_dns"] as? JsonArray
+            rows?.takeIf { it.isNotEmpty() }?.let { arr ->
+                sb.append("\nPassive DNS — ${arr.size} historical resolutions:\n")
+                arr.take(30).forEach { r ->
+                    val o = r as? JsonObject ?: return@forEach
+                    sb.append("• ${o.str("hostname") ?: o.str("address")}")
+                    o.str("address")?.takeIf { it != o.str("hostname") }?.let { sb.append(" → $it") }
+                    o.str("first")?.let { sb.append("  first ${it.substringBefore('T')}") }
+                    o.str("last")?.let { sb.append("  last ${it.substringBefore('T')}") }
+                    sb.append("\n")
+                }
+            }
+        }
+
+        runCatching {
+            val rows = json.parseToJsonElement(get("$base/url_list?limit=20"))
+                .jsonObject["url_list"] as? JsonArray
+            rows?.takeIf { it.isNotEmpty() }?.let { arr ->
+                sb.append("\nURLs seen (${arr.size}):\n")
+                arr.take(20).forEach { r ->
+                    sb.append("• ${(r as? JsonObject).str("url")?.take(140)}\n")
+                }
+            }
+        }
+        if (sb.length < 45) "OTX has nothing on $t." else sb.toString()
+    }
+
+    /** Internet outages happening right now, worldwide (Georgia Tech IODA). */
+    fun outages(input: String): Result<String> = runCatching {
+        val now = System.currentTimeMillis() / 1000
+        val from = now - 24 * 3600
+        val rows = json.parseToJsonElement(
+            get("https://api.ioda.inetintel.cc.gatech.edu/v2/outages/alerts?from=$from&until=$now&limit=120")
+        ).jsonObject["data"] as? JsonArray
+        if (rows.isNullOrEmpty()) return@runCatching "IODA reports no internet outage alerts in the last 24 hours."
+        val filter = input.trim().lowercase().takeIf { it.isNotBlank() && it != "osint" }
+        val sb = StringBuilder("Internet outages — last 24 hours\n")
+        val seen = LinkedHashMap<String, String>()
+        rows.forEach { r ->
+            val o = r as? JsonObject ?: return@forEach
+            val ent = o["entity"] as? JsonObject ?: return@forEach
+            val name = ent.str("name") ?: return@forEach
+            val org = ((ent["attrs"] as? JsonObject)).str("org")
+            val level = o.str("level") ?: ""
+            if (filter != null && !name.lowercase().contains(filter) &&
+                org?.lowercase()?.contains(filter) != true
+            ) return@forEach
+            val key = "$name|$org"
+            if (seen.containsKey(key)) return@forEach
+            seen[key] = buildString {
+                append("• $name")
+                if (!org.isNullOrBlank()) append(" ($org)")
+                append(" — $level")
+                o.str("datasource")?.let { append(", via $it") }
+            }
+        }
+        if (seen.isEmpty()) {
+            return@runCatching "No outage alerts matching '${filter ?: ""}' in the last 24 hours."
+        }
+        sb.append("${seen.size} affected networks/regions:\n\n")
+        seen.values.take(60).forEach { sb.append(it).append("\n") }
+        sb.append("\nSource: IODA (ioda.inetintel.cc.gatech.edu), keyless.")
+        sb.toString()
+    }
+
+    /** Full Tor relay record for an IP or nickname, from the Tor Project's
+     *  own Onionoo service. */
+    fun torRelay(input: String): Result<String> = runCatching {
+        val q = URLEncoder.encode(input.trim(), "UTF-8")
+        val o = json.parseToJsonElement(get("https://onionoo.torproject.org/details?search=$q&limit=5")).jsonObject
+        val relays = o["relays"] as? JsonArray
+        if (relays.isNullOrEmpty()) {
+            return@runCatching "Tor: '${input.trim()}' is not a known relay or bridge."
+        }
+        val sb = StringBuilder("Tor network — ${relays.size} matching relay(s)\n")
+        relays.forEach { r ->
+            val n = r as? JsonObject ?: return@forEach
+            sb.append("\n• ${n.str("nickname") ?: "(unnamed)"}")
+            (n["flags"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+                ?.takeIf { it.isNotEmpty() }?.let { sb.append("  [${it.joinToString(", ")}]") }
+            (n["or_addresses"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+                ?.let { sb.append("\n  Addresses: ${it.joinToString(", ")}") }
+            n.str("country_name")?.let { sb.append("\n  Country: $it") }
+            n.str("as_name")?.let { sb.append("\n  Network: $it (${n.str("as") ?: "?"})") }
+            n.str("first_seen")?.let { sb.append("\n  First seen: ${it.substringBefore(' ')}") }
+            n.str("last_seen")?.let { sb.append("\n  Last seen: ${it.substringBefore(' ')}") }
+            n.int("observed_bandwidth")?.let { sb.append("\n  Bandwidth: ${it / 1024} KB/s") }
+            n.str("contact")?.takeIf { it.isNotBlank() }?.let { sb.append("\n  Operator contact: $it") }
+            n.str("platform")?.let { sb.append("\n  Platform: $it") }
+            val exit = (n["flags"] as? JsonArray)?.any {
+                (it as? JsonPrimitive)?.contentOrNull == "Exit"
+            } == true
+            if (exit) sb.append("\n  This is an EXIT relay — traffic leaves the Tor network here.")
+        }
+        sb.append("\n\nSource: Onionoo, the Tor Project's own directory service.")
+        sb.toString()
     }
 
     // ------------------------------------------------------------------

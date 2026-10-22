@@ -194,6 +194,13 @@ class DirectToolExecutor(
                 "websearch" -> apis.websearch(input)
                 "github" -> apis.githubUser(input)
                 "ghactivity" -> deep.githubActivity(input)
+                "socialsweep" -> runCatching { deep.socialSweep(input) }
+                "osmuser" -> deep.osmUser(input)
+                "asnintel" -> deep.asnIntel(input)
+                "iprep" -> deep.ipReputation(input)
+                "otx" -> deep.threatExchange(input)
+                "torrelay" -> deep.torRelay(input)
+                "outages" -> deep.outages(input)
                 "keybase" -> deep.keybase(input)
                 "reddit" -> deep.reddit(input)
                 "hackernews" -> deep.hackerNews(input)

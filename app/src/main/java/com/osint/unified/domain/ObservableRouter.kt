@@ -93,9 +93,9 @@ class ObservableRouter {
     fun suggestTools(observable: Observable): List<Tool> {
         val ids = when (observable) {
             is Observable.Email -> listOf("breaches", "gravatar", "emailaccounts", "hudsonrock", "emailgithub", "mailsec", "websearch", "dorks", "framework", "holehe", "ghunt", "h8mail")
-            is Observable.Username -> listOf("keybase", "github", "ghactivity", "sherlock", "maigret", "blackbird", "reddit", "hackernews", "telegram", "wikidata", "websearch", "dorks", "framework")
-            is Observable.Domain -> listOf("subfinder", "crtsh", "subsweep", "dns", "tlscert", "mailsec", "headers", "sitefiles", "rdap", "hostintel", "httpx", "shodan", "urlscan", "waybackurls", "gau", "webcrawl", "wayback", "archive", "dorks", "framework", "amass", "nuclei")
-            is Observable.IpAddress -> listOf("ipinfo", "ptr", "torexit", "shodan", "bgpview", "rdap", "hostintel", "dorks", "framework", "httpx", "nuclei")
+            is Observable.Username -> listOf("keybase", "socialsweep", "github", "ghactivity", "sherlock", "maigret", "blackbird", "reddit", "hackernews", "telegram", "osmuser", "wikidata", "websearch", "dorks", "framework")
+            is Observable.Domain -> listOf("subfinder", "crtsh", "subsweep", "dns", "tlscert", "mailsec", "headers", "sitefiles", "rdap", "hostintel", "otx", "httpx", "shodan", "urlscan", "waybackurls", "gau", "webcrawl", "wayback", "archive", "dorks", "framework", "amass", "nuclei")
+            is Observable.IpAddress -> listOf("ipinfo", "ptr", "iprep", "torexit", "torrelay", "shodan", "bgpview", "asnintel", "otx", "rdap", "hostintel", "dorks", "framework", "httpx", "nuclei")
             is Observable.PhoneNumber -> listOf("phoneinfoga", "websearch", "dorks", "framework")
             is Observable.Coordinate -> listOf("revgeo", "sunterrain", "wikinearby", "overpass_turbo", "milsites", "cctvnear", "ukcrime", "histweather", "framework")
             is Observable.Url -> listOf("webcrawl", "wayback", "archive", "dorks", "framework")
