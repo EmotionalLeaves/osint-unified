@@ -81,7 +81,6 @@ class DeepApis(private val client: OkHttpClient = Http.client) {
         val sb = StringBuilder("Reddit — u/$username\n")
         about.int("total_karma")?.let { sb.append("Karma: $it (post ${about.int("link_karma") ?: 0} / comment ${about.int("comment_karma") ?: 0})\n") }
         about.dbl("created_utc")?.let { sb.append("Created: ${utc(it.toLong() * 1000)}\n") }
-        about.str("subreddit")?.let { }
         (about["subreddit"] as? JsonObject)?.let { s ->
             s.str("public_description")?.takeIf { it.isNotBlank() }?.let { sb.append("Bio: $it\n") }
         }

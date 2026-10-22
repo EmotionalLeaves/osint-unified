@@ -7,7 +7,12 @@ import com.osint.unified.domain.Tool
 import com.osint.unified.network.Http
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -389,13 +394,13 @@ class DirectToolExecutor(
                 if (els == null || els.isEmpty()) return Result.success("No military-tagged sites within 25 km.")
                 val lines = els.mapNotNull { e ->
                     val o = e.jsonObject
-                    val tags = o["tags"] as? kotlinx.serialization.json.JsonObject
-                    fun t(k: String) = (tags?.get(k) as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull
+                    val tags = o["tags"] as? JsonObject
+                    fun t(k: String) = (tags?.get(k) as? JsonPrimitive)?.contentOrNull
                     val name = t("name") ?: t("military") ?: return@mapNotNull null
                     val kind = t("military") ?: t("landuse") ?: ""
-                    val c = o["center"] as? kotlinx.serialization.json.JsonObject
-                    val la = ((c?.get("lat") ?: o["lat"]) as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull
-                    val lo = ((c?.get("lon") ?: o["lon"]) as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull
+                    val c = o["center"] as? JsonObject
+                    val la = ((c?.get("lat") ?: o["lat"]) as? JsonPrimitive)?.contentOrNull
+                    val lo = ((c?.get("lon") ?: o["lon"]) as? JsonPrimitive)?.contentOrNull
                     "• $name${if (kind.isNotBlank()) " ($kind)" else ""}" +
                         if (la != null && lo != null) "\n  Coords: $la, $lo" else ""
                 }

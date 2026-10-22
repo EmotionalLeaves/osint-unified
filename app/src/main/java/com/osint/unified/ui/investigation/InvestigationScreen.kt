@@ -52,6 +52,7 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.osint.unified.data.ExportFormat
 import com.osint.unified.domain.GraphBuilder
+import com.osint.unified.domain.EntityExtractor
 import com.osint.unified.domain.IntelSummary
 import com.osint.unified.domain.Observable
 import com.osint.unified.domain.Tool
@@ -108,6 +109,9 @@ fun InvestigationScreen(viewModel: GodEyeViewModel, onBack: () -> Unit) {
         val done = state.results.count { it.status == "success" || it.status == "error" }
         val found = state.results.count { it.status == "success" }
         val facts = remember(state.results) { IntelSummary.synthesize(state.results) }
+        val pivots = remember(state.results) {
+            EntityExtractor.extract(state.results, observable.raw)
+        }
 
         Column(
             modifier = Modifier.padding(pad).fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp)
@@ -192,6 +196,44 @@ fun InvestigationScreen(viewModel: GodEyeViewModel, onBack: () -> Unit) {
                 }
             }
 
+            // ---- Pivots: identifiers found in the results, one tap to chase ----
+            if (pivots.isNotEmpty()) {
+                SectionHeader("PIVOTS — ${pivots.size} identifiers found", Intel.CyanBright)
+                Text(
+                    "Tap any to start a fresh investigation on it.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Intel.TextLow,
+                    modifier = Modifier.padding(bottom = 6.dp)
+                )
+                pivots.groupBy { it.kind }.forEach { (kind, items) ->
+                    Row(
+                        verticalAlignment = Alignment.Top,
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
+                    ) {
+                        Text(
+                            kind,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Intel.TextLow,
+                            fontFamily = FontFamily.Monospace,
+                            modifier = Modifier.width(62.dp).padding(top = 10.dp)
+                        )
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            items.forEach { p ->
+                                PivotChip(p) {
+                                    viewModel.onQueryChange(p.value)
+                                    viewModel.onSearch()
+                                }
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+            }
+
             // ---- Sources by category ----
             state.suggestedTools.groupBy { it.category }.forEach { (category, tools) ->
                 SectionHeader(category.name, categoryColor(category))
@@ -235,6 +277,33 @@ fun InvestigationScreen(viewModel: GodEyeViewModel, onBack: () -> Unit) {
 
     if (showGraph) {
         GraphDialog(graphJson = graphJson, onDismiss = { showGraph = false })
+    }
+}
+
+@Composable
+private fun PivotChip(pivot: EntityExtractor.Pivot, onClick: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .background(Intel.Elevated, RoundedCornerShape(7.dp))
+            .border(1.dp, Intel.Hairline, RoundedCornerShape(7.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 9.dp, vertical = 6.dp)
+    ) {
+        Text(
+            pivot.value,
+            style = MaterialTheme.typography.labelMedium,
+            color = Intel.CyanBright,
+            fontFamily = FontFamily.Monospace
+        )
+        if (pivot.count > 1) {
+            Spacer(Modifier.width(5.dp))
+            Text(
+                "×${pivot.count}",
+                style = MaterialTheme.typography.labelSmall,
+                color = Intel.TextLow
+            )
+        }
     }
 }
 

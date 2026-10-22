@@ -61,9 +61,14 @@ class SpaceWeatherDataSource(private val client: OkHttpClient = Http.client) {
         }
 
         runCatching {
-            val arr = json.parseToJsonElement(
+            // The 6-hour file is small; fall back to the 1-day file, which is
+            // the one verified to exist, if it ever disappears.
+            val body = runCatching {
                 get("https://services.swpc.noaa.gov/json/goes/primary/xrays-6-hour.json")
-            ) as? JsonArray
+            }.getOrElse {
+                get("https://services.swpc.noaa.gov/json/goes/primary/xrays-1-day.json")
+            }
+            val arr = json.parseToJsonElement(body) as? JsonArray
             // Use the long channel (0.1-0.8nm), which defines the flare class.
             val last = arr?.lastOrNull { el ->
                 ((el as? JsonObject)?.get("energy") as? JsonPrimitive)?.contentOrNull == "0.1-0.8nm"
