@@ -93,7 +93,10 @@ class MainActivity : ComponentActivity() {
                                 onBack = { screen = "godeye" }
                             )
                         }
-                        "framework" -> FrameworkScreen(onBack = { screen = "godeye" })
+                        "framework" -> FrameworkScreen(
+                            initialTarget = godState.observable?.raw.orEmpty(),
+                            onBack = { screen = "godeye" }
+                        )
                         else -> GodEyeViewScreen(
                             godEyeViewModel,
                             onOpenHistory = { screen = "history" },

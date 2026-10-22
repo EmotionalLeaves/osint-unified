@@ -54,3 +54,11 @@ https://query.wikidata.org/sparql?format=json&query=SELECT%20%3FitemLabel%20WHER
 https://efts.sec.gov/LATEST/search-index?q=%22Tesla%22&forms=10-K
 https://efts.sec.gov/LATEST/search-index?q=Tesla
 https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&company=tesla&type=10-K&output=atom
+https://index.commoncrawl.org/collinfo.json
+https://www.sec.gov/edgar/search/||OSINT Unified research woofdog05@gmail.com
+https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&company=tesla&type=&dateb=&owner=include&count=20&output=atom||OSINT Unified research woofdog05@gmail.com
+https://cavalier.hudsonrock.com/api/json/v2/osint-tools/search-by-email?email=test@gmail.com
+https://api.ioda.inetintel.cc.gatech.edu/v2/outages/alerts?from=1790000000&until=1792000000&limit=20
+https://onionoo.torproject.org/details?search=octocat&limit=5
+https://api.adsb.lol/v2/hex/A835AF
+https://crt.sh/?q=%25.example.com&output=json

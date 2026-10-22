@@ -46,13 +46,15 @@ import com.osint.unified.ui.theme.Intel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun FrameworkScreen(onBack: () -> Unit) {
+fun FrameworkScreen(initialTarget: String = "", onBack: () -> Unit) {
     val context = LocalContext.current
     val root = remember { OsintFramework.load(context) }
     val allLeaves = remember(root) { root?.let { OsintFramework.leaves(it) } ?: emptyList() }
     val stack = remember { mutableStateListOf<ArfNode>().apply { root?.let { add(it) } } }
     var query by remember { mutableStateOf("") }
-    var target by remember { mutableStateOf("") }
+    // Carried over from whatever the dossier is open on, so arriving here
+    // mid-investigation does not mean retyping the target.
+    var target by remember(initialTarget) { mutableStateOf(initialTarget) }
 
     fun open(url: String) = com.osint.unified.ui.common.LinkOpener.open(context, url)
 
@@ -143,7 +145,10 @@ fun FrameworkScreen(onBack: () -> Unit) {
 
             if (query.isNotBlank()) {
                 val q = query.trim()
-                val matches = allLeaves.filter { it.first.contains(q, true) || it.third.contains(q, true) }.take(300)
+                val matches = allLeaves.filter {
+                    it.first.contains(q, true) || it.third.contains(q, true) ||
+                        it.second.contains(q, true)
+                }.take(300)
                 Text(
                     "${matches.size} matches",
                     style = MaterialTheme.typography.labelSmall, color = Intel.TextLow,
