@@ -265,8 +265,14 @@ fun GodEyeViewScreen(
                 LayerPill("BUOY", state.buoys.size, Color(0xFF4DD0E1), showBuoys) { showBuoys = !showBuoys }
                 LayerPill("METAR", state.metar.size, Color(0xFF9FE8FF), showMetar) { showMetar = !showMetar }
                 LayerPill("NEWS", state.news.size, Color(0xFFFF79C6), showNews) { showNews = !showNews }
-                LayerPill("CCTV", state.cameras.size, Color(0xFFB388FF), showCameras) { showCameras = !showCameras }
-                LayerPill("SUA", state.airspace.size, Color(0xFFFF5370), showAirspace) { showAirspace = !showAirspace }
+                LayerPill("CCTV", state.cameras.size, Color(0xFFB388FF), showCameras) {
+                    showCameras = !showCameras
+                    if (showCameras) viewModel.ensureCameras()
+                }
+                LayerPill("SUA", state.airspace.size, Color(0xFFFF5370), showAirspace) {
+                    showAirspace = !showAirspace
+                    if (showAirspace) viewModel.ensureAirspace()
+                }
                 if (state.overlayPoints.isNotEmpty()) {
                     LayerPill("OVLY", state.overlayPoints.size, Intel.CyanBright, showOverlay) { showOverlay = !showOverlay }
                 }

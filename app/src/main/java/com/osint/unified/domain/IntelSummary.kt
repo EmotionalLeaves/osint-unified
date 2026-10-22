@@ -62,6 +62,37 @@ object IntelSummary {
         ok.firstNotNullOfOrNull { Regex("""Vulnerabilities:\s*(.+)""").find(it.rawOutput)?.groupValues?.get(1) }
             ?.let { facts += Fact("CVES", it.split(",").size.toString()) }
 
+        // ---- Headline findings from the deep keyless sources ----
+        grab("BREACHED IN", Regex("""Found in (\d+) public breaches"""))
+        grab("BREACH RISK", Regex("""Risk label:\s*(\w+)"""))
+        grab("SANCTIONED", Regex("""Specially Designated Nationals\s*—\s*(\d+) match"""))
+        grab("FBI LIST", Regex("""seeking information\s*—\s*'[^']*'\s*\((\d+) match"""))
+        grab("LEI", Regex("""LEI:\s*(\S+)"""))
+        grab("CIK", Regex("""\(CIK (\d+)\)"""))
+        grab("AIRCRAFT OWNER", Regex("""Registered owner:\s*(.+)"""))
+        grab("AIRCRAFT TYPE", Regex("""Type:\s*(.+)"""))
+        grab("WALLET BALANCE", Regex("""Balance:\s*([\d.]+ (?:BTC|ETH))"""))
+        grab("UNIQUE HOSTS", Regex("""(\d+) unique hosts"""))
+        grab("EXPLOIT ODDS", Regex("""EPSS:\s*([\d.]+%)"""))
+        grab("CAMERAS NEARBY", Regex("""Public cameras within 50 km[^—]*—\s*(\d+) found"""))
+        grab("OFFENCES", Regex("""(\d+) offences reported"""))
+        grab("SUN ANGLE", Regex("""Elevation:\s*(-?[\d.]+°)"""))
+        grab("GROUND ELEV", Regex("""Ground elevation:\s*(\d+ m)"""))
+        grab("MGRS", Regex("""MGRS:\s*(\S+)"""))
+        grab("TIMEZONE HINT", Regex("""(?:Posting|Commit) peak:\s*(\d+:00 UTC)"""))
+        grab("KARMA", Regex("""Karma:\s*([\d,]+)"""))
+
+        // Proven identities are the strongest single signal a username search
+        // can return, so count them rather than just noting the tool ran.
+        ok.firstOrNull { it.toolId == "keybase" }?.let { row ->
+            val n = row.rawOutput.lines().count { it.startsWith("• ") }
+            if (n > 0) facts += Fact("PROVEN ACCOUNTS", n.toString())
+        }
+        ok.firstOrNull { it.toolId == "ghactivity" }?.let { row ->
+            Regex("""Commit emails:\s*(.+)""").find(row.rawOutput)?.groupValues?.get(1)
+                ?.split(",")?.size?.let { if (it > 0) facts += Fact("COMMIT EMAILS", it.toString()) }
+        }
+
         // Text tools that state their own count in the first line.
         parseCount(ok, "crtsh", Regex("""—\s*(\d+)\s+names"""), "CERT NAMES", facts)
         parseCount(ok, "wikinearby", Regex("""places\s*\((\d+)\)"""), "NEARBY SITES", facts)

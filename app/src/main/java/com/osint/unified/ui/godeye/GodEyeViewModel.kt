@@ -168,8 +168,6 @@ class GodEyeViewModel(
         poll(16_000, 1_800_000, { conflictDataSource.fetch() }) { s, v -> s.copy(conflicts = v) }
         poll(1_200, 3_600_000, { airportDataSource.fetch() }) { s, v -> s.copy(airports = v) }
         poll(1_800, 3_600_000, { powerPlantDataSource.fetch() }) { s, v -> s.copy(powerPlants = v) }
-        poll(2_400, 21_600_000, { cctvDataSource.fetch() }) { s, v -> s.copy(cameras = v) }
-        poll(3_000, 43_200_000, { airspaceDataSource.fetch() }) { s, v -> s.copy(airspace = v) }
         poll(3_600, 900_000, { spaceWeatherDataSource.fetch() }) { s, v -> s.copy(spaceWeather = v) }
     }
 
@@ -186,6 +184,28 @@ class GodEyeViewModel(
                 if (result != null) _state.update { apply(it, result) }
                 delay(intervalMs)
             }
+        }
+    }
+
+    private var camerasJob: Job? = null
+    private var airspaceJob: Job? = null
+
+    /** The camera inventory is several megabytes, so it is only fetched when
+     *  the user actually turns the layer on, and then cached for the session. */
+    fun ensureCameras() {
+        if (camerasJob != null || _state.value.cameras.isNotEmpty()) return
+        camerasJob = viewModelScope.launch {
+            val v = runCatching { cctvDataSource.fetch() }.getOrDefault(emptyList())
+            _state.update { it.copy(cameras = v) }
+        }
+    }
+
+    /** Likewise the FAA airspace set, which pages through thousands of polygons. */
+    fun ensureAirspace() {
+        if (airspaceJob != null || _state.value.airspace.isNotEmpty()) return
+        airspaceJob = viewModelScope.launch {
+            val v = runCatching { airspaceDataSource.fetch() }.getOrDefault(emptyList())
+            _state.update { it.copy(airspace = v) }
         }
     }
 

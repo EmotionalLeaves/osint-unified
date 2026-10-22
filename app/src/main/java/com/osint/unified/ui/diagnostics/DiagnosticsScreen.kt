@@ -64,7 +64,17 @@ private fun sampleFor(tool: Tool): String = when (tool.inputType) {
     "coordinate" -> "48.8584, 2.2945"
     "place" -> "Paris, France"
     "image", "media" -> "https://upload.wikimedia.org/wikipedia/commons/3/3f/Fronalpstock_big.jpg"
-    else -> "osint"
+    "entity" -> "Tesla"
+    "name" -> "Smith"
+    "wallet" -> "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"
+    "aircraft" -> "A835AF"
+    "repo" -> "https://github.com/octocat/Hello-World"
+    else -> when (tool.id) {
+        // "any" covers several shapes; give each one input it can actually use.
+        "cve" -> "CVE-2021-44228"
+        "wikidata" -> "Tesla"
+        else -> "osint"
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
