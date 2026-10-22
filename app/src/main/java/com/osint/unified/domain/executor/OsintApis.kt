@@ -92,6 +92,63 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
         if (ptr.isEmpty()) "No PTR record for $ip." else "PTR: ${ptr.joinToString(", ")}"
     }
 
+    private fun hostOf(input: String) =
+        input.removePrefix("https://").removePrefix("http://").substringBefore('/').trim()
+
+    /** TLS certificate: issuer, validity window, days left, and every hostname
+     *  the cert covers (SANs) — read straight from the handshake. */
+    fun tlsCert(input: String): Result<String> = runCatching {
+        val host = hostOf(input)
+        val request = Request.Builder().url("https://$host").head().header("User-Agent", ua).build()
+        client.newCall(request).execute().use { resp ->
+            val hs = resp.handshake ?: return@runCatching "No TLS handshake with $host."
+            val cert = hs.peerCertificates.firstOrNull() as? java.security.cert.X509Certificate
+                ?: return@runCatching "No certificate presented by $host."
+            val days = (cert.notAfter.time - System.currentTimeMillis()) / 86_400_000L
+            buildString {
+                append("Host: $host\n")
+                append("Issuer: ${cert.issuerX500Principal.name}\n")
+                append("Subject: ${cert.subjectX500Principal.name}\n")
+                append("Valid from: ${cert.notBefore}\n")
+                append("Expires: ${cert.notAfter}\n")
+                append("Days remaining: $days\n")
+                append("TLS: ${hs.tlsVersion} / ${hs.cipherSuite}\n")
+                val sans = runCatching {
+                    cert.subjectAlternativeNames?.mapNotNull { (it as? List<*>)?.getOrNull(1) as? String }
+                }.getOrNull().orEmpty()
+                if (sans.isNotEmpty()) append("Covers ${sans.size} hostnames: ${sans.take(40).joinToString(", ")}\n")
+            }
+        }
+    }
+
+    /** robots.txt, security.txt and sitemap — the files a site publishes about
+     *  itself, often naming paths it would rather not advertise. */
+    fun siteFiles(input: String): Result<String> = runCatching {
+        val host = hostOf(input)
+        val out = StringBuilder()
+        listOf("robots.txt", ".well-known/security.txt", "security.txt", "sitemap.xml").forEach { path ->
+            runCatching {
+                val body = getBody("https://$host/$path")
+                if (body.isNotBlank() && !body.take(200).contains("<html", true)) {
+                    out.append("--- /$path ---\n")
+                    out.append(body.lineSequence().filter { it.isNotBlank() }.take(25).joinToString("\n"))
+                    out.append("\n\n")
+                }
+            }
+        }
+        if (out.isBlank()) "No robots.txt, security.txt or sitemap found on $host."
+        else out.toString().trim()
+    }
+
+    /** Is this IP a Tor exit node? (official bulk exit list, keyless) */
+    fun torExit(ip: String): Result<String> = runCatching {
+        val target = ip.trim()
+        val list = getBody("https://check.torproject.org/torbulkexitlist")
+        val exits = list.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.toList()
+        if (exits.contains(target)) "⚠ $target IS a Tor exit node (anonymised traffic)."
+        else "$target is not a Tor exit node (checked ${exits.size} known exits)."
+    }
+
     /** DNS-over-HTTPS record lookup (Google DoH). */
     fun dns(domain: String): Result<String> = runCatching {
         val sb = StringBuilder()

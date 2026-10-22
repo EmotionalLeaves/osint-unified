@@ -43,6 +43,25 @@ object IntelSummary {
             if (!n.isNullOrBlank() && n != "0") facts += Fact(label, n)
         }
 
+        // Key single facts pulled from whichever tool reported them.
+        fun grab(label: String, regex: Regex) {
+            ok.firstNotNullOfOrNull { regex.find(it.rawOutput)?.groupValues?.getOrNull(1)?.trim() }
+                ?.takeIf { it.isNotBlank() }?.let { facts += Fact(label, it) }
+        }
+        grab("ASN", Regex("""ASN:\s*(AS[\w ]+)"""))
+        grab("ISP", Regex("""ISP:\s*(.+)"""))
+        grab("OPEN PORTS", Regex("""Open ports:\s*(.+)"""))
+        grab("TLS EXPIRES IN", Regex("""Days remaining:\s*(-?\d+)""").let { it })
+        grab("HTTP HEADERS", Regex("""Security headers:\s*(\d+/\d+)"""))
+        grab("SPOOFING RISK", Regex("""Spoofing risk:\s*(\w+)"""))
+        grab("REGISTERED", Regex("""Registration:\s*([\d-]+)"""))
+        grab("PTR", Regex("""PTR:\s*(.+)"""))
+        if (ok.any { it.rawOutput.contains("IS a Tor exit node") }) facts += Fact("TOR EXIT", "yes")
+        ok.firstNotNullOfOrNull { Regex("""Covers (\d+) hostnames""").find(it.rawOutput)?.groupValues?.get(1) }
+            ?.let { facts += Fact("CERT COVERS", it) }
+        ok.firstNotNullOfOrNull { Regex("""Vulnerabilities:\s*(.+)""").find(it.rawOutput)?.groupValues?.get(1) }
+            ?.let { facts += Fact("CVES", it.split(",").size.toString()) }
+
         // Text tools that state their own count in the first line.
         parseCount(ok, "crtsh", Regex("""—\s*(\d+)\s+names"""), "CERT NAMES", facts)
         parseCount(ok, "wikinearby", Regex("""places\s*\((\d+)\)"""), "NEARBY SITES", facts)
