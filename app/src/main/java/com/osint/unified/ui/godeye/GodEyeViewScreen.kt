@@ -52,6 +52,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -108,27 +109,27 @@ fun GodEyeViewScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var showSettings by rememberSaveable { mutableStateOf(false) }
-    var showAircraft by remember { mutableStateOf(true) }
-    var showVessels by remember { mutableStateOf(true) }
-    var showQuakes by remember { mutableStateOf(true) }
-    var showEvents by remember { mutableStateOf(true) }
-    var showOverlay by remember { mutableStateOf(true) }
-    var showWeather by remember { mutableStateOf(true) }
-    var showFires by remember { mutableStateOf(true) }
-    var showSats by remember { mutableStateOf(true) }
-    var showNews by remember { mutableStateOf(false) }
-    var showGdacs by remember { mutableStateOf(true) }
-    var showVolcanoes by remember { mutableStateOf(true) }
-    var showAurora by remember { mutableStateOf(true) }
-    var showBuoys by remember { mutableStateOf(false) }
-    var showMetar by remember { mutableStateOf(false) }
-    var showMil by remember { mutableStateOf(true) }
-    var showConflict by remember { mutableStateOf(true) }
-    var showCyclones by remember { mutableStateOf(true) }
-    var showTsunami by remember { mutableStateOf(true) }
-    var showAirportStatus by remember { mutableStateOf(true) }
-    var showRadiation by remember { mutableStateOf(false) }
-    var mode by remember { mutableStateOf(VisualMode.DEFAULT) }
+    var showAircraft by rememberSaveable { mutableStateOf(true) }
+    var showVessels by rememberSaveable { mutableStateOf(true) }
+    var showQuakes by rememberSaveable { mutableStateOf(true) }
+    var showEvents by rememberSaveable { mutableStateOf(true) }
+    var showOverlay by rememberSaveable { mutableStateOf(true) }
+    var showWeather by rememberSaveable { mutableStateOf(true) }
+    var showFires by rememberSaveable { mutableStateOf(true) }
+    var showSats by rememberSaveable { mutableStateOf(true) }
+    var showNews by rememberSaveable { mutableStateOf(false) }
+    var showGdacs by rememberSaveable { mutableStateOf(true) }
+    var showVolcanoes by rememberSaveable { mutableStateOf(true) }
+    var showAurora by rememberSaveable { mutableStateOf(true) }
+    var showBuoys by rememberSaveable { mutableStateOf(false) }
+    var showMetar by rememberSaveable { mutableStateOf(false) }
+    var showMil by rememberSaveable { mutableStateOf(true) }
+    var showConflict by rememberSaveable { mutableStateOf(true) }
+    var showCyclones by rememberSaveable { mutableStateOf(true) }
+    var showTsunami by rememberSaveable { mutableStateOf(true) }
+    var showAirportStatus by rememberSaveable { mutableStateOf(true) }
+    var showRadiation by rememberSaveable { mutableStateOf(false) }
+    var mode by rememberSaveable { mutableStateOf(VisualMode.DEFAULT) }
     val context = LocalContext.current
     var inspected by remember { mutableStateOf<Inspected?>(null) }
     // What a long press on the globe turned up: every loaded layer, swept
@@ -156,13 +157,87 @@ fun GodEyeViewScreen(
     // screen. On something called a God's Eye View the globe should be the
     // thing you are looking at, so the panel folds away.
     var panelOpen by rememberSaveable { mutableStateOf(true) }
-    var flightFilter by remember { mutableStateOf("ALL") }
+    var flightFilter by rememberSaveable { mutableStateOf("ALL") }
     // Filtered once per change, not twice per recomposition over 11,000
     // aircraft — the pill and the map now also read the same list.
     val visibleAircraft = remember(state.aircraft, flightFilter) {
         filterFlights(state.aircraft, flightFilter)
     }
+    var showCameras by rememberSaveable { mutableStateOf(false) }
+    var showAirspace by rememberSaveable { mutableStateOf(false) }
+    var showAirports by rememberSaveable { mutableStateOf(false) }
+    var showAqi by rememberSaveable { mutableStateOf(false) }
+    var showCables by rememberSaveable { mutableStateOf(false) }
+    var showPower by rememberSaveable { mutableStateOf(false) }
+    var showStations by rememberSaveable { mutableStateOf(false) }
     val god = mode == VisualMode.GOD
+    // Which feeds are worth spending someone's battery and mobile data on.
+    //
+    // Every one of the twenty-six polling loops ran for ever: in the
+    // background, off screen, and for layers switched off. METAR alone is
+    // twenty-four requests every ten minutes, and the aircraft sweep at
+    // world zoom is measured in hundreds of megabytes an hour. A feed
+    // nobody is looking at should not be fetched.
+    val visibleLayers = remember(
+        showAircraft,
+        showAirportStatus,
+        showAirports,
+        showAqi,
+        showAurora,
+        showBuoys,
+        showCables,
+        showConflict,
+        showCyclones,
+        showEvents,
+        showFires,
+        showGdacs,
+        showMetar,
+        showMil,
+        showNews,
+        showOverlay,
+        showPower,
+        showQuakes,
+        showSats,
+        showStations,
+        showTsunami,
+        showVessels,
+        showVolcanoes,
+        showWeather,
+        showCameras, showAirspace, showRadiation, god
+    ) {
+        buildSet {
+            if (showAircraft || god) add("aircraft")
+            if (showMil || god) add("milAircraft")
+            if (showVessels || god) add("vessels")
+            if (showQuakes || god) add("quakes")
+            if (showEvents || god) add("naturalEvents")
+            if (showWeather || god) add("weather")
+            if (showFires || god) add("fires")
+            if (showSats || god) add("satellites")
+            if (showGdacs || god) add("gdacs")
+            if (showVolcanoes || god) add("volcanoes")
+            if (showConflict || god) add("conflicts")
+            if (showAqi || god) add("airQuality")
+            if (showStations || god) add("stations")
+            if (showAirports || god) add("airports")
+            if (showPower || god) add("powerPlants")
+            if (showAurora || god) add("aurora")
+            if (showBuoys || god) add("buoys")
+            if (showMetar || god) add("metar")
+            if (showNews || god) add("news")
+            if (showCables || god) add("cables")
+            if (showCyclones || god) add("cyclones")
+            if (showTsunami || god) add("tsunamis")
+            if (showAirportStatus || god) add("airportStatus")
+            if (showOverlay || god) add("overlayPoints")
+            if (showCameras || god) add("cameras")
+            if (showAirspace || god) add("airspace")
+            if (showRadiation || god) add("radiation")
+            add("spaceWeather")
+        }
+    }
+    LaunchedEffect(visibleLayers) { viewModel.setVisibleLayers(visibleLayers) }
+
     // GOD MODE forces every layer visible.
     fun <T> vis(on: Boolean, data: List<T>): List<T> = if (on || god) data else emptyList()
     // Three layers hold nothing until something asks for them. A mode that
@@ -175,13 +250,6 @@ fun GodEyeViewScreen(
         }
     }
 
-    var showAqi by remember { mutableStateOf(false) }
-    var showStations by remember { mutableStateOf(false) }
-    var showAirports by remember { mutableStateOf(false) }
-    var showCameras by remember { mutableStateOf(false) }
-    var showAirspace by remember { mutableStateOf(false) }
-    var showCables by remember { mutableStateOf(false) }
-    var showPower by remember { mutableStateOf(false) }
 
     Scaffold(containerColor = Intel.Base) { pad ->
         Column(modifier = Modifier.padding(pad).fillMaxSize()) {
@@ -920,6 +988,22 @@ private fun GlobeMap(
     modifier: Modifier = Modifier
 ) {
     val appliedFocus = remember { mutableStateOf<Pair<Double, Double>?>(null) }
+    // Survives a rotation and a trip to the dossier, so coming back does
+    // not drop you at zoom 2.5 over the Atlantic.
+    val lastCamera = rememberSaveable(
+        saver = listSaver(
+            save = { listOf(it.value?.first, it.value?.second, it.value?.third) },
+            restore = { saved ->
+                val lat = saved.getOrNull(0) as? Double
+                val lon = saved.getOrNull(1) as? Double
+                val zoom = saved.getOrNull(2) as? Double
+                mutableStateOf(
+                    if (lat != null && lon != null && zoom != null) Triple(lat, lon, zoom)
+                    else null
+                )
+            }
+        )
+    ) { mutableStateOf<Triple<Double, Double, Double>?>(null) }
     // The visible area, updated as the map is panned or zoomed. Markers are
     // culled to it so a layer can hold tens of thousands of points without
     // the map trying to draw them all.
@@ -935,6 +1019,7 @@ private fun GlobeMap(
             MapView(ctx).apply {
                 // Esri World Imagery: keyless satellite basemap (no token), and
                 // its tile path is z/y/x with no extension, so build it directly.
+                // Attribution is required and is drawn by the overlay below.
                 setTileSource(object : OnlineTileSourceBase(
                     "EsriWorldImagery", 0, 19, 256, "",
                     arrayOf("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/")
@@ -948,8 +1033,26 @@ private fun GlobeMap(
                 })
                 setMultiTouchControls(true)
                 setBackgroundColor(0xFF0B0E11.toInt())
-                controller.setZoom(2.5)
-                controller.setCenter(GeoPoint(20.0, 0.0))
+                // Esri's terms require the imagery to be credited wherever it
+                // is shown, and the app was using it with no attribution at
+                // all. The overlay also carries OpenStreetMap, whose data
+                // the place and infrastructure layers come from.
+                overlays.add(
+                    org.osmdroid.views.overlay.CopyrightOverlay(ctx).apply {
+                        setCopyrightNotice(
+                            "Imagery © Esri, Maxar, Earthstar Geographics · " +
+                                "Data © OpenStreetMap contributors"
+                        )
+                        setTextSize(9)
+                    }
+                )
+                // Where the map was last left, rather than the middle of the
+                // Atlantic every time the screen is reopened.
+                controller.setZoom(lastCamera.value?.third ?: 2.5)
+                controller.setCenter(
+                    lastCamera.value?.let { GeoPoint(it.first, it.second) }
+                        ?: GeoPoint(20.0, 0.0)
+                )
                 val receiver = object : MapEventsReceiver {
                     override fun singleTapConfirmedHelper(p: GeoPoint): Boolean {
                         onMapTap(p.latitude, p.longitude)
@@ -967,12 +1070,18 @@ private fun GlobeMap(
                         object : MapListener {
                             override fun onScroll(event: ScrollEvent?): Boolean {
                                 viewport = boundingBox
+                                lastCamera.value = Triple(
+                                    mapCenter.latitude, mapCenter.longitude, zoomLevelDouble
+                                )
                                 onViewport(mapCenter.latitude, mapCenter.longitude, zoomLevelDouble)
                                 return false
                             }
 
                             override fun onZoom(event: ZoomEvent?): Boolean {
                                 viewport = boundingBox
+                                lastCamera.value = Triple(
+                                    mapCenter.latitude, mapCenter.longitude, zoomLevelDouble
+                                )
                                 onViewport(mapCenter.latitude, mapCenter.longitude, zoomLevelDouble)
                                 return false
                             }

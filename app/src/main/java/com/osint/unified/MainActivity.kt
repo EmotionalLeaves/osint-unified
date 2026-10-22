@@ -34,6 +34,23 @@ import com.osint.unified.ui.theme.OsintTheme
 
 class MainActivity : ComponentActivity() {
 
+    /**
+     * Feeds stop while the app is not on screen.
+     *
+     * Twenty-six polling loops carried on in the background, which is a
+     * phone bill and a flat battery for data nobody is looking at.
+     */
+    override fun onStart() {
+        super.onStart()
+        godEyeViewModel.setForeground(true)
+    }
+
+    override fun onStop() {
+        super.onStop()
+        godEyeViewModel.setForeground(false)
+    }
+
+
     private val godEyeViewModel: GodEyeViewModel by viewModels {
         val app = application as OsintApplication
         GodEyeViewModel.Factory(app.router, app.repository, app.aircraftDataSource, app.aisDataSource, app.earthquakeDataSource, app.naturalEventsDataSource, app.overlayDataSource, app.weatherDataSource, app.firesDataSource, app.satellitesDataSource, app.newsDataSource, app.gdacsDataSource, app.volcanoDataSource, app.auroraDataSource, app.buoyDataSource, app.metarDataSource, app.milAircraftDataSource, app.airQualityDataSource, app.seismicStationDataSource, app.conflictDataSource, app.airportDataSource, app.powerPlantDataSource, app.cctvDataSource, app.airspaceDataSource, app.spaceWeatherDataSource, app.cableLandingDataSource, app.cycloneDataSource, app.tsunamiDataSource, app.radiationDataSource, app.airportStatusDataSource, app.availableLocalTools, app.settings, app.exporter)

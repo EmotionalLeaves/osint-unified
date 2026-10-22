@@ -185,6 +185,38 @@ class GodEyeViewModel(
         }
     }
 
+    /**
+     * Layers the person is actually looking at.
+     *
+     * Every polling loop used to run for ever — in the background, off
+     * screen, and for layers switched off. METAR alone is twenty-four
+     * requests every ten minutes; the aircraft sweep at world zoom is
+     * hundreds of megabytes an hour. None of that is worth spending on a
+     * layer nobody has turned on.
+     *
+     * Everything starts visible so the first load is unchanged; the screen
+     * narrows it as soon as it composes.
+     */
+    @Volatile private var visibleLayers: Set<String>? = null
+
+    /** False while the app is in the background, where no feed is worth
+     *  fetching no matter which layers are on. */
+    @Volatile private var foreground: Boolean = true
+
+    fun setVisibleLayers(keys: Set<String>) {
+        visibleLayers = keys
+    }
+
+    fun setForeground(value: Boolean) {
+        foreground = value
+    }
+
+    private fun shouldFetch(key: String): Boolean {
+        if (!foreground) return false
+        val visible = visibleLayers ?: return true
+        return key in visible
+    }
+
     private val _state = MutableStateFlow(
         GodEyeUiState(
             backendUrl = settings.backendBaseUrl,
@@ -252,6 +284,12 @@ class GodEyeViewModel(
         viewModelScope.launch {
             if (initialDelayMs > 0) delay(initialDelayMs)
             while (isActive) {
+                // A feed nobody is looking at is not fetched, and the loop
+                // wakes often enough to notice when that changes.
+                if (!shouldFetch(key)) {
+                    delay(POLL_IDLE_MS)
+                    continue
+                }
                 val attempt = runCatching { fetch() }
                 attempt.exceptionOrNull()?.let { if (it is CancellationException) throw it }
                 val result = attempt.getOrNull()
@@ -754,6 +792,10 @@ class GodEyeViewModel(
     }
 
     private companion object {
+        /** How often a sleeping feed checks whether its layer came back
+         *  on. Short enough to feel immediate, long enough to cost nothing. */
+        const val POLL_IDLE_MS = 3_000L
+
         /** Per discovered identifier, in the second pass. Enough for a real
          *  profile of it; few enough that eleven of them stay affordable. */
         const val TOOLS_PER_PIVOT = 6
