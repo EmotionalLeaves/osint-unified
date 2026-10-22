@@ -58,6 +58,11 @@ class UsernameChecker(private val appContext: Context) {
         val absence: List<String> = emptyList(),
         val source: String = ""
     ) {
+        /** A rule that only reads the status code cannot tell a profile
+         *  from a site that answers 200 to everything. Those hits get a
+         *  control probe before they are believed. */
+         val statusOnly: Boolean get() = presence.isEmpty() && absence.isEmpty()
+
         fun urlFor(username: String): String = urlTemplate
             .replace("{account}", username)
             .replace("{username}", username)
@@ -69,13 +74,17 @@ class UsernameChecker(private val appContext: Context) {
         // merged result is shared across every UsernameChecker instance
         // rather than rebuilt per use.
         @Volatile var sharedRules: List<SiteRule>? = null
+
+        /** Control probes to run. Beyond this, hits are reported unverified
+         *  rather than paying for a second sweep as large as the first. */
+        const val CONTROL_PROBE_CAP = 400
     }
 
     suspend fun check(username: String): String = withContext(Dispatchers.IO) {
         val sites = loadRules()
         if (sites.isEmpty()) return@withContext "Could not load any site ruleset (check network)."
 
-        val found = Collections.synchronizedList(mutableListOf<Pair<String, String>>())
+        val found = Collections.synchronizedList(mutableListOf<Pair<SiteRule, String>>())
         val semaphore = Semaphore(96)
         val checked = java.util.concurrent.atomic.AtomicInteger(0)
 
@@ -84,7 +93,7 @@ class UsernameChecker(private val appContext: Context) {
                 sites.map { site ->
                     async {
                         semaphore.withPermit {
-                            checkSite(site, username)?.let { found.add(site.name to it) }
+                            checkSite(site, username)?.let { found.add(site to it) }
                             checked.incrementAndGet()
                         }
                     }
@@ -93,8 +102,16 @@ class UsernameChecker(private val appContext: Context) {
             true
         } != null
 
-        val hits = found.sortedBy { it.first.lowercase() }
+        val raw = found.sortedBy { it.first.name.lowercase() }
         val scanned = if (completed) sites.size else checked.get()
+
+        // Anything matched on page content is believed; anything matched on
+        // a bare 200 is not, until a control proves the site can say no.
+        val (byContent, byStatus) = raw.partition { !it.first.statusOnly }
+        val survived = controlFilter(byStatus)
+        val discarded = byStatus.size - survived.size
+        val hits = (byContent + survived).sortedBy { it.first.name.lowercase() }
+
         buildString {
             if (hits.isEmpty()) {
                 append("No accounts found for \"$username\" across $scanned sites")
@@ -103,9 +120,65 @@ class UsernameChecker(private val appContext: Context) {
                 append("Found ${hits.size} accounts for \"$username\" across $scanned sites")
                 append(if (completed) ":" else " (partial — hit the time cap):")
                 append("\n")
-                hits.forEach { (name, url) -> append("$name — $url\n") }
+                hits.forEach { (site, url) ->
+                    append(site.name)
+                    if (site.statusOnly) append(" ~")
+                    append(" — ")
+                    append(url)
+                    append("\n")
+                }
+            }
+            if (discarded > 0) {
+                append("\n")
+                append("$discarded apparent hit")
+                append(if (discarded == 1) " was" else "s were")
+                append(" dropped: the site returned the same answer for a username ")
+                append("that cannot exist, so it says yes to everything.")
+            }
+            if (hits.any { it.first.statusOnly }) {
+                append("\n~ = confirmed only by the site answering differently for a ")
+                append("control username, not by anything on the page.")
             }
         }
+    }
+
+    /**
+     * Soft-404 defence.
+     *
+     * A great many sites answer 200 to any profile URL, so a rule that reads
+     * only the status code reports every username as found everywhere, and a
+     * dossier of four hundred such "accounts" is worse than none — it cannot
+     * be told apart from a real result. The cheap test is to ask the same
+     * site for a username that cannot exist: if that also comes back found,
+     * the site's answer carries no information and the hit is dropped.
+     *
+     * Only hits are probed, so this costs one extra request per candidate
+     * rather than one per site.
+     */
+    private suspend fun controlFilter(
+        candidates: List<Pair<SiteRule, String>>
+    ): List<Pair<SiteRule, String>> {
+        if (candidates.isEmpty()) return candidates
+        val control = "zq" + java.util.UUID.randomUUID().toString().replace("-", "").take(16)
+        val keep = Collections.synchronizedList(mutableListOf<Pair<SiteRule, String>>())
+        val semaphore = Semaphore(48)
+        withTimeoutOrNull(18_000) {
+            coroutineScope {
+                candidates.take(CONTROL_PROBE_CAP).map { pair ->
+                    async {
+                        semaphore.withPermit {
+                            // Survives only if the control is NOT reported found.
+                            if (checkSite(pair.first, control) == null) keep.add(pair)
+                        }
+                    }
+                }.awaitAll()
+            }
+        }
+        // Anything past the cap, or left unprobed when the budget ran out,
+        // is kept rather than silently dropped — an unverified hit is still
+        // a lead, and it carries the ~ mark.
+        val probed = candidates.take(CONTROL_PROBE_CAP).toSet()
+        return keep + candidates.filter { it !in probed }
     }
 
     /** How many site rules this build actually merged, and from where.
@@ -232,6 +305,11 @@ class UsernameChecker(private val appContext: Context) {
             sites.mapNotNull { (name, el) ->
                 val o = el as? JsonObject ?: return@mapNotNull null
                 val url = o.str("url") ?: return@mapNotNull null
+                // Maigret marks sites it has retired, and sites whose check
+                // compares the final redirect — which needs the request
+                // history this client does not keep. Neither can be run here.
+                if ((o["disabled"] as? JsonPrimitive)?.contentOrNull == "true") return@mapNotNull null
+                if (o.str("checkType") == "response_url") return@mapNotNull null
                 val presence = stringsOf(o["presenceStrs"])
                 val absence = stringsOf(o["absenceStrs"])
                 SiteRule(

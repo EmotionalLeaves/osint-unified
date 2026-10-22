@@ -28,6 +28,10 @@ jobs:
             LIST=$(cat "$FILE")
           fi
           echo "$LIST" | sed '/^[[:space:]]*$/d' > /tmp/urls.txt
+          TOTAL=$(wc -l < /tmp/urls.txt)
+          PER=$(( (TOTAL + 9) / 10 ))
+          [ "$PER" -lt 1 ] && PER=1
+          echo "probing $TOTAL urls, $PER per annotation"
           OUT=""
           N=0
           GROUP=1
@@ -43,11 +47,14 @@ jobs:
               -H 'Accept: application/json,text/html,*/*' \
               "$U" 2>/tmp/err)
             SIZE=$(wc -c < /tmp/body 2>/dev/null || echo 0)
-            SNIP=$(tail -c +$SKIP /tmp/body | head -c 700 | tr -d '\r' | tr '\n' ' ' | sed 's/%/pct/g')
+            SNIP=$(tail -c +$SKIP /tmp/body | head -c 300 | tr -d '\r' | tr '\n' ' ' | sed 's/%/pct/g')
             [ -z "$CODE" ] && CODE="ERR:$(head -c 60 /tmp/err | tr '\n' ' ')"
             OUT="${OUT}[$CODE ${SIZE}b] $U%0A    $SNIP%0A"
             N=$((N+1))
-            if [ $N -ge 4 ]; then
+            # GitHub shows at most ten notice annotations per step, so the
+            # group size is chosen to fit the whole list into ten rather than
+            # silently losing the tail.
+            if [ $N -ge $PER ]; then
               echo "::notice title=probe-$GROUP::$OUT"
               OUT=""; N=0; GROUP=$((GROUP+1))
             fi

@@ -45,7 +45,6 @@ class CloudToolExecutor(
 ) : ToolExecutor {
 
     private val jsonMedia = "application/json; charset=utf-8".toMediaType()
-    private val json = Json { ignoreUnknownKeys = true }
 
     override suspend fun execute(tool: Tool, input: String): Result<String> =
         withContext(Dispatchers.IO) {
