@@ -110,6 +110,8 @@ fun GodEyeViewScreen(
     var showMil by remember { mutableStateOf(true) }
     var showConflict by remember { mutableStateOf(true) }
     var mode by remember { mutableStateOf(VisualMode.DEFAULT) }
+    var inspected by remember { mutableStateOf<Triple<String, Double, Double>?>(null) }
+    var flightFilter by remember { mutableStateOf("ALL") }
     val god = mode == VisualMode.GOD
     // GOD MODE forces every layer visible.
     fun <T> vis(on: Boolean, data: List<T>): List<T> = if (on || god) data else emptyList()
@@ -258,6 +260,17 @@ fun GodEyeViewScreen(
                 }
             }
 
+            if (showAircraft || god) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp)
+                ) {
+                    listOf("ALL", "CARGO", "MIL", "CIVIL").forEach { f ->
+                        TypeChip(f, flightFilter == f) { flightFilter = f }
+                    }
+                }
+            }
+
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -266,7 +279,7 @@ fun GodEyeViewScreen(
                     .clipToBounds()
             ) {
                 GlobeMap(
-                    aircraft = vis(showAircraft, state.aircraft),
+                    aircraft = vis(showAircraft, filterFlights(state.aircraft, flightFilter)),
                     vessels = vis(showVessels, state.vessels),
                     quakes = vis(showQuakes, state.quakes),
                     events = vis(showEvents, state.naturalEvents),
@@ -288,10 +301,7 @@ fun GodEyeViewScreen(
                     powerPlants = vis(showPower, state.powerPlants),
                     findings = state.findings,
                     focus = state.mapFocus,
-                    onInvestigate = { label ->
-                        viewModel.onQueryChange(label)
-                        viewModel.onSearch()
-                    },
+                    onInspect = { label, la, lo -> inspected = Triple(label, la, lo) },
                     onMapTap = { lat, lon -> viewModel.onMapClick(lat, lon) },
                     modifier = Modifier.fillMaxSize().clipToBounds()
                 )
@@ -343,6 +353,42 @@ fun GodEyeViewScreen(
         }
     }
 
+    inspected?.let { (label, la, lo) ->
+        AlertDialog(
+            onDismissRequest = { inspected = null },
+            containerColor = Intel.Surface,
+            titleContentColor = Intel.TextHi,
+            textContentColor = Intel.TextMid,
+            title = { Text("OBJECT", style = MaterialTheme.typography.titleSmall, color = Intel.TextHi) },
+            text = {
+                Column {
+                    Text(label, style = MaterialTheme.typography.bodyMedium, color = Intel.CyanBright,
+                        fontFamily = FontFamily.Monospace)
+                    Spacer(Modifier.size(8.dp))
+                    Text("LAT/LON", style = MaterialTheme.typography.labelSmall, color = Intel.TextLow)
+                    Text("%.5f, %.5f".format(la, lo), style = MaterialTheme.typography.bodySmall,
+                        color = Intel.TextHi, fontFamily = FontFamily.Monospace)
+                    com.osint.unified.domain.Mgrs.from(la, lo)?.let { grid ->
+                        Spacer(Modifier.size(6.dp))
+                        Text("MGRS", style = MaterialTheme.typography.labelSmall, color = Intel.TextLow)
+                        Text(grid, style = MaterialTheme.typography.bodySmall, color = Intel.TextHi,
+                            fontFamily = FontFamily.Monospace)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.onQueryChange(label); viewModel.onSearch(); inspected = null
+                }) { Text("INVESTIGATE", style = MaterialTheme.typography.labelMedium, color = Intel.Cyan) }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    viewModel.onMapClick(la, lo); inspected = null
+                }) { Text("LOCATION", style = MaterialTheme.typography.labelMedium, color = Intel.TextMid) }
+            }
+        )
+    }
+
     if (showSettings) {
         SettingsDialog(
             backendUrl = state.backendUrl,
@@ -388,7 +434,7 @@ private fun GlobeMap(
     powerPlants: List<GeoBlip>,
     findings: List<FindingPin>,
     focus: Pair<Double, Double>?,
-    onInvestigate: (String) -> Unit,
+    onInspect: (String, Double, Double) -> Unit,
     onMapTap: (Double, Double) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -444,7 +490,7 @@ private fun GlobeMap(
                 m.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                 m.title = title
                 m.setOnMarkerClickListener { mk, _ ->
-                    if (clickable && !mk.title.isNullOrBlank()) onInvestigate(mk.title)
+                    if (!mk.title.isNullOrBlank()) onInspect(mk.title, lat, lon)
                     true
                 }
                 map.overlays.add(m)
@@ -481,6 +527,23 @@ private fun GlobeMap(
             map.invalidate()
         } }
     )
+}
+
+/** Filters aircraft by callsign pattern: cargo carriers, military-style
+ *  callsigns, or civil passenger traffic. */
+private fun filterFlights(list: List<Aircraft>, filter: String): List<Aircraft> {
+    if (filter == "ALL") return list
+    val cargo = listOf("FDX", "UPS", "GTI", "CLX", "CKS", "ABX", "ATN", "BOX", "MPH", "QAC")
+    val mil = listOf("RCH", "CNV", "PAT", "SPAR", "REACH", "TITAN", "DOOM", "BAMA", "NAVY", "ARMY", "EVAC")
+    return list.filter { a ->
+        val cs = a.callsign.uppercase().trim()
+        when (filter) {
+            "CARGO" -> cargo.any { cs.startsWith(it) }
+            "MIL" -> mil.any { cs.startsWith(it) }
+            "CIVIL" -> cs.isNotBlank() && cargo.none { cs.startsWith(it) } && mil.none { cs.startsWith(it) }
+            else -> true
+        }
+    }
 }
 
 /** A filled circle marker icon built at runtime (no drawable resources). */

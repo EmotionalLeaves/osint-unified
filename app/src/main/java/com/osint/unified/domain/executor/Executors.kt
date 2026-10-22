@@ -158,6 +158,7 @@ class DirectToolExecutor(
         withContext(Dispatchers.IO) {
             when (tool.id) {
                 "overpass_turbo" -> overpass(input)
+                "milsites" -> militarySites(input)
                 "sherlock", "maigret", "blackbird" -> runCatching { usernameChecker.check(input) }
                 "emailaccounts" -> runCatching {
                     usernameChecker.check(input.substringBefore('@').substringBefore('+').trim())
@@ -244,6 +245,50 @@ class DirectToolExecutor(
         Result.success(sb.toString())
     } catch (e: Exception) {
         Result.failure(IllegalArgumentException("Could not parse number (use E.164, e.g. +14155551234): ${e.message}"))
+    }
+
+    /** Military sites near a coordinate from OpenStreetMap (public map data). */
+    private fun militarySites(input: String): Result<String> {
+        val parts = input.split(",").map { it.trim().toDoubleOrNull() }
+        if (parts.size != 2 || parts.any { it == null }) {
+            return Result.failure(IllegalArgumentException("Expected coordinates as 'lat, lon'."))
+        }
+        val lat = parts[0]!!
+        val lon = parts[1]!!
+        val q = "[out:json][timeout:30];(nwr(around:25000,$lat,$lon)[military];" +
+            "nwr(around:25000,$lat,$lon)[landuse=military];);out center 80;"
+        return try {
+            val body = ("data=" + java.net.URLEncoder.encode(q, "UTF-8")).toRequestBody(formUrlEncoded)
+            val request = Request.Builder()
+                .url("https://overpass-api.de/api/interpreter")
+                .header("User-Agent", "OSINT-Unified/1.0 (research)")
+                .header("Accept", "application/json")
+                .post(body).build()
+            client.newCall(request).execute().use { resp ->
+                val text = resp.body?.string().orEmpty()
+                if (!resp.isSuccessful) return Result.failure(IOException("HTTP ${resp.code}"))
+                val els = runCatching {
+                    kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+                        .parseToJsonElement(text).jsonObject["elements"]?.jsonArray
+                }.getOrNull()
+                if (els == null || els.isEmpty()) return Result.success("No military-tagged sites within 25 km.")
+                val lines = els.mapNotNull { e ->
+                    val o = e.jsonObject
+                    val tags = o["tags"] as? kotlinx.serialization.json.JsonObject
+                    fun t(k: String) = (tags?.get(k) as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull
+                    val name = t("name") ?: t("military") ?: return@mapNotNull null
+                    val kind = t("military") ?: t("landuse") ?: ""
+                    val c = o["center"] as? kotlinx.serialization.json.JsonObject
+                    val la = ((c?.get("lat") ?: o["lat"]) as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull
+                    val lo = ((c?.get("lon") ?: o["lon"]) as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull
+                    "• $name${if (kind.isNotBlank()) " ($kind)" else ""}" +
+                        if (la != null && lo != null) "\n  Coords: $la, $lo" else ""
+                }
+                Result.success("${lines.size} military-tagged sites within 25 km (OSM):\n" + lines.joinToString("\n"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
     }
 
     private fun overpass(input: String): Result<String> {

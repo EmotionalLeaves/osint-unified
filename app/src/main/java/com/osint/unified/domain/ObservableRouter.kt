@@ -87,7 +87,7 @@ class ObservableRouter {
             is Observable.Domain -> listOf("subfinder", "crtsh", "dns", "tlscert", "mailsec", "headers", "sitefiles", "rdap", "httpx", "shodan", "urlscan", "waybackurls", "gau", "webcrawl", "wayback", "archive", "dorks", "framework", "amass", "nuclei")
             is Observable.IpAddress -> listOf("ipinfo", "ptr", "torexit", "shodan", "bgpview", "rdap", "dorks", "framework", "httpx", "nuclei")
             is Observable.PhoneNumber -> listOf("phoneinfoga", "websearch", "dorks", "framework")
-            is Observable.Coordinate -> listOf("revgeo", "wikinearby", "overpass_turbo", "framework")
+            is Observable.Coordinate -> listOf("revgeo", "wikinearby", "overpass_turbo", "milsites", "framework")
             is Observable.Url -> listOf("webcrawl", "wayback", "archive", "dorks", "framework")
             is Observable.ImageUrl -> listOf("exif", "reverseimage", "archive", "framework")
             is Observable.Name -> listOf("websearch", "geocode", "gdelt", "dorks", "framework")
