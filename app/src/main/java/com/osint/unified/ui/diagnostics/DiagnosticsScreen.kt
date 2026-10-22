@@ -74,9 +74,16 @@ private fun sampleFor(tool: Tool): String = when (tool.inputType) {
     "aircraft" -> "A835AF"
     "repo" -> "https://github.com/octocat/Hello-World"
     else -> when (tool.id) {
-        // "any" covers several shapes; give each one input it can actually use.
+        // "any" covers several shapes, and a source given input of the
+        // wrong shape reports "nothing found" — which in a self-test reads
+        // as the source being broken. Each gets something it can use.
         "cve" -> "CVE-2021-44228"
         "wikidata" -> "Tesla"
+        "breachcat" -> "adobe.com"
+        "emailperm" -> "Jane Smith"
+        "outages" -> "US"
+        "gdelt" -> "earthquake"
+        "toolrun" -> "github.com"
         else -> "osint"
     }
 }

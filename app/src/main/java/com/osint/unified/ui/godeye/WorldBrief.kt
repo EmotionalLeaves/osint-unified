@@ -80,20 +80,26 @@ object WorldBrief {
             rank: (GeoBlip) -> Int = { alertRank(it.label) }
         ) {
             if (source.isEmpty()) return
-            val top = source
-                .sortedWith(
-                    compareByDescending<GeoBlip> { rank(it) }
-                        .thenBy { ageMinutes(it.label) ?: Int.MAX_VALUE }
-                )
+            // Ranking reads a regex out of each label, and the military
+            // aircraft layer alone holds thousands. A comparator that calls
+            // it would run that regex tens of thousands of times per
+            // rebuild, on the thread drawing the globe — so each item is
+            // scored exactly once and the sort works on the scores.
+            val scored = source.map { blip ->
+                Triple(rank(blip), ageMinutes(blip.label) ?: Int.MAX_VALUE, blip)
+            }
+            val top = scored
+                .sortedWith(compareByDescending<Triple<Int, Int, GeoBlip>> { it.first }
+                    .thenBy { it.second })
                 .take(PER_SECTION)
-                .map { Entry(it.label, it.lat, it.lon, it.url) }
+                .map { (_, _, b) -> Entry(b.label, b.lat, b.lon, b.url) }
             sections.add(
                 Section(
                     "$title — ${source.size}",
                     // A section of ordinary items should not outrank a
                     // section holding a red alert, so the worst item in it
                     // lifts the whole block.
-                    severity + (source.maxOfOrNull { rank(it) } ?: 1),
+                    severity + (scored.maxOfOrNull { it.first } ?: 1),
                     top,
                     note
                 )

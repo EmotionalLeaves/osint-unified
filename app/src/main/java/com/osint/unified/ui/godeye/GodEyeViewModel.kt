@@ -399,16 +399,32 @@ class GodEyeViewModel(
         }
     }
 
-    /** Runs every suggested tool for the current observable, in parallel. */
+    /**
+     * Runs every suggested tool again.
+     *
+     * Pressing a button labelled RUN ALL and seeing nothing happen because
+     * the automatic pass already ran those tools would be the app
+     * second-guessing a deliberate instruction. The de-duplication exists
+     * to stop the second pass repeating the first, not to overrule the
+     * person, so this bypasses it.
+     */
     fun onRunAll() {
-        runToolsInParallel(_state.value.suggestedTools)
+        runToolsInParallel(_state.value.suggestedTools, force = true)
     }
 
     /** Runs the given tools concurrently so findings appear as fast as each
      *  tool returns, rather than trickling in one at a time. */
-    private fun runToolsInParallel(tools: List<Tool>, thenEnrich: Boolean = false) {
+    private fun runToolsInParallel(
+        tools: List<Tool>,
+        thenEnrich: Boolean = false,
+        force: Boolean = false
+    ) {
         val observable = _state.value.observable ?: return
-        val fresh = tools.filter { dispatched.add("${'$'}{it.id}|${'$'}{observable.raw}") }
+        val fresh = if (force) {
+            tools.onEach { dispatched.add("${'$'}{it.id}|${'$'}{observable.raw}") }
+        } else {
+            tools.filter { dispatched.add("${'$'}{it.id}|${'$'}{observable.raw}") }
+        }
         if (fresh.isEmpty()) {
             if (thenEnrich) viewModelScope.launch { enrich(observable) }
             return

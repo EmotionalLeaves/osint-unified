@@ -135,7 +135,15 @@ fun GodEyeViewScreen(
     // The world brief is derived from the same state the globe draws, so it
     // is recomputed rather than fetched, and is never out of step with it.
     var showBrief by rememberSaveable { mutableStateOf(false) }
-    val brief = remember(state) { WorldBrief.build(state) }
+    // Keyed on the layers the brief reads, not the whole state: the
+    // aircraft poll replaces the state object every fifteen seconds, and
+    // rebuilding the ranking each time would be work for no new answer.
+    val brief = remember(
+        state.conflicts, state.gdacs, state.tsunamis, state.cyclones,
+        state.volcanoes, state.quakes, state.weather, state.fires,
+        state.milAircraft, state.ladd, state.airportStatus, state.news,
+        state.spaceWeather, state.loaded
+    ) { WorldBrief.build(state) }
     // The panel of search controls and layer pills is most of a phone
     // screen. On something called a God's Eye View the globe should be the
     // thing you are looking at, so the panel folds away.
