@@ -125,6 +125,8 @@ fun GodEyeViewScreen(
     }
     var showAqi by remember { mutableStateOf(false) }
     var showStations by remember { mutableStateOf(false) }
+    var showAirports by remember { mutableStateOf(false) }
+    var showPower by remember { mutableStateOf(false) }
 
     Scaffold(containerColor = Intel.Base) { pad ->
         Column(modifier = Modifier.padding(pad).fillMaxSize()) {
@@ -244,6 +246,8 @@ fun GodEyeViewScreen(
                 LayerPill("CONFLICT", state.conflicts.size, Color(0xFFFF2E2E), showConflict) { showConflict = !showConflict }
                 LayerPill("AQI", state.airQuality.size, Color(0xFFB4E66B), showAqi) { showAqi = !showAqi }
                 LayerPill("STATIONS", state.stations.size, Color(0xFF9AB0C0), showStations) { showStations = !showStations }
+                LayerPill("APT", state.airports.size, Color(0xFF8FD3FF), showAirports) { showAirports = !showAirports }
+                LayerPill("POWER", state.powerPlants.size, Color(0xFFFFC14D), showPower) { showPower = !showPower }
                 LayerPill("AURORA", state.aurora.size, Color(0xFF66FFB2), showAurora) { showAurora = !showAurora }
                 LayerPill("BUOY", state.buoys.size, Color(0xFF4DD0E1), showBuoys) { showBuoys = !showBuoys }
                 LayerPill("METAR", state.metar.size, Color(0xFF9FE8FF), showMetar) { showMetar = !showMetar }
@@ -279,6 +283,8 @@ fun GodEyeViewScreen(
                     conflicts = vis(showConflict, state.conflicts),
                     airQuality = vis(showAqi, state.airQuality),
                     stations = vis(showStations, state.stations),
+                    airports = vis(showAirports, state.airports),
+                    powerPlants = vis(showPower, state.powerPlants),
                     findings = state.findings,
                     focus = state.mapFocus,
                     onInvestigate = { label ->
@@ -377,6 +383,8 @@ private fun GlobeMap(
     conflicts: List<GeoBlip>,
     airQuality: List<GeoBlip>,
     stations: List<GeoBlip>,
+    airports: List<GeoBlip>,
+    powerPlants: List<GeoBlip>,
     findings: List<FindingPin>,
     focus: Pair<Double, Double>?,
     onInvestigate: (String) -> Unit,
@@ -445,6 +453,8 @@ private fun GlobeMap(
             news.forEach { add(it.lat, it.lon, 0xFFFF79C6.toInt(), 7, it.label, false) }
             aurora.forEach { add(it.lat, it.lon, 0xFF66FFB2.toInt(), 6, it.label, false) }
             stations.forEach { add(it.lat, it.lon, 0xFF9AB0C0.toInt(), 5, it.label, false) }
+            airports.forEach { add(it.lat, it.lon, 0xFF8FD3FF.toInt(), 6, it.label, true) }
+            powerPlants.forEach { add(it.lat, it.lon, 0xFFFFC14D.toInt(), 6, it.label, false) }
             airQuality.forEach { add(it.lat, it.lon, 0xFFB4E66B.toInt(), 9, it.label, false) }
             buoys.forEach { add(it.lat, it.lon, 0xFF4DD0E1.toInt(), 6, it.label, false) }
             metar.forEach { add(it.lat, it.lon, 0xFF9FE8FF.toInt(), 6, it.label, false) }

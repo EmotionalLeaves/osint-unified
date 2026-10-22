@@ -7,6 +7,7 @@ import com.osint.unified.data.AirQualityDataSource
 import com.osint.unified.data.AisDataSource
 import com.osint.unified.data.AppSettings
 import com.osint.unified.data.AuroraDataSource
+import com.osint.unified.data.BundledPointsDataSource
 import com.osint.unified.data.BuoyDataSource
 import com.osint.unified.data.ConflictDataSource
 import com.osint.unified.data.SeismicStationDataSource
@@ -58,6 +59,8 @@ class OsintApplication : Application() {
     val airQualityDataSource: AirQualityDataSource by lazy { AirQualityDataSource() }
     val seismicStationDataSource: SeismicStationDataSource by lazy { SeismicStationDataSource() }
     val conflictDataSource: ConflictDataSource by lazy { ConflictDataSource() }
+    val airportDataSource: BundledPointsDataSource by lazy { BundledPointsDataSource.airports(this) }
+    val powerPlantDataSource: BundledPointsDataSource by lazy { BundledPointsDataSource.powerPlants(this) }
 
     val executorFactory: ExecutorFactory by lazy {
         ExecutorFactory(

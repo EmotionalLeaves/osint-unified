@@ -73,6 +73,42 @@ jobs:
           curl -sSL https://raw.githubusercontent.com/lockfale/osint-framework/master/public/arf.json -o "$A/arf.json" || true
           # WhatsMyName ruleset for on-device account enumeration (offline-ready).
           curl -sSL https://raw.githubusercontent.com/WebBreacher/WhatsMyName/main/wmn-data.json -o "$A/wmn-data.json" || true
+          # Raw infrastructure datasets -> compact JSON bundled in the APK.
+          curl -sSL https://davidmegginson.github.io/ourairports-data/airports.csv -o /tmp/airports.csv || true
+          curl -sSL https://raw.githubusercontent.com/wri/global-power-plant-database/master/output_database/global_power_plant_database.csv -o /tmp/powerplants.csv || true
+          python3 - <<'PY'
+          import csv, json
+          A = "app/src/main/assets"
+          try:
+              out = []
+              with open('/tmp/airports.csv', newline='', encoding='utf-8') as f:
+                  for r in csv.DictReader(f):
+                      if r.get('type') in ('large_airport', 'medium_airport'):
+                          try:
+                              lat = float(r['latitude_deg']); lon = float(r['longitude_deg'])
+                          except Exception:
+                              continue
+                          code = (r.get('iata_code') or r.get('ident') or '').strip()
+                          out.append({"lat": lat, "lon": lon, "n": (r.get('name') or '')[:60], "c": code})
+              json.dump(out, open(A + "/airports.json", "w"))
+              print("airports bundled:", len(out))
+          except Exception as e:
+              print("airports failed:", e)
+          try:
+              out = []
+              with open('/tmp/powerplants.csv', newline='', encoding='utf-8') as f:
+                  for r in csv.DictReader(f):
+                      try:
+                          lat = float(r['latitude']); lon = float(r['longitude'])
+                      except Exception:
+                          continue
+                      out.append({"lat": lat, "lon": lon, "n": (r.get('name') or '')[:60],
+                                  "f": r.get('primary_fuel') or '', "mw": r.get('capacity_mw') or ''})
+              json.dump(out, open(A + "/powerplants.json", "w"))
+              print("power plants bundled:", len(out))
+          except Exception as e:
+              print("power plants failed:", e)
+          PY
           ls -la "$A"
           test -s "$A/arf.json"
 

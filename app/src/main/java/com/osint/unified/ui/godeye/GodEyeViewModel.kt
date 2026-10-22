@@ -8,6 +8,7 @@ import com.osint.unified.data.AirQualityDataSource
 import com.osint.unified.data.AisDataSource
 import com.osint.unified.data.AppSettings
 import com.osint.unified.data.AuroraDataSource
+import com.osint.unified.data.BundledPointsDataSource
 import com.osint.unified.data.BuoyDataSource
 import com.osint.unified.data.ConflictDataSource
 import com.osint.unified.data.SeismicStationDataSource
@@ -66,6 +67,8 @@ data class GodEyeUiState(
     val airQuality: List<GeoBlip> = emptyList(),
     val stations: List<GeoBlip> = emptyList(),
     val conflicts: List<GeoBlip> = emptyList(),
+    val airports: List<GeoBlip> = emptyList(),
+    val powerPlants: List<GeoBlip> = emptyList(),
     val findings: List<FindingPin> = emptyList(),
     val mapFocus: Pair<Double, Double>? = null,
     val results: List<ResultRow> = emptyList(),
@@ -101,6 +104,8 @@ class GodEyeViewModel(
     private val airQualityDataSource: AirQualityDataSource,
     private val seismicStationDataSource: SeismicStationDataSource,
     private val conflictDataSource: ConflictDataSource,
+    private val airportDataSource: BundledPointsDataSource,
+    private val powerPlantDataSource: BundledPointsDataSource,
     private val availableLocalTools: Set<String>,
     private val settings: AppSettings,
     private val exporter: InvestigationExporter
@@ -151,6 +156,8 @@ class GodEyeViewModel(
         poll(14_000, 900_000, { airQualityDataSource.fetch() }) { s, v -> s.copy(airQuality = v) }
         poll(15_000, 1_800_000, { seismicStationDataSource.fetch() }) { s, v -> s.copy(stations = v) }
         poll(16_000, 1_800_000, { conflictDataSource.fetch() }) { s, v -> s.copy(conflicts = v) }
+        poll(1_200, 3_600_000, { airportDataSource.fetch() }) { s, v -> s.copy(airports = v) }
+        poll(1_800, 3_600_000, { powerPlantDataSource.fetch() }) { s, v -> s.copy(powerPlants = v) }
     }
 
     private fun <T> poll(
@@ -357,12 +364,14 @@ class GodEyeViewModel(
         private val airQualityDataSource: AirQualityDataSource,
         private val seismicStationDataSource: SeismicStationDataSource,
         private val conflictDataSource: ConflictDataSource,
+        private val airportDataSource: BundledPointsDataSource,
+        private val powerPlantDataSource: BundledPointsDataSource,
         private val availableLocalTools: Set<String>,
         private val settings: AppSettings,
         private val exporter: InvestigationExporter
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            GodEyeViewModel(router, repository, aircraftDataSource, aisDataSource, earthquakeDataSource, naturalEventsDataSource, overlayDataSource, weatherDataSource, firesDataSource, satellitesDataSource, newsDataSource, gdacsDataSource, volcanoDataSource, auroraDataSource, buoyDataSource, metarDataSource, milAircraftDataSource, airQualityDataSource, seismicStationDataSource, conflictDataSource, availableLocalTools, settings, exporter) as T
+            GodEyeViewModel(router, repository, aircraftDataSource, aisDataSource, earthquakeDataSource, naturalEventsDataSource, overlayDataSource, weatherDataSource, firesDataSource, satellitesDataSource, newsDataSource, gdacsDataSource, volcanoDataSource, auroraDataSource, buoyDataSource, metarDataSource, milAircraftDataSource, airQualityDataSource, seismicStationDataSource, conflictDataSource, airportDataSource, powerPlantDataSource, availableLocalTools, settings, exporter) as T
     }
 }
