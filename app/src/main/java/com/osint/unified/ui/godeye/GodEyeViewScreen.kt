@@ -54,6 +54,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
@@ -62,8 +63,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.osint.unified.BuildConfig
 import com.osint.unified.ui.theme.Intel
 import org.osmdroid.config.Configuration
+import org.osmdroid.events.DelayedMapListener
 import org.osmdroid.events.MapEventsReceiver
+import org.osmdroid.events.MapListener
+import org.osmdroid.events.ScrollEvent
+import org.osmdroid.events.ZoomEvent
 import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
+import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.util.MapTileIndex
 import org.osmdroid.views.MapView
@@ -110,7 +116,8 @@ fun GodEyeViewScreen(
     var showMil by remember { mutableStateOf(true) }
     var showConflict by remember { mutableStateOf(true) }
     var mode by remember { mutableStateOf(VisualMode.DEFAULT) }
-    var inspected by remember { mutableStateOf<Triple<String, Double, Double>?>(null) }
+    val context = LocalContext.current
+    var inspected by remember { mutableStateOf<Inspected?>(null) }
     var flightFilter by remember { mutableStateOf("ALL") }
     val god = mode == VisualMode.GOD
     // GOD MODE forces every layer visible.
@@ -327,7 +334,7 @@ fun GodEyeViewScreen(
                     cables = vis(showCables, state.cables),
                     findings = state.findings,
                     focus = state.mapFocus,
-                    onInspect = { label, la, lo -> inspected = Triple(label, la, lo) },
+                    onInspect = { inspected = it },
                     onMapTap = { lat, lon -> viewModel.onMapClick(lat, lon) },
                     modifier = Modifier.fillMaxSize().clipToBounds()
                 )
@@ -379,37 +386,87 @@ fun GodEyeViewScreen(
         }
     }
 
-    inspected?.let { (label, la, lo) ->
+    inspected?.let { obj ->
         AlertDialog(
             onDismissRequest = { inspected = null },
             containerColor = Intel.Surface,
             titleContentColor = Intel.TextHi,
             textContentColor = Intel.TextMid,
-            title = { Text("OBJECT", style = MaterialTheme.typography.titleSmall, color = Intel.TextHi) },
+            title = {
+                Text(
+                    obj.kind.uppercase(),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = Intel.Cyan
+                )
+            },
             text = {
                 Column {
-                    Text(label, style = MaterialTheme.typography.bodyMedium, color = Intel.CyanBright,
-                        fontFamily = FontFamily.Monospace)
+                    Text(
+                        obj.label, style = MaterialTheme.typography.bodyMedium,
+                        color = Intel.CyanBright, fontFamily = FontFamily.Monospace
+                    )
                     Spacer(Modifier.size(8.dp))
                     Text("LAT/LON", style = MaterialTheme.typography.labelSmall, color = Intel.TextLow)
-                    Text("%.5f, %.5f".format(la, lo), style = MaterialTheme.typography.bodySmall,
-                        color = Intel.TextHi, fontFamily = FontFamily.Monospace)
-                    com.osint.unified.domain.Mgrs.from(la, lo)?.let { grid ->
+                    Text(
+                        "%.5f, %.5f".format(obj.lat, obj.lon),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Intel.TextHi, fontFamily = FontFamily.Monospace
+                    )
+                    com.osint.unified.domain.Mgrs.from(obj.lat, obj.lon)?.let { grid ->
                         Spacer(Modifier.size(6.dp))
                         Text("MGRS", style = MaterialTheme.typography.labelSmall, color = Intel.TextLow)
-                        Text(grid, style = MaterialTheme.typography.bodySmall, color = Intel.TextHi,
-                            fontFamily = FontFamily.Monospace)
+                        Text(
+                            grid, style = MaterialTheme.typography.bodySmall,
+                            color = Intel.TextHi, fontFamily = FontFamily.Monospace
+                        )
+                    }
+                    // What INVESTIGATE will actually search for, so it is never
+                    // a surprise that a decorative label got sent to the tools.
+                    val query = investigableQuery(obj)
+                    if (query != null) {
+                        Spacer(Modifier.size(8.dp))
+                        Text("INVESTIGATE AS", style = MaterialTheme.typography.labelSmall, color = Intel.TextLow)
+                        Text(
+                            query, style = MaterialTheme.typography.bodySmall,
+                            color = Intel.Amber, fontFamily = FontFamily.Monospace
+                        )
+                    }
+                    obj.url?.let { link ->
+                        Spacer(Modifier.size(10.dp))
+                        Text(
+                            "OPEN SOURCE ▸",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = Intel.Cyan,
+                            modifier = Modifier.clickable {
+                                com.osint.unified.ui.common.LinkOpener.open(context, link)
+                            }
+                        )
+                        Text(
+                            link.take(90), style = MaterialTheme.typography.labelSmall,
+                            color = Intel.TextLow
+                        )
                     }
                 }
             },
             confirmButton = {
-                TextButton(onClick = {
-                    viewModel.onQueryChange(label); viewModel.onSearch(); inspected = null
-                }) { Text("INVESTIGATE", style = MaterialTheme.typography.labelMedium, color = Intel.Cyan) }
+                val query = investigableQuery(obj)
+                TextButton(
+                    enabled = query != null,
+                    onClick = {
+                        query?.let { viewModel.onQueryChange(it); viewModel.onSearch() }
+                        inspected = null
+                    }
+                ) {
+                    Text(
+                        "INVESTIGATE",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (query != null) Intel.Cyan else Intel.TextLow
+                    )
+                }
             },
             dismissButton = {
                 TextButton(onClick = {
-                    viewModel.onMapClick(la, lo); inspected = null
+                    viewModel.onMapClick(obj.lat, obj.lon); inspected = null
                 }) { Text("LOCATION", style = MaterialTheme.typography.labelMedium, color = Intel.TextMid) }
             }
         )
@@ -464,11 +521,15 @@ private fun GlobeMap(
     cables: List<GeoBlip>,
     findings: List<FindingPin>,
     focus: Pair<Double, Double>?,
-    onInspect: (String, Double, Double) -> Unit,
+    onInspect: (Inspected) -> Unit,
     onMapTap: (Double, Double) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val appliedFocus = remember { mutableStateOf<Pair<Double, Double>?>(null) }
+    // The visible area, updated as the map is panned or zoomed. Markers are
+    // culled to it so a layer can hold tens of thousands of points without
+    // the map trying to draw them all.
+    var viewport by remember { mutableStateOf<BoundingBox?>(null) }
     // Cache marker dot drawables by colour+size so a rebuild of hundreds of
     // markers doesn't allocate a fresh ShapeDrawable each time.
     val dotCache = remember { HashMap<Long, Drawable>() }
@@ -503,54 +564,110 @@ private fun GlobeMap(
                     override fun longPressHelper(p: GeoPoint): Boolean = false
                 }
                 overlays.add(MapEventsOverlay(receiver))
+                // Debounced so a fling triggers one rebuild, not fifty.
+                addMapListener(
+                    DelayedMapListener(
+                        object : MapListener {
+                            override fun onScroll(event: ScrollEvent?): Boolean {
+                                viewport = boundingBox
+                                return false
+                            }
+
+                            override fun onZoom(event: ZoomEvent?): Boolean {
+                                viewport = boundingBox
+                                return false
+                            }
+                        },
+                        250L
+                    )
+                )
             }
         },
         update = { map -> runCatching {
             // Rebuild only the markers; keep the tap-events overlay in place.
             map.overlays.removeAll { it is Marker }
             val density = map.resources.displayMetrics.density
-            fun add(lat: Double, lon: Double, color: Int, sizeDp: Int, title: String?, clickable: Boolean) {
+            val box = viewport ?: map.boundingBox
+            // Collected first, then culled to the viewport and thinned to a
+            // budget, so a layer holding tens of thousands of points costs
+            // only what is actually on screen.
+            val pending = ArrayList<PendingMarker>(2048)
+            fun add(
+                kind: String,
+                lat: Double,
+                lon: Double,
+                color: Int,
+                sizeDp: Int,
+                title: String?,
+                clickable: Boolean,
+                url: String? = null
+            ) {
                 if (lat !in -90.0..90.0 || lon !in -180.0..180.0 || lat.isNaN() || lon.isNaN()) return
-                val px = (sizeDp * density).toInt()
-                val key = (color.toLong() shl 8) xor px.toLong()
-                val icon = dotCache.getOrPut(key) { dot(color, px) }
-                val m = Marker(map)
-                m.position = GeoPoint(lat, lon)
-                m.icon = icon
-                m.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                m.title = title
-                m.setOnMarkerClickListener { mk, _ ->
-                    if (!mk.title.isNullOrBlank()) onInspect(mk.title, lat, lon)
-                    true
-                }
-                map.overlays.add(m)
+                if (box != null && !inBox(box, lat, lon)) return
+                pending.add(PendingMarker(kind, lat, lon, color, sizeDp, title, clickable, url))
             }
-            quakes.forEach { add(it.lat, it.lon, 0xFFF0997B.toInt(), 8, "M%.1f".format(it.mag), false) }
-            events.forEach { add(it.lat, it.lon, 0xFFF2C94C.toInt(), 9, "${it.category}: ${it.title}", false) }
-            news.forEach { add(it.lat, it.lon, 0xFFFF79C6.toInt(), 7, it.label, false) }
-            aurora.forEach { add(it.lat, it.lon, 0xFF66FFB2.toInt(), 6, it.label, false) }
-            stations.forEach { add(it.lat, it.lon, 0xFF9AB0C0.toInt(), 5, it.label, false) }
-            airports.forEach { add(it.lat, it.lon, 0xFF8FD3FF.toInt(), 6, it.label, true) }
-            powerPlants.forEach { add(it.lat, it.lon, 0xFFFFC14D.toInt(), 6, it.label, false) }
-            cameras.forEach { add(it.lat, it.lon, 0xFFB388FF.toInt(), 6, it.label, true) }
-            airspace.forEach { add(it.lat, it.lon, 0xFFFF5370.toInt(), 7, it.label, false) }
-            ladd.forEach { add(it.lat, it.lon, 0xFFFFD166.toInt(), 7, it.label, true) }
-            cables.forEach { add(it.lat, it.lon, 0xFF7FFFD4.toInt(), 5, it.label, false) }
-            airQuality.forEach { add(it.lat, it.lon, 0xFFB4E66B.toInt(), 9, it.label, false) }
-            buoys.forEach { add(it.lat, it.lon, 0xFF4DD0E1.toInt(), 6, it.label, false) }
-            metar.forEach { add(it.lat, it.lon, 0xFF9FE8FF.toInt(), 6, it.label, false) }
-            conflicts.forEach { add(it.lat, it.lon, 0xFFFF2E2E.toInt(), 11, it.label, false) }
-            gdacs.forEach { add(it.lat, it.lon, 0xFFFF8A3D.toInt(), 10, it.label, false) }
-            volcanoes.forEach { add(it.lat, it.lon, 0xFFFF4D4D.toInt(), 9, it.label, false) }
-            weather.forEach { add(it.lat, it.lon, 0xFF7FB2FF.toInt(), 9, it.label, false) }
-            fires.forEach { add(it.lat, it.lon, 0xFFFF5A4D.toInt(), 8, it.label, false) }
-            overlay.forEach { add(it.lat, it.lon, 0xFF5CE1D6.toInt(), 9, it.label, false) }
-            satellites.forEach { add(it.lat, it.lon, 0xFFC0A8FF.toInt(), 11, it.label, false) }
-            vessels.forEach { add(it.lat, it.lon, 0xFF1D9E75.toInt(), 9, it.name.ifBlank { it.mmsi }, true) }
-            aircraft.forEach { add(it.lat, it.lon, 0xFF4FC3F7.toInt(), 9, it.callsign.ifBlank { it.icao }, true) }
-            milAircraft.forEach { add(it.lat, it.lon, 0xFFFFD23F.toInt(), 10, it.label, true) }
+            fun flush() {
+                // Findings and anything clickable survive thinning; the rest
+                // is sampled with a stride so what remains stays spread out
+                // instead of clumping into one corner of the view.
+                val keep = if (pending.size <= MARKER_BUDGET) pending else {
+                    val priority = pending.filter { it.clickable }
+                    val rest = pending.filterNot { it.clickable }
+                    val room = (MARKER_BUDGET - priority.size).coerceAtLeast(0)
+                    val stride = if (room == 0) rest.size + 1 else (rest.size / room).coerceAtLeast(1)
+                    priority.take(MARKER_BUDGET) + rest.filterIndexed { i, _ -> i % stride == 0 }.take(room)
+                }
+                keep.forEach { pm ->
+                    val px = (pm.sizeDp * density).toInt()
+                    val key = (pm.color.toLong() shl 8) xor px.toLong()
+                    val icon = dotCache.getOrPut(key) { dot(pm.color, px) }
+                    val m = Marker(map)
+                    m.position = GeoPoint(pm.lat, pm.lon)
+                    m.icon = icon
+                    m.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                    m.title = pm.title
+                    m.setOnMarkerClickListener { _, _ ->
+                        onInspect(
+                            Inspected(
+                                pm.kind,
+                                pm.title.orEmpty().ifBlank { pm.kind },
+                                pm.lat,
+                                pm.lon,
+                                pm.url
+                            )
+                        )
+                        true
+                    }
+                    map.overlays.add(m)
+                }
+            }
+            quakes.forEach { add("Earthquake", it.lat, it.lon, 0xFFF0997B.toInt(), 8, "M%.1f".format(it.mag), true) }
+            events.forEach { add("Natural event", it.lat, it.lon, 0xFFF2C94C.toInt(), 9, "${it.category}: ${it.title}", true) }
+            news.forEach { add("News hotspot", it.lat, it.lon, 0xFFFF79C6.toInt(), 7, it.label, true, it.url) }
+            aurora.forEach { add("Aurora forecast", it.lat, it.lon, 0xFF66FFB2.toInt(), 6, it.label, false, it.url) }
+            stations.forEach { add("Seismic station", it.lat, it.lon, 0xFF9AB0C0.toInt(), 5, it.label, false, it.url) }
+            airports.forEach { add("Airport", it.lat, it.lon, 0xFF8FD3FF.toInt(), 6, it.label, true, it.url) }
+            powerPlants.forEach { add("Power plant", it.lat, it.lon, 0xFFFFC14D.toInt(), 6, it.label, true, it.url) }
+            cameras.forEach { add("Traffic camera", it.lat, it.lon, 0xFFB388FF.toInt(), 6, it.label, true, it.url) }
+            airspace.forEach { add("Restricted airspace", it.lat, it.lon, 0xFFFF5370.toInt(), 7, it.label, true, it.url) }
+            ladd.forEach { add("Hidden-owner aircraft", it.lat, it.lon, 0xFFFFD166.toInt(), 7, it.label, true, it.url) }
+            cables.forEach { add("Cable landing", it.lat, it.lon, 0xFF7FFFD4.toInt(), 5, it.label, true, it.url) }
+            airQuality.forEach { add("Air quality", it.lat, it.lon, 0xFFB4E66B.toInt(), 9, it.label, false, it.url) }
+            buoys.forEach { add("Ocean buoy", it.lat, it.lon, 0xFF4DD0E1.toInt(), 6, it.label, true, it.url) }
+            metar.forEach { add("Airfield weather", it.lat, it.lon, 0xFF9FE8FF.toInt(), 6, it.label, false, it.url) }
+            conflicts.forEach { add("Conflict", it.lat, it.lon, 0xFFFF2E2E.toInt(), 11, it.label, true, it.url) }
+            gdacs.forEach { add("Disaster alert", it.lat, it.lon, 0xFFFF8A3D.toInt(), 10, it.label, true, it.url) }
+            volcanoes.forEach { add("Volcano", it.lat, it.lon, 0xFFFF4D4D.toInt(), 9, it.label, true, it.url) }
+            weather.forEach { add("Weather alert", it.lat, it.lon, 0xFF7FB2FF.toInt(), 9, it.label, true, it.url) }
+            fires.forEach { add("Wildfire", it.lat, it.lon, 0xFFFF5A4D.toInt(), 8, it.label, true, it.url) }
+            overlay.forEach { add("Custom overlay", it.lat, it.lon, 0xFF5CE1D6.toInt(), 9, it.label, false, it.url) }
+            satellites.forEach { add("Satellite", it.lat, it.lon, 0xFFC0A8FF.toInt(), 11, it.label, true, it.url) }
+            vessels.forEach { add("Vessel", it.lat, it.lon, 0xFF1D9E75.toInt(), 9, it.name.ifBlank { it.mmsi }, true) }
+            aircraft.forEach { add("Aircraft", it.lat, it.lon, 0xFF4FC3F7.toInt(), 9, it.callsign.ifBlank { it.icao }, true) }
+            milAircraft.forEach { add("Military aircraft", it.lat, it.lon, 0xFFFFD23F.toInt(), 10, it.label, true, it.url) }
             // Investigation findings sit on top, larger and brighter.
-            findings.forEach { add(it.lat, it.lon, 0xFFE24FD6.toInt(), 14, it.label, false) }
+            findings.forEach { add("Finding", it.lat, it.lon, 0xFFE24FD6.toInt(), 14, it.label, true) }
+            flush()
 
             // Fly to a newly-focused location (coordinate search or first geo finding).
             if (focus != null && focus != appliedFocus.value) {
@@ -561,6 +678,65 @@ private fun GlobeMap(
             map.invalidate()
         } }
     )
+}
+
+/**
+ * Turns a marker's display label into something worth searching.
+ *
+ * Labels are built for reading — "GHOST52 · GLF4", "CAM Hwy 5 at Pocket ·
+ * Sacramento" — and feeding one verbatim to the tools produces a dossier
+ * full of "no entity named 'GHOST52 · GLF4'". The useful identifier is the
+ * first segment, and only for layers where an identifier means something.
+ * Everything else investigates by position instead.
+ */
+private fun investigableQuery(obj: Inspected): String? {
+    val head = obj.label.substringBefore(" · ").trim()
+    return when (obj.kind) {
+        "Aircraft", "Military aircraft", "Hidden-owner aircraft" ->
+            head.removePrefix("LADD ").trim().takeIf { it.isNotBlank() }
+        "Vessel" -> head.takeIf { it.isNotBlank() }
+        "Satellite" -> head.takeIf { it.isNotBlank() }
+        "Airport" -> head.removePrefix("APT ").trim().takeIf { it.isNotBlank() }
+        "Finding" -> obj.label.takeIf { it.isNotBlank() }
+        // A camera, a cable landing or a weather alert is a place, not a
+        // name — searching its caption finds nothing, so these fall through
+        // to LOCATION instead of offering a search that cannot work.
+        else -> null
+    }
+}
+
+/** The most markers drawn at once. Layers may hold far more than this;
+ *  what is off screen costs nothing, and what is left is thinned evenly. */
+private const val MARKER_BUDGET = 2500
+
+private data class PendingMarker(
+    val kind: String,
+    val lat: Double,
+    val lon: Double,
+    val color: Int,
+    val sizeDp: Int,
+    val title: String?,
+    val clickable: Boolean,
+    val url: String? = null
+)
+
+/** What the object inspector is showing: which layer the marker came from,
+ *  its label, where it is, and any link that layer carries. */
+data class Inspected(
+    val kind: String,
+    val label: String,
+    val lat: Double,
+    val lon: Double,
+    val url: String? = null
+)
+
+/** Viewport test that tolerates a map scrolled past the antimeridian, where
+ *  the west edge is numerically greater than the east. */
+private fun inBox(box: BoundingBox, lat: Double, lon: Double): Boolean {
+    if (lat > box.latNorth || lat < box.latSouth) return false
+    val west = box.lonWest
+    val east = box.lonEast
+    return if (west <= east) lon in west..east else lon >= west || lon <= east
 }
 
 /** Filters aircraft by callsign pattern: cargo carriers, military-style

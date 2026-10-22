@@ -871,7 +871,7 @@ class DeepApis(private val client: OkHttpClient = Http.client) {
         // SEC requires a descriptive UA with contact details.
         val xml = get(
             "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&company=$q&type=&dateb=&owner=include&count=20&output=atom",
-            "OSINT Unified research tool (contact via github.com/EmotionalLeaves/osint-unified)"
+            SEC_USER_AGENT
         )
         val sb = StringBuilder("SEC EDGAR — '$name'\n")
         val ciks = Regex("""CIK=(\d{10})""").findAll(xml).map { it.groupValues[1] }.distinct().toList()

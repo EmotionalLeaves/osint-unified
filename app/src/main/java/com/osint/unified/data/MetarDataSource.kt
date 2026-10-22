@@ -33,7 +33,7 @@ class MetarDataSource(private val client: OkHttpClient = Http.client) {
                 val arr = json.parseToJsonElement(body).jsonArray
                 val out = ArrayList<GeoBlip>()
                 for (el in arr) {
-                    if (out.size >= 600) break
+                    if (out.size >= 8000) break
                     val o = el as? JsonObject ?: continue
                     fun d(k: String) = (o[k] as? JsonPrimitive)?.doubleOrNull
                     fun s(k: String) = (o[k] as? JsonPrimitive)?.contentOrNull

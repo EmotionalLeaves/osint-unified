@@ -20,7 +20,7 @@ class BundledPointsDataSource(
     private val appContext: Context,
     private val assetName: String,
     private val label: (JsonObject) -> String,
-    private val limit: Int = 4000
+    private val limit: Int = 60000
 ) {
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
     @Volatile private var cache: List<GeoBlip>? = null

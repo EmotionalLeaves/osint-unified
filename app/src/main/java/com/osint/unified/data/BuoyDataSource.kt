@@ -24,7 +24,7 @@ class BuoyDataSource(private val client: OkHttpClient = Http.client) {
                 if (!resp.isSuccessful || body.isNullOrBlank()) return@withContext emptyList()
                 val out = ArrayList<GeoBlip>()
                 body.lineSequence().forEach { line ->
-                    if (out.size >= 700) return@forEach
+                    if (out.size >= 5000) return@forEach
                     if (line.isBlank() || line.startsWith("#")) return@forEach
                     val cols = line.trim().split(Regex("\\s+"))
                     if (cols.size < 3) return@forEach

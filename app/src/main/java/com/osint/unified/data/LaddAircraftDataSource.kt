@@ -39,7 +39,7 @@ class LaddAircraftDataSource(private val client: OkHttpClient = Http.client) {
                     ?: return@withContext emptyList()
                 val out = ArrayList<GeoBlip>()
                 ac.forEach { el ->
-                    if (out.size >= 400) return@forEach
+                    if (out.size >= 5000) return@forEach
                     val o = el as? JsonObject ?: return@forEach
                     fun d(k: String) = (o[k] as? JsonPrimitive)?.doubleOrNull
                     fun s(k: String) = (o[k] as? JsonPrimitive)?.contentOrNull

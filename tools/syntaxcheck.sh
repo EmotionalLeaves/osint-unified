@@ -35,7 +35,7 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
 # shellcheck disable=SC2046
-"$KOTLINC" $(find app/src/main/java app/src/test/java -name '*.kt') \
+"$KOTLINC" -J-Xmx4g $(find app/src/main/java app/src/test/java -name '*.kt') \
   -nowarn -d "$WORK/out" > "$WORK/full.txt" 2>&1
 
 grep -iE "error:.*(conflicting declaration|redeclaration|expecting |unexpected token|unbalanced|unclosed|syntax error|already defined|expecting an element|expecting a top level|expecting member declaration)" \

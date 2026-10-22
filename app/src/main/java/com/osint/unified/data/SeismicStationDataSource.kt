@@ -24,7 +24,7 @@ class SeismicStationDataSource(private val client: OkHttpClient = Http.client) {
                 if (!resp.isSuccessful || body.isNullOrBlank()) return@withContext emptyList()
                 val out = ArrayList<GeoBlip>()
                 body.lineSequence().forEach { line ->
-                    if (out.size >= 700) return@forEach
+                    if (out.size >= 8000) return@forEach
                     if (line.isBlank() || line.startsWith("#")) return@forEach
                     // Net|Sta|Lat|Lon|Elev|SiteName|Start|End
                     val c = line.split("|")

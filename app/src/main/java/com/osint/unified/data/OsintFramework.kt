@@ -122,6 +122,42 @@ object OsintFramework {
         return byUrl.map { (url, name) -> name to url }
     }
 
+/**
+     * Catalogue URLs carry example values rather than placeholders — a
+     * literal `email@gmail.com`, `PHOTO-ID-HERE`, `SearchTerm`, a sample
+     * username. Emitting those verbatim produced link lists pointing at
+     * someone else's example data, which is worse than useless.
+     *
+     * Returns the URL with the target substituted, or null when the URL
+     * holds an example this cannot safely replace — those are better shown
+     * as a plain tool link than as a search for the wrong thing.
+     */
+    fun fillTarget(url: String, target: String): String? {
+        if (target.isBlank()) return null
+        val encoded = java.net.URLEncoder.encode(target.trim(), "UTF-8").replace("+", "%20")
+        var filled = url
+        var replaced = false
+        EXAMPLE_VALUES.forEach { example ->
+            if (filled.contains(example, ignoreCase = true)) {
+                filled = Regex(Regex.escape(example), RegexOption.IGNORE_CASE).replace(filled, encoded)
+                replaced = true
+            }
+        }
+        if (replaced) return filled
+        // Otherwise fall back to a recognised query parameter.
+        return com.osint.unified.domain.ToolTemplates.templateFor(url)?.resolve(target)
+    }
+
+    /** Example values catalogue authors leave in their URLs. Ordered longest
+     *  first so a specific case is matched before a generic one. */
+    private val EXAMPLE_VALUES = listOf(
+        "email%40gmail.com", "email@gmail.com", "PHOTO-ID-HERE", "SearchTerm",
+        "%7Bsearch_term%7D", "{search_term}", "{username}", "{account}",
+        "USERNAME-HERE", "USERNAMEHERE", "NAME-HERE", "DOMAIN-HERE", "IP-HERE",
+        "INSERT-USERNAME", "insert_username", "yourusername", "USERNAME",
+        "example.com", "johndoe", "john.doe"
+    ).sortedByDescending { it.length }
+
     /** All leaf resources (name + url) under a node, for search. */
     fun leaves(node: ArfNode, path: String = ""): List<Triple<String, String, String>> {
         val here = if (path.isBlank()) node.name else "$path › ${node.name}"

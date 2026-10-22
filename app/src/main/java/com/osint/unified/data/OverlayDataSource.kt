@@ -48,7 +48,7 @@ class OverlayDataSource(
                         (props?.get(it) as? JsonPrimitive)?.contentOrNull
                     } ?: "point"
                     OverlayPoint(lat, lon, label)
-                }.take(500)
+                }.take(5000)
             }
         } catch (e: Exception) {
             emptyList()

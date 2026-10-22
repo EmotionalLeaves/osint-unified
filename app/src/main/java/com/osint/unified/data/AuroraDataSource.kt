@@ -38,13 +38,13 @@ class AuroraDataSource(private val client: OkHttpClient = Http.client) {
                 for (c in coords) {
                     val a = c as? JsonArray ?: continue
                     val value = (a.getOrNull(2) as? JsonPrimitive)?.doubleOrNull ?: 0.0
-                    if (value < 25) continue          // only meaningful probability
-                    if (i++ % 6 != 0) continue        // sample the dense grid
+                    if (value < 5) continue          // only meaningful probability
+                    if (i++ % 2 != 0) continue        // sample the dense grid
                     var lon = (a.getOrNull(0) as? JsonPrimitive)?.doubleOrNull ?: continue
                     val lat = (a.getOrNull(1) as? JsonPrimitive)?.doubleOrNull ?: continue
                     if (lon > 180) lon -= 360          // SWPC uses 0..360
                     out.add(GeoBlip(lat, lon, "Aurora ${value.toInt()}%"))
-                    if (out.size >= 400) break
+                    if (out.size >= 6000) break
                 }
                 out
             }

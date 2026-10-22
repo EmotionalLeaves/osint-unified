@@ -23,7 +23,7 @@ class FiresDataSource(private val client: OkHttpClient = Http.client) {
     suspend fun fetch(): List<GeoBlip> = withContext(Dispatchers.IO) {
         try {
             val request = Request.Builder()
-                .url("https://eonet.gsfc.nasa.gov/api/v3/events?category=wildfires&status=open&limit=300")
+                .url("https://eonet.gsfc.nasa.gov/api/v3/events?category=wildfires&status=open&days=10&limit=2000")
                 .build()
             client.newCall(request).execute().use { resp ->
                 val body = resp.body?.string()
@@ -39,7 +39,13 @@ class FiresDataSource(private val client: OkHttpClient = Http.client) {
                     val coords = (geom as JsonObject)["coordinates"]?.jsonArray ?: return@mapNotNull null
                     val lon = (coords.getOrNull(0) as? JsonPrimitive)?.doubleOrNull ?: return@mapNotNull null
                     val lat = (coords.getOrNull(1) as? JsonPrimitive)?.doubleOrNull ?: return@mapNotNull null
-                    GeoBlip(lat, lon, title)
+                    // EONET keeps events open long after they stop burning,
+                    // so the last observation date decides whether this is
+                    // still live, and the label carries the age.
+                    val seen = Freshness.parse((geom["date"] as? JsonPrimitive)?.contentOrNull)
+                    if (!Freshness.within(seen, 240)) return@mapNotNull null
+                    val age = Freshness.ago(seen)
+                    GeoBlip(lat, lon, if (age != null) "$title · $age" else title)
                 }
             }
         } catch (e: Exception) {

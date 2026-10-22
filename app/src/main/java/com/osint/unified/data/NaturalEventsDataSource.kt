@@ -26,7 +26,7 @@ class NaturalEventsDataSource(private val client: OkHttpClient = Http.client) {
     suspend fun fetch(): List<NaturalEvent> = withContext(Dispatchers.IO) {
         try {
             val request = Request.Builder()
-                .url("https://eonet.gsfc.nasa.gov/api/v3/events?status=open&limit=200")
+                .url("https://eonet.gsfc.nasa.gov/api/v3/events?status=open&days=20&limit=2000")
                 .build()
             client.newCall(request).execute().use { resp ->
                 val body = resp.body?.string()
@@ -45,7 +45,12 @@ class NaturalEventsDataSource(private val client: OkHttpClient = Http.client) {
                     val coords = (geom as JsonObject)["coordinates"]?.jsonArray ?: return@mapNotNull null
                     val lon = (coords.getOrNull(0) as? JsonPrimitive)?.doubleOrNull ?: return@mapNotNull null
                     val lat = (coords.getOrNull(1) as? JsonPrimitive)?.doubleOrNull ?: return@mapNotNull null
-                    NaturalEvent(lat, lon, title, category)
+                    // The geometry's own date is when the event was last
+                    // observed there, which is the only honest timestamp.
+                    val seen = Freshness.parse((geom["date"] as? JsonPrimitive)?.contentOrNull)
+                    if (!Freshness.within(seen, 21 * 24)) return@mapNotNull null
+                    val age = Freshness.ago(seen)
+                    NaturalEvent(lat, lon, if (age != null) "$title · $age" else title, category)
                 }
             }
         } catch (e: Exception) {

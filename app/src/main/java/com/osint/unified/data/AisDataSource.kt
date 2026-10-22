@@ -36,7 +36,7 @@ class AisDataSource(
         if (urls.isEmpty()) return@withContext mock()
         val merged = LinkedHashMap<String, Vessel>()
         for (url in urls) {
-            if (merged.size >= 1500) break
+            if (merged.size >= 20000) break
             runCatching { fetchOne(url) }.getOrNull()?.forEach { v ->
                 merged.putIfAbsent(v.mmsi.ifBlank { "${v.lat},${v.lon}" }, v)
             }
@@ -67,7 +67,7 @@ class AisDataSource(
                         course = p("cog")?.doubleOrNull ?: 0.0,
                         speed = p("sog")?.doubleOrNull ?: 0.0
                     )
-                }.take(800)
+                }.take(20000)
             } else {
                 json.decodeFromString<List<AisVessel>>(body)
                     .filter { it.lat != null && it.lon != null }
@@ -79,7 +79,7 @@ class AisDataSource(
                             course = it.course ?: 0.0, speed = it.speed ?: 0.0
                         )
                     }
-                    .take(800)
+                    .take(20000)
             }
         }
     }

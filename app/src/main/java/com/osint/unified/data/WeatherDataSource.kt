@@ -54,7 +54,7 @@ class WeatherDataSource(private val client: OkHttpClient = Http.client) {
                     if (n == 0) return@mapNotNull null
                     val event = ((o["properties"] as? JsonObject)?.get("event") as? JsonPrimitive)?.contentOrNull ?: "Alert"
                     GeoBlip(sumLat / n, sumLon / n, event)
-                }.take(200)
+                }.take(3000)
             }
         } catch (e: Exception) {
             emptyList()

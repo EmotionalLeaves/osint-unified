@@ -264,9 +264,32 @@ class DirectToolExecutor(
             else -> listOf("Username", "Social Networks")
         }
         val leaves = com.osint.unified.data.OsintFramework.categoryLeaves(appContext, categories)
-        if (leaves.isEmpty()) "No OSINT Framework resources matched."
-        else "${leaves.size} OSINT Framework resources:\n" +
-            leaves.joinToString("\n") { (name, url) -> "$name: $url" }
+        if (leaves.isEmpty()) return@runCatching "No OSINT Framework resources matched."
+
+        // Split by whether the resource can actually be pointed at this
+        // target. A link already carrying someone else's example address is
+        // noise, so those are filled in where possible and listed plainly
+        // where not.
+        val runnable = ArrayList<String>()
+        val reference = ArrayList<String>()
+        leaves.forEach { (name, url) ->
+            val filled = com.osint.unified.data.OsintFramework.fillTarget(url, v)
+            if (filled != null) runnable.add("$name: $filled") else reference.add("$name: $url")
+        }
+        buildString {
+            append("${leaves.size} OSINT Framework resources for \"$v\"\n")
+            if (runnable.isNotEmpty()) {
+                append("\n── ${runnable.size} pointed at this target ──\n")
+                runnable.forEach { append(it).append("\n") }
+            }
+            if (reference.isNotEmpty()) {
+                append("\n── ${reference.size} general tools (open and paste the target) ──\n")
+                reference.take(160).forEach { append(it).append("\n") }
+                if (reference.size > 160) {
+                    append("…and ${reference.size - 160} more in the directory screen.\n")
+                }
+            }
+        }
     }
 
     private fun phoneInfo(input: String): Result<String> = try {
@@ -318,7 +341,7 @@ class DirectToolExecutor(
                         // The SEC rejects generic agents outright, and asks
                         // for a descriptive one with contact details.
                         val agent = if (url.contains("sec.gov")) {
-                            "OSINT Unified research tool (github.com/EmotionalLeaves/osint-unified)"
+                            SEC_USER_AGENT
                         } else {
                             "OSINT-Unified/1.0 (research)"
                         }

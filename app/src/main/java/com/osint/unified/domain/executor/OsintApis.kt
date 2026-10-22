@@ -585,21 +585,62 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
     }
 
     /** GDELT 2.0 geolocated news: places in global news mentioning the query. */
+    /**
+     * Global news coverage for a query, from GDELT's article API.
+     *
+     * GDELT's geo endpoint — which returned mapped hotspots — now answers
+     * 404 to every request; it has been retired. The article API still
+     * works, so this returns coverage with sources, countries and dates
+     * instead of silently showing an empty map layer. GDELT asks for no
+     * more than one request every five seconds, so a 429 is reported as
+     * rate limiting rather than as "no results".
+     */
     fun gdeltNews(query: String): Result<String> = runCatching {
-        val url = "https://api.gdeltproject.org/api/v2/geo/geo?query=" +
-            URLEncoder.encode(query, "UTF-8") + "&format=GeoJSON"
-        val feats = json.parseToJsonElement(getBody(url)).jsonObject["features"]?.jsonArray
-        if (feats == null || feats.isEmpty()) "No geolocated news for \"$query\" (last 24h)." else
-            "News hotspots for \"$query\" (${feats.size}):\n\n" + feats.take(25).joinToString("\n") { f ->
-                val o = f.jsonObject
-                val props = o["properties"] as? JsonObject
-                val name = (props?.get("name") as? JsonPrimitive)?.contentOrNull ?: "?"
-                val count = (props?.get("count") as? JsonPrimitive)?.contentOrNull
-                val coords = (o["geometry"] as? JsonObject)?.get("coordinates")?.jsonArray
-                val lon = (coords?.getOrNull(0) as? JsonPrimitive)?.contentOrNull.orEmpty()
-                val lat = (coords?.getOrNull(1) as? JsonPrimitive)?.contentOrNull.orEmpty()
-                "• $name${if (!count.isNullOrEmpty()) " ($count mentions)" else ""}\n  Coords: $lat, $lon"
+        val url = "https://api.gdeltproject.org/api/v2/doc/doc?query=" +
+            URLEncoder.encode(query, "UTF-8") +
+            "&mode=artlist&format=json&maxrecords=75&sort=datedesc&timespan=3d"
+        val body = runCatching { getBody(url) }.getOrElse { e ->
+            return@runCatching if (e.message?.contains("429") == true) {
+                "GDELT is rate limiting (it allows one request every five seconds). Try again shortly."
+            } else {
+                "GDELT did not answer for \"$query\"."
             }
+        }
+        if (body.trimStart().startsWith("Please limit")) {
+            return@runCatching "GDELT is rate limiting (one request per five seconds). Try again shortly."
+        }
+        val articles = runCatching {
+            json.parseToJsonElement(body).jsonObject["articles"] as? JsonArray
+        }.getOrNull()
+        if (articles.isNullOrEmpty()) {
+            return@runCatching "No news coverage for \"$query\" in the last three days."
+        }
+        val byCountry = LinkedHashMap<String, Int>()
+        val lines = articles.take(50).mapNotNull { a ->
+            val o = a as? JsonObject ?: return@mapNotNull null
+            fun f(k: String) = (o[k] as? JsonPrimitive)?.contentOrNull
+            val title = f("title")?.trim() ?: return@mapNotNull null
+            f("sourcecountry")?.takeIf { it.isNotBlank() }?.let { byCountry[it] = (byCountry[it] ?: 0) + 1 }
+            buildString {
+                append("• $title")
+                f("domain")?.let { append("\n  $it") }
+                f("seendate")?.let { append("  ${it.take(8)}") }
+                f("url")?.let { append("\n  $it") }
+            }
+        }
+        buildString {
+            append("News coverage for \"$query\" — ${articles.size} articles, last 3 days\n")
+            if (byCountry.isNotEmpty()) {
+                append("\nReporting countries: ")
+                append(
+                    byCountry.entries.sortedByDescending { it.value }.take(12)
+                        .joinToString(", ") { "${it.key} (${it.value})" }
+                )
+                append("\n")
+            }
+            append("\n")
+            append(lines.joinToString("\n"))
+        }
     }
 
     /** Reverse image search links across the major engines. */

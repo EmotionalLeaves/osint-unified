@@ -70,7 +70,7 @@ class AircraftDataSource(
         )
         val out = LinkedHashMap<String, Aircraft>()
         for ((lat, lon) in hubs) {
-            if (out.size >= 1000) break
+            if (out.size >= 20000) break
             try {
                 val request = Request.Builder()
                     .url("https://opendata.adsb.fi/api/v2/lat/$lat/lon/$lon/dist/250")
@@ -121,7 +121,7 @@ class AircraftDataSource(
                 val states = json.parseToJsonElement(body).jsonObject["states"]?.jsonArray
                 val out = ArrayList<Aircraft>()
                 states?.forEach { s ->
-                    if (out.size >= 250) return@forEach
+                    if (out.size >= 20000) return@forEach
                     val a = s as? JsonArray ?: return@forEach
                     fun d(i: Int) = (a.getOrNull(i) as? JsonPrimitive)?.doubleOrNull
                     fun str(i: Int) = (a.getOrNull(i) as? JsonPrimitive)?.contentOrNull
