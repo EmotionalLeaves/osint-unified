@@ -42,7 +42,7 @@ class UsernameChecker(private val appContext: Context) {
         val found = Collections.synchronizedList(mutableListOf<String>())
         val semaphore = Semaphore(64)
 
-        val completed = withTimeoutOrNull(45_000) {
+        val completed = withTimeoutOrNull(26_000) {
             coroutineScope {
                 sites.map { site ->
                     async { semaphore.withPermit { checkSite(site, username)?.let { found.add(it) } } }

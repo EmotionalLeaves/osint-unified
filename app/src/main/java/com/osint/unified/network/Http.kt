@@ -3,13 +3,15 @@ package com.osint.unified.network
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 
-/** Shared OkHttp client. Generous timeouts to accommodate slow cloud scans. */
+/** Shared OkHttp client. Tight timeouts so a slow endpoint fails fast instead
+ *  of hanging the dossier — results should arrive quickly or not at all. */
 object Http {
     val client: OkHttpClient by lazy {
         OkHttpClient.Builder()
-            .connectTimeout(20, TimeUnit.SECONDS)
-            .readTimeout(150, TimeUnit.SECONDS)
-            .callTimeout(160, TimeUnit.SECONDS)
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(20, TimeUnit.SECONDS)
+            .callTimeout(25, TimeUnit.SECONDS)
+            .retryOnConnectionFailure(true)
             .build()
     }
 }

@@ -7,6 +7,7 @@ import com.osint.unified.domain.Observable
 import com.osint.unified.domain.Tool
 import com.osint.unified.domain.executor.ExecutorFactory
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Creates investigations and runs tools, persisting every run to Room as a
@@ -56,7 +57,12 @@ class InvestigationRepository(
             )
         )
 
-        val outcome: kotlin.Result<String> = executors.forTool(tool).execute(tool, input)
+        // Hard cap per tool so one slow source can't make the dossier feel
+        // hung; most finish in 1–10s, this is just a safety net.
+        val cap = tool.timeoutMs.coerceAtMost(40_000L)
+        val outcome: kotlin.Result<String> =
+            withTimeoutOrNull(cap) { executors.forTool(tool).execute(tool, input) }
+                ?: kotlin.Result.failure(java.io.IOException("No response within ${cap / 1000}s"))
         val finished = System.currentTimeMillis()
 
         val updated = outcome.fold(
