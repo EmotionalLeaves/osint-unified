@@ -1,6 +1,7 @@
 package com.osint.unified
 
 import android.app.Application
+import java.io.File
 import com.osint.unified.data.AircraftDataSource
 import com.osint.unified.data.AisDataSource
 import com.osint.unified.data.AppSettings
@@ -54,4 +55,14 @@ class OsintApplication : Application() {
 
     val exporter: InvestigationExporter by lazy { InvestigationExporter(this) }
     val exifReader: ExifReader by lazy { ExifReader(this) }
+
+    /** Which LOCAL tools actually shipped a binary (jniLibs/lib<id>.so) in this
+     *  build. Used to hide local tools that would just error. */
+    val availableLocalTools: Set<String> by lazy {
+        File(applicationInfo.nativeLibraryDir).listFiles()
+            ?.mapNotNull { f ->
+                f.name.takeIf { it.startsWith("lib") && it.endsWith(".so") }
+                    ?.removePrefix("lib")?.removeSuffix(".so")
+            }?.toSet() ?: emptySet()
+    }
 }

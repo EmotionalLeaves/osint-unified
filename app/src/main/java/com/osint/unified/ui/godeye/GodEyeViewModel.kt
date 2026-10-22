@@ -73,9 +73,20 @@ class GodEyeViewModel(
     private val firesDataSource: FiresDataSource,
     private val satellitesDataSource: SatellitesDataSource,
     private val newsDataSource: NewsDataSource,
+    private val availableLocalTools: Set<String>,
     private val settings: AppSettings,
     private val exporter: InvestigationExporter
 ) : ViewModel() {
+
+    /** Keeps only tools that can actually run in this build/config: DIRECT
+     *  always, LOCAL only if its binary shipped, CLOUD only with a backend. */
+    private fun runnable(tools: List<Tool>): List<Tool> = tools.filter { t ->
+        when (t.executionMode) {
+            ExecutionMode.DIRECT -> true
+            ExecutionMode.LOCAL -> t.id in availableLocalTools
+            ExecutionMode.CLOUD -> settings.backendBaseUrl.isNotBlank()
+        }
+    }
 
     private val _state = MutableStateFlow(
         GodEyeUiState(
@@ -167,7 +178,7 @@ class GodEyeViewModel(
         _state.update {
             it.copy(
                 observable = observable,
-                suggestedTools = router.suggestTools(observable),
+                suggestedTools = runnable(router.suggestTools(observable)),
                 workflowName = Workflows.forObservable(observable)?.name,
                 results = emptyList(),
                 findings = emptyList(),
@@ -320,11 +331,12 @@ class GodEyeViewModel(
         private val firesDataSource: FiresDataSource,
         private val satellitesDataSource: SatellitesDataSource,
         private val newsDataSource: NewsDataSource,
+        private val availableLocalTools: Set<String>,
         private val settings: AppSettings,
         private val exporter: InvestigationExporter
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            GodEyeViewModel(router, repository, aircraftDataSource, aisDataSource, earthquakeDataSource, naturalEventsDataSource, overlayDataSource, weatherDataSource, firesDataSource, satellitesDataSource, newsDataSource, settings, exporter) as T
+            GodEyeViewModel(router, repository, aircraftDataSource, aisDataSource, earthquakeDataSource, naturalEventsDataSource, overlayDataSource, weatherDataSource, firesDataSource, satellitesDataSource, newsDataSource, availableLocalTools, settings, exporter) as T
     }
 }

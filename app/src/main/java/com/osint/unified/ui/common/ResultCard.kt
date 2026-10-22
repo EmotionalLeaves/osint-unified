@@ -26,11 +26,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.osint.unified.data.db.Result as ResultRow
@@ -47,7 +49,15 @@ import com.osint.unified.ui.theme.categoryColor
 @Composable
 fun ResultCard(row: ResultRow, onPivot: ((String) -> Unit)? = null) {
     var expanded by remember { mutableStateOf(false) }
-    val uriHandler = LocalUriHandler.current
+    val context = LocalContext.current
+    val open: (String) -> Unit = { url ->
+        val clean = url.trim().trimEnd('.', ',', ')', ']', '}', '"', '\'', ';', '>')
+        runCatching {
+            context.startActivity(
+                Intent(Intent.ACTION_VIEW, Uri.parse(clean)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        }
+    }
     val accent = remember(row.toolId) {
         ToolRegistry.byId(row.toolId)?.category?.let { categoryColor(it) } ?: Intel.Cyan
     }
@@ -101,9 +111,7 @@ fun ResultCard(row: ResultRow, onPivot: ((String) -> Unit)? = null) {
                     } else {
                         val visible = if (expanded) lines else lines.take(6)
                         Column(modifier = Modifier.padding(top = 8.dp)) {
-                            visible.forEach { line ->
-                                LineItem(line) { url -> runCatching { uriHandler.openUri(url) } }
-                            }
+                            visible.forEach { line -> LineItem(line, open) }
                         }
                         if (lines.size > 6) {
                             Text(
