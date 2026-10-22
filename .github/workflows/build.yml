@@ -136,6 +136,15 @@ jobs:
           PY
           ls -la "$A"
           test -s "$A/arf.json"
+          # Report exactly what landed in the APK. Downloads are best-effort
+          # (|| true) so a dead mirror can't break the build — but a silently
+          # missing dataset would be worse, so surface the inventory as an
+          # annotation, which is readable without downloading logs.
+          SUMMARY=""
+          for f in "$A"/*; do
+            SUMMARY="${SUMMARY}$(basename "$f") $(wc -c < "$f") bytes%0A"
+          done
+          echo "::error title=bundled-assets::${SUMMARY}"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
