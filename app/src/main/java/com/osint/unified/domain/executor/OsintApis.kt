@@ -38,6 +38,60 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
         if (subs.isEmpty()) "crt.sh: no certificates found." else "crt.sh — ${subs.size} names:\n" + subs.sorted().joinToString("\n")
     }
 
+    private fun dohTxt(name: String, type: String): List<String> = runCatching {
+        json.parseToJsonElement(getBody("https://dns.google/resolve?name=$name&type=$type"))
+            .jsonObject["Answer"]?.jsonArray?.mapNotNull {
+                ((it as? JsonObject)?.get("data") as? JsonPrimitive)?.contentOrNull?.trim('"')
+            } ?: emptyList()
+    }.getOrDefault(emptyList())
+
+    /** Email-domain security posture: MX, SPF and DMARC via DoH (keyless). */
+    fun mailSecurity(input: String): Result<String> = runCatching {
+        val domain = input.substringAfter('@').trim().lowercase()
+        val mx = dohTxt(domain, "MX")
+        val spf = dohTxt(domain, "TXT").filter { it.startsWith("v=spf1", true) }
+        val dmarc = dohTxt("_dmarc.$domain", "TXT").filter { it.startsWith("v=DMARC1", true) }
+        buildString {
+            append("Domain: $domain\n")
+            append("MX: ${mx.joinToString(", ").ifBlank { "(none — domain may not receive mail)" }}\n")
+            append("SPF: ${spf.firstOrNull() ?: "(missing)"}\n")
+            append("DMARC: ${dmarc.firstOrNull() ?: "(missing)"}\n")
+            val policy = Regex("p=(\\w+)").find(dmarc.firstOrNull().orEmpty())?.groupValues?.get(1)
+            append("Spoofing risk: ${when {
+                spf.isEmpty() && dmarc.isEmpty() -> "HIGH (no SPF or DMARC)"
+                dmarc.isEmpty() || policy == "none" -> "MEDIUM (no enforced DMARC)"
+                else -> "LOW (DMARC p=$policy)"
+            }}")
+        }
+    }
+
+    /** HTTP security headers + server banner for a domain/URL. */
+    fun securityHeaders(input: String): Result<String> = runCatching {
+        val url = if (input.startsWith("http")) input else "https://$input"
+        val request = Request.Builder().url(url).header("User-Agent", ua).head().build()
+        client.newCall(request).execute().use { resp ->
+            val checks = listOf(
+                "Strict-Transport-Security", "Content-Security-Policy", "X-Frame-Options",
+                "X-Content-Type-Options", "Referrer-Policy", "Permissions-Policy"
+            )
+            buildString {
+                append("HTTP ${resp.code} — ${resp.request.url}\n")
+                resp.header("Server")?.let { append("Server: $it\n") }
+                resp.header("X-Powered-By")?.let { append("Powered-By: $it\n") }
+                val present = checks.count { resp.header(it) != null }
+                append("Security headers: $present/${checks.size}\n")
+                checks.forEach { h -> append("${if (resp.header(h) != null) "✓" else "✗"} $h\n") }
+            }
+        }
+    }
+
+    /** Reverse DNS (PTR) for an IPv4 via DoH. */
+    fun reverseDns(ip: String): Result<String> = runCatching {
+        val arpa = ip.trim().split('.').reversed().joinToString(".") + ".in-addr.arpa"
+        val ptr = dohTxt(arpa, "PTR")
+        if (ptr.isEmpty()) "No PTR record for $ip." else "PTR: ${ptr.joinToString(", ")}"
+    }
+
     /** DNS-over-HTTPS record lookup (Google DoH). */
     fun dns(domain: String): Result<String> = runCatching {
         val sb = StringBuilder()
