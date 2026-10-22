@@ -645,15 +645,47 @@ private fun GlobeMap(
                 pending.add(PendingMarker(kind, lat, lon, color, sizeDp, title, clickable, url))
             }
             fun flush() {
-                // Findings and anything clickable survive thinning; the rest
-                // is sampled with a stride so what remains stays spread out
-                // instead of clumping into one corner of the view.
+                // Thinning has to be fair between layers. The satellite
+                // catalogue alone is twelve thousand objects; taking markers
+                // in the order layers happen to be added would let it eat the
+                // whole budget and push aircraft, vessels and everything else
+                // off the map entirely.
+                //
+                // So each layer present gets an equal share, any layer using
+                // less than its share hands the remainder back, and layers
+                // over their share are sampled with a stride so what survives
+                // stays spread across the view instead of clumping.
                 val keep = if (pending.size <= MARKER_BUDGET) pending else {
-                    val priority = pending.filter { it.clickable }
-                    val rest = pending.filterNot { it.clickable }
-                    val room = (MARKER_BUDGET - priority.size).coerceAtLeast(0)
-                    val stride = if (room == 0) rest.size + 1 else (rest.size / room).coerceAtLeast(1)
-                    priority.take(MARKER_BUDGET) + rest.filterIndexed { i, _ -> i % stride == 0 }.take(room)
+                    val byKind = pending.groupBy { it.kind }
+                    val quotas = HashMap<String, Int>()
+                    var remaining = MARKER_BUDGET
+                    var contenders = byKind.keys.toMutableSet()
+                    while (contenders.isNotEmpty() && remaining > 0) {
+                        val share = (remaining / contenders.size).coerceAtLeast(1)
+                        val satisfied = contenders.filter { (byKind[it]?.size ?: 0) <= share }
+                        if (satisfied.isEmpty()) {
+                            contenders.forEach { quotas[it] = share }
+                            remaining -= share * contenders.size
+                            break
+                        }
+                        satisfied.forEach { kind ->
+                            val n = byKind[kind]?.size ?: 0
+                            quotas[kind] = n
+                            remaining -= n
+                        }
+                        contenders = (contenders - satisfied.toSet()).toMutableSet()
+                    }
+                    byKind.flatMap { (kind, markers) ->
+                        val quota = quotas[kind] ?: 0
+                        when {
+                            quota <= 0 -> emptyList()
+                            markers.size <= quota -> markers
+                            else -> {
+                                val stride = (markers.size / quota).coerceAtLeast(1)
+                                markers.filterIndexed { i, _ -> i % stride == 0 }.take(quota)
+                            }
+                        }
+                    }
                 }
                 keep.forEach { pm ->
                     val px = (pm.sizeDp * density).toInt()
