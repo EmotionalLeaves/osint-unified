@@ -1,6 +1,10 @@
 package com.osint.unified
 
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -23,6 +27,7 @@ import com.osint.unified.ui.godeye.GodEyeViewScreen
 import com.osint.unified.ui.history.HistoryScreen
 import com.osint.unified.ui.history.HistoryViewModel
 import com.osint.unified.ui.investigation.InvestigationScreen
+import com.osint.unified.ui.watch.WatchScreen
 import com.osint.unified.ui.theme.OsintTheme
 
 class MainActivity : ComponentActivity() {
@@ -36,8 +41,25 @@ class MainActivity : ComponentActivity() {
         HistoryViewModel.Factory((application as OsintApplication).repository)
     }
 
+    /**
+     * Asked once, and nothing depends on the answer: a refused permission
+     * makes a watch silent, not broken — the change is still recorded and
+     * shown on the watch screen.
+     */
+    private val notificationPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(
+                this, android.Manifest.permission.POST_NOTIFICATIONS
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            runCatching {
+                notificationPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
         setContent {
             OsintTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
@@ -53,8 +75,20 @@ class MainActivity : ComponentActivity() {
                     BackHandler(enabled = screen != "godeye") { screen = "godeye" }
 
                     when (screen) {
-                        "investigation" -> InvestigationScreen(godEyeViewModel, onBack = { screen = "godeye" })
+                        "investigation" -> InvestigationScreen(
+                            godEyeViewModel,
+                            (application as OsintApplication).watchRepository,
+                            onBack = { screen = "godeye" }
+                        )
                         "history" -> HistoryScreen(historyViewModel, onBack = { screen = "godeye" })
+                        "watch" -> WatchScreen(
+                            (application as OsintApplication).watchRepository,
+                            onOpen = { target ->
+                                godEyeViewModel.onQueryChange(target)
+                                godEyeViewModel.onSearch()
+                            },
+                            onBack = { screen = "godeye" }
+                        )
                         "forensics" -> ForensicsScreen(
                             (application as OsintApplication).exifReader,
                             onBack = { screen = "godeye" }
@@ -106,7 +140,8 @@ class MainActivity : ComponentActivity() {
                             onOpenHistory = { screen = "history" },
                             onOpenForensics = { screen = "forensics" },
                             onOpenDiagnostics = { screen = "diagnostics" },
-                            onOpenFramework = { screen = "framework" }
+                            onOpenFramework = { screen = "framework" },
+                            onOpenWatch = { screen = "watch" }
                         )
                     }
                 }

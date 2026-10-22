@@ -36,6 +36,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -52,6 +53,7 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.osint.unified.data.ExportFormat
 import com.osint.unified.domain.GraphBuilder
+import com.osint.unified.data.WatchRepository
 import com.osint.unified.domain.EntityExtractor
 import com.osint.unified.domain.Findings
 import com.osint.unified.domain.IntelSummary
@@ -70,13 +72,23 @@ import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun InvestigationScreen(viewModel: GodEyeViewModel, onBack: () -> Unit) {
+fun InvestigationScreen(
+    viewModel: GodEyeViewModel,
+    watchRepository: WatchRepository,
+    onBack: () -> Unit
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var showGraph by remember { mutableStateOf(false) }
     var graphJson by remember { mutableStateOf("") }
     val observable = state.observable
+    // Whether this target is already being followed. Read once per target
+    // rather than observed: it only changes when the button below is used.
+    var watched by remember(observable?.raw) { mutableStateOf(false) }
+    LaunchedEffect(observable?.raw) {
+        watched = observable?.let { runCatching { watchRepository.isWatched(it.raw) }.getOrDefault(false) } ?: false
+    }
 
     Scaffold(
         containerColor = Intel.Base,
@@ -202,6 +214,17 @@ fun InvestigationScreen(viewModel: GodEyeViewModel, onBack: () -> Unit) {
                 state.workflowName?.let { wf ->
                     ConsoleButton(if (state.workflowRunning) "$wf…" else "CHAIN: $wf", enabled = !anyRunning) {
                         viewModel.onRunWorkflow()
+                    }
+                }
+                // A dossier is a snapshot; this is where you decide the
+                // target is worth asking about again.
+                ConsoleButton(if (watched) "✓ WATCHING" else "WATCH") {
+                    scope.launch {
+                        runCatching {
+                            if (watched) watchRepository.removeByObservable(observable.raw)
+                            else watchRepository.add(observable)
+                        }
+                        watched = !watched
                     }
                 }
                 if (state.results.isNotEmpty()) {

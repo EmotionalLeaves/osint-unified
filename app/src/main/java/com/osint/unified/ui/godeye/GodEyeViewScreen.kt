@@ -29,6 +29,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.NetworkCheck
@@ -100,7 +101,8 @@ fun GodEyeViewScreen(
     onOpenHistory: () -> Unit,
     onOpenForensics: () -> Unit,
     onOpenDiagnostics: () -> Unit = {},
-    onOpenFramework: () -> Unit = {}
+    onOpenFramework: () -> Unit = {},
+    onOpenWatch: () -> Unit = {}
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var showSettings by remember { mutableStateOf(false) }
@@ -239,6 +241,13 @@ fun GodEyeViewScreen(
                 }
                 IconButton(onClick = onOpenForensics) {
                     Icon(Icons.Filled.Build, contentDescription = "Forensics & decoders", tint = Intel.TextMid)
+                }
+                IconButton(onClick = onOpenWatch) {
+                    Icon(
+                        Icons.Filled.Visibility,
+                        contentDescription = "Watched targets",
+                        tint = Intel.TextMid
+                    )
                 }
                 IconButton(onClick = onOpenHistory) {
                     Icon(Icons.Filled.History, contentDescription = "History", tint = Intel.TextMid)

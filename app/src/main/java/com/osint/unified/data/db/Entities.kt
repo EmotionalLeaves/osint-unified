@@ -47,3 +47,29 @@ data class Result(
     val startedAt: Long,
     val finishedAt: Long? = null
 )
+
+/**
+ * A target the app keeps checking on its own.
+ *
+ * An investigation is a snapshot: it tells you what was true when you
+ * asked. Most of what an analyst wants to know is whether something has
+ * *changed* — a new subdomain, a profile that appeared, a sanctions entry
+ * added — and that requires asking again later and remembering the
+ * previous answer. [digest] is that memory: one line per source, naming
+ * the source and fingerprinting what it said, which is enough to detect a
+ * change without storing every full result forever.
+ */
+@Entity(tableName = "watches")
+data class Watch(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val observable: String,
+    val observableType: String,
+    val createdAt: Long = System.currentTimeMillis(),
+    val lastCheckedAt: Long? = null,
+    /** "toolId<TAB>fingerprint" per line, from the last successful check. */
+    val digest: String = "",
+    /** What changed at [lastChangeAt], in words, or empty if never. */
+    val lastChange: String = "",
+    val lastChangeAt: Long? = null,
+    val checks: Int = 0
+)

@@ -39,3 +39,24 @@ interface ResultDao {
     @Query("DELETE FROM results WHERE investigationId = :investigationId")
     suspend fun deleteForInvestigation(investigationId: Long)
 }
+
+@Dao
+interface WatchDao {
+    @Query("SELECT * FROM watches ORDER BY lastChangeAt DESC, createdAt DESC")
+    fun observeAll(): Flow<List<Watch>>
+
+    @Query("SELECT * FROM watches")
+    suspend fun all(): List<Watch>
+
+    @Query("SELECT COUNT(*) FROM watches WHERE observable = :observable")
+    suspend fun countFor(observable: String): Int
+
+    @Insert
+    suspend fun insert(watch: Watch): Long
+
+    @Update
+    suspend fun update(watch: Watch)
+
+    @Query("DELETE FROM watches WHERE id = :id")
+    suspend fun delete(id: Long)
+}

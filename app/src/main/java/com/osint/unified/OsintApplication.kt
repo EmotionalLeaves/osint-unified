@@ -35,6 +35,7 @@ import com.osint.unified.data.WeatherDataSource
 import com.osint.unified.data.ExifReader
 import com.osint.unified.data.InvestigationExporter
 import com.osint.unified.data.InvestigationRepository
+import com.osint.unified.data.WatchRepository
 import com.osint.unified.data.db.AppDatabase
 import com.osint.unified.domain.ObservableRouter
 import com.osint.unified.domain.executor.CloudToolExecutor
@@ -48,6 +49,14 @@ import com.osint.unified.domain.executor.UsernameChecker
  * hand-rolled container keeps the build simple and the wiring explicit.
  */
 class OsintApplication : Application() {
+
+    override fun onCreate() {
+        super.onCreate()
+        // Idempotent and cheap: with no watched targets the worker returns
+        // immediately, so there is nothing to turn on or off.
+        com.osint.unified.work.WatchWorker.schedule(this)
+    }
+
     val database: AppDatabase by lazy { AppDatabase.get(this) }
     val diskCache: DiskCache by lazy { DiskCache(this) }
     val router: ObservableRouter by lazy { ObservableRouter() }
@@ -94,6 +103,10 @@ class OsintApplication : Application() {
 
     val repository: InvestigationRepository by lazy {
         InvestigationRepository(database, executorFactory)
+    }
+
+    val watchRepository: WatchRepository by lazy {
+        WatchRepository(database, router, executorFactory)
     }
 
     val exporter: InvestigationExporter by lazy { InvestigationExporter(this) }

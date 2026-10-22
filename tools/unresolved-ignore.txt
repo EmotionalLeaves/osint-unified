@@ -5,6 +5,7 @@
 # that does not exist in CI, so they are not evidence of anything.
 add
 color
+description
 intent
 item
 paint
