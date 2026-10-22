@@ -137,22 +137,22 @@ jobs:
           PY
           ls -la "$A"
           test -s "$A/arf.json"
-          # Report exactly what landed in the APK. Downloads are best-effort
-          # (|| true) so a dead mirror can't break the build — but a silently
-          # missing dataset would be worse, so surface the inventory as an
-          # annotation, which is readable without downloading logs.
+          # Ship the inventory inside the APK, so the self-test screen can
+          # show on-device exactly which datasets this build carries.
+          COUNTS=$(python3 .github/count-assets.py)
+          printf '%s\n' "${COUNTS}" | sed 's/%0A/\n/g' > "$A/bundle-manifest.txt"
+          cat "$A/bundle-manifest.txt"
+          # Also report it back to the build. Downloads are best-effort
+          # (|| true) so a dead mirror can't break the build, but a silently
+          # missing dataset would be worse. These are notices, not errors:
+          # they are information about a healthy build, and marking a green
+          # build with error annotations is just noise.
           SUMMARY=""
           for f in "$A"/*; do
             SUMMARY="${SUMMARY}$(basename "$f") $(wc -c < "$f") bytes%0A"
           done
-          echo "::error title=bundled-assets::${SUMMARY}"
-          # Ship the inventory inside the APK too, so the self-test screen
-          # can show on-device exactly which datasets this build carries.
-          python3 .github/count-assets.py | tr '\n' '\n' > /tmp/counts.txt
-          COUNTS=$(cat /tmp/counts.txt)
-          echo "::error title=rule-counts::${COUNTS}"
-          printf '%s\n' "${COUNTS}" | sed 's/%0A/\n/g' > "$A/bundle-manifest.txt"
-          cat "$A/bundle-manifest.txt"
+          echo "::notice title=bundled-assets::${SUMMARY}"
+          echo "::notice title=rule-counts::${COUNTS}"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4

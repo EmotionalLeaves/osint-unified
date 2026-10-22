@@ -42,10 +42,10 @@ jobs:
             OUT="${OUT}[$CODE ${SIZE}b] $U%0A    $SNIP%0A"
             N=$((N+1))
             if [ $N -ge 4 ]; then
-              echo "::error title=probe-$GROUP::$OUT"
+              echo "::notice title=probe-$GROUP::$OUT"
               OUT=""; N=0; GROUP=$((GROUP+1))
             fi
           done < /tmp/urls.txt
-          if [ -n "$OUT" ]; then echo "::error title=probe-$GROUP::$OUT"; fi
+          if [ -n "$OUT" ]; then echo "::notice title=probe-$GROUP::$OUT"; fi
           # Annotations carry the results; the job itself succeeds.
           exit 0
