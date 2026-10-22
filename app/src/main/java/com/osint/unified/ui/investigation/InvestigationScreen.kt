@@ -105,7 +105,8 @@ fun InvestigationScreen(viewModel: GodEyeViewModel, onBack: () -> Unit) {
             return@Scaffold
         }
 
-        val anyRunning = state.runningToolIds.isNotEmpty() || state.workflowRunning
+        val anyRunning = state.runningToolIds.isNotEmpty() || state.workflowRunning ||
+            state.enrichmentRunning
         val done = state.results.count { it.status == "success" || it.status == "error" }
         val found = state.results.count { it.status == "success" }
         val facts = remember(state.results) { IntelSummary.synthesize(state.results) }
@@ -144,6 +145,9 @@ fun InvestigationScreen(viewModel: GodEyeViewModel, onBack: () -> Unit) {
                 }
                 Text(
                     when {
+                        state.enrichmentRunning ->
+                            "second pass · chasing ${state.enriching.size} discovered " +
+                                "identifier${if (state.enriching.size == 1) "" else "s"} · $found hits"
                         anyRunning -> "scanning · $done/${state.suggestedTools.size} sources · $found hits"
                         done > 0 -> "$done sources queried · $found returned intel"
                         else -> "ready — run all, or tap a source below"
@@ -152,6 +156,15 @@ fun InvestigationScreen(viewModel: GodEyeViewModel, onBack: () -> Unit) {
                     color = Intel.TextMid,
                     modifier = Modifier.padding(top = 6.dp)
                 )
+                if (state.enriching.isNotEmpty()) {
+                    Text(
+                        state.enriching.joinToString("  ·  "),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Intel.Cyan,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
                 if (anyRunning) {
                     LinearProgressIndicator(
                         color = Intel.Cyan,
@@ -264,8 +277,14 @@ fun InvestigationScreen(viewModel: GodEyeViewModel, onBack: () -> Unit) {
                     row.status == "success" && !saysNothingFound(row.rawOutput)
                 }
 
-                if (hits.isNotEmpty()) {
-                    val byCategory = hits.groupBy { row ->
+                // What you asked about, and what the app went on to look up
+                // because the first pass named it, are two different kinds of
+                // claim; the second says where it came from.
+                val seed = observable.raw.trim().lowercase()
+                val (direct, derived) = hits.partition { it.input.trim().lowercase() == seed }
+
+                if (direct.isNotEmpty()) {
+                    val byCategory = direct.groupBy { row ->
                         com.osint.unified.domain.ToolRegistry.byId(row.toolId)?.category
                             ?: ToolCategory.NETINT
                     }
@@ -279,7 +298,32 @@ fun InvestigationScreen(viewModel: GodEyeViewModel, onBack: () -> Unit) {
                             Spacer(Modifier.height(10.dp))
                         }
                     }
-                } else if (!anyRunning) {
+                }
+
+                if (derived.isNotEmpty()) {
+                    SectionHeader(
+                        "FOLLOWED UP — ${derived.size} results on identifiers the first pass found",
+                        Intel.CyanBright
+                    )
+                    derived.groupBy { it.input }.forEach { (via, rows) ->
+                        Text(
+                            "◂ $via",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = Intel.Cyan,
+                            fontFamily = FontFamily.Monospace,
+                            modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+                        )
+                        rows.forEach { row ->
+                            ResultCard(row, onPivot = { value ->
+                                viewModel.onQueryChange(value)
+                                viewModel.onSearch()
+                            })
+                            Spacer(Modifier.height(10.dp))
+                        }
+                    }
+                }
+
+                if (hits.isEmpty() && !anyRunning) {
                     Text(
                         "No source returned anything on this target.",
                         style = MaterialTheme.typography.bodyMedium,

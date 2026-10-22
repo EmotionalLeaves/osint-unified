@@ -29,6 +29,7 @@ import com.osint.unified.data.OverlayDataSource
 import com.osint.unified.data.SatellitesDataSource
 import com.osint.unified.data.VolcanoDataSource
 import com.osint.unified.data.WeatherDataSource
+import com.osint.unified.domain.EntityExtractor
 import com.osint.unified.domain.GeoExtractor
 import com.osint.unified.data.ExportFormat
 import com.osint.unified.data.InvestigationExporter
@@ -90,6 +91,11 @@ data class GodEyeUiState(
     val runningToolIds: Set<String> = emptySet(),
     val workflowName: String? = null,
     val workflowRunning: Boolean = false,
+    /** The second pass is chasing what the first pass turned up. */
+    val enrichmentRunning: Boolean = false,
+    /** Identifiers the first pass discovered and the second pass is looking
+     *  up in their own right — shown so the derivation is never a mystery. */
+    val enriching: List<String> = emptyList(),
     val navSignal: Long = 0,
     val backendUrl: String = "",
     val tar1090Url: String = "",
@@ -133,6 +139,10 @@ class GodEyeViewModel(
 
     /** Keeps only tools that can actually run in this build/config: DIRECT
      *  always, LOCAL only if its binary shipped, CLOUD only with a backend. */
+    /** toolId|input pairs already dispatched for the current investigation,
+     *  so the enrichment pass never repeats a lookup the first pass did. */
+    private val dispatched = HashSet<String>()
+
     private fun runnable(tools: List<Tool>): List<Tool> = tools.filter { t ->
         when (t.executionMode) {
             ExecutionMode.DIRECT -> true
@@ -267,6 +277,7 @@ class GodEyeViewModel(
         // New search = fresh investigation context.
         currentInvestigationId = null
         resultsJob?.cancel()
+        dispatched.clear()
         // A coordinate search focuses the globe immediately; other types get a
         // focus once a tool returns a location (see the results collector).
         val focus = (observable as? Observable.Coordinate)?.let { it.lat to it.lon }
@@ -279,6 +290,8 @@ class GodEyeViewModel(
                 findings = emptyList(),
                 mapFocus = focus,
                 runningToolIds = emptySet(),
+                enrichmentRunning = false,
+                enriching = emptyList(),
                 navSignal = it.navSignal + 1
             )
         }
@@ -295,7 +308,7 @@ class GodEyeViewModel(
         val tools = _state.value.suggestedTools.filter {
             it.executionMode != ExecutionMode.CLOUD && it.id !in redundant
         }
-        runToolsInParallel(tools)
+        runToolsInParallel(tools, thenEnrich = true)
     }
 
     /** Runs the chained workflow for the current observable, piping each
@@ -345,14 +358,18 @@ class GodEyeViewModel(
 
     /** Runs the given tools concurrently so findings appear as fast as each
      *  tool returns, rather than trickling in one at a time. */
-    private fun runToolsInParallel(tools: List<Tool>) {
+    private fun runToolsInParallel(tools: List<Tool>, thenEnrich: Boolean = false) {
         val observable = _state.value.observable ?: return
-        if (tools.isEmpty()) return
+        val fresh = tools.filter { dispatched.add("${'$'}{it.id}|${'$'}{observable.raw}") }
+        if (fresh.isEmpty()) {
+            if (thenEnrich) viewModelScope.launch { enrich(observable) }
+            return
+        }
         viewModelScope.launch {
             val investigationId = ensureInvestigation(observable)
-            _state.update { it.copy(runningToolIds = it.runningToolIds + tools.map { t -> t.id }) }
+            _state.update { it.copy(runningToolIds = it.runningToolIds + fresh.map { t -> t.id }) }
             coroutineScope {
-                tools.forEach { tool ->
+                fresh.forEach { tool ->
                     launch {
                         try {
                             repository.runTool(investigationId, tool, observable.raw)
@@ -362,6 +379,69 @@ class GodEyeViewModel(
                     }
                 }
             }
+            if (thenEnrich) enrich(observable)
+        }
+    }
+
+    /**
+     * The second pass.
+     *
+     * The first pass can only look up what you typed. Its output, though,
+     * names things you could not have known to ask for: the IPs a domain
+     * resolves to, the hosts a certificate covers, the address a registration
+     * lists, the handle a profile links. An analyst's next move is to look
+     * those up too, and that is the difference between a page of lookups and
+     * a dossier — so the app does it rather than waiting to be asked.
+     *
+     * One round only, and with quotas. Pivots corroborate each other, so
+     * chasing everything would fan out without bound and spend the whole
+     * budget on the noisiest kind of identifier.
+     */
+    private suspend fun enrich(seed: Observable) {
+        // Results arrive through the Room flow, so give the last insert a
+        // moment to land before reading what the pass produced.
+        delay(400)
+        val rows = _state.value.results
+        if (rows.isEmpty()) return
+
+        val quota = mapOf("IP" to 3, "HOST" to 3, "EMAIL" to 2, "HANDLE" to 2, "WALLET" to 1)
+        val spent = HashMap<String, Int>()
+        val chase = EntityExtractor.extract(rows, seed.raw, limitPerKind = 8).filter { p ->
+            val cap = quota[p.kind] ?: return@filter false
+            val n = spent[p.kind] ?: 0
+            if (n >= cap) false else { spent[p.kind] = n + 1; true }
+        }
+        if (chase.isEmpty()) return
+
+        val investigationId = ensureInvestigation(seed)
+        _state.update { it.copy(enrichmentRunning = true, enriching = chase.map { p -> p.value }) }
+        try {
+            for (pivot in chase) {
+                val observable = router.classify(pivot.value)
+                // take() first, then mark dispatched — otherwise tools trimmed
+                // off the end get recorded as run when they never were.
+                val tools = runnable(router.suggestTools(observable))
+                    .filter { it.executionMode == ExecutionMode.DIRECT }
+                    .take(TOOLS_PER_PIVOT)
+                    .filter { dispatched.add("${'$'}{it.id}|${'$'}{pivot.value}") }
+                if (tools.isEmpty()) continue
+                _state.update { it.copy(runningToolIds = it.runningToolIds + tools.map { t -> t.id }) }
+                coroutineScope {
+                    tools.forEach { tool ->
+                        launch {
+                            try {
+                                repository.runTool(investigationId, tool, pivot.value)
+                            } finally {
+                                _state.update { st ->
+                                    st.copy(runningToolIds = st.runningToolIds - tool.id)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } finally {
+            _state.update { it.copy(enrichmentRunning = false, enriching = emptyList()) }
         }
     }
 
@@ -450,4 +530,11 @@ class GodEyeViewModel(
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
             GodEyeViewModel(router, repository, aircraftDataSource, aisDataSource, earthquakeDataSource, naturalEventsDataSource, overlayDataSource, weatherDataSource, firesDataSource, satellitesDataSource, newsDataSource, gdacsDataSource, volcanoDataSource, auroraDataSource, buoyDataSource, metarDataSource, milAircraftDataSource, airQualityDataSource, seismicStationDataSource, conflictDataSource, airportDataSource, powerPlantDataSource, cctvDataSource, airspaceDataSource, spaceWeatherDataSource, laddAircraftDataSource, cableLandingDataSource, availableLocalTools, settings, exporter) as T
     }
+
+    private companion object {
+        /** Per discovered identifier, in the second pass. Enough for a real
+         *  profile of it; few enough that eleven of them stay affordable. */
+        const val TOOLS_PER_PIVOT = 6
+    }
+
 }
