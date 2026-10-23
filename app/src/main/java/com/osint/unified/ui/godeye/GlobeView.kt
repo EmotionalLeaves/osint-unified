@@ -311,7 +311,7 @@ fun GlobeView(
             drawTerminator(terminator, cx, cy, radius, lat0, lon0)
         }
         drawPoints(points, cx, cy, radius, lat0, lon0, sun)
-        drawLimb(cx, cy, radius)
+        drawLimb(cx, cy, radius, textured)
     }
 }
 
@@ -436,12 +436,16 @@ private fun DrawScope.drawOcean(cx: Float, cy: Float, r: Float) {
     )
 }
 
-private fun DrawScope.drawLimb(cx: Float, cy: Float, r: Float) {
+private fun DrawScope.drawLimb(cx: Float, cy: Float, r: Float, textured: Boolean = false) {
+    // Over a gradient the hard cyan edge is what made the disc read as
+    // a planet. Over a photograph it reads as a sticker on one, so the
+    // edge nearly disappears and the haze outside it does the work —
+    // which is what an atmosphere actually looks like from orbit.
     drawCircle(
-        color = Intel.Cyan.copy(alpha = 0.55f),
+        color = Intel.Cyan.copy(alpha = if (textured) 0.16f else 0.55f),
         radius = r,
         center = Offset(cx, cy),
-        style = Stroke(width = 1.5f)
+        style = Stroke(width = if (textured) 1f else 1.5f)
     )
     // A thin haze outside the edge: the atmosphere, and the thing that
     // stops the globe looking like a sticker.
@@ -626,6 +630,11 @@ private fun DrawScope.drawTerminator(
  * camera in darkness, an aircraft over an unlit ocean and a fire at
  * night are different propositions from the same things in daylight,
  * and the globe is the only view that can say so at a glance.
+ *
+ * Each marker gets a dark ring. Over a gradient a coloured dot was
+ * always legible; over a photograph of the Earth a yellow dot on a
+ * desert and a blue one on the sea are not, and the ring is what
+ * separates the thing being reported from the ground it is on.
  */
 private fun DrawScope.drawPoints(
     points: List<GlobePoint>,
@@ -637,8 +646,16 @@ private fun DrawScope.drawPoints(
         val p = Orthographic.project(point.lat, point.lon, lat0, lon0, r, cx, cy)
         if (!p.visible) return@forEach
         val night = Orthographic.isNight(point.lat, point.lon, sun.first, sun.second)
-        val colour = Color(point.color).let { if (night) it.copy(alpha = 0.55f) else it }
+        // Dimmed less than before: the night side of a photograph is
+        // genuinely dark, and the old fade took markers there from
+        // "quieter" to "invisible".
+        val colour = Color(point.color).let { if (night) it.copy(alpha = 0.78f) else it }
         val radius = (point.sizeDp.coerceIn(5, 16) / 2f) * density
+        drawCircle(
+            HALO,
+            radius = radius + 1.2f * density,
+            center = Offset(p.x, p.y)
+        )
         drawCircle(colour, radius = radius, center = Offset(p.x, p.y))
     }
 }
@@ -649,6 +666,9 @@ private val OCEAN_DARK = Color(0xFF050C14)
 private val LAND = Color(0xFF1C2E24)
 private val COAST = Color(0xFF3E6B58)
 private val TERMINATOR = Color(0x99FFC14D)
+
+/** What separates a marker from the ground it is standing on. */
+private val HALO = Color(0x9905080C)
 
 private const val MIN_ZOOM = 0.6f
 private const val MAX_ZOOM = 8f
