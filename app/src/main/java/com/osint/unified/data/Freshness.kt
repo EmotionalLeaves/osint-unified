@@ -54,8 +54,14 @@ object Freshness {
         DateTimeFormatter.ISO_OFFSET_DATE_TIME,
         DateTimeFormatter.ISO_INSTANT,
         DateTimeFormatter.ISO_LOCAL_DATE_TIME,
-        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss", Locale.US),
-        DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm:ss", Locale.US),
+        // The fraction is optional on purpose. The IOC's tide gauges
+        // send "2026-10-23 13:09:00.000" and several other feeds send
+        // the same stamp without it; a formatter that takes only one
+        // of those shapes silently dates every reading as unknown,
+        // and a layer whose timestamps are all unknown is a layer
+        // that gets filtered away as stale.
+        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss[.SSS]", Locale.US),
+        DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm:ss[.SSS]", Locale.US),
         DateTimeFormatter.ISO_LOCAL_DATE
     )
 

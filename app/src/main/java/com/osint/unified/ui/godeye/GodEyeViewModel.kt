@@ -31,6 +31,8 @@ import com.osint.unified.data.NewsDataSource
 import com.osint.unified.data.OverlayDataSource
 import com.osint.unified.data.SatellitesDataSource
 import com.osint.unified.data.VolcanoDataSource
+import com.osint.unified.data.OutageDataSource
+import com.osint.unified.data.SeaLevelDataSource
 import com.osint.unified.data.WorldWarningsDataSource
 import com.osint.unified.data.WeatherDataSource
 import com.osint.unified.domain.EntityExtractor
@@ -77,6 +79,10 @@ data class GodEyeUiState(
     val volcanoes: List<GeoBlip> = emptyList(),
     /** Official warnings from every WMO member, one marker per service. */
     val worldWarnings: List<GeoBlip> = emptyList(),
+    /** Tide gauges reporting now, worldwide. */
+    val seaLevel: List<GeoBlip> = emptyList(),
+    /** Countries whose connectivity has fallen over. */
+    val outages: List<GeoBlip> = emptyList(),
     val aurora: List<GeoBlip> = emptyList(),
     val buoys: List<GeoBlip> = emptyList(),
     val metar: List<GeoBlip> = emptyList(),
@@ -170,6 +176,8 @@ class GodEyeViewModel(
     private val gdacsDataSource: GdacsDataSource,
     private val volcanoDataSource: VolcanoDataSource,
     private val worldWarningsDataSource: WorldWarningsDataSource,
+    private val seaLevelDataSource: SeaLevelDataSource,
+    private val outageDataSource: OutageDataSource,
     private val auroraDataSource: AuroraDataSource,
     private val buoyDataSource: BuoyDataSource,
     private val metarDataSource: MetarDataSource,
@@ -283,6 +291,8 @@ class GodEyeViewModel(
         poll(1125, 600_000, "fires", { firesDataSource.fetch() }) { s, v -> s.copy(fires = v) }
         poll(1375, 600_000, "volcanoes", { volcanoDataSource.fetch() }) { s, v -> s.copy(volcanoes = v) }
         poll(1510, 600_000, "worldWarnings", { worldWarningsDataSource.fetch() }) { s, v -> s.copy(worldWarnings = v) }
+        poll(1640, 600_000, "seaLevel", { seaLevelDataSource.fetch() }) { s, v -> s.copy(seaLevel = v) }
+        poll(1770, 600_000, "outages", { outageDataSource.fetch() }) { s, v -> s.copy(outages = v) }
         poll(1625, 600_000, "gdacs", { gdacsDataSource.fetch() }) { s, v -> s.copy(gdacs = v) }
         poll(1875, 300_000, "weather", { weatherDataSource.fetch() }) { s, v -> s.copy(weather = v) }
         poll(2125, 300_000, "aurora", { auroraDataSource.fetch() }) { s, v -> s.copy(aurora = v) }
@@ -1081,6 +1091,8 @@ class GodEyeViewModel(
         private val gdacsDataSource: GdacsDataSource,
         private val volcanoDataSource: VolcanoDataSource,
         private val worldWarningsDataSource: WorldWarningsDataSource,
+        private val seaLevelDataSource: SeaLevelDataSource,
+        private val outageDataSource: OutageDataSource,
         private val auroraDataSource: AuroraDataSource,
         private val buoyDataSource: BuoyDataSource,
         private val metarDataSource: MetarDataSource,
@@ -1104,7 +1116,7 @@ class GodEyeViewModel(
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            GodEyeViewModel(router, repository, aircraftDataSource, aisDataSource, earthquakeDataSource, naturalEventsDataSource, overlayDataSource, weatherDataSource, firesDataSource, satellitesDataSource, newsDataSource, gdacsDataSource, volcanoDataSource, worldWarningsDataSource, auroraDataSource, buoyDataSource, metarDataSource, milAircraftDataSource, airQualityDataSource, seismicStationDataSource, conflictDataSource, airportDataSource, powerPlantDataSource, cctvDataSource, airspaceDataSource, spaceWeatherDataSource, cableLandingDataSource, cycloneDataSource, tsunamiDataSource, radiationDataSource, airportStatusDataSource, availableLocalTools, settings, exporter) as T
+            GodEyeViewModel(router, repository, aircraftDataSource, aisDataSource, earthquakeDataSource, naturalEventsDataSource, overlayDataSource, weatherDataSource, firesDataSource, satellitesDataSource, newsDataSource, gdacsDataSource, volcanoDataSource, worldWarningsDataSource, seaLevelDataSource, outageDataSource, auroraDataSource, buoyDataSource, metarDataSource, milAircraftDataSource, airQualityDataSource, seismicStationDataSource, conflictDataSource, airportDataSource, powerPlantDataSource, cctvDataSource, airspaceDataSource, spaceWeatherDataSource, cableLandingDataSource, cycloneDataSource, tsunamiDataSource, radiationDataSource, airportStatusDataSource, availableLocalTools, settings, exporter) as T
     }
 
     /**

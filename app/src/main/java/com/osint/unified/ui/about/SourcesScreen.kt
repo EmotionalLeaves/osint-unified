@@ -66,12 +66,43 @@ private val coverage = listOf(
             "says so rather than letting the absence of a ship look " +
             "like information."
     ),
-    Coverage("Earthquakes", "worldwide", "USGS, every event above the reporting threshold."),
+    Coverage(
+        "Earthquakes",
+        "worldwide, from two agencies",
+        "The USGS catalogue is global but it is a US agency reporting " +
+            "the world, and small events far from its own networks " +
+            "arrive late or never. The EMSC publishes a magnitude 2 in " +
+            "Greece within minutes. Both are read and merged by where " +
+            "and when, since the two number the same earthquake " +
+            "differently."
+    ),
+    Coverage(
+        "Sea level",
+        "worldwide",
+        "The IOC of UNESCO's tide-gauge network — the only live, " +
+            "worldwide, keyless measurement of the ocean there is, and " +
+            "the instruments that confirm a tsunami actually happened. " +
+            "Gauges that stopped reporting are left off rather than " +
+            "drawn, because one on a live map reads as a live reading."
+    ),
+    Coverage(
+        "Internet outages",
+        "worldwide",
+        "IODA watches routing, pings and darknet noise for every " +
+            "country and raises an alert when they fall together. A " +
+            "shutdown, a cut cable, a power failure and a censorship " +
+            "event all look like this; which one it is is the question " +
+            "you are there to answer. Alerts carry no coordinates, so " +
+            "each sits on its country's centroid."
+    ),
     Coverage(
         "Wildfires",
         "worldwide",
         "NASA's satellite thermal detections — every one of them, not " +
-            "the named events a newsroom has noticed."
+            "the named events a newsroom has noticed. Two instruments: " +
+            "MODIS at a kilometre and VIIRS at 375 metres, which finds " +
+            "about three times as many and sees small fires MODIS " +
+            "cannot resolve at all."
     ),
     Coverage("Volcanoes", "worldwide", "Smithsonian Global Volcanism Program."),
     Coverage(
@@ -162,6 +193,21 @@ fun SourcesScreen(onBack: () -> Unit) {
         Source("Esri World Imagery (Maxar, Earthstar Geographics)", "satellite basemap", "Esri terms — attribution required"),
         Source("OpenStreetMap contributors", "place names, features, cameras, infrastructure", "ODbL 1.0"),
         Source("USGS", "earthquakes", "US public domain"),
+        Source(
+            "EMSC / seismicportal.eu",
+            "earthquakes reported by European, Mediterranean and central Asian networks",
+            "free reuse with attribution"
+        ),
+        Source(
+            "IOC of UNESCO sea level monitoring",
+            "the global tide-gauge network",
+            "free use with attribution; data belongs to the operating agencies"
+        ),
+        Source(
+            "IODA (Georgia Tech / CAIDA)",
+            "country-level internet outage detection",
+            "free for research and non-commercial use"
+        ),
         // IRIS is a university consortium, not USGS, and crediting the
         // wrong institution is both a licence failure and an accuracy
         // one: it tells a reader the station list comes from somewhere

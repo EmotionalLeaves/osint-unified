@@ -66,7 +66,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
 
     private val godEyeViewModel: GodEyeViewModel by viewModels {
         val app = application as OsintApplication
-        GodEyeViewModel.Factory(app.router, app.repository, app.aircraftDataSource, app.aisDataSource, app.earthquakeDataSource, app.naturalEventsDataSource, app.overlayDataSource, app.weatherDataSource, app.firesDataSource, app.satellitesDataSource, app.newsDataSource, app.gdacsDataSource, app.volcanoDataSource, app.worldWarningsDataSource, app.auroraDataSource, app.buoyDataSource, app.metarDataSource, app.milAircraftDataSource, app.airQualityDataSource, app.seismicStationDataSource, app.conflictDataSource, app.airportDataSource, app.powerPlantDataSource, app.cctvDataSource, app.airspaceDataSource, app.spaceWeatherDataSource, app.cableLandingDataSource, app.cycloneDataSource, app.tsunamiDataSource, app.radiationDataSource, app.airportStatusDataSource, app.availableLocalTools, app.settings, app.exporter)
+        GodEyeViewModel.Factory(app.router, app.repository, app.aircraftDataSource, app.aisDataSource, app.earthquakeDataSource, app.naturalEventsDataSource, app.overlayDataSource, app.weatherDataSource, app.firesDataSource, app.satellitesDataSource, app.newsDataSource, app.gdacsDataSource, app.volcanoDataSource, app.worldWarningsDataSource, app.seaLevelDataSource, app.outageDataSource, app.auroraDataSource, app.buoyDataSource, app.metarDataSource, app.milAircraftDataSource, app.airQualityDataSource, app.seismicStationDataSource, app.conflictDataSource, app.airportDataSource, app.powerPlantDataSource, app.cctvDataSource, app.airspaceDataSource, app.spaceWeatherDataSource, app.cableLandingDataSource, app.cycloneDataSource, app.tsunamiDataSource, app.radiationDataSource, app.airportStatusDataSource, app.availableLocalTools, app.settings, app.exporter)
     }
 
     private val historyViewModel: HistoryViewModel by viewModels {
@@ -370,6 +370,8 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                     FeedProbe("Wildfires (NASA FIRMS)") { app.firesDataSource.fetch().size },
                                     FeedProbe("Volcanoes (Smithsonian GVP)") { app.volcanoDataSource.fetch().size },
                                     FeedProbe("World warnings (WMO SWIC)") { app.worldWarningsDataSource.fetch().size },
+                                    FeedProbe("Sea level (IOC/UNESCO)") { app.seaLevelDataSource.fetch().size },
+                                    FeedProbe("Internet outages (IODA)") { app.outageDataSource.fetch().size },
                                     FeedProbe("Disasters (GDACS)") { app.gdacsDataSource.fetch().size },
                                     FeedProbe("Weather alerts (NWS \u00b7 US)") { app.weatherDataSource.fetch().size },
                                     FeedProbe("Aurora (SWPC)") { app.auroraDataSource.fetch().size },

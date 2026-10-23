@@ -172,6 +172,7 @@ object WorldBrief {
             )
         }
 
+        blips("INTERNET OUTAGES", state.outages, 8)
         blips("SEVERE WEATHER · WORLD", state.worldWarnings, 7)
         blips("SEVERE WEATHER · US", state.weather, 6)
         blips("WILDFIRES", state.fires, 5)
@@ -206,6 +207,7 @@ object WorldBrief {
         maybeQuiet("conflicts", "conflicts", state.conflicts.size)
         maybeQuiet("volcanoes", "volcanoes", state.volcanoes.size)
         maybeQuiet("fires", "wildfires", state.fires.size)
+        maybeQuiet("outages", "countries with connectivity down", state.outages.size)
         maybeQuiet(
             "worldWarnings",
             "severe-weather warnings anywhere in the world",

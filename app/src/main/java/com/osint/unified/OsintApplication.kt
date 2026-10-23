@@ -30,6 +30,8 @@ import com.osint.unified.data.NewsDataSource
 import com.osint.unified.data.OverlayDataSource
 import com.osint.unified.data.SatellitesDataSource
 import com.osint.unified.data.VolcanoDataSource
+import com.osint.unified.data.OutageDataSource
+import com.osint.unified.data.SeaLevelDataSource
 import com.osint.unified.data.WorldWarningsDataSource
 import com.osint.unified.data.WeatherDataSource
 import com.osint.unified.data.ExifReader
@@ -98,6 +100,13 @@ class OsintApplication : Application() {
     val newsDataSource: NewsDataSource by lazy { NewsDataSource() }
     val gdacsDataSource: GdacsDataSource by lazy { GdacsDataSource() }
     val volcanoDataSource: VolcanoDataSource by lazy { VolcanoDataSource() }
+
+    /** The global tide-gauge network, which is an observation rather
+     *  than a warning. */
+    val seaLevelDataSource: SeaLevelDataSource by lazy { SeaLevelDataSource(diskCache) }
+
+    /** Countries whose connectivity has fallen over. */
+    val outageDataSource: OutageDataSource by lazy { OutageDataSource(this) }
 
     /** Every official severe-weather warning on Earth, not only the US ones. */
     val worldWarningsDataSource: WorldWarningsDataSource by lazy {

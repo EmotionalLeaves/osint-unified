@@ -126,6 +126,8 @@ fun GodEyeViewScreen(
     var showGdacs by rememberSaveable { mutableStateOf(true) }
     var showVolcanoes by rememberSaveable { mutableStateOf(true) }
     var showWorldWarnings by rememberSaveable { mutableStateOf(true) }
+    var showSeaLevel by rememberSaveable { mutableStateOf(false) }
+    var showOutages by rememberSaveable { mutableStateOf(true) }
     var showAurora by rememberSaveable { mutableStateOf(true) }
     var showBuoys by rememberSaveable { mutableStateOf(false) }
     var showMetar by rememberSaveable { mutableStateOf(false) }
@@ -155,7 +157,8 @@ fun GodEyeViewScreen(
     // rebuilding the ranking each time would be work for no new answer.
     val brief = remember(
         state.conflicts, state.gdacs, state.tsunamis, state.cyclones,
-        state.volcanoes, state.worldWarnings, state.quakes, state.weather, state.fires,
+        state.volcanoes, state.worldWarnings, state.seaLevel, state.outages,
+        state.quakes, state.weather, state.fires,
         state.milAircraft, state.airportStatus, state.news,
         state.spaceWeather, state.loaded,
         // The traffic line reads these three, so leaving them out of the key
@@ -221,6 +224,8 @@ fun GodEyeViewScreen(
         showVessels,
         showVolcanoes,
         showWorldWarnings,
+        showSeaLevel,
+        showOutages,
         showWeather,
         showCameras, showAirspace, showRadiation, god
     ) {
@@ -236,6 +241,8 @@ fun GodEyeViewScreen(
             if (showGdacs || god) add("gdacs")
             if (showVolcanoes || god) add("volcanoes")
             if (showWorldWarnings || god) add("worldWarnings")
+            if (showSeaLevel || god) add("seaLevel")
+            if (showOutages || god) add("outages")
             if (showConflict || god) add("conflicts")
             if (showAqi || god) add("airQuality")
             if (showStations || god) add("stations")
@@ -415,6 +422,8 @@ fun GodEyeViewScreen(
                 LayerPill("FIRE·GLOBAL", state.fires.size, Color(0xFFFF5A4D), showFires || god, loaded = "fires" in state.loaded, trouble = "fires" in state.feedTrouble) { showFires = !showFires }
                 LayerPill("SAT", state.satellites.size, Color(0xFFC0A8FF), showSats || god, loaded = "satellites" in state.loaded, trouble = "satellites" in state.feedTrouble) { showSats = !showSats }
                 LayerPill("HAZARD", state.gdacs.size, Color(0xFFFF8A3D), showGdacs || god, loaded = "gdacs" in state.loaded, trouble = "gdacs" in state.feedTrouble) { showGdacs = !showGdacs }
+                LayerPill("OUTAGE·GLOBAL", state.outages.size, Color(0xFFFF6B6B), showOutages || god, loaded = "outages" in state.loaded, trouble = "outages" in state.feedTrouble) { showOutages = !showOutages }
+                LayerPill("TIDE·GLOBAL", state.seaLevel.size, Color(0xFF4DD0E1), showSeaLevel || god, loaded = "seaLevel" in state.loaded, trouble = "seaLevel" in state.feedTrouble) { showSeaLevel = !showSeaLevel }
                 LayerPill("WARN·GLOBAL", state.worldWarnings.size, Color(0xFFFFD166), showWorldWarnings || god, loaded = "worldWarnings" in state.loaded, trouble = "worldWarnings" in state.feedTrouble) { showWorldWarnings = !showWorldWarnings }
                 LayerPill("VOLC·GLOBAL", state.volcanoes.size, Color(0xFFFF4D4D), showVolcanoes || god, loaded = "volcanoes" in state.loaded, trouble = "volcanoes" in state.feedTrouble) { showVolcanoes = !showVolcanoes }
                 LayerPill("CONFLICT", state.conflicts.size, Color(0xFFFF2E2E), showConflict || god, loaded = "conflicts" in state.loaded, trouble = "conflicts" in state.feedTrouble) { showConflict = !showConflict }
@@ -524,6 +533,8 @@ fun GodEyeViewScreen(
                     gdacs = vis(showGdacs, state.gdacs),
                     volcanoes = vis(showVolcanoes, state.volcanoes),
                     worldWarnings = vis(showWorldWarnings, state.worldWarnings),
+                    seaLevel = vis(showSeaLevel, state.seaLevel),
+                    outages = vis(showOutages, state.outages),
                     aurora = vis(showAurora, state.aurora),
                     buoys = vis(showBuoys, state.buoys),
                     metar = vis(showMetar, state.metar),

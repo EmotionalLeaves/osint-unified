@@ -38,8 +38,6 @@ class OutageDataSource(
     private val client: OkHttpClient = Http.feedClient
 ) {
 
-    private val json = Json { ignoreUnknownKeys = true; isLenient = true }
-
     suspend fun fetch(): List<GeoBlip> = withContext(Dispatchers.IO) {
         val now = System.currentTimeMillis() / 1000
         val request = Request.Builder()
@@ -52,8 +50,28 @@ class OutageDataSource(
             if (text.isNullOrBlank()) throw IOException("IODA returned nothing")
             text
         }
-        parse(body, CountryCentroids.load(appContext))
+        OutageAlerts.parse(body, CountryCentroids.load(appContext))
     }
+
+    private companion object {
+        const val SOURCE = "https://api.ioda.inetintel.cc.gatech.edu/v2/outages/alerts"
+
+        /** A day. An outage that started yesterday is still an outage,
+         *  and a window shorter than this misses the start of one. */
+        const val WINDOW_SECONDS = 24 * 3600
+    }
+}
+
+/**
+ * Reading IODA's alerts, with nothing Android in it.
+ *
+ * Separated from the fetch so the grouping — which is where the
+ * judgement is, and where a mistake looks like twelve outages in
+ * Malawi — can be tested without a device.
+ */
+internal object OutageAlerts {
+
+    private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
     /**
      * Alerts into one marker per place.
@@ -148,13 +166,5 @@ class OutageDataSource(
         "merit-nt", "ucsd-nt" -> "darknet"
         "gtr", "gtr-norm" -> "traffic"
         else -> datasource
-    }
-
-    private companion object {
-        const val SOURCE = "https://api.ioda.inetintel.cc.gatech.edu/v2/outages/alerts"
-
-        /** A day. An outage that started yesterday is still an outage,
-         *  and a window shorter than this misses the start of one. */
-        const val WINDOW_SECONDS = 24 * 3600
     }
 }
