@@ -53,12 +53,60 @@ class GlobeGesturesTest {
 
     @Test
     fun aDragCarriesTheGroundWithIt() {
-        for (lat0 in listOf(0f, 30f, 60f)) {
+        // Vertical is exact at every latitude: tilting the camera north
+        // moves the centre of the disc along a meridian, which projects
+        // to a straight line down the screen.
+        for (lat0 in listOf(0f, 30f, 60f, 80f)) {
+            assertTrue("vertical slipped at lat $lat0", slipAfterDrag(lat0, 0f, 40f) < 0.2)
+        }
+        // Horizontal is exact on the equator and approaches it
+        // elsewhere. See the test below for why it is not exact
+        // everywhere and why that is the right answer.
+        assertTrue(slipAfterDrag(0f, 40f, 0f) < 0.2)
+        for (lat0 in listOf(15f, 30f, 45f, 60f)) {
             assertTrue(
-                "slipped at lat $lat0",
-                slipAfterDrag(lat0, 40f, 0f) < 1.0 && slipAfterDrag(lat0, 0f, 40f) < 1.0
+                "horizontal slipped too far at lat $lat0",
+                slipAfterDrag(lat0, 40f, 0f) < 40f * 0.08
             )
         }
+    }
+
+    /**
+     * Why a sideways drag is not pixel-exact away from the equator.
+     *
+     * Turning the globe sideways means rotating it about its own axis,
+     * and away from the equator that carries the point under the thumb
+     * along a small circle rather than along the screen. At sixty north
+     * a forty-pixel drag leaves the ground about three pixels high of
+     * the finger. The error is in the sideways direction only — the
+     * horizontal distance is right — and it is path-independent, so it
+     * is the geometry rather than an accumulation of rounding.
+     *
+     * It could be made exact by rotating about whichever axis is
+     * perpendicular to the drag, which is what a trackball does. That
+     * is worse: it rolls the globe, north stops being up, and every
+     * label and meridian on screen tilts with it. A map keeps north up
+     * and accepts the three pixels.
+     */
+    @Test
+    fun aSidewaysDragNearThePoleCurves() {
+        val near = slipAfterDrag(60f, 40f, 0f)
+        assertTrue("the curve has vanished — did the axis change?", near > 1.0)
+        assertTrue("and it should still be small", near < 4.0)
+        // Path-independent: twenty frames of two pixels land in the
+        // same place as one frame of forty, which is what tells you
+        // this is the rotation and not drift.
+        assertTrue(kotlin.math.abs(slipInSteps(60f, 40f, 20) - near) < 0.05)
+    }
+
+    /** The same drag delivered as [steps] frames rather than one jump. */
+    private fun slipInSteps(lat0: Float, panX: Float, steps: Int): Double {
+        val ground = Orthographic.unproject(cx, cy, lat0.toDouble(), 0.0, r, cx, cy)!!
+        var lon = 0.0
+        val each = panX / steps
+        repeat(steps) { lon -= each * GlobeGestures.perPixelLon(r, lat0) }
+        val landed = project(ground.first, ground.second, lat0.toDouble(), lon) ?: return 1e9
+        return hypot((landed.first - (cx + panX)).toDouble(), (landed.second - cy).toDouble())
     }
 
     /**
