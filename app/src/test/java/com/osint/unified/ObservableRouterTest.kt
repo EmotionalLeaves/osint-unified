@@ -5,6 +5,7 @@ import com.osint.unified.domain.Observable
 import com.osint.unified.domain.ObservableRouter
 import com.osint.unified.domain.ToolRegistry
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -198,5 +199,46 @@ class ObservableRouterTest {
     @Test
     fun unknownSuggestsNothing() {
         assertTrue(router.suggestTools(Observable.Unknown("???")).isEmpty())
+    }
+
+    /**
+     * Six hex characters written the way a transponder address is
+     * written. The pattern for this existed and was never consulted,
+     * so "4CA853" ran the whole username fan-out — three sweeps
+     * across thousands of third-party sites — and the aircraft
+     * lookup's Mode-S branch could not be reached by typing one.
+     */
+    @Test
+    fun aModeSAddressIsAnAircraft() {
+        assertTrue(router.classify("4CA853") is Observable.Aircraft)
+        assertTrue(router.classify("A1B2C3") is Observable.Aircraft)
+        // And a handle that happens to be hex is still a handle.
+        assertTrue(router.classify("abc123") is Observable.Username)
+        assertTrue(router.classify("cafe01") is Observable.Username)
+        assertTrue(router.classify("123456") is Observable.Username)
+    }
+
+    /**
+     * A MAC address is not an IP address. The IPv6 pattern took
+     * anything with colons in it, so hardware addresses and clock
+     * times were sent to ipwho.is, Shodan, RDAP and BGPView.
+     */
+    @Test
+    fun hardwareAddressesAreNotIpAddresses() {
+        assertFalse(router.classify("ab:cd:ef:12:34:56") is Observable.IpAddress)
+        assertFalse(router.classify("00:1A:2B:3C:4D:5E") is Observable.IpAddress)
+        assertFalse(router.classify("12:30:45") is Observable.IpAddress)
+        // Real ones still are.
+        assertTrue(router.classify("2001:db8::1") is Observable.IpAddress)
+        assertTrue(router.classify("2001:0db8:85a3:0000:0000:8a2e:0370:7334") is Observable.IpAddress)
+        assertTrue(router.classify("::1") is Observable.IpAddress)
+    }
+
+    /** Forcing the type skipped the bounds check, so a point off the
+     *  Earth was sent to three geocoders as a place. */
+    @Test
+    fun aForcedCoordinateStillHasToBeOnEarth() {
+        assertTrue(router.classifyAs("500, 900", "coordinate") is Observable.Name)
+        assertTrue(router.classifyAs("51.5, -0.1", "coordinate") is Observable.Coordinate)
     }
 }

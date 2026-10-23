@@ -30,7 +30,30 @@ class ObservableRouter {
     private val emailRegex = Regex("""^[^\s@]+@[^\s@]+\.[^\s@]+$""")
     private val coordinateRegex = Regex("""^-?\d{1,3}(?:\.\d+)?\s*,\s*-?\d{1,3}(?:\.\d+)?$""")
     private val ipv4Regex = Regex("""^(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:/\d{1,2})?$""")
+    // Groups of up to four hex digits, and at least one group longer
+    // than two — otherwise this is a MAC address or a clock.
+    // "ab:cd:ef:12:34:56" and "12:30:45" both matched, and a MAC was
+    // then sent to ipwho.is, Shodan, RDAP and BGPView as an address.
     private val ipv6Regex = Regex("""^(?:[0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}(?:/\d{1,3})?$""")
+    private val macLikeRegex = Regex("""^(?:[0-9a-fA-F]{2}[:-]){5}[0-9a-fA-F]{2}$""")
+    private val clockLikeRegex = Regex("""^\d{1,2}:\d{2}(?::\d{2})?$""")
+
+    private fun looksLikeModeS(input: String): Boolean =
+        modeSRegex.matches(input) &&
+            input == input.uppercase() &&
+            input.any { it.isDigit() } &&
+            input.any { it.isLetter() }
+
+    private fun looksLikeIpv6(input: String): Boolean {
+        if (!ipv6Regex.matches(input)) return false
+        if (macLikeRegex.matches(input)) return false
+        if (clockLikeRegex.matches(input)) return false
+        // A real IPv6 address either abbreviates with "::" or has a
+        // group of more than two hex digits somewhere; six groups of
+        // exactly two is the shape of hardware, not of an address.
+        if (input.contains("::")) return true
+        return input.substringBefore('/').split(":").any { it.length > 2 }
+    }
     // A phone number typed the way people write them. The old pattern
     // demanded a leading + and no separators, so "(415) 555-0123" and
     // "+44 20 7946 0958" were both investigated as a person's name.
@@ -56,6 +79,21 @@ class ObservableRouter {
     // At least two digits and four characters: "n42" is far more often a
     // handle than an aircraft, and it was being investigated as one.
     private val tailRegex = Regex("""^N[0-9]{2,5}[A-Z]{0,2}$""")
+    // "d-link", "g-unit", "i-robot", "m-audio", "b-side", "f-zero"
+    // and "c-span" all match this, and they are left matching it.
+    //
+    // The single-letter prefixes are real — G, D, F, I, C, B, M and 2
+    // are the United Kingdom, Germany, France, Italy, Canada, China,
+    // the Isle of Man and Guernsey — and a British registration is
+    // four letters after the hyphen, which is exactly the shape of
+    // "LINK" and "UNIT". No pattern separates them, so the question
+    // is only which mistake to make.
+    //
+    // Sending a brand to the aircraft lookup costs one request that
+    // finds nothing. Sending a real registration to the username
+    // route costs three sweeps across thousands of third-party sites.
+    // So the cheap mistake is the one left in, and anyone who meant
+    // the other thing has the type selector.
     private val hyphenTailRegex = Regex(
         "^(?:" + listOf(
             "G", "D", "F", "I", "EC", "PH", "OO", "OE", "HB", "SE", "LN", "OY",
@@ -113,7 +151,7 @@ class ObservableRouter {
             // and a phone number are both digits and separators, and
             // whichever test runs first wins — so the one with an exact
             // definition goes first.
-            ipv4Regex.matches(input) || ipv6Regex.matches(input) -> Observable.IpAddress(input)
+            ipv4Regex.matches(input) || looksLikeIpv6(input) -> Observable.IpAddress(input)
 
             looksLikePhone(input) -> Observable.PhoneNumber(input)
 
@@ -122,6 +160,22 @@ class ObservableRouter {
             (tailRegex.matches(input.uppercase()) && input.length >= 4) ||
                 hyphenTailRegex.matches(input.uppercase()) ->
                 Observable.Aircraft(input.uppercase())
+
+            // Six hex digits is a Mode-S transponder address.
+            //
+            // This pattern was written and then never consulted, so
+            // "4CA853" fell through to the username rule and ran the
+            // whole username fan-out — three sweeps, thousands of
+            // sites, every one touching a third party — while the
+            // aircraft lookup, which has a dedicated Mode-S branch,
+            // was unreachable by auto-detection.
+            //
+            // Only when it is written the way a Mode-S address is
+            // written: upper case, and mixing letters with digits.
+            // Six hex characters is also "abc123" and "cafe01", which
+            // are handles, and routing those to an aircraft registry
+            // would be trading one wrong answer for another.
+            looksLikeModeS(input) -> Observable.Aircraft(input.uppercase())
 
             input.startsWith("http://", true) || input.startsWith("https://", true) ->
                 if (imageExtRegex.matches(input)) Observable.ImageUrl(input) else Observable.Url(input)
@@ -157,7 +211,17 @@ class ObservableRouter {
                 val parts = input.split(",").map { it.trim() }
                 val lat = parts.getOrNull(0)?.toDoubleOrNull()
                 val lon = parts.getOrNull(1)?.toDoubleOrNull()
-                if (lat != null && lon != null) Observable.Coordinate(input, lat, lon) else Observable.Name(input)
+                // Bounds checked, as auto-detection does. Forcing the
+                // type skipped them, so "500, 900" became a coordinate
+                // and was sent to Nominatim, Overpass and Open-Meteo
+                // as a place on Earth.
+                if (lat != null && lon != null &&
+                    lat in -90.0..90.0 && lon in -180.0..180.0
+                ) {
+                    Observable.Coordinate(input, lat, lon)
+                } else {
+                    Observable.Name(input)
+                }
             }
             else -> classify(input)
         }
