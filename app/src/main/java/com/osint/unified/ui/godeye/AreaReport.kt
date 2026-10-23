@@ -131,6 +131,7 @@ object AreaReport {
         blips("Tropical cyclone", state.cyclones)
         blips("Disaster alert", state.gdacs)
         blips("Weather alert", state.weather)
+        blips("World weather warning", state.worldWarnings)
         sweep("Earthquake", state.quakes, { it.lat }, { it.lon }, { it.label }, { it.url })
         blips("Volcano", state.volcanoes)
         blips("Wildfire", state.fires)

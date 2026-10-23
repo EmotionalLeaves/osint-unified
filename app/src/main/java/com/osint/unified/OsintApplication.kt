@@ -30,6 +30,7 @@ import com.osint.unified.data.NewsDataSource
 import com.osint.unified.data.OverlayDataSource
 import com.osint.unified.data.SatellitesDataSource
 import com.osint.unified.data.VolcanoDataSource
+import com.osint.unified.data.WorldWarningsDataSource
 import com.osint.unified.data.WeatherDataSource
 import com.osint.unified.data.ExifReader
 import com.osint.unified.data.InvestigationExporter
@@ -97,6 +98,11 @@ class OsintApplication : Application() {
     val newsDataSource: NewsDataSource by lazy { NewsDataSource() }
     val gdacsDataSource: GdacsDataSource by lazy { GdacsDataSource() }
     val volcanoDataSource: VolcanoDataSource by lazy { VolcanoDataSource() }
+
+    /** Every official severe-weather warning on Earth, not only the US ones. */
+    val worldWarningsDataSource: WorldWarningsDataSource by lazy {
+        WorldWarningsDataSource(diskCache)
+    }
     val auroraDataSource: AuroraDataSource by lazy { AuroraDataSource() }
     val buoyDataSource: BuoyDataSource by lazy { BuoyDataSource() }
     val metarDataSource: MetarDataSource by lazy { MetarDataSource() }

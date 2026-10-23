@@ -21,6 +21,7 @@ data class MapLayers(
     val news: List<GeoBlip> = emptyList(),
     val gdacs: List<GeoBlip> = emptyList(),
     val volcanoes: List<GeoBlip> = emptyList(),
+    val worldWarnings: List<GeoBlip> = emptyList(),
     val aurora: List<GeoBlip> = emptyList(),
     val buoys: List<GeoBlip> = emptyList(),
     val metar: List<GeoBlip> = emptyList(),
@@ -74,6 +75,9 @@ data class MapLayers(
         cameras.forEach { add("Traffic camera", it.lat, it.lon, 0xFFB388FF.toInt(), 6, it.label, true, it.url) }
         airspace.forEach { add("Restricted airspace", it.lat, it.lon, 0xFFFF5370.toInt(), 7, it.label, true, it.url) }
         cables.forEach { add("Cable landing", it.lat, it.lon, 0xFF7FFFD4.toInt(), 5, it.label, true, it.url) }
+        worldWarnings.forEach {
+            add("World weather warning", it.lat, it.lon, 0xFFFFD166.toInt(), 10, it.label, true, it.url)
+        }
         airQuality.forEach { add("Air quality", it.lat, it.lon, 0xFFB4E66B.toInt(), 9, it.label, false, it.url) }
         buoys.forEach { add("Ocean buoy", it.lat, it.lon, 0xFF4DD0E1.toInt(), 6, it.label, true, it.url) }
         metar.forEach { add("Airfield weather", it.lat, it.lon, 0xFF9FE8FF.toInt(), 6, it.label, false, it.url) }

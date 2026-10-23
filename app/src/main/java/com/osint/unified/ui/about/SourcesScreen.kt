@@ -52,6 +52,11 @@ fun SourcesScreen(onBack: () -> Unit) {
         ),
         Source("NOAA NHC", "tropical cyclones", "US public domain"),
         Source("NOAA NWS / tsunami.gov", "severe weather and tsunami bulletins", "US public domain"),
+        Source(
+            "WMO Severe Weather Information Centre",
+            "official severe-weather warnings issued by WMO member states worldwide",
+            "WMO — free use with attribution; warnings belong to the issuing service"
+        ),
         Source("NOAA SWPC", "space weather, aurora", "US public domain"),
         Source("NOAA NDBC", "ocean buoys", "US public domain"),
         Source("FAA", "airport status, restricted airspace", "US public domain"),

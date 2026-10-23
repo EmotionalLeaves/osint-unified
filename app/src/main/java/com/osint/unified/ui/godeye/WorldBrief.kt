@@ -172,6 +172,7 @@ object WorldBrief {
             )
         }
 
+        blips("SEVERE WEATHER · WORLD", state.worldWarnings, 7)
         blips("SEVERE WEATHER · US", state.weather, 6)
         blips("WILDFIRES", state.fires, 5)
         blips("MILITARY AIRCRAFT", state.milAircraft, 5, rank = { 1 })
@@ -205,6 +206,11 @@ object WorldBrief {
         maybeQuiet("conflicts", "conflicts", state.conflicts.size)
         maybeQuiet("volcanoes", "volcanoes", state.volcanoes.size)
         maybeQuiet("fires", "wildfires", state.fires.size)
+        maybeQuiet(
+            "worldWarnings",
+            "severe-weather warnings anywhere in the world",
+            state.worldWarnings.size
+        )
         maybeQuiet("weather", "US severe-weather alerts", state.weather.size)
         maybeQuiet("milAircraft", "military aircraft", state.milAircraft.size)
         // Named by their real coverage. A regional source reporting nothing
