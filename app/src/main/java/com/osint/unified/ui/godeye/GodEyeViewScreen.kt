@@ -178,6 +178,28 @@ fun GodEyeViewScreen(
     // the Earth, so the sphere is what opens, and the flat map is one tap
     // away for the close work it is actually good at.
     var roundEarth by rememberSaveable { mutableStateOf(true) }
+    // One camera for both views. The globe and the map are the same
+    // view at different distances, so turning the Earth to a place and
+    // pinching in has to arrive there rather than at a default.
+    var globeCamera by rememberSaveable(
+        saver = listSaver(
+            save = { listOf(it.value.lat, it.value.lon, it.value.zoom) },
+            restore = {
+                mutableStateOf(
+                    GlobeCamera(
+                        (it.getOrNull(0) as? Float) ?: 20f,
+                        (it.getOrNull(1) as? Float) ?: 0f,
+                        (it.getOrNull(2) as? Float) ?: 1f
+                    )
+                )
+            }
+        )
+    ) { mutableStateOf(GlobeCamera(20f, 0f, 1f)) }
+    var globeSize by remember { mutableStateOf(0 to 0) }
+    // Where the map should jump to when the globe hands over, and the
+    // other way about. Not the search focus: that is a different kind
+    // of move and the map already has one.
+    var handoff by remember { mutableStateOf<Triple<Double, Double, Double>?>(null) }
     var flightFilter by rememberSaveable { mutableStateOf("ALL") }
     // Filtered once per change, not twice per recomposition over 11,000
     // aircraft — the pill and the map now also read the same list.
@@ -331,7 +353,30 @@ fun GodEyeViewScreen(
                         .clip(RoundedCornerShape(50))
                         .background(Intel.Elevated)
                         .border(1.dp, Intel.Cyan, RoundedCornerShape(50))
-                        .clickable { roundEarth = !roundEarth }
+                        .clickable {
+                            // The toggle carries the camera too. A
+                            // person who presses MAP wants the map of
+                            // where they are looking, not of wherever
+                            // the map happened to be left.
+                            val (w, h) = globeSize
+                            if (roundEarth) {
+                                if (w > 0) {
+                                    val span = GlobeHandoff.spanDegrees(w, h, globeCamera.zoom)
+                                    handoff = Triple(
+                                        globeCamera.lat.toDouble(),
+                                        globeCamera.lon.toDouble(),
+                                        GlobeHandoff.tileZoom(span, w)
+                                    )
+                                }
+                            } else if (w > 0 && zoomNow > 0.0) {
+                                globeCamera = globeCamera.copy(
+                                    zoom = GlobeHandoff.globeZoom(
+                                        GlobeHandoff.mapSpanDegrees(zoomNow, w), w, h
+                                    )
+                                )
+                            }
+                            roundEarth = !roundEarth
+                        }
                         .padding(horizontal = 10.dp, vertical = 5.dp)
                 )
                 // The other five destinations moved to the bar along the
@@ -556,6 +601,26 @@ fun GodEyeViewScreen(
                 if (roundEarth) {
                     GlobeView(
                         points = remember(layers) { layers.points() },
+                        camera = globeCamera,
+                        onCamera = { next ->
+                            globeCamera = next
+                            // Past a large country across the screen a
+                            // sphere is the wrong thing to be looking
+                            // at, so it hands over mid-pinch and the
+                            // zoom simply continues on tiles.
+                            val (w, h) = globeSize
+                            if (w > 0 && GlobeHandoff.shouldHandToMap(w, h, next.zoom)) {
+                                handoff = Triple(
+                                    next.lat.toDouble(),
+                                    next.lon.toDouble(),
+                                    GlobeHandoff.tileZoom(
+                                        GlobeHandoff.spanDegrees(w, h, next.zoom), w
+                                    )
+                                )
+                                roundEarth = false
+                            }
+                        },
+                        onSize = { w, h -> globeSize = w to h },
                         onInspect = { p ->
                             inspected = Inspected(
                                 p.kind, p.title.orEmpty().ifBlank { p.kind },
@@ -573,10 +638,26 @@ fun GodEyeViewScreen(
                 GlobeMap(
                     layers = layers,
                     focus = state.mapFocus,
+                    handoff = handoff,
                     onInspect = { inspected = it },
                     onViewport = { lat, lon, zoom ->
                         zoomNow = zoom
                         viewModel.onViewportChanged(lat, lon, zoom)
+                        // And back the other way: zoom out far enough
+                        // and the tiles become a sphere again, at the
+                        // same place and showing the same ground.
+                        val (w, h) = globeSize
+                        if (w > 0 && GlobeHandoff.shouldReturnToGlobe(zoom, w)) {
+                            globeCamera = GlobeCamera(
+                                lat.toFloat(),
+                                lon.toFloat(),
+                                GlobeHandoff.globeZoom(
+                                    GlobeHandoff.mapSpanDegrees(zoom, w), w, h
+                                )
+                            )
+                            handoff = null
+                            roundEarth = true
+                        }
                     },
                     // Markers are a few dp across, so most taps miss. Every
                     // miss used to fire forty lookups from the person's own
@@ -1056,6 +1137,9 @@ private fun UtcClock() {
 private fun GlobeMap(
     layers: MapLayers,
     focus: Pair<Double, Double>?,
+    /** Where the globe handed over: a place and the zoom that shows
+     *  the same ground it was showing. Applied once. */
+    handoff: Triple<Double, Double, Double>?,
     onInspect: (Inspected) -> Unit,
     onViewport: (Double, Double, Double) -> Unit,
     onMapTap: (Double, Double) -> Unit,
@@ -1093,6 +1177,7 @@ private fun GlobeMap(
             }
         )
     ) { mutableStateOf<Triple<Double, Double, Double>?>(null) }
+    val appliedHandoff = remember { mutableStateOf<Triple<Double, Double, Double>?>(null) }
     // The visible area, updated as the map is panned or zoomed. Markers are
     // culled to it so a layer can hold tens of thousands of points without
     // the map trying to draw them all.
@@ -1274,6 +1359,17 @@ private fun GlobeMap(
                         placed.remove(key)?.let { map.overlays.remove(it) }
                     }
                 }
+                map.invalidate()
+            }
+
+            // The globe handed this view the camera it was using.
+            // Set rather than animated: this is the continuation of a
+            // pinch that is still happening, and a half-second flight
+            // in the middle of one feels like the map fighting back.
+            if (handoff != null && handoff != appliedHandoff.value) {
+                map.controller.setZoom(handoff.third)
+                map.controller.setCenter(GeoPoint(handoff.first, handoff.second))
+                appliedHandoff.value = handoff
                 map.invalidate()
             }
 

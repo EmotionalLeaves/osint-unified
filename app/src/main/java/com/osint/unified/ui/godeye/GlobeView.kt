@@ -12,7 +12,6 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
@@ -59,6 +58,9 @@ import kotlin.math.roundToInt
 @Composable
 fun GlobeView(
     points: List<GlobePoint>,
+    camera: GlobeCamera,
+    onCamera: (GlobeCamera) -> Unit,
+    onSize: (Int, Int) -> Unit,
     onInspect: (GlobePoint) -> Unit,
     onPress: (Double, Double) -> Unit,
     onLongPress: (Double, Double, Double) -> Unit,
@@ -75,12 +77,13 @@ fun GlobeView(
         value = EarthTexture.ready()
     }
 
-    // Where the globe is looking, and how close. Saved, so turning the
-    // phone or stepping into a dossier does not spin you back to the
-    // middle of the Atlantic.
-    var centreLat by rememberSaveable { mutableFloatStateOf(20f) }
-    var centreLon by rememberSaveable { mutableFloatStateOf(0f) }
-    var zoom by rememberSaveable { mutableFloatStateOf(1f) }
+    // Where the globe is looking, and how close. Held by the screen
+    // rather than here, because the flat map has to be able to pick
+    // the same camera up and carry on with it — the two are one view
+    // at different distances, not two places.
+    val centreLat = camera.lat
+    val centreLon = camera.lon
+    val zoom = camera.zoom
     var spin by remember { mutableFloatStateOf(0f) }
 
     // A flick keeps turning and slows down, the way a globe does. It
@@ -90,7 +93,7 @@ fun GlobeView(
     LaunchedEffect(spin != 0f) {
         while (abs(spin) > SPIN_FLOOR) {
             withFrameNanos { }
-            centreLon = wrapLon(centreLon - spin)
+            onCamera(camera.copy(lon = wrapLon(camera.lon - spin)))
             spin *= SPIN_DECAY
         }
         spin = 0f
@@ -169,7 +172,10 @@ fun GlobeView(
             // state during a draw schedules the next frame, which draws,
             // which writes, and the globe spins the CPU instead of
             // itself.
-            .onSizeChanged { viewport = it }
+            .onSizeChanged {
+                viewport = it
+                onSize(it.width, it.height)
+            }
             .pointerInput(Unit) {
                 detectTransformGestures { _, pan, gestureZoom, _ ->
                     val radius = globeRadius(size.width, size.height, zoom)
@@ -178,10 +184,14 @@ fun GlobeView(
                     // — dragging by a fixed number of degrees per pixel
                     // feels like a slider, not a sphere.
                     val perPixel = (90f / radius).coerceAtMost(1f)
-                    centreLon = wrapLon(centreLon - pan.x * perPixel)
-                    centreLat = (centreLat + pan.y * perPixel).coerceIn(-89f, 89f)
                     spin = (pan.x * perPixel).coerceIn(-4f, 4f)
-                    zoom = (zoom * gestureZoom).coerceIn(MIN_ZOOM, MAX_ZOOM)
+                    onCamera(
+                        GlobeCamera(
+                            lat = (camera.lat + pan.y * perPixel).coerceIn(-89f, 89f),
+                            lon = wrapLon(camera.lon - pan.x * perPixel),
+                            zoom = (camera.zoom * gestureZoom).coerceIn(MIN_ZOOM, MAX_ZOOM)
+                        )
+                    )
                     gestures++
                 }
             }
@@ -275,6 +285,14 @@ private data class Camera(
     val sunLon: Double,
     val fine: Boolean
 )
+
+/**
+ * Where the globe is looking and how close.
+ *
+ * A value held by the screen, so the flat map can be handed the same
+ * place rather than starting over in the middle of the Atlantic.
+ */
+data class GlobeCamera(val lat: Float, val lon: Float, val zoom: Float)
 
 /** One thing to put on the globe. */
 data class GlobePoint(
