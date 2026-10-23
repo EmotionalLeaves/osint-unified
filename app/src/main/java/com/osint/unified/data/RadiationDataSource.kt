@@ -18,42 +18,45 @@ import java.util.Locale
 import java.util.TimeZone
 
 /**
- * Crowd-measured background radiation from Safecast, around wherever you
- * are looking.
+ * Crowd-measured radiation from Safecast, around wherever you are
+ * looking.
  *
- * Safecast grew out of Fukushima: volunteers with Geiger counters, because
- * the official numbers were not available fast enough or at enough places.
- * It is the only open, global, keyless radiation dataset there is, and on a
- * globe it answers a question no other layer can.
+ * Safecast grew out of Fukushima: volunteers with Geiger counters,
+ * because the official numbers were not available fast enough or at
+ * enough places. It is the only open, global, keyless radiation dataset
+ * there is, and on a globe it answers a question no other layer can.
  *
- * Two things make it honest rather than decorative. It is queried around
- * the viewport, because the dataset is tens of millions of points and a
- * global fetch is meaningless. And it is filtered by capture date — the API
- * ignores sort order and will happily return a reading from 2013 first, so
- * without `captured_after` this layer would plot thirteen-year-old
- * measurements as current.
+ * It is an archive, and this layer took a long time to admit it. The
+ * API ignores sort order, so the only way to ask for recent readings
+ * was `captured_after` — which makes the query take longer than any
+ * reasonable timeout. Probed again today: the plain call answers in
+ * about a second, the dated one still does not answer at all. So the
+ * radiation pill has been dark since the day it was added, and the one
+ * thing that could have lit it up was a filter that cannot complete.
  *
- * That filter is also what makes the query slow: a probe found the plain
- * call answering in a second and the dated one exceeding twenty-five, so
- * on the ordinary client this layer was timing out every time and the
- * radiation pill had been dark for as long as it has existed. It gets the
- * longer timeout the other genuinely slow queries use.
+ * The filter is gone. What comes back is what Safecast holds for that
+ * place, oldest first, and every reading carries the date it was taken.
+ * A measurement from 2014 near Fukushima is not stale data pretending
+ * to be current — it is a real reading of a real place, and the label
+ * says when. Dressing that up as live would be the lie; dropping it
+ * because it is old leaves an empty layer over the one dataset that has
+ * anything to say.
+ *
+ * Still queried around the viewport, because the dataset is tens of
+ * millions of points and a global fetch is meaningless.
  */
-class RadiationDataSource(private val client: OkHttpClient = Http.slowApiClient) {
+// Back on the ordinary client: without the date filter the query
+// answers in about a second, and the long timeout existed only to wait
+// for a request that never completed.
+class RadiationDataSource(private val client: OkHttpClient = Http.feedClient) {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
     private val day = SimpleDateFormat("yyyy-MM-dd", Locale.US)
         .apply { timeZone = TimeZone.getTimeZone("UTC") }
 
-    /** How far back a reading may have been taken and still be plotted.
-     *  Crowd-sourced readings are sparse, so this is the longest window
-     *  that can still be called current — and every label carries its age
-     *  so nobody has to take that on trust. */
-    private val windowDays = 30
-
     private companion object {
-        /** Long enough to make panning cheap, short enough that the ages
-         *  printed on the labels are still roughly true. */
+        /** An archive does not change; this is about panning, not
+         *  freshness. The label's age is rebuilt on every fetch anyway. */
         const val CACHE_TTL_MS = 30 * 60 * 1000L
     }
 
@@ -93,10 +96,8 @@ class RadiationDataSource(private val client: OkHttpClient = Http.slowApiClient)
                 return@withContext held.points
             }
 
-            val after = day.format(Date(System.currentTimeMillis() - windowDays * 86_400_000L))
             val url = "https://api.safecast.org/measurements.json" +
-                "?latitude=$lat&longitude=$lon&distance=$radiusM" +
-                "&captured_after=$after"
+                "?latitude=$lat&longitude=$lon&distance=$radiusM"
             val parsed = run {
                 val request = Request.Builder()
                     .url(url)
@@ -119,14 +120,17 @@ class RadiationDataSource(private val client: OkHttpClient = Http.slowApiClient)
                         val mLon = d("longitude") ?: return@mapNotNull null
                         val value = d("value") ?: return@mapNotNull null
                         val captured = Freshness.parse(s("captured_at"))
-                        // The window is enforced here as well as in the
-                        // query: the parameter is the API's promise, this is
-                        // the app's.
-                        if (!Freshness.within(captured, windowDays * 24)) return@mapNotNull null
+                        // The date is not decoration. These readings span
+                        // more than a decade and the only thing that makes
+                        // an old one honest is saying how old, on the
+                        // marker, every time. A reading with no date at all
+                        // is dropped: unlabelled, it reads as current.
+                        if (captured == null) return@mapNotNull null
                         val label = buildString {
                             append("%.1f ${s("unit") ?: "cpm"}".format(value))
                             s("location_name")?.let { append(" · $it") }
-                            Freshness.ago(captured)?.let { append(" · $it") }
+                            append(" · measured ")
+                            append(Freshness.ago(captured) ?: day.format(Date(captured)))
                         }
                         GeoBlip(mLat, mLon, label, "https://map.safecast.org/")
                     }

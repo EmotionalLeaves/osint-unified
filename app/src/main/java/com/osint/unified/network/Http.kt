@@ -78,6 +78,21 @@ object Http {
     private val gates = ConcurrentHashMap<String, Semaphore>()
     private val cooldowns = ConcurrentHashMap<String, Long>()
 
+    /**
+     * Hosts that publish a minimum interval between requests, and it.
+     *
+     * A 429 after the fact is the expensive way to learn this. GDELT
+     * writes it on the refusal itself — "please limit requests to one
+     * every 5 seconds" — so there is no reason to find out by being
+     * refused, and a layer that comes back empty because two polls
+     * happened to coincide is a layer that lies about the world rather
+     * than about the feed.
+     */
+    private val PACED = mapOf("api.gdeltproject.org" to 6_000L)
+
+    private val pacing = ConcurrentHashMap<String, Any>()
+    private val lastCall = ConcurrentHashMap<String, Long>()
+
     @Volatile private var feedCacheDir: File? = null
 
     /** Where to send everything, or null for straight out of the phone. */
@@ -165,6 +180,17 @@ object Http {
                         "$host asked to be left alone for another ${wait / 1000}s " +
                             "(it answered 429). Not asking again yet."
                     )
+                }
+            }
+
+            // Hosts that stated an interval are held to it, one caller at
+            // a time, so two polls arriving together queue instead of
+            // racing into a refusal.
+            PACED[host]?.let { gap ->
+                synchronized(pacing.computeIfAbsent(host) { Any() }) {
+                    val wait = (lastCall[host] ?: 0L) + gap - System.currentTimeMillis()
+                    if (wait > 0) sleep(wait.coerceAtMost(gap))
+                    lastCall[host] = System.currentTimeMillis()
                 }
             }
 
