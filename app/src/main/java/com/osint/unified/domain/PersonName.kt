@@ -249,7 +249,12 @@ object PersonName {
             out.add("${p.given} ${middle.first()}. ${p.family}")
         }
         out.add("${p.given.first()}. ${p.family}")
-        diminutives(p.given).forEach { out.add("$it ${p.family}") }
+        // Capitalised, because these are going into a search box and
+        // several of the sources behind it match on the literal
+        // string: "bob Smith" is not how anybody writes it down.
+        diminutives(p.given).forEach { short ->
+            out.add(short.replaceFirstChar { c -> c.uppercase() } + " ${p.family}")
+        }
         return out.filter { it.isNotBlank() }.take(limit)
     }
 }

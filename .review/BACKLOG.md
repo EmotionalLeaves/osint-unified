@@ -17,6 +17,65 @@ not a source and must not be counted, graded or presented as one.
 
 ---
 
+## 1. BLOCKING: the build is red
+
+Nothing below can be tested until there is an APK, so this is first
+whatever else is on the list.
+
+- **1a.** r321 — `Overpass.kt:100` uses `continue` inside an inline
+  lambda, which Kotlin 2.0 calls experimental. Restructure.
+- **1b.** r320 — `PersonNameTest.variantsCoverTheFormsASourceWouldHold`
+  expects "Bob Smith" and gets "bob Smith". The diminutive table is
+  lowercase and the variant goes into a search box, so capitalise it.
+
+## 2. What the second tester actually hit (23 Oct)
+
+Reported by the user's boyfriend, on a device that is not the one
+these builds have been judged on. User-encountered breakage, so it
+outranks everything I found by reading.
+
+- **2a. The UI does not fit his screen.** The most-reported and the
+  least diagnosed. Needs a real responsive pass: window-size classes
+  rather than fixed dp, text that scales with the system font size,
+  insets on every screen and not just the ones with a Scaffold,
+  overflow behaviour for long labels, and a check at small-width,
+  large-font and landscape. FirstRunScreen is already known to draw
+  under the status bar.
+- **2b. Zooming into the map stops every layer working.** Concrete
+  and reproducible. Suspects, in order: the on-demand layers were
+  never re-queried when the view moved (fixed since, untested by
+  him); `wideView = zoom < 5.0` gating in the poller; markers culled
+  to a window that is correct but holds data fetched for a far wider
+  one; the handoff arming at high zoom. Reproduce from the code
+  before changing anything.
+- **2c. "None of the search features really worked."** The single
+  most serious item in this document. Search is the spine of the app
+  and it is the thing he says did not work. Needs: what the search
+  box does with each of the nine type chips, what happens on an
+  empty or odd input, what the dossier shows when every tool is
+  filtered out, and whether the fan-out is silently dropping
+  everything.
+- **2d. Not smooth on his device.** Partly addressed by the GPU
+  sphere and the main-thread work moved off it; he has not tested
+  any of that yet. Re-ask after he has.
+
+## 3. Keys, and the disposable-mailbox idea
+
+Answered here so it is not asked twice: no. Registering throwaway
+accounts to mint free API keys and rotating them to get round a rate
+limit is circumventing the terms of a service that is giving its
+data away, and the predictable end of it is the whole user base
+blocked by key pattern or by app name. It is also the exact opposite
+of the posture the rest of this app takes — the first-run screen is
+about not announcing yourself and not touching what you are not
+entitled to touch.
+
+What is legitimate and does the same job: **bring your own key**, per
+service, blank by default, with the setting saying in plain words
+what gets sent and where. SEC EDGAR already works exactly like that
+with the contact address. That is the pattern for Picarta or anything
+else keyed, if the person wants it.
+
 ## A. Oldest open reports
 
 - **A1. Overpass-backed layers still file failures as absences.**

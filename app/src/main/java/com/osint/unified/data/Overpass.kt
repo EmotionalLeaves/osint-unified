@@ -95,8 +95,10 @@ internal object Overpass {
                     text
                 }
             }
-            val text = attempt.getOrElse {
-                why = "${host(mirror)}: ${it.message ?: "no answer"}"
+            val text = attempt.getOrNull()
+            if (text == null) {
+                why = "${host(mirror)}: " +
+                    (attempt.exceptionOrNull()?.message ?: "no answer")
                 continue
             }
             val elements = elementsOf(text)
