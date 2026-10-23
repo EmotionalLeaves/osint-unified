@@ -66,6 +66,9 @@ class InvestigationRepository(
     /** What was written about this case, for re-opening it. */
     suspend fun notesFor(id: Long): String = investigationDao.getById(id)?.notes.orEmpty()
 
+    /** One case, for a screen that has only its id. */
+    suspend fun byId(id: Long): Investigation? = investigationDao.getById(id)
+
     fun observeResults(investigationId: Long): Flow<List<ResultRow>> =
         resultDao.observeForInvestigation(investigationId)
 

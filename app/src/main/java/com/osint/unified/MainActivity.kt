@@ -70,7 +70,8 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
     }
 
     private val historyViewModel: HistoryViewModel by viewModels {
-        HistoryViewModel.Factory((application as OsintApplication).repository)
+        val app = application as OsintApplication
+        HistoryViewModel.Factory(app.repository, app.router, app.exporter)
     }
 
     /**
@@ -225,7 +226,14 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                             (application as OsintApplication).watchRepository,
                             onBack = { screen = "godeye" }
                         )
-                        "history" -> HistoryScreen(historyViewModel, onBack = { screen = "godeye" })
+                        "history" -> HistoryScreen(
+                            historyViewModel,
+                            onReopen = { target ->
+                                godEyeViewModel.onQueryChange(target)
+                                godEyeViewModel.onSearch()
+                            },
+                            onBack = { screen = "godeye" }
+                        )
                         "watch" -> WatchScreen(
                             (application as OsintApplication).watchRepository,
                             focusWatchId = openWatchId.longValue.takeIf { it > 0 },
