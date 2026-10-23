@@ -1,7 +1,9 @@
 package com.osint.unified.ui.godeye
 
 import kotlin.math.asin
+import kotlin.math.cos
 import kotlin.math.ln
+import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
 
@@ -23,6 +25,16 @@ import kotlin.math.sin
  * The thresholds do not overlap, deliberately. Switching at one
  * boundary in both directions means a pinch that lands on it flips the
  * view back and forth under the thumb.
+ *
+ * Every span here is **ground**, not longitude, and that distinction is
+ * the whole of the hard part. The globe is orthographic, so the span it
+ * shows is a great-circle angle and means the same thing everywhere.
+ * A slippy map is Mercator, where a pixel is a fixed amount of
+ * longitude and therefore cos(latitude) as much ground. Converting one
+ * to the other without that factor sent a globe showing 22 degrees of
+ * Norway to a map showing 11 — the view jumped twice as close as the
+ * person had pinched, at exactly the moment the handoff is meant to be
+ * invisible.
  */
 internal object GlobeHandoff {
 
@@ -39,22 +51,39 @@ internal object GlobeHandoff {
     }
 
     /**
-     * The slippy-map zoom that shows the same ground.
+     * The slippy-map zoom that shows the same ground at this latitude.
      *
-     * At zoom Z the whole world is 256·2^Z pixels across, so a
-     * viewport of w pixels shows 360·w/(256·2^Z) degrees.
+     * At zoom Z the whole world is 256·2^Z pixels across, so a viewport
+     * of w pixels spans 360·w/(256·2^Z) degrees of *longitude* — which
+     * at latitude phi is only cos(phi) as much ground. [spanDegrees] is
+     * ground, so it has to be divided back up into longitude before the
+     * logarithm.
      */
-    fun tileZoom(spanDegrees: Double, width: Int): Double {
+    fun tileZoom(spanDegrees: Double, width: Int, latitude: Double = 0.0): Double {
         if (spanDegrees <= 0.0 || width <= 0) return 2.0
-        val z = ln(360.0 * width / (TILE * spanDegrees)) / ln(2.0)
+        val lonSpan = spanDegrees / shrink(latitude)
+        val z = ln(360.0 * width / (TILE * lonSpan)) / ln(2.0)
         return z.coerceIn(2.0, 19.0)
     }
 
-    /** How much ground a slippy map at this zoom is showing. */
-    fun mapSpanDegrees(tileZoom: Double, width: Int): Double {
+    /** How much ground a slippy map at this zoom and latitude shows. */
+    fun mapSpanDegrees(tileZoom: Double, width: Int, latitude: Double = 0.0): Double {
         if (width <= 0) return 360.0
-        return 360.0 * width / (TILE * Math.pow(2.0, tileZoom))
+        return 360.0 * width / (TILE * Math.pow(2.0, tileZoom)) * shrink(latitude)
     }
+
+    /**
+     * How much less ground a degree of longitude is here than on the
+     * equator.
+     *
+     * Floored rather than allowed to reach zero. Above the floor the
+     * conversion is exact; below it the map is within a few degrees of
+     * the pole, where Mercator is not showing anything anyone is
+     * reading off and an unfloored cosine would ask for a tile zoom in
+     * the thirties.
+     */
+    private fun shrink(latitude: Double): Double =
+        max(cos(Math.toRadians(latitude.coerceIn(-89.0, 89.0))), MIN_COS)
 
     /** The globe zoom that shows the same ground as that span. */
     fun globeZoom(spanDegrees: Double, width: Int, height: Int): Float {
@@ -76,17 +105,20 @@ internal object GlobeHandoff {
      * back later. Without it, a map that merely opened wide counted as
      * "zoomed out" the moment it appeared.
      */
-    fun closeEnoughToArm(tileZoom: Double, width: Int): Boolean =
-        mapSpanDegrees(tileZoom, width) < TO_ARM_SPAN
+    fun closeEnoughToArm(tileZoom: Double, width: Int, latitude: Double = 0.0): Boolean =
+        mapSpanDegrees(tileZoom, width, latitude) < TO_ARM_SPAN
 
     /** Far enough out that tiles are the wrong thing to be looking at. */
-    fun shouldReturnToGlobe(tileZoom: Double, width: Int): Boolean =
-        mapSpanDegrees(tileZoom, width) > TO_GLOBE_SPAN
+    fun shouldReturnToGlobe(tileZoom: Double, width: Int, latitude: Double = 0.0): Boolean =
+        mapSpanDegrees(tileZoom, width, latitude) > TO_GLOBE_SPAN
 
     /** How much of the smaller screen dimension the globe fills. */
     private const val GLOBE_FILL = 0.92
 
     private const val TILE = 256.0
+
+    /** The smallest the longitude-to-ground factor is allowed to get. */
+    private const val MIN_COS = 0.05
 
     /** Roughly a large country across the screen. */
     private const val TO_MAP_SPAN = 22.0

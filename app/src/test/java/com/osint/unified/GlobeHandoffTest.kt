@@ -150,6 +150,49 @@ class GlobeHandoffTest {
         assertTrue(GlobeHandoff.closeEnoughToArm(GlobeHandoff.tileZoom(23.0, w), w))
     }
 
+    /**
+     * The handoff has to hand over the same amount of ground at every
+     * latitude, and for a long time it did not.
+     *
+     * The globe is orthographic, so its span is a great-circle angle.
+     * A slippy map is Mercator, where a pixel is a fixed amount of
+     * longitude and so only cos(latitude) as much ground. Converting
+     * one to the other without that factor meant a globe showing 22
+     * degrees of Norway handed over to a map showing 11: the view
+     * jumped twice as close as the person had pinched, at exactly the
+     * moment the handoff is supposed to be invisible.
+     */
+    @Test
+    fun theSameGroundArrivesOnTheMapAtEveryLatitude() {
+        for (lat in listOf(0.0, 30.0, 45.0, 60.0, 75.0)) {
+            val z = GlobeHandoff.tileZoom(22.0, w, lat)
+            val arrived = GlobeHandoff.mapSpanDegrees(z, w, lat)
+            assertEquals("at $lat", 22.0, arrived, 0.05)
+        }
+    }
+
+    /** And back the other way, for the same reason. */
+    @Test
+    fun theSameGroundArrivesBackOnTheGlobe() {
+        for (lat in listOf(0.0, 45.0, 70.0)) {
+            val span = GlobeHandoff.spanDegrees(w, h, 2.5f)
+            val z = GlobeHandoff.tileZoom(span, w, lat)
+            val back = GlobeHandoff.globeZoom(GlobeHandoff.mapSpanDegrees(z, w, lat), w, h)
+            assertEquals("at $lat", 2.5f, back, 0.02f)
+        }
+    }
+
+    /**
+     * The uncorrected conversion, kept so the size of the mistake is
+     * on the record rather than only the fix.
+     */
+    @Test
+    fun ignoringTheProjectionLandedTwiceAsCloseAtSixtyNorth() {
+        val naive = GlobeHandoff.tileZoom(22.0, w, 0.0)
+        val ground = GlobeHandoff.mapSpanDegrees(naive, w, 60.0)
+        assertTrue("expected roughly half of 22 degrees, got $ground", ground in 10.0..12.0)
+    }
+
     /** Somewhere between the two is where the arming happens. */
     @Test
     fun armingAndReturningDoNotOverlap() {
@@ -159,6 +202,12 @@ class GlobeHandoffTest {
         while (z <= 12.0) {
             if (GlobeHandoff.closeEnoughToArm(z, w)) armed = true
             if (GlobeHandoff.shouldReturnToGlobe(z, w)) returned = true
+            // And the same must hold well away from the equator, where
+            // the two spans are a factor of two apart.
+            assertFalse(
+                GlobeHandoff.closeEnoughToArm(z, w, 60.0) &&
+                    GlobeHandoff.shouldReturnToGlobe(z, w, 60.0)
+            )
             // No zoom may be both at once, or a single pinch would arm
             // the rule and trip it in the same frame.
             assertFalse(

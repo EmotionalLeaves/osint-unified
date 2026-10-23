@@ -415,7 +415,9 @@ fun GodEyeViewScreen(
                                     handoff = Triple(
                                         globeCamera.lat.toDouble(),
                                         globeCamera.lon.toDouble(),
-                                        GlobeHandoff.tileZoom(span, w)
+                                        GlobeHandoff.tileZoom(
+                                            span, w, globeCamera.lat.toDouble()
+                                        )
                                     )
                                 }
                                 arrivedOnMap = System.currentTimeMillis()
@@ -428,7 +430,11 @@ fun GodEyeViewScreen(
                                     lon = (mapCentre?.second ?: globeCamera.lon.toDouble())
                                         .toFloat(),
                                     zoom = GlobeHandoff.globeZoom(
-                                        GlobeHandoff.mapSpanDegrees(zoomNow, w), w, h
+                                        GlobeHandoff.mapSpanDegrees(
+                                            zoomNow, w,
+                                            mapCentre?.first ?: globeCamera.lat.toDouble()
+                                        ),
+                                        w, h
                                     )
                                 )
                             }
@@ -831,7 +837,8 @@ fun GodEyeViewScreen(
                                     next.lat.toDouble(),
                                     next.lon.toDouble(),
                                     GlobeHandoff.tileZoom(
-                                        GlobeHandoff.spanDegrees(w, h, next.zoom), w
+                                        GlobeHandoff.spanDegrees(w, h, next.zoom),
+                                        w, next.lat.toDouble()
                                     )
                                 )
                                 arrivedOnMap = System.currentTimeMillis()
@@ -882,17 +889,17 @@ fun GodEyeViewScreen(
                         // Close enough that the person is clearly using
                         // the map. From here, zooming back out means
                         // they want the globe.
-                        if (w > 0 && GlobeHandoff.closeEnoughToArm(zoom, w)) {
+                        if (w > 0 && GlobeHandoff.closeEnoughToArm(zoom, w, lat)) {
                             armedForGlobe = true
                         }
                         if (w > 0 && armedForGlobe && zoomingOut && settled &&
-                            GlobeHandoff.shouldReturnToGlobe(zoom, w)
+                            GlobeHandoff.shouldReturnToGlobe(zoom, w, lat)
                         ) {
                             globeCamera = GlobeCamera(
                                 lat.toFloat().coerceIn(-89f, 89f),
                                 lon.toFloat(),
                                 GlobeHandoff.globeZoom(
-                                    GlobeHandoff.mapSpanDegrees(zoom, w), w, h
+                                    GlobeHandoff.mapSpanDegrees(zoom, w, lat), w, h
                                 )
                             )
                             handoff = null

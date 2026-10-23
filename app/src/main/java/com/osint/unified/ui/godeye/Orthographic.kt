@@ -72,7 +72,15 @@ object Orthographic {
         if (rho < 1e-9) return lat0 to lon0
         val c = asin(rho.coerceAtMost(1.0))
         val la0 = Math.toRadians(lat0)
-        val lat = asin(cos(c) * sin(la0) + dy * sin(c) * cos(la0) / rho)
+        // Clamped, like every other asin in this file and in the
+        // shader. In exact arithmetic this argument is sin(lat0 + c)
+        // and so never leaves -1..1, but it reaches exactly 1 when the
+        // tapped point is the pole and rounds past it in doubles. asin
+        // then returns NaN, which goes straight into the camera — and a
+        // NaN camera is not merely wrong, it crashes: the render key
+        // rounds the latitude to an Int during composition, and
+        // roundToInt throws on NaN.
+        val lat = asin((cos(c) * sin(la0) + dy * sin(c) * cos(la0) / rho).coerceIn(-1.0, 1.0))
         val lon = Math.toRadians(lon0) + atan2(
             dx * sin(c),
             rho * cos(c) * cos(la0) - dy * sin(c) * sin(la0)

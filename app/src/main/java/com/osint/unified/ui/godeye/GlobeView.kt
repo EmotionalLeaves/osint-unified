@@ -26,6 +26,7 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -34,6 +35,8 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlin.math.abs
 import kotlin.math.min
@@ -69,9 +72,26 @@ fun GlobeView(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val rings = remember { Coastlines.rings(context) }
-    val borders = remember { Coastlines.borders(context) }
-    val places = remember { Places.all(context) }
+    // Read off the main thread.
+    //
+    // These are three bundled JSON files — Natural Earth coastlines and
+    // borders, and the gazetteer — and they were opened, read whole and
+    // deserialised inside `remember`, which is to say on the main
+    // thread during the first composition of the default screen. The
+    // globe simply does not draw them until they arrive, which is a
+    // frame or two of bare sphere instead of a stalled launch.
+    val vectors by produceState(EMPTY_VECTORS, context) {
+        value = withContext(Dispatchers.IO) {
+            Vectors(
+                Coastlines.rings(context),
+                Coastlines.borders(context),
+                Places.all(context)
+            )
+        }
+    }
+    val rings = vectors.rings
+    val borders = vectors.borders
+    val places = vectors.places
     // One Paint, reused. Laying out a label is cheap; allocating the
     // thing that lays it out, three hundred times a frame, is not.
     val ink = remember { labelInk() }
@@ -99,7 +119,14 @@ fun GlobeView(
     // exactly what "the globe will not move" looks like.
     val live by rememberUpdatedState(camera)
     val emit by rememberUpdatedState(onCamera)
+    // How fast the globe is coasting, and how fast the last drag was
+    // going. The second is a plain holder rather than state on purpose:
+    // it is written on every frame of a gesture and nothing should
+    // recompose because of it.
     var spin by remember { mutableFloatStateOf(0f) }
+    val thrown = remember { floatArrayOf(0f) }
+    // Whether a finger is on the glass at all.
+    var touching by remember { mutableStateOf(false) }
 
     // Where a double tap is taking the camera, if one is in flight.
     var flight by remember { mutableStateOf<GlobeCamera?>(null) }
@@ -116,7 +143,12 @@ fun GlobeView(
             emit(
                 GlobeCamera(
                     lat = from.lat + (target.lat - from.lat) * e,
-                    lon = from.lon + shortestTurn(from.lon, target.lon) * e,
+                    // Wrapped. shortestTurn is right about the
+                    // direction but the sum runs past 180 on a flight
+                    // across the date line, and an unwrapped longitude
+                    // reaches the map handoff, the stars and the area
+                    // report before anything folds it back.
+                    lon = wrapLon(from.lon + shortestTurn(from.lon, target.lon) * e),
                     zoom = from.zoom + (target.zoom - from.zoom) * e
                 )
             )
@@ -128,11 +160,30 @@ fun GlobeView(
     // stops at zero rather than drifting for ever: a sphere redrawing
     // ten thousand coastline points sixty times a second, all night, to
     // look alive, is a flat battery.
-    LaunchedEffect(spin != 0f) {
-        while (abs(spin) > SPIN_FLOOR) {
+    //
+    // It starts when the finger comes off, and not before. It used to
+    // start on the first sideways pixel of the drag, because the drag
+    // was what set the speed — so for the whole gesture the globe was
+    // being turned twice, once by the thumb and once by the coast, and
+    // it ran at double speed sideways. Worse, this loop writes a whole
+    // camera: `live` is only refreshed at recomposition, and the frame
+    // clock resumes before that, so every frame it also wrote back the
+    // latitude and zoom from *before* the drag — which is why dragging
+    // up and down and pinching did nothing at all while a flick was in
+    // progress.
+    LaunchedEffect(touching) {
+        if (touching) {
+            spin = 0f
+            return@LaunchedEffect
+        }
+        var v = thrown[0]
+        thrown[0] = 0f
+        while (abs(v) > SPIN_FLOOR) {
             withFrameNanos { }
-            emit(live.copy(lon = wrapLon(live.lon - spin)))
-            spin *= SPIN_DECAY
+            val now = live
+            spin = v
+            emit(now.copy(lon = wrapLon(now.lon - v)))
+            v *= SPIN_DECAY
         }
         spin = 0f
     }
@@ -204,12 +255,25 @@ fun GlobeView(
     // megabytes, and allocating that per frame is how a smooth thing
     // becomes a stuttering one.
     val scratch = remember { arrayOfNulls<IntArray>(1) }
+    // One render at a time, because they all write the same array.
+    //
+    // produceState cancels the previous coroutine on a key change but
+    // does not wait for it, and the resampler has no suspension point
+    // in it, so cancellation does nothing until it has finished. The
+    // next render would start immediately and fill the first corner of
+    // the same buffer while the old one was still painting the rest of
+    // it, and the bitmap came out of the two mixed together. Easy to
+    // reach: settle on a full-size frame, then touch the screen —
+    // `moving` drops the size to a quarter and starts a small render
+    // into the middle of a two-megapixel one.
+    val painter = remember { Mutex() }
     val globe: Rendered? by produceState<Rendered?>(null, frame, textured) {
         if (!textured || frame.d <= 8) {
             value = null
             return@produceState
         }
         value = withContext(Dispatchers.Default) {
+            painter.withLock {
             val need = frame.d * frame.d
             var buffer = scratch[0]
             if (buffer == null || buffer.size < need) {
@@ -220,6 +284,7 @@ fun GlobeView(
                 buffer, frame.d, frame.lat, frame.lon,
                 frame.sunLat, frame.sunLon, frame.fine
             )?.let { Rendered(it, frame.lat, frame.lon) }
+            }
         }
     }
 
@@ -231,6 +296,20 @@ fun GlobeView(
             // which writes, and the globe spins the CPU instead of
             // itself.
             .onSizeChanged { viewport = it }
+            // Nothing but watching. It reads the pointers on the
+            // Initial pass and consumes none of them, so the gesture
+            // detectors below still see every event — all this decides
+            // is whether a finger is currently down, which is what
+            // tells the coast when to start.
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        val down = event.changes.any { it.pressed }
+                        if (down != touching) touching = down
+                    }
+                }
+            }
             .pointerInput(Unit) {
                 // Every value read in here comes from `live`, not from
                 // the parameter. These lambdas are created once and
@@ -248,7 +327,10 @@ fun GlobeView(
                     // sideways drag is more degrees the nearer a pole.
                     val perLat = GlobeGestures.perPixelLat(radius)
                     val perLon = GlobeGestures.perPixelLon(radius, live.lat)
-                    spin = (pan.x * perLon).toFloat().coerceIn(-4f, 4f)
+                    // Recorded, not applied. The coast starts when the
+                    // finger lifts; applying it here turned the globe
+                    // twice over for every pixel of the drag.
+                    thrown[0] = (pan.x * perLon).toFloat().coerceIn(-4f, 4f)
                     val zoomed = (live.zoom * gestureZoom).coerceIn(MIN_ZOOM, MAX_ZOOM)
                     val dragged = GlobeCamera(
                         lat = (live.lat + pan.y * perLat).toFloat().coerceIn(-89f, 89f),
@@ -285,6 +367,7 @@ fun GlobeView(
                             radius, centre.x, centre.y
                         )?.let { (lat, lon) ->
                             spin = 0f
+                            thrown[0] = 0f
                             flight = GlobeCamera(
                                 lat = lat.toFloat().coerceIn(-89f, 89f),
                                 lon = lon.toFloat(),
@@ -325,7 +408,12 @@ fun GlobeView(
                             // long press so the area report can size
                             // itself; the globe's equivalent is how much
                             // of the Earth is on screen.
-                            onLongPress(lat, lon, (2.0 + zoom).coerceAtMost(12.0))
+                            // live, not the captured zoom. This block is
+                        // rebuilt only when the marker list changes
+                        // identity, so a plain read here is whatever
+                        // the zoom was at the last feed poll — and the
+                        // report's radius is computed from it.
+                        onLongPress(lat, lon, (2.0 + live.zoom).coerceAtMost(12.0))
                         }
                     }
                 )
@@ -413,6 +501,15 @@ fun GlobeView(
  * code used whichever camera was current, which is how the borders
  * came to slide across the continents they describe.
  */
+/** The three bundled vector sets, loaded together off the main thread. */
+private data class Vectors(
+    val rings: List<DoubleArray>,
+    val borders: List<DoubleArray>,
+    val places: List<Place>
+)
+
+private val EMPTY_VECTORS = Vectors(emptyList(), emptyList(), emptyList())
+
 private data class Rendered(
     val image: ImageBitmap,
     val lat: Double,
