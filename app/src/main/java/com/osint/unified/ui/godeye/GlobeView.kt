@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.PointMode
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -108,6 +109,29 @@ fun GlobeView(
         value = EarthTexture.ready()
     }
 
+    // The sphere on the GPU, when the phone has one this app can
+    // address.
+    //
+    // This is the whole of the globe's performance story. The CPU
+    // renderer below produces one frame of planet in tens of
+    // milliseconds, which is why it had to run off the main thread,
+    // only at a quarter size while a thumb was down, and only once the
+    // camera had been still for a seventh of a second — the stutter,
+    // the pop when it settled and the imagery trailing behind its own
+    // coastlines were all consequences of that one number. A fragment
+    // shader does the same arithmetic on every pixel at once and
+    // finishes inside a frame, so none of those compromises are needed
+    // and none of them are made on this path.
+    //
+    // Null below Android 13, or on a build that shipped no imagery.
+    // Both fall through to exactly what was there before.
+    val gpuSphere = remember(textured) {
+        if (!textured) return@remember null
+        val day = EarthTexture.dayMap() ?: return@remember null
+        GlobeShader.bind(day, EarthTexture.nightMap())
+            ?.let { GpuSphere(it, ShaderBrush(it)) }
+    }
+
     // Where the globe is looking, and how close. Held by the screen
     // rather than here, because the flat map has to be able to pick
     // the same camera up and carry on with it — the two are one view
@@ -122,6 +146,9 @@ fun GlobeView(
     // exactly what "the globe will not move" looks like.
     val live by rememberUpdatedState(camera)
     val emit by rememberUpdatedState(onCamera)
+    // The marker list, read at tap time rather than captured. See the
+    // note on the tap detector below.
+    val hittable = rememberUpdatedState(points)
     // How fast the globe is coasting, and how fast the last drag was
     // going. The second is a plain holder rather than state on purpose:
     // it is written on every frame of a gesture and nothing should
@@ -271,8 +298,11 @@ fun GlobeView(
     // at most one render is ever in flight — so asking every frame
     // costs nothing more than asking every third one did, and every
     // picture that arrives is of where the globe is now.
-    val frame = remember(centreLat, centreLon, diameter, sun, drifting) {
-        RenderRequest(
+    val frame = remember(gpuSphere, centreLat, centreLon, diameter, sun, drifting) {
+        // Held constant while the GPU is drawing the planet, so the
+        // off-thread renderer's produceState is not relaunched sixty
+        // times a second to immediately return nothing.
+        if (gpuSphere != null) IDLE_REQUEST else RenderRequest(
             lat = centreLat.toDouble(),
             lon = centreLon.toDouble(),
             d = diameter,
@@ -297,8 +327,8 @@ fun GlobeView(
     // `drifting` drops the size to a quarter and starts a small render
     // into the middle of a two-megapixel one.
     val painter = remember { Mutex() }
-    val globe: Rendered? by produceState<Rendered?>(null, frame, textured) {
-        if (!textured || frame.d <= 8) {
+    val globe: Rendered? by produceState<Rendered?>(null, frame, textured, gpuSphere) {
+        if (gpuSphere != null || !textured || frame.d <= 8) {
             value = null
             return@produceState
         }
@@ -384,7 +414,16 @@ fun GlobeView(
                     gestures++
                 }
             }
-            .pointerInput(points) {
+            // Keyed on nothing, with the marker list read live.
+            //
+            // It used to be keyed on `points` — up to two and a half
+            // thousand data classes compared field by field on every
+            // recomposition, which is every frame of a drag, and when
+            // the comparison did come out different the block
+            // restarted and cancelled whatever gesture was in flight.
+            // A long press was being dropped every time the aircraft
+            // feed polled.
+            .pointerInput(Unit) {
                 detectTapGestures(
                     // The gesture everybody tries first on a globe.
                     // Without it, closing in means pinching with two
@@ -415,7 +454,7 @@ fun GlobeView(
                         // one, and projecting a few thousand points once
                         // per tap costs nothing anybody can feel.
                         val hit = nearest(
-                            points, tap, centre, radius,
+                            hittable.value, tap, centre, radius,
                             live.lat.toDouble(), live.lon.toDouble()
                         )
                         if (hit != null) {
@@ -470,9 +509,26 @@ fun GlobeView(
         // slide across its own continents reads as broken, where the
         // same globe lagging as one piece just reads as heavy.
         val sphere = globe
-        val shownLat = sphere?.lat ?: lat0
-        val shownLon = sphere?.lon ?: lon0
-        if (sphere != null) {
+        // On the GPU path there is nothing to lag behind: the sphere is
+        // drawn in this frame, at this camera, so the coastlines and
+        // the markers are too.
+        val shownLat = if (gpuSphere != null) lat0 else sphere?.lat ?: lat0
+        val shownLon = if (gpuSphere != null) lon0 else sphere?.lon ?: lon0
+        if (gpuSphere != null) {
+            GlobeShader.aim(
+                gpuSphere.shader, cx, cy, radius, lat0, lon0, sun.first, sun.second
+            )
+            // Over the whole canvas rather than the disc's box: the
+            // shader returns nothing outside the circle, and a
+            // full-size rect keeps the fragment coordinates in the
+            // canvas's own space, which is what the uniforms are in.
+            drawRect(brush = gpuSphere.brush, size = size)
+            drawGraticule(cx, cy, radius, lat0, lon0, faint = true)
+            drawLines(
+                borders, cx, cy, radius, lat0, lon0,
+                BORDER_OVER_IMAGERY, stride = if (drifting) 2 else 1
+            )
+        } else if (sphere != null) {
             // Scaled to the live radius rather than re-rendered for
             // it: the projection does not change with zoom, only the
             // size of the disc does.
@@ -546,6 +602,18 @@ private data class Vectors(
 
 private val EMPTY_VECTORS = Vectors(emptyList(), emptyList(), emptyList())
 
+/**
+ * The GPU sphere: the shader and the brush that paints with it.
+ *
+ * Held together because the brush is a thin wrapper that must be made
+ * once — rebuilding it per frame would defeat the point — while the
+ * shader's uniforms are rewritten immediately before every draw.
+ */
+private class GpuSphere(
+    val shader: android.graphics.Shader,
+    val brush: ShaderBrush
+)
+
 private data class Rendered(
     val image: ImageBitmap,
     val lat: Double,
@@ -560,6 +628,9 @@ private data class RenderRequest(
     val sunLon: Double,
     val fine: Boolean
 )
+
+/** A request for nothing: the camera the GPU path parks on. */
+private val IDLE_REQUEST = RenderRequest(0.0, 0.0, 0, 0.0, 0.0, false)
 
 /**
  * Where the globe is looking and how close.

@@ -98,19 +98,6 @@ import java.util.Locale
 
 private val EXAMPLES = listOf("example.com", "8.8.8.8", "40.7128,-74.0060", "+14155550123", "John Smith")
 
-/**
- * Display modes: tactical filters over the imagery.
- *
- * GOD is not one of these and used to be. Cycling past CRT quietly
- * turned on every layer there is — downloading eight thousand airspace
- * polygons, a camera sweep and a radiation query — because somebody was
- * trying tinted overlays. A colour filter and "fetch everything" are not
- * the same kind of choice and no longer share a button.
- */
-private enum class VisualMode(val label: String) {
-    DEFAULT("DEFAULT"), NVG("NVG"), FLIR("FLIR"), CRT("CRT")
-}
-
 private val SEARCH_TYPES = listOf(
     "auto" to "AUTO", "name" to "NAME", "email" to "EMAIL", "username" to "USER",
     "domain" to "DOMAIN", "ip" to "IP", "phone" to "PHONE", "coordinate" to "COORD", "image" to "IMAGE"
@@ -156,7 +143,6 @@ fun GodEyeViewScreen(
     var showTsunami by rememberSaveable { mutableStateOf(false) }
     var showAirportStatus by rememberSaveable { mutableStateOf(false) }
     var showRadiation by rememberSaveable { mutableStateOf(false) }
-    var mode by rememberSaveable { mutableStateOf(VisualMode.DEFAULT) }
     // Everything on at once, which costs real bandwidth, so it is its own
     // deliberate switch rather than the fifth stop on a colour cycle.
     var god by rememberSaveable { mutableStateOf(false) }
@@ -1036,23 +1022,6 @@ fun GodEyeViewScreen(
                     modifier = Modifier.fillMaxSize().clipToBounds()
                 )
                 }
-                // Tactical display filter over the imagery.
-                when (mode) {
-                    VisualMode.NVG -> Box(Modifier.matchParentSize().background(Color(0x5512FF7A)))
-                    VisualMode.FLIR -> Box(Modifier.matchParentSize().background(Color(0x55FF6A00)))
-                    VisualMode.CRT -> {
-                        Box(Modifier.matchParentSize().background(Color(0x3326FF95)))
-                        Canvas(Modifier.matchParentSize()) {
-                            var y = 0f
-                            while (y < size.height) {
-                                drawLine(Color(0x26000000), Offset(0f, y), Offset(size.width, y), strokeWidth = 1f)
-                                y += 4f
-                            }
-                        }
-                    }
-                    else -> Unit
-                }
-
                 // What a tap offers, instead of what it used to do.
                 tapped?.let { (tLat, tLon) ->
                     Column(
@@ -1111,21 +1080,6 @@ fun GodEyeViewScreen(
                             )
                         }
                     }
-                }
-
-                // Mode cycle button.
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomStart).padding(6.dp)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(Color(0xCC000000))
-                        .border(1.dp, Intel.Cyan, RoundedCornerShape(6.dp))
-                        .clickable {
-                            mode = VisualMode.entries[(mode.ordinal + 1) % VisualMode.entries.size]
-                        }
-                        .padding(horizontal = 10.dp, vertical = 5.dp)
-                ) {
-                    Text(mode.label, style = MaterialTheme.typography.labelSmall, color = Intel.CyanBright)
                 }
 
                 // Its own control, and it says what it costs.

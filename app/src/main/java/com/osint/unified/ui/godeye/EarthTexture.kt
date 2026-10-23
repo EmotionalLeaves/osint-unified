@@ -25,6 +25,14 @@ object EarthTexture {
 
     @Volatile private var day: SphereShading.Texture? = null
     @Volatile private var night: SphereShading.Texture? = null
+    // The same two images, kept as Bitmaps instead, for the GPU path.
+    //
+    // Only one form is ever held: the shader needs a Bitmap to sample
+    // and the CPU renderer needs an int array to index, and keeping
+    // both would double the one thing in this app measured in tens of
+    // megabytes.
+    @Volatile private var dayMap: Bitmap? = null
+    @Volatile private var nightMap: Bitmap? = null
     @Volatile private var attempted = false
 
     /** Decoded lazily and off the main thread; safe to call repeatedly. */
@@ -37,6 +45,15 @@ object EarthTexture {
         // a current phone and is not fine on a cheap one. So it is only
         // asked for where there is room, and a failure to decode it
         // falls through to the small one rather than to nothing.
+        if (GlobeShader.supported) {
+            if (roomy(context)) dayMap = bitmap(context, HI_DAY)
+            if (dayMap == null) dayMap = bitmap(context, DAY)
+            nightMap = bitmap(context, NIGHT)
+            // A build that shipped no imagery leaves both null, and
+            // the globe falls back to coastline outlines exactly as
+            // it did before there was a shader.
+            if (dayMap != null) return
+        }
         if (roomy(context)) day = decode(context, HI_DAY)
         if (day == null) day = decode(context, DAY)
         night = decode(context, NIGHT)
@@ -59,8 +76,28 @@ object EarthTexture {
 
     fun night(): SphereShading.Texture? = night
 
+    fun dayMap(): Bitmap? = dayMap
+
+    fun nightMap(): Bitmap? = nightMap
+
     /** True once there is something better than an outline to draw. */
-    fun ready(): Boolean = day != null
+    fun ready(): Boolean = day != null || dayMap != null
+
+    /** True when the globe can be drawn by the GPU this frame. */
+    fun shaded(): Boolean = GlobeShader.supported && dayMap != null
+
+    /** The mosaic as a Bitmap, which is what a BitmapShader samples. */
+    private fun bitmap(context: Context, name: String): Bitmap? =
+        runCatching {
+            context.assets.open(name).use { stream ->
+                val options = BitmapFactory.Options().apply {
+                    // Not HARDWARE: a hardware bitmap cannot be read
+                    // back, and the fallback path may still need to.
+                    inPreferredConfig = Bitmap.Config.ARGB_8888
+                }
+                BitmapFactory.decodeStream(stream, null, options)
+            }
+        }.getOrNull()
 
     private fun decode(context: Context, name: String): SphereShading.Texture? =
         runCatching {
@@ -108,8 +145,34 @@ object EarthTexture {
     ): ImageBitmap? {
         val base = day ?: return null
         SphereShading.render(out, d, base, night, lat0, lon0, sunLat, sunLon, bilinear)
-        return runCatching {
-            Bitmap.createBitmap(out, d, d, Bitmap.Config.ARGB_8888).asImageBitmap()
-        }.getOrNull()
+        return runCatching { surface(d).also { it.setPixels(out, 0, d, 0, 0, d, d) } }
+            .getOrNull()?.asImageBitmap()
+    }
+
+    /**
+     * Two Bitmaps, used in turn.
+     *
+     * The comment above [image] explains why the pixel array is
+     * reused, and then the old code called `Bitmap.createBitmap`,
+     * which copies — so a quarter-size drag frame allocated half a
+     * megabyte sixty times a second and a full frame up to eight,
+     * none of it ever recycled. The array's reuse saved nothing.
+     *
+     * Two rather than one because the frame just handed to Compose
+     * may still be on screen while the next is being painted; writing
+     * into it would show half of one globe and half of another.
+     */
+    private val surfaces = arrayOfNulls<Bitmap>(2)
+    private var nextSurface = 0
+
+    private fun surface(d: Int): Bitmap {
+        val slot = nextSurface
+        nextSurface = (nextSurface + 1) % surfaces.size
+        val held = surfaces[slot]
+        if (held != null && !held.isRecycled && held.width == d && held.height == d) {
+            return held
+        }
+        held?.recycle()
+        return Bitmap.createBitmap(d, d, Bitmap.Config.ARGB_8888).also { surfaces[slot] = it }
     }
 }
