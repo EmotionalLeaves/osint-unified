@@ -239,7 +239,26 @@ jobs:
           OSINT_KEYSTORE_PASSWORD: ${{ secrets.OSINT_KEYSTORE_PASSWORD }}
           OSINT_KEY_ALIAS: ${{ secrets.OSINT_KEY_ALIAS }}
           OSINT_KEY_PASSWORD: ${{ secrets.OSINT_KEY_PASSWORD }}
-        run: gradle assembleDebug --no-daemon --stacktrace -PosintVersionCode=${{ github.run_number }} -PosintVersionName=r${{ github.run_number }}
+        run: |
+          # The log archive cannot be downloaded from where this project is
+          # developed, so a failure here has to arrive as annotations or it
+          # does not arrive at all. r169 failed in this step and said
+          # nothing but "exit code 1".
+          set +e
+          gradle assembleDebug --no-daemon --stacktrace --console=plain \
+            -PosintVersionCode=${{ github.run_number }} \
+            -PosintVersionName=r${{ github.run_number }} > assemble.log 2>&1
+          code=$?
+          if [ $code -ne 0 ]; then
+            grep -nE "^(e: |FAILURE|.*Execution failed|Caused by|> )" assemble.log \
+              | head -30 | while IFS= read -r line; do
+                clean="${line//$'\r'/}"
+                echo "::error::${clean}"
+              done
+            echo "----- tail of assemble log -----"
+            tail -120 assemble.log
+            exit 1
+          fi
 
       - name: Report the signing fingerprint and the APK size
         run: |
