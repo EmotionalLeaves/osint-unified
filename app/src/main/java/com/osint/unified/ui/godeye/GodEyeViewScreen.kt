@@ -155,6 +155,11 @@ fun GodEyeViewScreen(
     // phone has: the front door was a wall of buttons with a sliver of map
     // underneath.
     var panelOpen by rememberSaveable { mutableStateOf(false) }
+    // A thing called a God's Eye View should be a globe. Mercator is the
+    // right tool for looking at a street and the wrong one for looking at
+    // the Earth, so the sphere is what opens, and the flat map is one tap
+    // away for the close work it is actually good at.
+    var roundEarth by rememberSaveable { mutableStateOf(true) }
     var flightFilter by rememberSaveable { mutableStateOf("ALL") }
     // Filtered once per change, not twice per recomposition over 11,000
     // aircraft — the pill and the map now also read the same list.
@@ -303,6 +308,17 @@ fun GodEyeViewScreen(
                         tint = Intel.Cyan
                     )
                 }
+                Text(
+                    if (roundEarth) "GLOBE" else "MAP",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Intel.Cyan,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(Intel.Elevated)
+                        .border(1.dp, Intel.Cyan, RoundedCornerShape(50))
+                        .clickable { roundEarth = !roundEarth }
+                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                )
                 // The other five destinations moved to the bar along the
                 // bottom, where they have names. Settings stays here: it
                 // adjusts this screen.
@@ -476,7 +492,7 @@ fun GodEyeViewScreen(
                     .padding(top = 2.dp)
                     .clipToBounds()
             ) {
-                GlobeMap(
+                val layers = MapLayers(
                     aircraft = vis(showAircraft || god, visibleAircraft),
                     vessels = vis(showVessels, state.vessels),
                     quakes = vis(showQuakes, state.quakes),
@@ -504,7 +520,27 @@ fun GodEyeViewScreen(
                     tsunamis = vis(showTsunami, state.tsunamis),
                     airportStatus = vis(showAirportStatus, state.airportStatus),
                     radiation = vis(showRadiation, state.radiation),
-                    findings = state.findings,
+                    findings = state.findings
+                )
+                if (roundEarth) {
+                    GlobeView(
+                        points = remember(layers) { layers.points() },
+                        onInspect = { p ->
+                            inspected = Inspected(
+                                p.kind, p.title.orEmpty().ifBlank { p.kind },
+                                p.lat, p.lon, p.url
+                            )
+                        },
+                        onPress = { lat, lon -> tapped = lat to lon },
+                        onLongPress = { lat, lon, zoom ->
+                            area = AreaReport.build(
+                                state, lat, lon, AreaReport.radiusForZoom(zoom)
+                            )
+                        }
+                    )
+                } else {
+                GlobeMap(
+                    layers = layers,
                     focus = state.mapFocus,
                     onInspect = { inspected = it },
                     onViewport = { lat, lon, zoom ->
@@ -522,6 +558,7 @@ fun GodEyeViewScreen(
                     },
                     modifier = Modifier.fillMaxSize().clipToBounds()
                 )
+                }
                 // Tactical display filter over the imagery.
                 when (mode) {
                     VisualMode.NVG -> Box(Modifier.matchParentSize().background(Color(0x5512FF7A)))
@@ -958,34 +995,7 @@ private fun UtcClock() {
  */
 @Composable
 private fun GlobeMap(
-    aircraft: List<Aircraft>,
-    vessels: List<Vessel>,
-    quakes: List<Quake>,
-    events: List<NaturalEvent>,
-    overlay: List<OverlayPoint>,
-    weather: List<GeoBlip>,
-    fires: List<GeoBlip>,
-    satellites: List<GeoBlip>,
-    news: List<GeoBlip>,
-    gdacs: List<GeoBlip>,
-    volcanoes: List<GeoBlip>,
-    aurora: List<GeoBlip>,
-    buoys: List<GeoBlip>,
-    metar: List<GeoBlip>,
-    milAircraft: List<GeoBlip>,
-    conflicts: List<GeoBlip>,
-    airQuality: List<GeoBlip>,
-    stations: List<GeoBlip>,
-    airports: List<GeoBlip>,
-    powerPlants: List<GeoBlip>,
-    cameras: List<GeoBlip>,
-    airspace: List<GeoBlip>,
-    cables: List<GeoBlip>,
-    cyclones: List<GeoBlip>,
-    tsunamis: List<GeoBlip>,
-    airportStatus: List<GeoBlip>,
-    radiation: List<GeoBlip>,
-    findings: List<FindingPin>,
+    layers: MapLayers,
     focus: Pair<Double, Double>?,
     onInspect: (Inspected) -> Unit,
     onViewport: (Double, Double, Double) -> Unit,
@@ -1234,35 +1244,12 @@ private fun GlobeMap(
                     map.overlays.add(m)
                 }
             }
-            quakes.forEach { add("Earthquake", it.lat, it.lon, 0xFFF0997B.toInt(), 8, it.label, true, it.url) }
-            events.forEach { add("Natural event", it.lat, it.lon, 0xFFF2C94C.toInt(), 9, "${it.category}: ${it.title}", true) }
-            news.forEach { add("News hotspot", it.lat, it.lon, 0xFFFF79C6.toInt(), 7, it.label, true, it.url) }
-            aurora.forEach { add("Aurora forecast", it.lat, it.lon, 0xFF66FFB2.toInt(), 6, it.label, false, it.url) }
-            stations.forEach { add("Seismic station", it.lat, it.lon, 0xFF9AB0C0.toInt(), 5, it.label, false, it.url) }
-            airports.forEach { add("Airport", it.lat, it.lon, 0xFF8FD3FF.toInt(), 6, it.label, true, it.url) }
-            powerPlants.forEach { add("Power plant", it.lat, it.lon, 0xFFFFC14D.toInt(), 6, it.label, true, it.url) }
-            cameras.forEach { add("Traffic camera", it.lat, it.lon, 0xFFB388FF.toInt(), 6, it.label, true, it.url) }
-            airspace.forEach { add("Restricted airspace", it.lat, it.lon, 0xFFFF5370.toInt(), 7, it.label, true, it.url) }
-            cables.forEach { add("Cable landing", it.lat, it.lon, 0xFF7FFFD4.toInt(), 5, it.label, true, it.url) }
-            airQuality.forEach { add("Air quality", it.lat, it.lon, 0xFFB4E66B.toInt(), 9, it.label, false, it.url) }
-            buoys.forEach { add("Ocean buoy", it.lat, it.lon, 0xFF4DD0E1.toInt(), 6, it.label, true, it.url) }
-            metar.forEach { add("Airfield weather", it.lat, it.lon, 0xFF9FE8FF.toInt(), 6, it.label, false, it.url) }
-            conflicts.forEach { add("Conflict", it.lat, it.lon, 0xFFFF2E2E.toInt(), 11, it.label, true, it.url) }
-            gdacs.forEach { add("Disaster alert", it.lat, it.lon, 0xFFFF8A3D.toInt(), 10, it.label, true, it.url) }
-            volcanoes.forEach { add("Volcano", it.lat, it.lon, 0xFFFF4D4D.toInt(), 9, it.label, true, it.url) }
-            weather.forEach { add("Weather alert", it.lat, it.lon, 0xFF7FB2FF.toInt(), 9, it.label, true, it.url) }
-            fires.forEach { add("Wildfire", it.lat, it.lon, 0xFFFF5A4D.toInt(), 8, it.label, true, it.url) }
-            overlay.forEach { add("Custom overlay", it.lat, it.lon, 0xFF5CE1D6.toInt(), 9, it.label, false) }
-            radiation.forEach { add("Radiation", it.lat, it.lon, 0xFFD4FF4D.toInt(), 7, it.label, false, it.url) }
-            airportStatus.forEach { add("Airport status", it.lat, it.lon, 0xFFFFA64D.toInt(), 10, it.label, true, it.url) }
-            cyclones.forEach { add("Tropical cyclone", it.lat, it.lon, 0xFFFF7AC6.toInt(), 14, it.label, true, it.url) }
-            tsunamis.forEach { add("Tsunami bulletin", it.lat, it.lon, 0xFF4DF0FF.toInt(), 13, it.label, true, it.url) }
-            satellites.forEach { add("Satellite", it.lat, it.lon, 0xFFC0A8FF.toInt(), 11, it.label, true, it.url) }
-            vessels.forEach { add("Vessel", it.lat, it.lon, 0xFF1D9E75.toInt(), 9, it.name.ifBlank { it.mmsi }, true) }
-            aircraft.forEach { add("Aircraft", it.lat, it.lon, 0xFF4FC3F7.toInt(), 9, it.callsign.ifBlank { it.icao }, true) }
-            milAircraft.forEach { add("Military aircraft", it.lat, it.lon, 0xFFFFD23F.toInt(), 10, it.label, true, it.url) }
-            // Investigation findings sit on top, larger and brighter.
-            findings.forEach { add("Finding", it.lat, it.lon, 0xFFE24FD6.toInt(), 14, it.label, true) }
+            // One table, in MapLayers, read by the globe and by this
+            // map alike. Two copies of it would drift apart the first
+            // time a layer was added to one of them.
+            layers.points().forEach { p ->
+                add(p.kind, p.lat, p.lon, p.color, p.sizeDp, p.title, p.clickable, p.url)
+            }
             flush()
 
             // Fly to a newly-focused location (coordinate search or first geo finding).

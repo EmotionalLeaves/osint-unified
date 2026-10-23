@@ -130,6 +130,15 @@ jobs:
               echo "WARNING: $f missing or empty"; rm -f "$A/$f"
             fi
           done
+          # The globe draws its own coastlines: a sphere cannot be
+          # textured with flat map tiles without reprojecting every one,
+          # and seeing the whole Earth at once is the point of it.
+          curl -sSL https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_land.geojson -o /tmp/ne_land.geojson || true
+          if [ -s /tmp/ne_land.geojson ]; then
+            python3 .github/make-coastlines.py /tmp/ne_land.geojson "$A/coastlines.json" || true
+          fi
+          test -s "$A/coastlines.json" || echo "::warning title=globe::coastlines.json is missing; the globe will draw an empty sphere"
+
           # Raw infrastructure datasets -> compact JSON bundled in the APK.
           curl -sSL https://davidmegginson.github.io/ourairports-data/airports.csv -o /tmp/airports.csv || true
           curl -sSL https://raw.githubusercontent.com/wri/global-power-plant-database/master/output_database/global_power_plant_database.csv -o /tmp/powerplants.csv || true
