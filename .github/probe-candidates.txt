@@ -1,4 +1,10 @@
-https://api.reliefweb.int/v1/disasters?appname=osint-unified&limit=5&profile=list
-https://geofon.gfz.de/fdsnws/event/1/query?format=text&limit=10
-https://opensky-network.org/api/states/all?lamin=45&lomin=0&lamax=55&lomax=15
-https://www.gdacs.org/gdacsapi/api/events/geteventlist/MAP?fromDate=2026-10-01
+https://www.data.jma.go.jp/vaac/data/vaac_list.html@@1
+https://www.bom.gov.au/aviation/volcanic-ash/@@1
+https://vaac.metoffice.gov.uk/vaacuk/VAACUK_advisories.html@@1
+https://vaac.meteo.fr/@@1
+https://www.ssd.noaa.gov/VAAC/ARCH26/archive.html@@1
+https://meteo.vaac.gov.ar/@@1
+https://www.kystverket.no/en/
+https://api.vtexplorer.com/
+https://www.vaarweginformatie.nl/fdd/main/rest/services/datastore/bridge
+https://gis.vta.ee/
