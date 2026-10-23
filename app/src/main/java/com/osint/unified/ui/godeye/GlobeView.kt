@@ -238,21 +238,37 @@ fun GlobeView(
                 // a captured camera is the camera as it was when the
                 // screen opened — which made a drag snap back to the
                 // middle of the Atlantic on every frame.
-                detectTransformGestures { _, pan, gestureZoom, _ ->
+                detectTransformGestures { centroid, pan, gestureZoom, _ ->
                     val radius = globeRadius(size.width, size.height, live.zoom)
                     // A drag turns the globe by the angle it subtends,
                     // so the point under the thumb stays under the thumb
                     // — dragging by a fixed number of degrees per pixel
-                    // feels like a slider, not a sphere.
-                    val perPixel = (90f / radius).coerceAtMost(1f)
-                    spin = (pan.x * perPixel).coerceIn(-4f, 4f)
-                    emit(
-                        GlobeCamera(
-                            lat = (live.lat + pan.y * perPixel).coerceIn(-89f, 89f),
-                            lon = wrapLon(live.lon - pan.x * perPixel),
-                            zoom = (live.zoom * gestureZoom).coerceIn(MIN_ZOOM, MAX_ZOOM)
-                        )
+                    // feels like a slider, not a sphere. The two axes
+                    // differ: longitude lines converge, so the same
+                    // sideways drag is more degrees the nearer a pole.
+                    val perLat = GlobeGestures.perPixelLat(radius)
+                    val perLon = GlobeGestures.perPixelLon(radius, live.lat)
+                    spin = (pan.x * perLon).toFloat().coerceIn(-4f, 4f)
+                    val zoomed = (live.zoom * gestureZoom).coerceIn(MIN_ZOOM, MAX_ZOOM)
+                    val dragged = GlobeCamera(
+                        lat = (live.lat + pan.y * perLat).toFloat().coerceIn(-89f, 89f),
+                        lon = wrapLon((live.lon - pan.x * perLon).toFloat()),
+                        zoom = zoomed
                     )
+                    // And a pinch zooms about the fingers rather than
+                    // about the middle of the screen, so the thing being
+                    // pinched on does not slide away from under them.
+                    val (anchoredLat, anchoredLon) = GlobeGestures.anchorPinch(
+                        lat = dragged.lat,
+                        lon = dragged.lon,
+                        oldRadius = globeRadius(size.width, size.height, live.zoom),
+                        newRadius = globeRadius(size.width, size.height, zoomed),
+                        focusX = centroid.x,
+                        focusY = centroid.y,
+                        centreX = size.width / 2f,
+                        centreY = size.height / 2f
+                    )
+                    emit(dragged.copy(lat = anchoredLat, lon = anchoredLon))
                     gestures++
                 }
             }
