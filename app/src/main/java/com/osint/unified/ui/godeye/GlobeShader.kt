@@ -118,7 +118,7 @@ object GlobeShader {
             // Bilinear, for the same reason the CPU renderer does four
             // taps on a still frame: at this magnification nearest
             // neighbour is visibly blocky at the limb.
-            setFilterMode(Shader.FilterMode.LINEAR)
+            setFilterMode(BitmapShader.FILTER_MODE_LINEAR)
         }
 
     /**
