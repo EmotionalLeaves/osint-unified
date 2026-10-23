@@ -18,17 +18,29 @@ object IntelSummary {
 
     fun synthesize(results: List<ResultRow>): List<Fact> {
         val ok = results.filter { it.status == "success" }
+        // Rows that speak for themselves, as opposed to rows that
+        // quote somebody else's page. Defined here rather than fifty
+        // lines down, because the LOCATION block below was reading
+        // `ok` — the comment that explains this filter sat underneath
+        // the two extractions that most needed it. Snapshot any page
+        // containing the literal string "Location: Moscow, Russia" —
+        // job adverts, event pages, header dumps all do — while
+        // investigating an unrelated handle, and the dossier's own
+        // summary printed LOCATION Moscow, Russia at the top, in the
+        // report's voice. Results arrive newest first, so a fresh
+        // snapshot beat a real geocode to it.
+        val structured = ok.filterNot { it.toolId in QUOTES_OTHERS }
         val facts = mutableListOf<Fact>()
 
         // Location: prefer a named place, else fall back to raw coordinates.
-        val location = ok.firstNotNullOfOrNull { r ->
+        val location = structured.firstNotNullOfOrNull { r ->
             locationRegex.find(r.rawOutput)?.groupValues?.getOrNull(1)?.trim()
                 ?.takeIf { it.isNotBlank() && !it.contains("null", true) && it.replace(",", "").isNotBlank() }
         }
         if (location != null) {
             facts += Fact("LOCATION", location)
         } else {
-            ok.firstNotNullOfOrNull { GeoExtractor.firstCoordinate(it.rawOutput) }?.let { (lat, lon) ->
+            structured.firstNotNullOfOrNull { GeoExtractor.firstCoordinate(it.rawOutput) }?.let { (lat, lon) ->
                 facts += Fact("COORDINATE", "%.4f, %.4f".format(Locale.US, lat, lon))
             }
         }
@@ -61,8 +73,6 @@ object IntelSummary {
         // source wrote can be mistaken for part of this report". This
         // was reading the same text and printing it unprefixed, in the
         // report's own voice, at the top.
-        val structured = ok.filterNot { it.toolId in QUOTES_OTHERS }
-
         fun grab(label: String, regex: Regex, from: List<ResultRow> = structured) {
             from.firstNotNullOfOrNull { regex.find(it.rawOutput)?.groupValues?.getOrNull(1)?.trim() }
                 ?.takeIf { it.isNotBlank() }?.let { facts += Fact(label, it) }
@@ -135,7 +145,17 @@ object IntelSummary {
         parseCount(ok, "wikinearby", Regex("""places\s*\((\d+)\)"""), "NEARBY SITES", facts)
         parseCount(ok, "gdelt", Regex("""hotspots.*\((\d+)\)"""), "NEWS HOTSPOTS", facts)
 
-        facts += Fact("SOURCES", "${ok.size}/${results.size}")
+        // Sources that returned something, not rows that did not throw.
+        //
+        // `ok` is every row whose status is "success", which includes
+        // every tool that reached its source and was told there is
+        // nothing there. Counted as answers, this printed SOURCES
+        // 56/60 on the same page where the dossier's own assessment —
+        // which goes through Findings — said "4 of 60 sources
+        // returned something". One document, two numbers, five-fold
+        // apart, and the generous one at the top.
+        val found = results.count { Findings.kindOf(it) == Findings.Kind.HIT }
+        facts += Fact("SOURCES", "$found/${results.size}")
         return facts
     }
 
@@ -149,10 +169,7 @@ object IntelSummary {
      * otherwise. Their content still appears in the dossier — quoted,
      * attributed and bar-prefixed, which is the whole difference.
      */
-    private val QUOTES_OTHERS = setOf(
-        "snapshot", "webcrawl", "websearch", "gdelt", "wayback",
-        "commoncrawl", "dorks", "framework", "toolrun", "reverseimage"
-    )
+    private val QUOTES_OTHERS = ToolRegistry.QUOTES_OTHERS
 
     private fun parseCount(
         ok: List<ResultRow>, toolId: String, regex: Regex, label: String, into: MutableList<Fact>

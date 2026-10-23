@@ -337,7 +337,7 @@ class InvestigationExporter(private val appContext: Context) {
                 sb.append(csvCell(r.input)).append(',')
                 sb.append(csvCell(iso(r.startedAt))).append(',')
                 sb.append(csvCell(r.finishedAt?.let { iso(it) }.orEmpty())).append(',')
-                sb.append(csvCell(r.outputSha256.ifBlank { sha256(r.rawOutput) })).append(',')
+                sb.append(csvCell(recordedDigest(r) ?: "not recorded")).append(',')
                 sb.append(r.outputBytes).append(',')
                 sb.append(csvCell(r.rawOutput)).append('\n')
             }
@@ -447,7 +447,8 @@ class InvestigationExporter(private val appContext: Context) {
                         put("input", r.input)
                         put("startedAt", iso(r.startedAt))
                         r.finishedAt?.let { put("finishedAt", iso(it)) }
-                        put("sha256", r.outputSha256.ifBlank { sha256(r.rawOutput) })
+                        recordedDigest(r)?.let { put("sha256", it) }
+                            ?: put("sha256Note", "not recorded (captured before this build)")
                         put("bytes", r.outputBytes)
                         put("truncated", r.truncated)
                         ToolRegistry.byId(r.toolId)?.reliability?.let {
@@ -489,7 +490,7 @@ class InvestigationExporter(private val appContext: Context) {
                     ToolRegistry.byId(r.toolId)?.reliability?.code?.toString().orEmpty(),
                     verdict(r), r.input,
                     iso(r.startedAt), r.finishedAt?.let { iso(it) }.orEmpty(),
-                    r.outputSha256.ifBlank { sha256(r.rawOutput) }, warning, payload
+                    recordedDigest(r) ?: "not recorded", warning, payload
                 ).joinToString(",") { csv(it) }
             ).append("\n")
         }
@@ -500,24 +501,42 @@ class InvestigationExporter(private val appContext: Context) {
     private fun iso(millis: Long): String =
         java.time.Instant.ofEpochMilli(millis).toString()
 
-    private fun verdict(r: ResultRow): String = when (Findings.kindOf(r)) {
-        Findings.Kind.HIT -> "found"
-        Findings.Kind.ABSENT -> "nothing found"
-        Findings.Kind.UNREACHABLE -> "could not be reached"
+    private fun verdict(r: ResultRow): String = when {
+        // A row that is still running has not been contacted and
+        // failed; it has not finished. toDossier already skips these
+        // (see Findings.sort, and the comment there about reporting
+        // "NOTHING FOUND (38 errored)" while 38 tools were working),
+        // but the machine-readable exports iterated everything and
+        // the else-branch of kindOf is UNREACHABLE — so exporting
+        // JSON mid-run asserted that every source still working had
+        // been reached and had failed. That is the one distinction
+        // this app exists to maintain.
+        r.status == "running" -> "still running"
+        else -> when (Findings.kindOf(r)) {
+            Findings.Kind.HIT -> "found"
+            Findings.Kind.ABSENT -> "nothing found"
+            Findings.Kind.UNREACHABLE -> "could not be reached"
+        }
     }
 
     /**
-     * A fingerprint of exactly what the source returned.
+     * The digest the source's answer was recorded with, or nothing.
      *
-     * Without it an export is a text file anyone could have typed. With it,
-     * two people can confirm they are looking at the same answer, and a
-     * later re-run can be compared to this one.
+     * Not a digest computed here and printed in a column called
+     * sha256. Rows captured before schema v5 have no digest and
+     * `outputBytes = 0`; hashing the STORED copy of those produces a
+     * real-looking fingerprint of text that includes the truncation
+     * banner this app appended, which no source ever sent. For an
+     * errored row rawOutput is empty, so the column printed
+     * e3b0c442…b855 — the digest of the empty string — immediately
+     * beside the error message it was supposed to describe. Two
+     * analysts comparing exports got a confident match on a value
+     * neither source had produced. The text dossier has always been
+     * honest about this and said "not recorded"; these now agree
+     * with it.
      */
-    private fun sha256(text: String): String = runCatching {
-        java.security.MessageDigest.getInstance("SHA-256")
-            .digest(text.toByteArray())
-            .joinToString("") { "%02x".format(Locale.US, it) }
-    }.getOrDefault("")
+    private fun recordedDigest(r: ResultRow): String? =
+        r.outputSha256.takeIf { it.isNotBlank() }
 
     /**
      * The report someone actually reads.
@@ -543,7 +562,20 @@ class InvestigationExporter(private val appContext: Context) {
             results,
             observable.raw,
             seedIsPlace = observable is Observable.Coordinate
-        )
+        ).filterNot { p ->
+            // What the investigator struck does not come back two
+            // sections later as a lead.
+            //
+            // Corroboration is given the dismissals and correctly
+            // caveats a struck entity out of WHAT WAS FOUND; this
+            // list was built from the unfiltered extractor, so
+            // marking john@example.com wrong with the reason
+            // "different J. Doe" printed it under RULED OUT with the
+            // reason and then printed it again, uncaveated, under
+            // EMAIL — where the next reader chases it, which is the
+            // thing a dismissal exists to prevent.
+            dismissals.containsKey(p.kind to p.value.lowercase())
+        }
         val (direct, derived) = sorted.hits.partition { it.input.trim().lowercase() == seed }
 
         append("OSINT INVESTIGATION DOSSIER\n")
@@ -552,8 +584,17 @@ class InvestigationExporter(private val appContext: Context) {
         append("Type       : ${observable.typeLabel}\n")
         append("Generated  : ${java.time.Instant.now()}\n")
         append("App build  : ${com.osint.unified.BuildConfig.VERSION_NAME}\n")
-        append("Sources    : ${results.size} queried — ${sorted.hits.size} returned intel, ")
-        append("${sorted.empty.size} found nothing, ${sorted.failed.size} could not be reached\n")
+        // The three counts are of rows that FINISHED, so the total has
+        // to be too — otherwise a dossier exported mid-run printed
+        // "60 queried" over three numbers adding up to twenty-two,
+        // with nothing saying where the other thirty-eight went.
+        val finished = sorted.hits.size + sorted.empty.size + sorted.failed.size
+        append("Sources    : $finished of ${results.size} finished — ")
+        append("${sorted.hits.size} returned intel, ")
+        append("${sorted.empty.size} found nothing, ${sorted.failed.size} could not be reached")
+        val running = results.size - finished
+        if (running > 0) append(", $running still running")
+        append("\n")
 
         // An assessment, not a transcript. A report that hands over sixty
         // tool outputs and no judgement has moved the work rather than

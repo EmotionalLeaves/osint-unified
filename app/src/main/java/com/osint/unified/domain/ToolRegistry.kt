@@ -15,6 +15,24 @@ import com.osint.unified.domain.ToolCategory.SOCMINT
  */
 object ToolRegistry {
 
+    /**
+     * Tools whose output is somebody else's words, not this app's.
+     *
+     * A page snapshot, a crawl, a web search, a news query: the row
+     * holds text that was on a page, and anything read out of it is a
+     * fact about that page rather than about the target. Three
+     * different files kept three different versions of this list and
+     * they disagreed — IntelSummary excluded all ten, EntityExtractor
+     * excluded only "snapshot", and Timeline excluded none — so the
+     * same page could be refused as a source of identifiers, accepted
+     * as a source of dated events, and quoted in the dossier's own
+     * summary, all in one report. One list, read by all three.
+     */
+    val QUOTES_OTHERS = setOf(
+        "snapshot", "webcrawl", "websearch", "gdelt", "wayback",
+        "commoncrawl", "dorks", "framework", "toolrun", "reverseimage"
+    )
+
     val all: List<Tool> get() = graded
 
     private val declared: List<Tool> = listOf(

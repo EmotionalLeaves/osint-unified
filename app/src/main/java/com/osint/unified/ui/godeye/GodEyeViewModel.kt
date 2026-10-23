@@ -1410,8 +1410,24 @@ class GodEyeViewModel(
         val observable = _state.value.observable ?: return null
         val results = _state.value.results
         if (results.isEmpty()) return null
+        // Read for this case, not taken from the flow.
+        //
+        // openStored clears dismissals to empty and then starts a
+        // collector that refills them, and the results flow refills
+        // separately — so there is a window where the dossier has
+        // every result and none of the marks. Exporting in it
+        // produced a report with every struck finding printed as a
+        // live, graded lead, no RULED OUT section, and no demotion of
+        // the sources behind them. A dossier that found the wrong
+        // person and says so is useful; one that found the wrong
+        // person and does not is the failure this app's own notes
+        // call worse than finding nothing. HistoryViewModel.export
+        // already re-reads for exactly this reason.
+        val marks = currentInvestigationId?.let { id ->
+            runCatching { repository.dismissalsFor(id) }.getOrNull()
+        } ?: _state.value.dismissals
         return exporter.export(
-            observable, results, format, _state.value.notes, _state.value.dismissals
+            observable, results, format, _state.value.notes, marks
         )
     }
 

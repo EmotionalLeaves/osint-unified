@@ -104,9 +104,19 @@ object EntityExtractor {
         //
         // Snapshots are left out as well: they store a hash of the
         // page they captured, which this then extracted as a SHA-256
-        // belonging to the target.
+        // belonging to the target. So are the other nine tools whose
+        // output is a copy of somebody else's page — a crawl, a web
+        // search, a news query. This excluded "snapshot" alone, so a
+        // crawled page's cdn host, contact address and copyright year
+        // all arrived in IDENTIFIERS DISCOVERED as things found out
+        // about the target. The list lives in ToolRegistry now,
+        // because keeping three copies of it is how they came to
+        // disagree.
         val text = results
-            .filter { Findings.kindOf(it) == Findings.Kind.HIT && it.toolId != "snapshot" }
+            .filter {
+                Findings.kindOf(it) == Findings.Kind.HIT &&
+                    it.toolId !in ToolRegistry.QUOTES_OTHERS
+            }
             .joinToString("\n") { it.rawOutput }
         if (text.isBlank()) return emptyList()
         val seedLower = seed.trim().lowercase()

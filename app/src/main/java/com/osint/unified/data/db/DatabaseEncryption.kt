@@ -70,7 +70,22 @@ internal object DatabaseEncryption {
                 // the encrypted database and read a row out of it.
                 val backup = File(plain.parentFile, BACKUP_NAME)
                 cleanUp(backup)
-                if (!plain.renameTo(backup)) cleanUp(plain)
+                plain.renameTo(backup)
+                // Whether or not the rename worked, the plaintext file
+                // and its sidecars go.
+                //
+                // The rename moves one file. Room runs in WAL mode, so
+                // the plaintext database has a -wal and a -shm beside
+                // it, and after an unclean shutdown the -wal holds
+                // committed pages that were never checkpointed into
+                // the main file: target names, seed observables, raw
+                // tool output. Only the success path skipped cleanUp,
+                // so those two kept their original names, nothing ever
+                // touched them again, and they sat unencrypted in the
+                // app's databases directory for the life of the
+                // install — while the screen said the rows had been
+                // moved into an encrypted database.
+                cleanUp(plain)
                 "moved ${before.counts.values.sum()} rows into an encrypted database"
             }
         } catch (e: Exception) {

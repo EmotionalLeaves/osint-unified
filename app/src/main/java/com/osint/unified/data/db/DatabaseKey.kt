@@ -61,7 +61,27 @@ object DatabaseKey {
 
         val raw = ByteArray(KEY_BYTES).also { SecureRandom().nextBytes(it) }
         val fresh = raw.joinToString("") { "%02x".format(it) }.toByteArray(Charsets.US_ASCII)
-        prefs.edit().putString(SEALED, seal(fresh)).commit()
+        // A key that was not written down is not a key.
+        //
+        // commit() returns false when the preferences file cannot be
+        // written — a full disk, a broken profile — and that result
+        // was discarded. The consequences were not recoverable: the
+        // migration copies every case into a database sealed with
+        // this key, renames the plaintext file aside, opens the
+        // encrypted one successfully, and then deletes the plaintext
+        // backup. On the next launch there is no stored key, a brand
+        // new one is generated, the encrypted file will not open with
+        // it, there is no backup left, and the app tells the owner
+        // the keystore lost their key. Every case, gone, from one
+        // ignored boolean.
+        //
+        // Returning null here means the app runs unencrypted this
+        // session — the same path as a device with no usable keystore
+        // — and the plaintext database it keeps using is the one
+        // thing that still has the data in it.
+        if (!prefs.edit().putString(SEALED, seal(fresh)).commit()) {
+            return@runCatching null
+        }
         fresh
     }.getOrNull()
 

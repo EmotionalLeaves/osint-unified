@@ -63,9 +63,25 @@ object Timeline {
      */
     private val IGNORE = listOf(
         "generated", "retrieved", "fetched", "queried", "as of", "captured:",
-        "last-modified", "cache", "expires", "valid until", "copyright",
+        // Both spellings. Only the hyphenated one was here, so the
+        // HTTP header "Last Modified: 2020-01-01" — cache metadata
+        // about a web request — passed on INTERESTING's "modified"
+        // and landed on the subject's timeline as an event.
+        "last-modified", "last modified",
+        "cache", "valid until", "copyright",
         "snapshot date", "report date", "accessed"
     )
+
+    /**
+     * Checked after INTERESTING, not before it.
+     *
+     * IGNORE held "expires" and INTERESTING held "expires on", and
+     * IGNORE won because it was tested first — so a domain's or a
+     * certificate's expiry date, which INTERESTING lists in so many
+     * words as worth showing, could never reach the timeline. These
+     * are the phrases that are interesting DESPITE matching IGNORE.
+     */
+    private val DESPITE = listOf("expires on", "expiry", "expiration date")
 
     /** Words that make a date worth putting on a timeline. */
     private val INTERESTING = listOf(
@@ -73,7 +89,8 @@ object Timeline {
         "breach", "leaked", "added", "listed", "first seen", "firstseen",
         "joined", "since", "founded", "incorporated", "updated", "modified",
         "start", "began", "published", "filed", "taken", "date", "born",
-        "expiry", "expires on", "renewed", "last seen", "lastseen"
+        "expiry", "expires on", "expiration date", "renewed",
+        "last seen", "lastseen"
     )
 
     /**
@@ -91,12 +108,26 @@ object Timeline {
 
         results.forEach { row ->
             if (Findings.kindOf(row) != Findings.Kind.HIT) return@forEach
+            // Not from a page this app merely stored a copy of.
+            //
+            // A snapshot's status is "success", so it is a HIT, and
+            // its body is whatever was on the page. EntityExtractor
+            // excludes these and says why; IntelSummary excludes them
+            // and says why; this did not. Snapshot a Wikipedia
+            // article while investigating an unrelated handle and
+            // "Founded 1923" became a dated event in that person's
+            // life, printed in the report's own voice and graded B
+            // for the snapshot tool's reliability. IGNORE caught the
+            // snapshot's own "Captured:" header and nothing in its
+            // body.
+            if (row.toolId in ToolRegistry.QUOTES_OTHERS) return@forEach
             val tool = ToolRegistry.byId(row.toolId)
             row.rawOutput.lineSequence().take(MAX_LINES_PER_RESULT).forEach { raw ->
                 val line = raw.trim()
                 if (line.isBlank() || line.length > 300) return@forEach
                 val lower = line.lowercase()
-                if (IGNORE.any { lower.contains(it) }) return@forEach
+                val rescued = DESPITE.any { lower.contains(it) }
+                if (!rescued && IGNORE.any { lower.contains(it) }) return@forEach
                 if (INTERESTING.none { lower.contains(it) }) return@forEach
                 val date = firstDate(line) ?: return@forEach
                 if (date.isBefore(earliest) || date.isAfter(today.plusYears(30))) return@forEach
@@ -115,7 +146,13 @@ object Timeline {
                 )
             }
         }
-        return out.sortedBy { it.date }.take(limit)
+        // The newest events, not the oldest.
+        //
+        // `sortedBy { it.date }.take(limit)` keeps the 120 EARLIEST
+        // and silently drops everything after them, so a case with
+        // more than that lost the present — which is the part of a
+        // timeline anybody is reading it for.
+        return out.sortedByDescending { it.date }.take(limit).sortedBy { it.date }
     }
 
     /** The first real date in a line, in any of the shapes used. */
