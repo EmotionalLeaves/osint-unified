@@ -41,7 +41,17 @@ trap 'rm -rf "$WORK"' EXIT
 "$KOTLINC" -J-Xmx4g $(find app/src/main/java app/src/test/java -name '*.kt') \
   -nowarn -d "$WORK/out" > "$WORK/full.txt" 2>&1
 
-grep -iE "error:.*(conflicting declaration|redeclaration|expecting |unexpected token|unbalanced|unclosed|syntax error|already defined|expecting an element|expecting a top level|expecting member declaration)" \
+# Errors that no classpath can explain away. Everything in this list is
+# about the shape of the code rather than about what a name refers to, so
+# it is real whether or not the Android SDK is present.
+#
+# "A 'return' expression required in a function with a block body" earned
+# its place the hard way: turning an expression-bodied function into a
+# block-bodied one silently drops the result, kotlinc says so plainly,
+# and the message was being filtered out with the six thousand unresolved
+# AndroidX references because it happened to mention types it could not
+# resolve.
+grep -iE "error:.*(conflicting declaration|redeclaration|expecting |unexpected token|unbalanced|unclosed|syntax error|already defined|expecting an element|expecting a top level|expecting member declaration|return. expression required|missing return statement|cannot be reassigned|variable expected|modifier .* is not applicable)" \
   "$WORK/full.txt" > "$WORK/real.txt" || true
 
 # ${'$'}{...} — a literal dollar followed by a brace. This is what a string

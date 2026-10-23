@@ -83,57 +83,68 @@ class CycloneDataSource(private val client: OkHttpClient = Http.feedClient) {
             .header("User-Agent", "OSINT-Unified/1.0 (research)")
             .build()
         return client.newCall(request).execute().use { resp ->
-            val body = resp.body?.string()
-            if (!resp.isSuccessful) throw IOException("JTWC HTTP ${resp.code}")
-            if (body.isNullOrBlank()) throw IOException("JTWC returned an empty body")
-            JtwcAdvisory.parse(body, url)
-        }
+        val body = resp.body?.string()
+        if (!resp.isSuccessful) throw IOException("JTWC HTTP ${resp.code}")
+        if (body.isNullOrBlank()) throw IOException("JTWC returned an empty body")
+        JtwcAdvisory.parse(body, url)
     }
+}
 
+    /** The Atlantic and the east Pacific, as the NHC publishes them. */
     private fun nhc(): List<GeoBlip> {
-            val request = Request.Builder()
-                .url("https://www.nhc.noaa.gov/CurrentStorms.json")
-                .header("User-Agent", "OSINT-Unified/1.0 (research)")
-                .build()
-            client.newCall(request).execute().use { resp ->
-                val body = resp.body?.string()
-                if (!resp.isSuccessful) throw IOException("NHC HTTP ${resp.code}")
-                if (body.isNullOrBlank()) throw IOException("NHC returned an empty body")
-                val storms = json.parseToJsonElement(body).jsonObject["activeStorms"] as? JsonArray
-                    ?: throw IOException("NHC response had no activeStorms array")
+        val request = Request.Builder()
+            .url("https://www.nhc.noaa.gov/CurrentStorms.json")
+            .header("User-Agent", "OSINT-Unified/1.0 (research)")
+            .build()
+        return client.newCall(request).execute().use { resp ->
+            val body = resp.body?.string()
+            if (!resp.isSuccessful) throw IOException("NHC HTTP ${resp.code}")
+            if (body.isNullOrBlank()) throw IOException("NHC returned an empty body")
+            val storms = json.parseToJsonElement(body).jsonObject["activeStorms"] as? JsonArray
+                ?: throw IOException("NHC response had no activeStorms array")
 
-                storms.mapNotNull { el ->
-                    val o = el as? JsonObject ?: return@mapNotNull null
-                    fun s(k: String) = (o[k] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
-                    fun d(k: String) = (o[k] as? JsonPrimitive)?.doubleOrNull
+            storms.mapNotNull { el ->
+                val o = el as? JsonObject ?: return@mapNotNull null
+                fun s(k: String) =
+                    (o[k] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
+                fun d(k: String) = (o[k] as? JsonPrimitive)?.doubleOrNull
 
-                    val lat = d("latitudeNumeric") ?: return@mapNotNull null
-                    val lon = d("longitudeNumeric") ?: return@mapNotNull null
-                    val name = s("name") ?: s("id") ?: "unnamed system"
-                    val cls = s("classification")?.uppercase()
-                    // Intensity is in knots; everyone outside aviation thinks
-                    // in mph or km/h, so both are given.
-                    val knots = s("intensity")?.toDoubleOrNull()
+                val lat = d("latitudeNumeric") ?: return@mapNotNull null
+                val lon = d("longitudeNumeric") ?: return@mapNotNull null
+                val name = s("name") ?: s("id") ?: "unnamed system"
+                val cls = s("classification")?.uppercase()
+                // Intensity is in knots; everyone outside aviation thinks
+                // in mph or km/h, so both are given.
+                val knots = s("intensity")?.toDoubleOrNull()
 
-                    val label = buildString {
-                        append(name)
-                        classes[cls]?.let { append(" · $it") }
-                            ?: cls?.let { append(" · $it") }
-                        if (knots != null) {
-                            append(" · %.0f kt (%.0f mph)".format(Locale.US, knots, knots * 1.15078))
-                        }
-                        s("pressure")?.let { append(" · $it mb") }
-                        val dir = s("movementDir")
-                        val speed = s("movementSpeed")
-                        if (dir != null && speed != null) append(" · moving ${dir}° at $speed kt")
-                        Freshness.ago(Freshness.parse(s("lastUpdate")))?.let { append(" · $it") }
+                val label = buildString {
+                    append(name)
+                    classes[cls]?.let { append(" \u00b7 $it") }
+                        ?: cls?.let { append(" \u00b7 $it") }
+                    if (knots != null) {
+                        append(
+                            " \u00b7 %.0f kt (%.0f mph)".format(
+                                Locale.US, knots, knots * 1.15078
+                            )
+                        )
                     }
-                    val link = s("publicAdvisory")
-                        ?: ((o["publicAdvisory"] as? JsonObject)?.get("url") as? JsonPrimitive)?.contentOrNull
-                        ?: "https://www.nhc.noaa.gov/"
-                    GeoBlip(lat, lon, label, link)
+                    s("pressure")?.let { append(" \u00b7 $it mb") }
+                    val dir = s("movementDir")
+                    val speed = s("movementSpeed")
+                    if (dir != null && speed != null) {
+                        append(" \u00b7 moving ${dir}\u00b0 at $speed kt")
+                    }
+                    Freshness.ago(Freshness.parse(s("lastUpdate")))?.let {
+                        append(" \u00b7 $it")
+                    }
                 }
+                val link = s("publicAdvisory")
+                    ?: ((o["publicAdvisory"] as? JsonObject)?.get("url") as? JsonPrimitive)
+                        ?.contentOrNull
+                    ?: "https://www.nhc.noaa.gov/"
+                GeoBlip(lat, lon, label, link)
             }
+        }
     }
 
     private companion object {
