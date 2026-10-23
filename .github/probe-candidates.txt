@@ -1,7 +1,10 @@
-https://kystdatahuset.no/ws/api/ais/realtime/geojson@@400
-https://kystdatahuset.no/ws/api/ais/realtime/geojson##"(mmsi|name|shipname|shiptype|speed|cog|imo|destination|msgtime|lastupdate)": ?[^,}]{0,26}
-https://api.ioda.inetintel.cc.gatech.edu/v2/outages/alerts?from=1792195200&until=1792886400&limit=2@@420
-https://www.seismicportal.eu/fdsnws/event/1/query?format=json&limit=1@@420
-https://kystdatahuset.no/ws/swagger/index.html
-https://kystdatahuset.no/ws/api/ais/realtime/geojson/points
-https://www.ioc-sealevelmonitoring.org/service.php?query=stationlist&showall=all&format=json##"(Code|Location|countryname|lasttime|lastvalue|lat|lon|status)": ?[^,}]{0,22}
+https://ll.thespacedevs.com/2.2.0/launch/upcoming/?limit=2&mode=list
+https://ll.thespacedevs.com/2.2.0/launch/upcoming/?limit=1##"(name|net|latitude|longitude|location|status)":
+https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_ports.geojson@@1
+https://www.operations.amsa.gov.au/Public/api/vessels
+https://ais.hafen-hamburg.de/
+https://gis.vta.ee/arcgis/rest/services
+https://opendata.rdw.nl/resource/
+https://www.vesseltracker.com/
+https://retrieve.pskreporter.info/query?rronly=1&flowStartSeconds=-600&limit=5
+https://ds.data.jma.go.jp/svd/vaac/data/vaac_list.html
