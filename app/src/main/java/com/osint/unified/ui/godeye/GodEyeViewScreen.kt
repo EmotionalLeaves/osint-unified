@@ -393,6 +393,56 @@ fun GodEyeViewScreen(
 
     Scaffold(containerColor = Intel.Base) { pad ->
         Column(modifier = Modifier.padding(pad).fillMaxSize()) {
+            // An encrypted database this device can no longer open.
+            //
+            // Said here rather than only on the settings screen. The
+            // symptom is an empty case list, and the obvious reading
+            // of an empty case list is that the app lost your work —
+            // so the one thing that must not happen is for the app to
+            // know better and not say.
+            if (com.osint.unified.data.db.AppDatabase.lockedOut) {
+                var showWhy by rememberSaveable { mutableStateOf(false) }
+                Text(
+                    "⚠ YOUR EARLIER CASES CANNOT BE OPENED — TAP",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Intel.Base,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Intel.Danger)
+                        .clickable { showWhy = true }
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                )
+                if (showWhy) {
+                    AlertDialog(
+                        onDismissRequest = { showWhy = false },
+                        containerColor = Intel.Surface,
+                        titleContentColor = Intel.TextHi,
+                        textContentColor = Intel.TextMid,
+                        title = {
+                            Text(
+                                "EARLIER CASES LOCKED",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = Intel.TextHi
+                            )
+                        },
+                        text = {
+                            Text(
+                                com.osint.unified.data.db.AppDatabase.encryptionNote,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        },
+                        confirmButton = {
+                            TextButton(onClick = { showWhy = false }) {
+                                Text(
+                                    "UNDERSTOOD",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = Intel.Cyan
+                                )
+                            }
+                        }
+                    )
+                }
+            }
             // Classification banner (tactical console convention; green = UNCLASS).
 
             // ---- Console header + live telemetry ----

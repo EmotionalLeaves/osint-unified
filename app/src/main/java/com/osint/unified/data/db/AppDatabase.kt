@@ -226,6 +226,23 @@ abstract class AppDatabase : RoomDatabase() {
         @Volatile var encryptionNote: String = "not opened yet"
             private set
 
+        /**
+         * True when there is an encrypted database on this device that
+         * this app can no longer open.
+         *
+         * The cases are still there and are not coming back without
+         * the key. That happens when the keystore entry goes — a
+         * lock-screen reset, a restore onto a new device — and the
+         * handling was to open a fresh empty database and carry on as
+         * though nothing had happened, with one line about it on a
+         * settings screen nobody has a reason to visit. Somebody
+         * opening the app to a blank case list deserves to be told
+         * that the old ones exist and why they cannot be read, not
+         * left to conclude the app threw their work away.
+         */
+        @Volatile var lockedOut: Boolean = false
+            private set
+
         fun get(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: open(context.applicationContext).also { INSTANCE = it }
@@ -246,7 +263,19 @@ abstract class AppDatabase : RoomDatabase() {
         private fun open(app: Context): AppDatabase {
             val passphrase = DatabaseKey.passphrase(app)
             if (passphrase == null) {
-                encryptionNote = "this device's keystore would not provide a key"
+                val sealed = app.getDatabasePath(DatabaseEncryption.ENCRYPTED_NAME)
+                val plainFile = app.getDatabasePath(DatabaseEncryption.PLAIN_NAME)
+                lockedOut = sealed.exists() && !plainFile.exists()
+                encryptionNote = if (lockedOut) {
+                    "this device's keystore no longer holds the key to your " +
+                        "existing cases, so they cannot be opened. They are " +
+                        "still on the device, in an encrypted file that only " +
+                        "that key could read. This usually follows a " +
+                        "lock-screen reset or a restore onto a new phone. " +
+                        "Anything from here on goes into a new database."
+                } else {
+                    "this device's keystore would not provide a key"
+                }
                 return plain(app)
             }
             runCatching { System.loadLibrary("sqlcipher") }
@@ -304,13 +333,21 @@ abstract class AppDatabase : RoomDatabase() {
             if (backup.exists() && !plainFile.exists()) {
                 runCatching { backup.renameTo(plainFile) }
             }
-            encryptionNote = if (plainFile.exists()) {
-                "encryption failed ($why), so the unencrypted copy of your " +
-                    "cases is being used — nothing was lost, but nothing is " +
-                    "encrypted either"
-            } else {
-                "encryption failed ($why); the database is readable by " +
-                    "anything that can read this app's files"
+            val sealed = app.getDatabasePath(DatabaseEncryption.ENCRYPTED_NAME)
+            lockedOut = sealed.exists() && !plainFile.exists()
+            encryptionNote = when {
+                plainFile.exists() ->
+                    "encryption failed ($why), so the unencrypted copy of your " +
+                        "cases is being used — nothing was lost, but nothing is " +
+                        "encrypted either"
+                lockedOut ->
+                    "the encrypted database on this device would not open " +
+                        "($why), so your existing cases cannot be read. They " +
+                        "have not been deleted. Anything from here on goes " +
+                        "into a new database."
+                else ->
+                    "encryption failed ($why); the database is readable by " +
+                        "anything that can read this app's files"
             }
             return plain(app)
         }

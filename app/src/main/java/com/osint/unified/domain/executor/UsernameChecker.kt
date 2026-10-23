@@ -5,6 +5,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
@@ -378,30 +379,41 @@ class UsernameChecker(private val appContext: Context) {
     ): List<Pair<SiteRule, String>> {
         if (candidates.isEmpty()) return candidates
         val control = "zq" + java.util.UUID.randomUUID().toString().replace("-", "").take(16)
-        val keep = Collections.synchronizedList(mutableListOf<Pair<SiteRule, String>>())
         val semaphore = Semaphore(48)
+        // A verdict per candidate, by position: 0 never asked, 1 the
+        // control came back found, 2 the control came back absent.
+        //
+        // The old version collected survivors in a list and then kept
+        // "anything not in the first CONTROL_PROBE_CAP". Everything
+        // inside the cap was in that set whether or not the twelve
+        // second budget had reached it — so on a slow connection the
+        // candidates the timeout cut off were in neither list and
+        // vanished, which is the opposite of what the comment under
+        // it promised. Worse, they were then counted as discarded and
+        // the output accused those sites of answering yes to
+        // everything, which nobody had asked them.
+        val verdict = java.util.concurrent.atomic.AtomicIntegerArray(candidates.size)
         withTimeoutOrNull(CONTROL_BUDGET_MS) {
             coroutineScope {
-                candidates.take(CONTROL_PROBE_CAP).map { pair ->
-                    async {
+                candidates.take(CONTROL_PROBE_CAP).forEachIndexed { index, pair ->
+                    launch {
                         semaphore.withPermit {
                             // Survives only if the control is NOT reported
                             // found. A site that could not be asked about the
                             // control proves nothing, so the hit stands and
                             // keeps its unverified mark.
-                            if (checkSite(pair.first, control) !is SiteAnswer.Found) {
-                                keep.add(pair)
-                            }
+                            val soft = checkSite(pair.first, control) is SiteAnswer.Found
+                            verdict.set(index, if (soft) 1 else 2)
                         }
                     }
-                }.awaitAll()
+                }
             }
         }
-        // Anything past the cap, or left unprobed when the budget ran out,
-        // is kept rather than silently dropped — an unverified hit is still
-        // a lead, and it carries the ~ mark.
-        val probed = candidates.take(CONTROL_PROBE_CAP).toSet()
-        return keep + candidates.filter { it !in probed }
+        // Dropped only where the control actually came back found.
+        // Past the cap, cut off by the budget, or unreachable: kept,
+        // because an unverified hit is still a lead and it carries the
+        // ~ mark.
+        return candidates.filterIndexed { index, _ -> verdict.get(index) != 1 }
     }
 
     /**
