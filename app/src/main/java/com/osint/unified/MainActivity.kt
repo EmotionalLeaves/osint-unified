@@ -287,6 +287,16 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                         godEyeViewModel.onSearch()
                     }
 
+                    val snapshot by com.osint.unified.ui.common.InAppNavigation
+                        .snapshotTaken.collectAsStateWithLifecycle()
+                    var handledSnapshot by rememberSaveable { mutableLongStateOf(0L) }
+                    LaunchedEffect(snapshot) {
+                        val taken = snapshot ?: return@LaunchedEffect
+                        if (taken.at <= handledSnapshot) return@LaunchedEffect
+                        handledSnapshot = taken.at
+                        godEyeViewModel.onSnapshot(taken.url, taken.title, taken.html)
+                    }
+
                     // Anything the app found opens here rather than in the
                     // signed-in browser.
                     val privateUrl by com.osint.unified.ui.common.PrivateBrowserHost

@@ -885,6 +885,36 @@ class GodEyeViewModel(
         }
     }
 
+    /**
+     * Keeps a page from the isolated browser in the case.
+     *
+     * If no case is open, the page's own host becomes one — capturing
+     * evidence should not require having first thought to start an
+     * investigation.
+     */
+    fun onSnapshot(url: String, title: String, html: String) {
+        viewModelScope.launch {
+            val existing = _state.value.observable
+            val observable = existing ?: router.classify(hostOf(url)).also { fresh ->
+                _state.update {
+                    it.copy(
+                        query = fresh.raw,
+                        observable = fresh,
+                        suggestedTools = runnable(router.suggestTools(fresh)),
+                        navSignal = it.navSignal + 1
+                    )
+                }
+            }
+            runCatching {
+                repository.recordSnapshot(ensureInvestigation(observable), url, title, html)
+            }
+        }
+    }
+
+    private fun hostOf(url: String): String = runCatching {
+        java.net.URI(url).host?.removePrefix("www.").orEmpty().ifBlank { url }
+    }.getOrDefault(url)
+
     /** Builds an export file for the current observable + results, or null. */
     suspend fun buildExport(format: ExportFormat): File? {
         val observable = _state.value.observable ?: return null

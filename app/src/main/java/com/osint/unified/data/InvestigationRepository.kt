@@ -213,6 +213,62 @@ class InvestigationRepository(
      * collector, so the investigation can never be opened again. One
      * talkative source should not be able to do that.
      */
+    /**
+     * Keeps a page exactly as it was, in the case.
+     *
+     * A finding whose page the target deletes next week stops being a
+     * finding. What is stored is the readable text, the address, the
+     * moment it was taken and the digest of the HTML as served, so the
+     * claim survives the page and can be checked against an archive
+     * later.
+     */
+    suspend fun recordSnapshot(
+        investigationId: Long,
+        url: String,
+        title: String,
+        html: String
+    ): ResultRow {
+        val now = System.currentTimeMillis()
+        val bytes = html.toByteArray()
+        val text = readable(html)
+        val body = buildString {
+            append("Page: ").append(title.ifBlank { url }).append('\n')
+            append("URL: ").append(url).append('\n')
+            append("Captured: ").append(java.time.Instant.ofEpochMilli(now)).append('\n')
+            append("SHA-256 of the page as served: ").append(sha256(bytes)).append('\n')
+            append("Size: ").append(bytes.size).append(" bytes\n\n")
+            append(text)
+        }
+        val row = ResultRow(
+            investigationId = investigationId,
+            toolId = "snapshot",
+            toolName = "Page snapshot",
+            input = url,
+            status = "success",
+            rawOutput = cap(body),
+            startedAt = now,
+            finishedAt = now,
+            outputSha256 = sha256(bytes),
+            outputBytes = bytes.size.toLong(),
+            truncated = body.length > MAX_RESULT_CHARS
+        )
+        val id = resultDao.insert(row)
+        return row.copy(id = id)
+    }
+
+    /** HTML reduced to what a person would read off the page. */
+    private fun readable(html: String): String = html
+        .replace(Regex("(?is)<(script|style|noscript)[^>]*>.*?</\\1>"), " ")
+        .replace(Regex("(?i)<br\\s*/?>"), "\n")
+        .replace(Regex("(?i)</(p|div|li|tr|h[1-6])>"), "\n")
+        .replace(Regex("<[^>]+>"), " ")
+        .replace(Regex("&nbsp;?", RegexOption.IGNORE_CASE), " ")
+        .replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+        .replace("&quot;", "\"").replace("&#39;", "'")
+        .replace(Regex("[ \\t\\x0B\\f\\r]+"), " ")
+        .replace(Regex("\n{3,}"), "\n\n")
+        .trim()
+
     /** The digest of exactly what the source sent. */
     private fun sha256(bytes: ByteArray): String = runCatching {
         java.security.MessageDigest.getInstance("SHA-256").digest(bytes)

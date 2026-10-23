@@ -104,6 +104,7 @@ fun PrivateBrowserDialog(url: String, onDismiss: () -> Unit) {
     var progress by remember(url) { mutableStateOf(0) }
     var blocked by remember(url) { mutableStateOf<String?>(null) }
     var view by remember { mutableStateOf<WebView?>(null) }
+    var saved by remember(url) { mutableStateOf(false) }
 
     // Back goes back through the page's own history first. Closing the
     // whole browser because somebody followed one link is the behaviour
@@ -152,6 +153,26 @@ fun PrivateBrowserDialog(url: String, onDismiss: () -> Unit) {
                     ) {
                         Action("COPY LINK", Intel.TextMid) {
                             clipboard.setText(AnnotatedString(current))
+                        }
+                        Spacer(Modifier.width(10.dp))
+                        Action(if (saved) "SAVED" else "SNAPSHOT", if (saved) Intel.Success else Intel.Cyan) {
+                            val web = view ?: return@Action
+                            // The page as it is now, kept in the case. A
+                            // finding whose page the target deletes
+                            // tomorrow stops being a finding; this is the
+                            // cheapest thing that stops that happening,
+                            // and it is why Bellingcat built an archiver.
+                            web.evaluateJavascript(
+                                "(function(){return document.documentElement.outerHTML})()"
+                            ) { encoded ->
+                                val html = runCatching {
+                                    org.json.JSONTokener(encoded).nextValue() as? String
+                                }.getOrNull()
+                                if (!html.isNullOrBlank()) {
+                                    InAppNavigation.snapshot(current, title, html)
+                                    saved = true
+                                }
+                            }
                         }
                         Spacer(Modifier.width(10.dp))
                         Action("INVESTIGATE", Intel.Cyan) {
@@ -297,5 +318,19 @@ object InAppNavigation {
 
     fun investigate(target: String) {
         investigateTarget.value = target to System.currentTimeMillis()
+    }
+
+    /** A page captured into the open case. */
+    data class Snapshot(
+        val url: String,
+        val title: String,
+        val html: String,
+        val at: Long = System.currentTimeMillis()
+    )
+
+    val snapshotTaken = MutableStateFlow<Snapshot?>(null)
+
+    fun snapshot(url: String, title: String, html: String) {
+        snapshotTaken.value = Snapshot(url, title, html)
     }
 }

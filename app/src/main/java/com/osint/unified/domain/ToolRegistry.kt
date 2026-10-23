@@ -287,6 +287,14 @@ object ToolRegistry {
         Tool("gdelt", "Global news", NETINT, "any", "text", DIRECT,
             "Worldwide coverage of a query with sources, reporting countries and dates (GDELT article API).",
             "https://www.gdeltproject.org"),
+        // Not suggested by the router — nothing routes to it. It exists
+        // so that a page kept from the isolated browser has a name, a
+        // category and a grade like any other source, rather than
+        // appearing in the dossier as an unidentified row.
+        Tool("snapshot", "Page snapshot", FORENSICS, "url", "text", DIRECT,
+            "A copy of a page as it was when you looked at it, with the hash " +
+                "of what the server served.",
+            "https://www.bellingcat.com"),
     )
 
 
@@ -322,9 +330,11 @@ object ToolRegistry {
             "aircraftreg", "wallet", "bgpview", "asnintel", "cve", "wikidata"
         ).forEach { put(it, Grading.Reliability.COMPLETE) }
 
-        // B — an operator publishing its own data.
+        // B — an operator publishing its own data. A page is the site's
+        // own publication, and a snapshot is a copy of it with the time
+        // and the digest attached.
         listOf(
-            "dns", "ptr", "tlscert", "wayback", "archive", "commoncrawl",
+            "snapshot", "dns", "ptr", "tlscert", "wayback", "archive", "commoncrawl",
             "waybackurls", "gau", "subfinder", "github", "ghactivity",
             "keybase", "pgpkey", "gravatar", "geocode", "revgeo",
             "wikinearby", "osmrecon", "osmuser", "overpass_turbo",
