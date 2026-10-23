@@ -35,6 +35,8 @@ import com.osint.unified.ui.theme.Intel
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MoreScreen(
+    encrypted: Boolean,
+    storageNote: String,
     onOpenForensics: () -> Unit,
     onOpenDiagnostics: () -> Unit,
     onOpenSources: () -> Unit
@@ -79,6 +81,45 @@ fun MoreScreen(
                     "under what terms.",
                 onOpenSources
             )
+            // Stated rather than assumed. An app that claims a security
+            // property it does not have is worse than one that claims
+            // nothing, so this reports what actually happened when the
+            // database was opened on this device.
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(top = 14.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Intel.Surface)
+                    .border(
+                        1.dp,
+                        if (encrypted) Intel.Hairline else Intel.Amber,
+                        RoundedCornerShape(10.dp)
+                    )
+                    .padding(14.dp)
+            ) {
+                Text(
+                    if (encrypted) "CASE DATABASE: ENCRYPTED" else "CASE DATABASE: NOT ENCRYPTED",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (encrypted) Intel.Success else Intel.Amber
+                )
+                Text(
+                    storageNote,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Intel.TextMid,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+                Text(
+                    "The key is sealed by this device's hardware keystore and " +
+                        "cannot be taken off it. Exported dossiers are not " +
+                        "encrypted — they are deleted from the cache after a day, " +
+                        "but wherever you shared one is your responsibility.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Intel.TextLow,
+                    modifier = Modifier.padding(top = 6.dp)
+                )
+            }
+
             Spacer(Modifier.height(16.dp))
             Text(
                 "OSINT Unified ${BuildConfig.VERSION_NAME}",

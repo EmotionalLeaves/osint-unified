@@ -130,6 +130,13 @@ dependencies {
     implementation("androidx.browser:browser:1.8.0")
     implementation("androidx.work:work-runtime-ktx:2.9.0")
 
+    // The case database is encrypted at rest. An investigation holds
+    // who was looked at and everything every source said about them, and
+    // until now that sat in a plain SQLite file.
+    implementation("net.zetetic:sqlcipher-android:4.6.1")
+    implementation("androidx.sqlite:sqlite-ktx:2.4.0")
+    implementation("androidx.biometric:biometric:1.1.0")
+
     val roomVersion = "2.6.1"
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")

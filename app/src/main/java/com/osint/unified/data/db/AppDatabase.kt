@@ -6,6 +6,7 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 
 @Database(
     entities = [Investigation::class, Result::class, Watch::class, WatchEvent::class],
@@ -120,14 +121,70 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Whether the case database on this device is actually encrypted,
+         * and why not when it is not.
+         *
+         * Reported rather than assumed: a security property the app claims
+         * and does not have is worse than one it does not claim.
+         */
+        @Volatile var encrypted: Boolean = false
+            private set
+
+        @Volatile var encryptionNote: String = "not opened yet"
+            private set
+
         fun get(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
-                INSTANCE ?: Room.databaseBuilder(
-                    context.applicationContext,
-                    AppDatabase::class.java,
-                    "osint-unified.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
-                    .build().also { INSTANCE = it }
+                INSTANCE ?: open(context.applicationContext).also { INSTANCE = it }
             }
+
+        /**
+         * Encrypted if this device will have it, plaintext if it will not.
+         *
+         * An investigation holds who was looked at and everything every
+         * source said about them, so it is encrypted at rest with a key
+         * sealed by the hardware keystore. But a tool that refuses to open
+         * is no use to anyone: if the keystore will not produce a key, or
+         * the native library will not load, or the one-off move of an
+         * existing database does not verify, the app carries on exactly as
+         * it did before and says so on the MORE screen rather than
+         * pretending.
+         */
+        private fun open(app: Context): AppDatabase {
+            val passphrase = DatabaseKey.passphrase(app)
+            if (passphrase == null) {
+                encryptionNote = "this device's keystore would not provide a key"
+                return plain(app)
+            }
+            val attempt = runCatching {
+                runCatching { System.loadLibrary("sqlcipher") }
+                val moved = DatabaseEncryption.migrateIfNeeded(app, passphrase)
+                val db = Room.databaseBuilder(
+                    app, AppDatabase::class.java, DatabaseEncryption.ENCRYPTED_NAME
+                )
+                    .openHelperFactory(SupportOpenHelperFactory(passphrase))
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                    .build()
+                // Opened here on purpose: a key or library problem should
+                // surface now, where there is still a fallback, rather than
+                // on the first query from a screen.
+                db.openHelper.writableDatabase
+                db to moved
+            }
+            attempt.getOrNull()?.let { (db, moved) ->
+                encrypted = true
+                encryptionNote = moved ?: "encrypted at rest"
+                return db
+            }
+            encryptionNote =
+                "encryption failed (${attempt.exceptionOrNull()?.message}); the " +
+                    "database is readable by anything that can read this app's files"
+            return plain(app)
+        }
+
+        private fun plain(app: Context): AppDatabase = Room.databaseBuilder(
+            app, AppDatabase::class.java, DatabaseEncryption.PLAIN_NAME
+        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build()
     }
 }

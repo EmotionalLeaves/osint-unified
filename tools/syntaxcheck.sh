@@ -66,6 +66,15 @@ grep -E "error: unresolved reference: @[A-Za-z]" "$WORK/full.txt" >> "$WORK/real
 # template, where Kotlin swallows the underscore into the identifier.
 grep -E "error: unresolved reference: [A-Za-z0-9]+_$" "$WORK/full.txt" >> "$WORK/real.txt" || true
 
+# A Compose scope member imported as though it were a top-level function.
+# `Modifier.weight` belongs to ColumnScope and is internal at package level,
+# so importing it compiles locally and fails in CI with "it is internal" —
+# which is how r168 died. These names are only ever reached through their
+# scope receiver.
+grep -nE "^import androidx\.compose\.(foundation\.layout|ui)\.(weight|align|alignBy|alignByBaseline|matchParentSize|fillParentMaxSize|fillParentMaxWidth|fillParentMaxHeight|animateItemPlacement)$" \
+  $(find app/src -name '*.kt') 2>/dev/null \
+  | sed 's/^/error: scope member imported as a top-level function: /' >> "$WORK/real.txt" || true
+
 # A bare identifier that is declared somewhere in this project but is not
 # visible where it is used — a member added to the wrong class, an import
 # never written. Unlike the AndroidX noise, this one is genuinely broken,

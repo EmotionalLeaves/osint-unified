@@ -14,7 +14,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.weight
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -266,6 +265,12 @@ class MainActivity : ComponentActivity() {
                             onBack = { screen = "more" }
                         )
                         "more" -> MoreScreen(
+                            // Touching the database first, so the report is
+                            // about an open database and not about one that
+                            // has not been tried yet.
+                            encrypted = (application as OsintApplication)
+                                .database.let { com.osint.unified.data.db.AppDatabase.encrypted },
+                            storageNote = com.osint.unified.data.db.AppDatabase.encryptionNote,
                             onOpenForensics = { screen = "forensics" },
                             onOpenDiagnostics = { screen = "diagnostics" },
                             onOpenSources = { screen = "sources" }

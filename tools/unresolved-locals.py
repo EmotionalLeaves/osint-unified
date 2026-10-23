@@ -100,7 +100,15 @@ def main():
         src = sources[path]
         if lineno - 1 >= len(src):
             continue
-        before = src[lineno - 1][: col - 1].rstrip()
+        whole = src[lineno - 1]
+        # An import of a library the classpath does not have reports its
+        # first path segment as an unresolved bare name — `net` in
+        # `import net.zetetic...`. That is the missing SDK again, and the
+        # import line is the one place a bare name is never a mistake we
+        # could make.
+        if whole.lstrip().startswith("import "):
+            continue
+        before = whole[: col - 1].rstrip()
         # A dotted access is unresolved because its receiver was, which is
         # the SDK's absence rather than ours. Only bare names count.
         if before.endswith(".") or before.endswith("?") or before.endswith("::"):
