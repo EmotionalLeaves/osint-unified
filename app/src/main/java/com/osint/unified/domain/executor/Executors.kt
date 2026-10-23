@@ -432,8 +432,12 @@ class DirectToolExecutor(
     private fun framework(input: String): Result<String> = runCatching {
         val v = input.trim()
         val isEmail = v.contains('@') && !v.contains(' ')
-        val isPhone = Regex("""^\+?[\d][\d\s\-().]{6,}$""").matches(v)
         val isIp = Regex("""^(?:\d{1,3}\.){3}\d{1,3}$""").matches(v)
+        // Decided before the phone test, and excluded from it. The
+        // phone branch came first in the `when` below, so every IP
+        // investigation was handed the OSINT Framework's Telephone
+        // Numbers category instead of IP Address and Domain Name.
+        val isPhone = !isIp && Regex("""^\+?[\d][\d\s\-().]{6,}$""").matches(v)
         val isCoord = Regex("""^-?\d{1,3}(?:\.\d+)?\s*,\s*-?\d{1,3}(?:\.\d+)?$""").matches(v)
         val isImage = Regex(""".*\.(?:jpe?g|png|gif|webp|bmp|tiff?)(?:\?.*)?$""", RegexOption.IGNORE_CASE).matches(v)
         val isUrl = v.startsWith("http", true)

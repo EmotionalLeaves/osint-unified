@@ -286,8 +286,17 @@ class DeepApis(
     fun telegram(handle: String): Result<String> = runCatching {
         val name = handle.trim().removePrefix("@").substringAfterLast("/")
         val html = get("https://t.me/s/$name", browserUa)
-        if (!html.contains("tgme_channel_info") && !html.contains("tgme_page")) {
-            return@runCatching "Telegram: no public channel '@$name' (or it is private)."
+        // Only the channel marker counts.
+        //
+        // t.me serves a generic preview page for a username that does
+        // not exist and for an ordinary user account, and that page
+        // carries the tgme_page classes — so the second half of this
+        // test passed for everything, and the tool asserted a public
+        // channel for any string typed into it. tgme_channel_info is
+        // the one marker that only a channel has.
+        if (!html.contains("tgme_channel_info")) {
+            return@runCatching "Telegram: no public channel '@$name' " +
+                "(it may be private, or a user account rather than a channel)."
         }
         val sb = StringBuilder("Telegram — @$name\n")
         Regex("""<div class="tgme_channel_info_header_title"[^>]*>(?:<span[^>]*>)?([^<]+)""")
@@ -1200,7 +1209,7 @@ class DeepApis(
                 sb.append("Type: ${o.str("Manufacturer")} ${o.str("Type")} (${o.str("ICAOTypeCode")})\n")
                 o.str("RegisteredOwners")?.let { sb.append("Registered owner: $it\n") }
                 o.str("OperatorFlagCode")?.let { sb.append("Operator code: $it\n") }
-            }.onFailure { sb.append("hexdb: no record for Mode-S $hex\n") }
+            }.onFailure { sb.append("hexdb could not be reached for Mode-S $hex.\n") }
         }
         // Live position from adsb.lol (keyless, open ADS-B aggregation).
         val path = if (hex != null) "icao/$hex" else "registration/${reg ?: t}"

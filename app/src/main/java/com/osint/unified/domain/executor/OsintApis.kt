@@ -533,7 +533,10 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
         val q = URLEncoder.encode(query, "UTF-8")
         val out = StringBuilder()
 
-        // Best-effort DuckDuckGo Instant Answer (quick facts; may be empty).
+        // Best-effort DuckDuckGo Instant Answer (quick facts; may be
+        // empty). The whole query goes to them, email addresses
+        // included — said in the registry entry so it is visible
+        // before the tool is run rather than after.
         runCatching {
             val o = json.parseToJsonElement(
                 getBody("https://api.duckduckgo.com/?q=$q&format=json&no_html=1&skip_disambig=1")
@@ -610,7 +613,14 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
         fun add(label: String, url: String) = lines.add("$label: $url")
 
         val isEmail = v.contains('@') && !v.contains(' ')
-        val isPhone = Regex("""^\+?[\d][\d\s\-().]{6,}$""").matches(v)
+        // An address is not a telephone number. The router has carried
+        // this guard for a while; these two copies of the shape test
+        // never got it, and the phone branch is tested first — so
+        // "8.8.8.8" produced a reverse-lookup dork against Truecaller
+        // and Whitepages, and social-media searches for a person who
+        // does not exist.
+        val isIpv4 = Regex("""^(?:\d{1,3}\.){3}\d{1,3}$""").matches(v)
+        val isPhone = !isIpv4 && Regex("""^\+?[\d][\d\s\-().]{6,}$""").matches(v)
         val isDomain = !isEmail && v.contains('.') && !v.contains(' ')
         val isName = v.contains(' ')
         val handle = v.substringBefore('@').replace(" ", "").lowercase()

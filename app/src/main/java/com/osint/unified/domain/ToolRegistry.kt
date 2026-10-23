@@ -104,8 +104,16 @@ object ToolRegistry {
         Tool("shodan", "Shodan (InternetDB)", NETINT, "ip", "json", DIRECT,
             "Open ports, hostnames, CPEs and CVEs for an IP or domain (keyless Shodan InternetDB).",
             "https://internetdb.shodan.io"),
+        // Named for both of the places it sends the query to. It
+        // posts the raw input — including a complete email address,
+        // since this tool is in the email list — to DuckDuckGo's
+        // instant-answer endpoint before it asks Wikipedia, and the
+        // entry used to name Wikipedia alone. A person deciding
+        // whether to run a tool is entitled to know who sees the
+        // query.
         Tool("websearch", "Web & Wikipedia", NETINT, "any", "text", DIRECT,
-            "Live Wikipedia results + instant-answer facts shown inline.",
+            "Wikipedia full-text search, plus DuckDuckGo's instant-answer " +
+                "endpoint — so the query goes to both.",
             "https://en.wikipedia.org"),
         Tool("framework", "OSINT Framework", NETINT, "any", "text", DIRECT,
             "Every matching OSINT Framework resource for this target, as links.",
@@ -131,9 +139,19 @@ object ToolRegistry {
         Tool("headers", "Security headers", NETINT, "domain", "text", DIRECT,
             "HTTP security headers, server banner and status for a domain.",
             "https://owasp.org/www-project-secure-headers/", touchesTarget = true),
+        // Four tools came off the active-recon gate, because none of
+        // them contacts the target at all. `touchesTarget` exists to
+        // keep the investigator out of the target's logs, and marking
+        // a passive lookup with it does not make anyone safer — it
+        // just withholds a tool that was never going to show up
+        // anywhere. Reverse DNS asks Google's resolver; the subdomain
+        // sweep asks hackertarget, RapidDNS, Cert Spotter and the
+        // Wayback index; the typosquat sweep resolves lookalike names
+        // that by definition are not the target; the camera lookup
+        // reads a Caltrans inventory and Overpass.
         Tool("ptr", "Reverse DNS", NETINT, "ip", "text", DIRECT,
             "PTR hostname for an IP via DNS-over-HTTPS.",
-            "https://dns.google", touchesTarget = true),
+            "https://dns.google"),
         Tool("rdap", "RDAP registration", NETINT, "domain", "json", DIRECT,
             "Registrar, key dates, nameservers, org/country for a domain or IP (keyless).",
             "https://rdap.org"),
@@ -202,8 +220,9 @@ object ToolRegistry {
             "Finds GitHub accounts that publicly list this email.",
             "https://github.com"),
         Tool("subsweep", "Subdomain sweep", NETINT, "domain", "text", DIRECT,
-            "Merges hackertarget, RapidDNS and Wayback into one deduplicated host list.",
-            "https://rapiddns.io", touchesTarget = true),
+            "Merges hackertarget, RapidDNS, Cert Spotter and Wayback into one " +
+                "deduplicated host list.",
+            "https://rapiddns.io"),
         Tool("hostintel", "Host intel", NETINT, "domain", "text", DIRECT,
             "Reverse IP neighbours, AS lookup and outbound page links.",
             "https://hackertarget.com", touchesTarget = true),
@@ -251,7 +270,7 @@ object ToolRegistry {
             "https://data.police.uk"),
         Tool("cctvnear", "Cameras nearby", GEOINT, "coordinate", "text", DIRECT,
             "Public traffic cameras near a coordinate, with live still-image links.",
-            "https://cwwp2.dot.ca.gov", touchesTarget = true),
+            "https://cwwp2.dot.ca.gov"),
 
         Tool("toolrun", "Run tool directory", NETINT, "any", "text", DIRECT,
             "Executes every runnable endpoint in the directory against this target and points the rest at it.",
@@ -261,7 +280,7 @@ object ToolRegistry {
             "https://en.wikipedia.org/wiki/Email_address"),
         Tool("typosquat", "Typosquat sweep", NETINT, "domain", "text", DIRECT,
             "Generates lookalike domains and resolves every one; reports only those actually registered.",
-            "https://en.wikipedia.org/wiki/Typosquatting", timeoutMs = 40_000L, touchesTarget = true),
+            "https://en.wikipedia.org/wiki/Typosquatting", timeoutMs = 40_000L),
         Tool("socialsweep", "Platform sweep", SOCMINT, "username", "text", DIRECT,
             "One username checked in parallel against Bluesky, Mastodon, GitLab, Docker Hub, Stack Overflow, Bitbucket, npm and Wikipedia.",
             "https://bsky.app", touchesTarget = true),
