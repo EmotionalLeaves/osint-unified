@@ -1,3 +1,4 @@
-https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_populated_places_simple.geojson@@1
-https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_populated_places_simple.geojson##"(name|adm0cap|featurecla|pop_max)": ?[^,}]{0,24}
-https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_populated_places_simple.geojson@@1
+https://kystdatahuset.no/ws/swagger/v1/swagger.json##"/ws/api/ais/[A-Za-z0-9/{}_-]{0,60}
+https://kystdatahuset.no/ws/swagger/v1/swagger.json@@1
+https://meri.digitraffic.fi/api/ais/v1/locations@@1
+https://kystdatahuset.no/ws/api/ais/realtime/geojson?bbox=4,58,12,62@@1
