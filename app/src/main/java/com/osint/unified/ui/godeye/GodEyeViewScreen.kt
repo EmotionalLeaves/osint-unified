@@ -164,6 +164,15 @@ fun GodEyeViewScreen(
     // package — planMarkers, thinGlobe, the vector load — is already
     // off the main thread; this was the one that was not.
     var areaWanted by remember { mutableStateOf<Triple<Double, Double, Double>?>(null) }
+    // Markers on screen, and markers the armed layers hold.
+    //
+    // Zoom a map in far enough and an empty screen is the correct
+    // answer — everything the layers hold is somewhere else — but the
+    // pills above it go on reporting layer totals, so the app looks
+    // broken at exactly the moment it is being careful. Reported from
+    // a second phone as "zoom in and all the layers stop working",
+    // which is what that looks like from the outside.
+    var plotted by remember { mutableStateOf(0 to 0) }
     LaunchedEffect(areaWanted, state) {
         val want = areaWanted ?: return@LaunchedEffect
         val built = withContext(Dispatchers.Default) {
@@ -1063,6 +1072,7 @@ fun GodEyeViewScreen(
                 } else {
                 GlobeMap(
                     layers = layers,
+                    onPlotted = { shown, total -> plotted = shown to total },
                     focus = state.mapFocus,
                     handoff = handoff,
                     onInspect = { inspected = it },
@@ -1621,6 +1631,8 @@ private fun GlobeMap(
     onViewport: (Double, Double, Double) -> Unit,
     onMapTap: (Double, Double) -> Unit,
     onAreaPress: (Double, Double, Double) -> Unit,
+    /** How many markers are on screen, and how many the layers hold. */
+    onPlotted: (Int, Int) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
     // Which focus has already been flown to. Saved, not merely
