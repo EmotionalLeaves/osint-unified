@@ -129,6 +129,29 @@ android {
         }
     }
 
+    /**
+     * One check turned off, and the reason.
+     *
+     * ProduceStateDoesNotAssignValue arrived with the API 35 lint and
+     * fires on all six produceState calls in this app, every one of
+     * which is the same shape:
+     *
+     *     val x by produceState(initial, key) {
+     *         value = withContext(Dispatchers.Default) { ... }
+     *     }
+     *
+     * The value is assigned, directly, in the producer lambda. The check
+     * does not see it through the delegated property, so it is wrong
+     * about this code — and it is an error rather than a warning, so it
+     * fails the build. Six correct call sites are not going to be
+     * contorted to satisfy it, and leaving the whole lint gate off to
+     * get past one false positive would throw away the checks that have
+     * actually caught things here.
+     */
+    lint {
+        disable += "ProduceStateDoesNotAssignValue"
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
