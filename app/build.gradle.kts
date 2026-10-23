@@ -136,6 +136,11 @@ dependencies {
     implementation("net.zetetic:sqlcipher-android:4.6.1")
     implementation("androidx.sqlite:sqlite-ktx:2.4.0")
     implementation("androidx.biometric:biometric:1.1.0")
+    // biometric 1.1.0 drags in fragment 1.2.x, which predates the
+    // ActivityResult contracts this activity registers — lint calls that
+    // fatal and it is right to: the permission request would not come
+    // back. Pinned forward.
+    implementation("androidx.fragment:fragment-ktx:1.8.1")
 
     val roomVersion = "2.6.1"
     implementation("androidx.room:room-runtime:$roomVersion")

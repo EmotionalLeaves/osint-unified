@@ -222,8 +222,18 @@ jobs:
           # are reported rather than buried.
           REPORT=app/build/reports/lint-results-debug.txt
           if [ -f "$REPORT" ]; then
-            grep -iE "Security|Accessibility|Error:" "$REPORT" | head -40 \
+            grep -iE "Security|Accessibility|Warning:" "$REPORT" | head -40 \
               | while IFS= read -r line; do echo "::warning::lint: ${line}"; done
+            # An error here is fatal to assembleDebug anyway — lintVital
+            # runs inside it, because debug is signed and not debuggable.
+            # Failing at this step instead means the reason is annotated
+            # rather than arriving as an exit code three steps later, which
+            # is what happened to r172.
+            if grep -qE "^.*: Error:" "$REPORT"; then
+              grep -E "^.*: Error:" "$REPORT" | head -25 \
+                | while IFS= read -r line; do echo "::error::lint: ${line}"; done
+              exit 1
+            fi
           fi
           exit 0
 
