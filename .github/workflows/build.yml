@@ -139,6 +139,54 @@ jobs:
           fi
           test -s "$A/coastlines.json" || echo "::warning title=globe::coastlines.json is missing; the globe will draw an empty sphere"
 
+          # A real Earth to put on the globe.
+          #
+          # The sphere has been drawing coastline outlines on a gradient
+          # because outlines were all it had. NASA publishes Blue Marble
+          # and the city-lights composite as plain equirectangular
+          # images in the public domain, which is exactly the projection
+          # an orthographic sampler wants: latitude and longitude map
+          # straight to row and column with no reprojection at all.
+          #
+          # Downscaled here rather than shipped at source resolution.
+          # 5400x2700 is twenty-two million pixels and the globe is at
+          # most twelve hundred across; 2048x1024 is already two texels
+          # per screen pixel with the whole Earth in view, and it is
+          # eight megabytes as an int array rather than ninety.
+          python3 -m pip install --quiet --disable-pip-version-check pillow || true
+          curl -sSL "https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73909/world.topo.bathy.200412.3x5400x2700.jpg" -o /tmp/earth-day-src.jpg || true
+          curl -sSL "https://eoimages.gsfc.nasa.gov/images/imagerecords/55000/55167/earth_lights_lrg.jpg" -o /tmp/earth-night-src.jpg || true
+          python3 - <<'PY'
+          import os
+          A = "app/src/main/assets"
+          try:
+              from PIL import Image
+          except Exception as e:
+              print("WARNING: pillow unavailable, globe will fall back to outlines:", e)
+              raise SystemExit(0)
+          for src, out, size in (
+              ("/tmp/earth-day-src.jpg", f"{A}/earth-day.jpg", (2048, 1024)),
+              ("/tmp/earth-night-src.jpg", f"{A}/earth-night.jpg", (1024, 512)),
+          ):
+              if not (os.path.exists(src) and os.path.getsize(src) > 100_000):
+                  print("WARNING: missing", src)
+                  continue
+              try:
+                  im = Image.open(src).convert("RGB")
+                  # Both are full-Earth equirectangular already; the
+                  # resize is unconditional so a source that changes
+                  # aspect ratio still lands on the grid the sampler
+                  # assumes rather than silently skewing the map.
+                  im = im.resize(size, Image.LANCZOS)
+                  im.save(out, "JPEG", quality=86, optimize=True)
+                  print("bundled", os.path.basename(out), os.path.getsize(out), "bytes")
+              except Exception as e:
+                  print("WARNING: could not prepare", out, e)
+          PY
+          for f in earth-day.jpg earth-night.jpg; do
+            test -s "$A/$f" || echo "::warning title=globe::$f is missing; the globe falls back to drawn coastlines"
+          done
+
           # Raw infrastructure datasets -> compact JSON bundled in the APK.
           curl -sSL https://davidmegginson.github.io/ourairports-data/airports.csv -o /tmp/airports.csv || true
           curl -sSL https://raw.githubusercontent.com/wri/global-power-plant-database/master/output_database/global_power_plant_database.csv -o /tmp/powerplants.csv || true

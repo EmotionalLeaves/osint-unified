@@ -1,10 +1,7 @@
-https://www.ioc-sealevelmonitoring.org/service.php?query=stationlist&showall=all&format=json@@1800
-https://api.ioda.inetintel.cc.gatech.edu/v2/outages/alerts?from=1792195200&until=1792886400&limit=5
-https://api.reliefweb.int/v2/disasters?appname=osint-unified&limit=2
-https://api.openaq.org/v3/parameters?limit=1
-https://www.seismicportal.eu/fdsnws/event/1/query?format=json&limit=400&start=2026-10-22T00:00:00##"mag": [0-9.]+
-https://live.ais.barentswatch.no/
-https://www.barentswatch.no/bwapi/openapi/
-https://kystdatahuset.no/ws/api/ais/realtime/geojson
-https://meri.digitraffic.fi/api/ais/v1/vessels@@1
-https://api.ioda.inetintel.cc.gatech.edu/v2/entities/query?entityType=country&limit=2
+https://kystdatahuset.no/ws/api/ais/realtime/geojson@@400
+https://kystdatahuset.no/ws/api/ais/realtime/geojson##"(mmsi|name|shipname|shiptype|speed|cog|imo|destination|msgtime|lastupdate)": ?[^,}]{0,26}
+https://api.ioda.inetintel.cc.gatech.edu/v2/outages/alerts?from=1792195200&until=1792886400&limit=2@@420
+https://www.seismicportal.eu/fdsnws/event/1/query?format=json&limit=1@@420
+https://kystdatahuset.no/ws/swagger/index.html
+https://kystdatahuset.no/ws/api/ais/realtime/geojson/points
+https://www.ioc-sealevelmonitoring.org/service.php?query=stationlist&showall=all&format=json##"(Code|Location|countryname|lasttime|lastvalue|lat|lon|status)": ?[^,}]{0,22}
