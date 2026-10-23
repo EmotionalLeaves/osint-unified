@@ -1045,7 +1045,13 @@ class DeepApis(
         if (sb.length < 40) {
             sb.append("\nNo geotagged imagery found here. Wider options:\n")
             sb.append("Google Street View: https://www.google.com/maps/@$lat,$lon,17z\n")
-            sb.append("Mapillary: https://www.mapillary.com/app/?lat=$lat&lng=$lon&z=17\n")
+            // Said plainly, because it is slow enough on a phone to
+            // look broken: it is a WebGL viewer that downloads a scene
+            // before it shows anything, and its API needs a key, so
+            // there is nothing lighter to offer and nothing this app
+            // can fetch on its behalf.
+            sb.append("Mapillary (heavy page, slow to open on mobile): ")
+            sb.append("https://www.mapillary.com/app/?lat=$lat&lng=$lon&z=17\n")
         }
         sb.toString()
     }

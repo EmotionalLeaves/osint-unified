@@ -1354,6 +1354,15 @@ fun GodEyeViewScreen(
                             query, style = MaterialTheme.typography.bodySmall,
                             color = Intel.Amber, fontFamily = FontFamily.Monospace
                         )
+                    } else {
+                        Spacer(Modifier.size(8.dp))
+                        Text(
+                            "This marker is a place rather than a name, so " +
+                                "there is nothing here to search for. " +
+                                "Investigating it looks at what is around it.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Intel.TextLow
+                        )
                     }
                     obj.url?.let { link ->
                         Spacer(Modifier.size(10.dp))
@@ -1372,26 +1381,71 @@ fun GodEyeViewScreen(
                     }
                 }
             },
+            // A button that is there and does nothing is worse than one
+            // that is not there.
+            //
+            // Many markers are a place rather than a name — a camera, a
+            // cable landing, a weather alert — and searching their
+            // caption finds nothing, so INVESTIGATE was disabled for
+            // them. The comment on investigableQuery says those "fall
+            // through to LOCATION"; they did not. The dialog kept a
+            // greyed INVESTIGATE in the usual place and a person tapped
+            // it and nothing happened, which reads as the app being
+            // broken rather than as the marker having no name in it.
+            //
+            // So when there is nothing to search for, the action that
+            // does work takes the slot and says what it will do.
             confirmButton = {
                 val query = investigableQuery(obj)
-                TextButton(
-                    enabled = query != null,
-                    onClick = {
-                        query?.let { viewModel.onQueryChange(it); viewModel.onSearch() }
-                        inspected = null
+                if (query != null) {
+                    TextButton(
+                        onClick = {
+                            viewModel.onQueryChange(query)
+                            viewModel.onSearch()
+                            inspected = null
+                        }
+                    ) {
+                        Text(
+                            "INVESTIGATE",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = Intel.Cyan
+                        )
                     }
-                ) {
-                    Text(
-                        "INVESTIGATE",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = if (query != null) Intel.Cyan else Intel.TextLow
-                    )
+                } else {
+                    TextButton(
+                        onClick = {
+                            viewModel.onMapClick(obj.lat, obj.lon)
+                            inspected = null
+                        }
+                    ) {
+                        Text(
+                            "INVESTIGATE THE PLACE",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = Intel.Cyan
+                        )
+                    }
                 }
             },
             dismissButton = {
-                TextButton(onClick = {
-                    viewModel.onMapClick(obj.lat, obj.lon); inspected = null
-                }) { Text("LOCATION", style = MaterialTheme.typography.labelMedium, color = Intel.TextMid) }
+                if (investigableQuery(obj) != null) {
+                    TextButton(onClick = {
+                        viewModel.onMapClick(obj.lat, obj.lon); inspected = null
+                    }) {
+                        Text(
+                            "LOCATION",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = Intel.TextMid
+                        )
+                    }
+                } else {
+                    TextButton(onClick = { inspected = null }) {
+                        Text(
+                            "CLOSE",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = Intel.TextMid
+                        )
+                    }
+                }
             }
         )
     }
