@@ -31,6 +31,126 @@ import com.osint.unified.ui.theme.Intel
  */
 private data class Source(val name: String, val usedFor: String, val licence: String)
 
+/**
+ * What each layer actually covers.
+ *
+ * A pill reading zero means one of two things and the map cannot tell
+ * you which: nothing is happening, or nothing is being watched there.
+ * The pills carry the worst cases in their names — SEA·BALTIC, ATC·US —
+ * but a name has room for three words, and "why" does not fit in three
+ * words. This is the long version, and where a layer is regional it says
+ * what was looked for and what was found instead of implying nobody
+ * tried.
+ */
+private data class Coverage(val layer: String, val extent: String, val why: String = "")
+
+private val coverage = listOf(
+    Coverage(
+        "Aircraft, military aircraft",
+        "worldwide",
+        "Community ADS-B receivers, so coverage follows the people who " +
+            "run them: thin over oceans and over parts of Africa and " +
+            "central Asia where few are listening."
+    ),
+    Coverage(
+        "Vessels",
+        "the Baltic only",
+        "No open network publishes live AIS worldwide without an " +
+            "account. Every aggregator that carries the world wants a " +
+            "key; the national feeds that need no key cover their own " +
+            "waters. Fintraffic's covers the Baltic, so that is what " +
+            "this covers, and the pill says so rather than implying the " +
+            "rest of the sea is empty."
+    ),
+    Coverage("Earthquakes", "worldwide", "USGS, every event above the reporting threshold."),
+    Coverage(
+        "Wildfires",
+        "worldwide",
+        "NASA's satellite thermal detections — every one of them, not " +
+            "the named events a newsroom has noticed."
+    ),
+    Coverage("Volcanoes", "worldwide", "Smithsonian Global Volcanism Program."),
+    Coverage(
+        "Severe weather — world",
+        "worldwide",
+        "Every WMO member state's own official warnings. They carry no " +
+            "geometry, so each marker sits on the service that issued " +
+            "the warning and is flagged approximate; the area is named " +
+            "in the label."
+    ),
+    Coverage(
+        "Severe weather — US",
+        "the United States",
+        "Kept alongside the world layer because NWS alerts carry real " +
+            "polygons, which the worldwide feed does not."
+    ),
+    Coverage(
+        "Tropical cyclones",
+        "worldwide",
+        "The hurricane centre for the Atlantic and east Pacific, the " +
+            "Joint Typhoon Warning Center for the west Pacific, south " +
+            "Pacific and Indian Ocean."
+    ),
+    Coverage(
+        "Tsunami bulletins",
+        "the Pacific and the Caribbean",
+        "The two US centres publish openly. Other basins' warnings " +
+            "reach the map through disaster alerts instead."
+    ),
+    Coverage("Disaster alerts", "worldwide", "GDACS, after an event is judged to affect people."),
+    Coverage(
+        "Conflicts",
+        "worldwide, as recorded rather than as live",
+        "Wikidata, which is written after the fact and is not a feed."
+    ),
+    Coverage(
+        "News hotspots",
+        "worldwide, at country level",
+        "GDELT's article index carries the country each outlet " +
+            "publishes from, not where the event happened. Plotting it " +
+            "as the event would be a lie the map tells convincingly."
+    ),
+    Coverage(
+        "Satellites",
+        "worldwide",
+        "Orbital elements from Celestrak, propagated on the phone, so " +
+            "the positions are computed rather than reported."
+    ),
+    Coverage("Aurora", "worldwide forecast", "NOAA Space Weather Prediction Center."),
+    Coverage("Air quality", "worldwide", "Open-Meteo, around the view."),
+    Coverage("Airfield weather", "worldwide", "METARs around the view, wherever an airfield reports."),
+    Coverage("Ocean buoys", "mostly US waters", "NOAA's own network, plus partners."),
+    Coverage("Seismic stations", "worldwide", "The IRIS/EarthScope inventory."),
+    Coverage("Airports, power plants, cable landings", "worldwide", "Bundled with the app, so they work offline."),
+    Coverage(
+        "Cameras",
+        "worldwide, with live stills in California",
+        "OpenStreetMap's mapped cameras around the view, anywhere. " +
+            "Caltrans adds pictures, which nobody else publishes openly."
+    ),
+    Coverage(
+        "Restricted airspace",
+        "the United States, plus military ground worldwide",
+        "The FAA publishes its airspace; nobody else does without an " +
+            "aviation data contract. OpenStreetMap's military areas fill " +
+            "in the rest of the world as ground rather than as airspace."
+    ),
+    Coverage(
+        "Airport delays",
+        "the United States",
+        "No open worldwide equivalent exists. Every other source is a " +
+            "commercial aviation feed."
+    ),
+    Coverage(
+        "Radiation",
+        "worldwide, wherever anyone has measured",
+        "Safecast is an archive, not a live feed, and most of it was " +
+            "recorded years ago. Every marker says when its reading was " +
+            "taken."
+    ),
+    Coverage("Findings", "your case", "Whatever the tools located, plotted where they said.")
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SourcesScreen(onBack: () -> Unit) {
@@ -172,6 +292,54 @@ fun SourcesScreen(onBack: () -> Unit) {
                     style = MaterialTheme.typography.bodySmall,
                     color = Intel.TextMid,
                     modifier = Modifier.padding(vertical = 10.dp)
+                )
+            }
+            item {
+                Text(
+                    "WHAT EACH LAYER COVERS",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Intel.TextHi,
+                    modifier = Modifier.padding(top = 6.dp, bottom = 2.dp)
+                )
+                Text(
+                    "A layer showing zero means one of two things, and the " +
+                        "map cannot tell you which: nothing is happening, or " +
+                        "nothing is being watched there. Where a layer is " +
+                        "regional this says what was looked for and what was " +
+                        "found instead.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Intel.TextMid,
+                    modifier = Modifier.padding(bottom = 6.dp)
+                )
+            }
+            items(coverage) { c ->
+                Column(Modifier.padding(vertical = 6.dp)) {
+                    Text(
+                        c.layer,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Intel.TextHi
+                    )
+                    Text(
+                        c.extent,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (c.extent.startsWith("worldwide")) Intel.CyanBright
+                        else Intel.TextMid
+                    )
+                    if (c.why.isNotBlank()) {
+                        Text(
+                            c.why,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Intel.TextLow
+                        )
+                    }
+                }
+            }
+            item {
+                Text(
+                    "WHOSE DATA IT IS",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Intel.TextHi,
+                    modifier = Modifier.padding(top = 18.dp, bottom = 2.dp)
                 )
             }
             items(sources) { s ->
