@@ -83,7 +83,9 @@ class UsernameChecker(private val appContext: Context) {
             .replace("{}", username)
     }
 
-    private companion object {
+    // Not private: the classifier reads the verdict field this sweep
+    // writes, and the two have to agree on its spelling.
+    companion object {
         // Parsing three rulesets costs several megabytes of JSON, so the
         // merged result is shared across every UsernameChecker instance
         // rather than rebuilt per use.
@@ -97,7 +99,6 @@ class UsernameChecker(private val appContext: Context) {
          *  memory, so no body is read past this. */
         const val MAX_BODY_BYTES = 256L * 1024
 
-        /** 40 + 15 = 55 s, inside the 70 s the registry allows this tool. */
         /** The first line of a sweep's output, read as data. */
         const val VERDICT_FIELD = "sweep-verdict="
         const val VERDICT_HIT = "hit"
@@ -109,6 +110,7 @@ class UsernameChecker(private val appContext: Context) {
          *  accounts" is reported as an absence rather than a shrug. */
         const val GOOD_COVERAGE = 0.80
 
+        /** 40 + 15 = 55 s, inside the 70 s the registry allows this tool. */
         const val SWEEP_BUDGET_MS = 40_000L
         const val CONTROL_BUDGET_MS = 15_000L
     }

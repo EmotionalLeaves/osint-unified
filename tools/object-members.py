@@ -61,7 +61,39 @@ def main() -> int:
     for m in re.finditer(r"\bobject\s+([A-Z][A-Za-z0-9_]*)\s*:", whole):
         objects.pop(m.group(1), None)
 
+    # A `private companion object` is invisible from any other file, so a
+    # constant declared in one and read from another compiles here and
+    # fails in CI with "Cannot access 'Companion'" — which is how r178
+    # died, over a field name the sweep and its classifier both had to
+    # know.
+    private_companions: dict[str, tuple[set[str], Path]] = {}
+    for path in files:
+        text = path.read_text(errors="replace")
+        for m in re.finditer(
+            r"\bclass\s+([A-Z][A-Za-z0-9_]*)[\s\S]{0,20000}?"
+            r"^\s*private\s+companion\s+object\s*\{", text, re.M
+        ):
+            brace = text.index("{", m.end() - 1)
+            members = set(MEMBER.findall(body_of(text, brace)))
+            if members:
+                private_companions[m.group(1)] = (members, path)
+
     bad: list[str] = []
+    for path in files:
+        text = path.read_text(errors="replace")
+        for owner, (members, home) in private_companions.items():
+            if path == home:
+                continue
+            for use in re.finditer(r"\b%s\.([A-Za-z_][A-Za-z0-9_]*)" % re.escape(owner), text):
+                if use.group(1) not in members:
+                    continue
+                line = text.count("\n", 0, use.start()) + 1
+                bad.append(
+                    f"{path.relative_to(ROOT)}:{line}: {owner}.{use.group(1)} — "
+                    f"{owner}'s companion object is private, so this is not "
+                    f"visible outside {home.name}"
+                )
+
     for path in files:
         text = path.read_text(errors="replace")
         for name, members in objects.items():
@@ -81,11 +113,14 @@ def main() -> int:
                 bad.append(f"{path.relative_to(ROOT)}:{line}: {name}.{member} — {name} has no such member")
 
     if bad:
-        print("Members named on a project object that it does not declare:")
+        print("Members that will not resolve where they are used:")
         for b in sorted(set(bad)):
             print("  " + b)
         return 1
-    print(f"object-members: {len(objects)} singletons checked, all members resolve.")
+    print(
+        f"object-members: {len(objects)} singletons and "
+        f"{len(private_companions)} private companions checked, all members resolve."
+    )
     return 0
 
 
