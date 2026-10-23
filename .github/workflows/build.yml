@@ -366,7 +366,10 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: osint-unified-debug
+          # Not "debug". It has been a release build for a long time
+          # and the artifact kept the old name, so the one label a
+          # person sees before installing said the wrong thing.
+          name: osint-unified
           path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error
 
