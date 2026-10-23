@@ -481,12 +481,38 @@ class GodEyeViewModel(
                 // Cables and ports are on a twenty-four hour timer and
                 // stations on six. Switching one of those on while the
                 // phone happens to be between networks marked it "not
-                // reporting" and then left it that way until tomorrow
-                // — and toggling the layer did not help, because the
-                // loop is parked in this delay rather than in the idle
-                // path that notices.
-                delay(if (result == null) minOf(intervalMs, RETRY_MS) else intervalMs)
+                // reporting" and then left it that way until tomorrow.
+                val wait = if (result == null) minOf(intervalMs, RETRY_MS) else intervalMs
+                waitWatching(key, wait)
             }
+        }
+    }
+
+    /**
+     * Wait out an interval, but notice if the layer goes away.
+     *
+     * A plain delay parked the loop for the whole interval whatever
+     * happened to the layer meanwhile, and switching a layer off now
+     * discards what it had said — so a layer toggled off and on again
+     * during a long interval came back empty and stayed empty until
+     * the timer finally came round. For cables that is a day.
+     *
+     * Breaking out early lands the loop in the idle path, which is
+     * checked every few seconds, so switching the layer back on
+     * fetches it at once. The slice is a fraction of the interval and
+     * never more than half a minute, so a feed on a short timer is not
+     * woken any more often than it already was and one on a long timer
+     * costs two wakes a minute while it is on screen.
+     */
+    private suspend fun waitWatching(key: String, total: Long) {
+        if (total <= 0L) return
+        val slice = total.coerceAtMost(WAIT_SLICE_MS).coerceAtLeast(POLL_IDLE_MS)
+        var waited = 0L
+        while (waited < total) {
+            val step = minOf(slice, total - waited)
+            delay(step)
+            waited += step
+            if (!shouldFetch(key)) return
         }
     }
 
@@ -1327,6 +1353,10 @@ class GodEyeViewModel(
 
         /** The same wait, for an app nobody is looking at. */
         const val BACKGROUND_IDLE_MS = 60_000L
+
+        /** The longest a poll sleeps without checking whether its layer
+         *  is still on. */
+        const val WAIT_SLICE_MS = 30_000L
 
         /** The longest a feed waits after a failure before trying
          *  again, whatever its own interval is. */
