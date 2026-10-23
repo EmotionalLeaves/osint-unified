@@ -2,6 +2,7 @@ package com.osint.unified.domain.executor
 
 import com.google.i18n.phonenumbers.PhoneNumberUtil
 import com.osint.unified.data.AppSettings
+import com.osint.unified.data.Overpass
 import com.osint.unified.domain.ExecutionMode
 import com.osint.unified.domain.Findings
 import com.osint.unified.domain.Tool
@@ -893,23 +894,24 @@ class DirectToolExecutor(
      * the place, which is more than a link to a camera directory's front
      * page ever was.
      */
-    private fun surveillanceNear(lat: Double, lon: Double): List<String> {
-        val query = "[out:json][timeout:25];" +
+    /**
+     * Cameras OSM knows about, or null when nobody answered.
+     *
+     * Null and empty are different answers and this returned the same
+     * thing for both: a 429 from Overpass — likely, since the same
+     * host had just been asked — came back as an empty list and the
+     * caller printed "OpenStreetMap has no surveillance cameras
+     * mapped within 1 km either", which is a statement about a street
+     * made from a request that was refused.
+     */
+    private fun surveillanceNear(lat: Double, lon: Double): List<String>? {
+        val query = "[out:json][timeout:40];" +
             "(node(around:1000,$lat,$lon)[man_made=surveillance];" +
             "way(around:1000,$lat,$lon)[man_made=surveillance];);out center 60;"
-        val body = ("data=" + java.net.URLEncoder.encode(query, "UTF-8")).toRequestBody(formUrlEncoded)
-        val request = Request.Builder()
-            .url("https://overpass-api.de/api/interpreter")
-            .header("User-Agent", "OSINT-Unified/1.0 (research)")
-            .header("Accept", "application/json")
-            .post(body)
-            .build()
-        val text = client.newCall(request).execute().use { resp ->
-            if (!resp.isSuccessful) return emptyList()
-            resp.body?.string().orEmpty()
+        val elements = when (val answer = Overpass.query(query, client)) {
+            is Overpass.Answer.Unreachable -> return null
+            is Overpass.Answer.Ok -> answer.elements
         }
-        val elements = (json.parseToJsonElement(text).jsonObject["elements"] as? JsonArray)
-            ?: return emptyList()
         return elements.mapNotNull { el ->
             val o = el as? JsonObject ?: return@mapNotNull null
             val centre = o["center"] as? JsonObject
@@ -974,11 +976,14 @@ class DirectToolExecutor(
             // answered anything — they were links for the sake of having
             // links. OSM actually holds mapped cameras, so the query is run
             // rather than described.
-            val mapped = runCatching { surveillanceNear(lat, lon) }.getOrNull().orEmpty()
+            val mapped = runCatching { surveillanceNear(lat, lon) }.getOrNull()
             return@runCatching buildString {
                 append("No public traffic-camera feed within 50 km of %.4f, %.4f ".format(Locale.US, lat, lon))
                 append("(live still images today are Caltrans, California only).\n")
-                if (mapped.isEmpty()) {
+                if (mapped == null) {
+                    append("OpenStreetMap could not be asked about mapped cameras here, ")
+                    append("so nothing is claimed about those either.")
+                } else if (mapped.isEmpty()) {
                     append("OpenStreetMap has no surveillance cameras mapped within 1 km either.")
                 } else {
                     append("\nOpenStreetMap has ${mapped.size} surveillance camera")
@@ -1110,25 +1115,19 @@ class DirectToolExecutor(
         }
         val lat = parts[0]!!
         val lon = parts[1]!!
-        val q = "[out:json][timeout:30];(nwr(around:25000,$lat,$lon)[military];" +
+        // Sixty seconds, not thirty. A 25 km nwr[military] union is
+        // one of the heaviest things anyone asks Overpass for, and
+        // the server's own timeout was the thing being hit.
+        val q = "[out:json][timeout:60];(nwr(around:25000,$lat,$lon)[military];" +
             "nwr(around:25000,$lat,$lon)[landuse=military];);out center 80;"
-        return try {
-            val body = ("data=" + java.net.URLEncoder.encode(q, "UTF-8")).toRequestBody(formUrlEncoded)
-            val request = Request.Builder()
-                .url("https://overpass-api.de/api/interpreter")
-                .header("User-Agent", "OSINT-Unified/1.0 (research)")
-                .header("Accept", "application/json")
-                .post(body).build()
-            client.newCall(request).execute().use { resp ->
-                val text = resp.body?.string().orEmpty()
-                if (!resp.isSuccessful) return Result.failure(IOException("HTTP ${resp.code}"))
-                val els = runCatching {
-                    kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
-                        .parseToJsonElement(text).jsonObject["elements"]?.jsonArray
-                }.getOrNull()
-                if (els == null || els.isEmpty()) return Result.success("No military-tagged sites within 25 km.")
-                val lines = els.mapNotNull { e ->
-                    val o = e.jsonObject
+        return when (val answer = Overpass.query(q, client)) {
+            is Overpass.Answer.Unreachable -> Result.success(
+                "Overpass could not be reached for military sites near " +
+                    "$lat, $lon, so nothing is claimed either way (${answer.why})."
+            )
+            is Overpass.Answer.Ok -> {
+                val lines = answer.elements.mapNotNull { e ->
+                    val o = e as? JsonObject ?: return@mapNotNull null
                     val tags = o["tags"] as? JsonObject
                     fun t(k: String) = (tags?.get(k) as? JsonPrimitive)?.contentOrNull
                     val name = t("name") ?: t("military") ?: return@mapNotNull null
@@ -1139,10 +1138,20 @@ class DirectToolExecutor(
                     "• $name${if (kind.isNotBlank()) " ($kind)" else ""}" +
                         if (la != null && lo != null) "\n  Coords: $la, $lo" else ""
                 }
-                Result.success("${lines.size} military-tagged sites within 25 km (OSM):\n" + lines.joinToString("\n"))
+                // "0 military-tagged sites" was being read as a
+                // finding, because it is not the word "no".
+                if (lines.isEmpty()) {
+                    Result.success(
+                        "No military-tagged sites within 25 km of $lat, $lon " +
+                            "in OpenStreetMap."
+                    )
+                } else {
+                    Result.success(
+                        "${lines.size} military-tagged sites within 25 km " +
+                            "(OSM via ${answer.from}):\n" + lines.joinToString("\n")
+                    )
+                }
             }
-        } catch (e: Exception) {
-            Result.failure(e)
         }
     }
 
@@ -1153,37 +1162,56 @@ class DirectToolExecutor(
         }
         val lat = parts[0]!!
         val lon = parts[1]!!
-        val query = "[out:json][timeout:25];(node(around:500,$lat,$lon)[amenity];node(around:500,$lat,$lon)[man_made];);out body 60;"
-        return try {
-            val body = ("data=" + java.net.URLEncoder.encode(query, "UTF-8")).toRequestBody(formUrlEncoded)
-            val request = Request.Builder()
-                .url("https://overpass-api.de/api/interpreter")
-                .header("User-Agent", "OSINT-Unified/1.0 (research)")
-                .header("Accept", "application/json")
-                .post(body)
-                .build()
-            client.newCall(request).execute().use { resp ->
-                val text = resp.body?.string().orEmpty()
-                if (!resp.isSuccessful) {
-                    return Result.failure(IOException("HTTP ${resp.code}: ${text.take(200)}"))
-                }
-                // A sentence in front of the JSON, because the raw
-                // body's first line is "{" and the classifier reads
-                // the first line. An empty result set was therefore
-                // always a finding, and the card showed "0 nearby
-                // features" beside a verdict of "found".
-                val count = runCatching {
-                    (json.parseToJsonElement(text).jsonObject["elements"] as? JsonArray)?.size
-                }.getOrNull() ?: 0
-                val head = if (count == 0) {
-                    "No mapped features within 500 m of $lat, $lon.\n"
+        val query = "[out:json][timeout:40];(node(around:500,$lat,$lon)[amenity];" +
+            "node(around:500,$lat,$lon)[man_made];);out body 60;"
+        return when (val answer = Overpass.query(query, client)) {
+            is Overpass.Answer.Unreachable -> Result.success(
+                "Overpass could not be reached for $lat, $lon, so nothing is " +
+                    "claimed about what is mapped there (${answer.why})."
+            )
+            is Overpass.Answer.Ok -> {
+                // A sentence in front, because the classifier reads
+                // the first line and raw JSON begins with a brace.
+                // "No mapped features" was that sentence and it
+                // matched no absence pattern either, so an empty
+                // result was still filed as a finding.
+                val els = answer.elements
+                if (els.isEmpty()) {
+                    Result.success(
+                        "No mapped places or structures within 500 m of $lat, $lon."
+                    )
                 } else {
-                    "Overpass — $count features within 500 m of $lat, $lon\n"
+                    // Readable lines rather than the raw body. This
+                    // used to append the whole Overpass document —
+                    // every tag of every feature, kilobytes of JSON —
+                    // under a one-line summary, into the dossier and
+                    // into the card.
+                    val lines = els.mapNotNull { e ->
+                        val o = e as? JsonObject ?: return@mapNotNull null
+                        val tags = o["tags"] as? JsonObject
+                        fun t(k: String) = (tags?.get(k) as? JsonPrimitive)?.contentOrNull
+                        val name = t("name")
+                        val kind = t("amenity") ?: t("man_made") ?: return@mapNotNull null
+                        val la = (o["lat"] as? JsonPrimitive)?.contentOrNull
+                        val lo = (o["lon"] as? JsonPrimitive)?.contentOrNull
+                        buildString {
+                            append("• ").append(name ?: kind)
+                            if (name != null) append(" ($kind)")
+                            if (la != null && lo != null) append("\n  $la, $lo")
+                            t("operator")?.let { append("\n  Operator: $it") }
+                            t("addr:street")?.let { street ->
+                                append("\n  ")
+                                t("addr:housenumber")?.let { append("$it ") }
+                                append(street)
+                            }
+                        }
+                    }
+                    Result.success(
+                        "${els.size} mapped features within 500 m of $lat, $lon " +
+                            "(OSM via ${answer.from}):\n" + lines.joinToString("\n")
+                    )
                 }
-                Result.success(head + text)
             }
-        } catch (e: Exception) {
-            Result.failure(e)
         }
     }
 }

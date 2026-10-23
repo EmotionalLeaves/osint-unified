@@ -63,15 +63,11 @@ class MilitaryAreasDataSource(private val client: OkHttpClient = Http.feedClient
                 out center $MAX_RESULTS;
             """.trimIndent()
 
-            val request = Request.Builder()
-                .url(ENDPOINT)
-                .post(FormBody.Builder().add("data", query).build())
-                .header("User-Agent", "OSINT-Unified/1.0 (research)")
-                .build()
-            val body = client.newCall(request).execute().use { resp ->
-                if (!resp.isSuccessful) throw IOException("Overpass HTTP ${resp.code}")
-                resp.body?.string()
-            } ?: throw IOException("Overpass returned nothing")
+            // Through the shared client, which tries the mirrors and
+            // knows that a 200 carrying "runtime error: Query timed
+            // out" is not an empty result set. One hardcoded server
+            // at capacity is why this layer spent afternoons dark.
+            val body = Overpass.raw(query, client)
 
             val blips = parse(body)
             cached = Cached(key, System.currentTimeMillis(), blips)

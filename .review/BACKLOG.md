@@ -167,6 +167,43 @@ sources that search by name; a person-shaped dossier rather than the
 infrastructure-shaped one; and the same audit for the other
 observable types (B3).
 
+## G. Asked for on 23 Oct
+
+- **G1. Image geolocation — GeoSpy, GeoInfer, Picarta.**
+  All three are keyed: GeoSpy is commercial, Picarta's free tier
+  still issues a key, GeoInfer likewise. The standing rule for this
+  app is no keys and no accounts, so they cannot be wired in as they
+  are. Two honest ways to give the person the capability anyway:
+    - **Build the keyless equivalent.** On-device OCR (ML Kit ships
+      with no key and runs offline) reads the text in a photograph —
+      shop names, street signs, plates, phone numbers — and those
+      strings go straight into the sources this app already has.
+      Combine with EXIF GPS, the sun-and-shadow maths that is already
+      here, the reverse-image links, and a structured cue list
+      (which side of the road, plate shape, mains sockets, kerb and
+      bollard style, vegetation, architecture). That is most of how
+      a human geolocates a picture and none of it needs a key.
+      APK size does not matter here, so a bundled scene model is on
+      the table too.
+    - **Let the person bring their own key**, the way SEC EDGAR
+      already takes their contact address: a blank optional setting,
+      off by default, that says exactly what it sends and where.
+      Ask the user which they want before building either.
+
+- **G2. Taranis AI.** Open-source, self-hosted, and its useful idea
+  is portable without running their server: collect from open feeds
+  on a schedule, pull entities out of what arrives, cluster the
+  stories that are about the same thing, and produce a briefing with
+  the analyst's own notes attached. This app already has three
+  quarters of the parts — GDELT, the watch worker, EntityExtractor,
+  IntelSummary, WorldBrief — and they do not talk to each other.
+  Build: a topic or target you can subscribe to; keyless collection
+  (GDELT plus RSS, which needs no key and no account); clustering by
+  shared entities rather than by keyword; and a dated briefing that
+  says which source said what and when. That is a feature this app
+  is unusually well placed to have, and it is the difference between
+  a lookup tool and something you keep running.
+
 ## F. Then
 
 Every issue known, listed and fixed. Every improvement, listed and
