@@ -253,7 +253,7 @@ class UsernameChecker(private val appContext: Context) {
         // out, the same avatar — so they are read, and the ones that
         // agree are reported as agreeing. That is the whole difference
         // between a list of possibilities and something to act on.
-        val clusters = if (hits.isEmpty()) emptyList() else verify(hits)
+        val clusters = if (hits.isEmpty()) emptyList() else verify(hits, username)
 
         val reached = said.toDouble() / askable
         val verdict = when {
@@ -344,7 +344,8 @@ class UsernameChecker(private val appContext: Context) {
      * into a crawl stops finishing.
      */
     private suspend fun verify(
-        hits: List<Pair<SiteRule, String>>
+        hits: List<Pair<SiteRule, String>>,
+        username: String
     ): List<ProfileSignals.Cluster> {
         val accounts = Collections.synchronizedList(mutableListOf<ProfileSignals.Account>())
         val gate = Semaphore(16)

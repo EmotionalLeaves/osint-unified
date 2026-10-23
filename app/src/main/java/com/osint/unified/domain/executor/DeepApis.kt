@@ -1147,7 +1147,13 @@ class DeepApis(
 
         runCatching {
             val data = ((json.parseToJsonElement(
-                get("https://api.openstreetcam.org/2.0/photo/?lat=$lat&lng=$lon&radius=400")
+                // api.kartaview.org, not the openstreetcam.org alias it
+                // used to be called. Both answer with the same bytes, but
+                // the legacy name is served through a redirect that took
+                // eleven and a half seconds to the current name's four
+                // hundredths — street-level imagery looked broken on a
+                // phone for no reason but the hostname.
+                get("https://api.kartaview.org/2.0/photo/?lat=$lat&lng=$lon&radius=400")
             ).jsonObject["result"] as? JsonObject)?.get("data") as? JsonArray)
             if (!data.isNullOrEmpty()) {
                 // KartaView returns its file URLs with a {{sizeprefix}}

@@ -24,6 +24,57 @@ DECL = re.compile(
     r"(?:<[^>]*>\s*)?([A-Za-z_][A-Za-z0-9_]*)(?![A-Za-z0-9_.?])"
 )
 IMPORTED = re.compile(r"^\s*import\s+[\w.]*?\.([A-Za-z_][A-Za-z0-9_]*)(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?\s*$")
+# Parameter lists, scanned separately from declarations.
+#
+# A parameter is a declaration the DECL pattern cannot see: there is no
+# val, var or fun in front of it. That blind spot let `verify(hits)` call
+# a function whose body read a `username` it had never been given — the
+# name is a parameter of four other functions in the same file, so it is
+# obviously a real name, and the check knew nothing about it. Parameter
+# names go into the project-wide set so the diagnostic is believed, but
+# deliberately NOT into the per-file set: the per-file skip exists for
+# delegated properties, and extending it to parameters would hide
+# exactly this mistake, which is always made in a file that has the
+# name as a parameter somewhere else.
+SIGNATURE = re.compile(r"\b(?:fun|class|constructor)\b[^(\n{]*\(")
+PARAM = re.compile(
+    r"(?:^|,)\s*(?:@\w+(?:\([^)]*\))?\s*)*"
+    r"(?:(?:vararg|noinline|crossinline|private|internal|protected|"
+    r"public|override|open|final|lateinit)\s+)*"
+    r"(?:val\s+|var\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*:"
+)
+
+
+def parameter_names(text):
+    """Every name that appears as a parameter in this file."""
+    out = set()
+    for m in SIGNATURE.finditer(text):
+        i = m.end() - 1
+        depth = 0
+        for j in range(i, len(text)):
+            c = text[j]
+            if c == "(":
+                depth += 1
+            elif c == ")":
+                depth -= 1
+                if depth == 0:
+                    break
+        else:
+            continue
+        # Only the top level of the list: a default value can itself be
+        # a call with named arguments, and those are not parameters here.
+        flat, depth = [], 0
+        for c in text[i + 1:j]:
+            if c in "([{":
+                depth += 1
+                flat.append(" ")
+            elif c in ")]}":
+                depth -= 1
+                flat.append(" ")
+            else:
+                flat.append(" " if depth > 0 else c)
+        out.update(PARAM.findall("".join(flat)))
+    return out
 # Both spellings on purpose.
 #
 # Kotlin 1.9 wrote "unresolved reference: Place" and Kotlin 2.0 writes
@@ -50,6 +101,7 @@ def scan(roots):
     followed by a dot.
     """
     names = set()
+    params = set()
     per_file = {}
     declared_in = {}
     for root in roots:
@@ -61,23 +113,25 @@ def scan(roots):
                 imported = set()
                 here = set()
                 with open(full, encoding="utf-8", errors="replace") as fh:
-                    for line in fh:
-                        m = IMPORTED.match(line)
-                        if m:
-                            imported.add(m.group(2) or m.group(1))
-                            continue
-                        m = DECL.match(line)
-                        if m:
-                            names.add(m.group(1))
-                            here.add(m.group(1))
+                    body = fh.read()
+                params.update(parameter_names(body))
+                for line in body.splitlines():
+                    m = IMPORTED.match(line)
+                    if m:
+                        imported.add(m.group(2) or m.group(1))
+                        continue
+                    m = DECL.match(line)
+                    if m:
+                        names.add(m.group(1))
+                        here.add(m.group(1))
                 per_file[os.path.realpath(full)] = imported
                 declared_in[os.path.realpath(full)] = here
-    return names, per_file, declared_in
+    return names | params, params - names, per_file, declared_in
 
 
 def main():
     root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    declared, imports_by_file, declared_by_file = scan([
+    declared, param_only, imports_by_file, declared_by_file = scan([
         os.path.join(root, "app/src/main/java"),
         os.path.join(root, "app/src/test/java"),
     ])
@@ -91,6 +145,7 @@ def main():
                 if ln.strip() and not ln.startswith("#")
             }
     declared -= ignore
+    param_only -= ignore
 
     text = open(sys.argv[1], encoding="utf-8", errors="replace") if len(sys.argv) > 1 else sys.stdin
     sources = {}
@@ -151,6 +206,19 @@ def main():
                 continue
         if all(
             whole[:at].rstrip().endswith((".", "?", "::"))
+            for at in positions
+        ):
+            continue
+        # A name known only as a parameter, being assigned to.
+        #
+        # Kotlin parameters cannot be reassigned, so an assignment to a
+        # bare name is never the mistake this check hunts — it is a
+        # property of an implicit receiver the SDK supplies, the `style`
+        # inside `Paint().apply { ... }`. Skipping these is what makes
+        # parameter names usable as evidence at all, and it costs
+        # nothing: there is no bug on the other side of it.
+        if name in param_only and all(
+            re.match(r"\s*=(?![=>])", whole[at + len(name):])
             for at in positions
         ):
             continue

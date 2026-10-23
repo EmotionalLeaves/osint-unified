@@ -125,7 +125,7 @@ object ToolTemplates {
         // ---- coordinate ----
         Template("Nominatim reverse", "https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat={LAT}&lon={LON}", "coordinate", true),
         Template("Commons photos nearby", "https://commons.wikimedia.org/w/api.php?action=query&generator=geosearch&ggscoord={LAT}%7C{LON}&ggsradius=2000&ggslimit=30&prop=imageinfo&iiprop=url&format=json", "coordinate", true),
-        Template("KartaView street imagery", "https://api.openstreetcam.org/2.0/photo/?lat={LAT}&lng={LON}&radius=300", "coordinate", true),
+        Template("KartaView street imagery", "https://api.kartaview.org/2.0/photo/?lat={LAT}&lng={LON}&radius=300", "coordinate", true),
         Template("Open-Meteo elevation", "https://api.open-meteo.com/v1/elevation?latitude={LAT}&longitude={LON}", "coordinate", true),
         Template("Google Maps", "https://www.google.com/maps/@{LAT},{LON},17z", "coordinate"),
         Template("Google Earth", "https://earth.google.com/web/@{LAT},{LON},0a,1000d", "coordinate"),
