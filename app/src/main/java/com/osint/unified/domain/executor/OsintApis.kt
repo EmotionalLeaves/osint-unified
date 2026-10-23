@@ -41,7 +41,16 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
         fun record(raw: String) {
             raw.split("\n").forEach { line ->
                 val v = line.trim().removePrefix("*.").lowercase()
-                if (v.isNotEmpty() && v.endsWith(d)) subs.add(v)
+                // The domain itself or something genuinely under it.
+                //
+                // The same bare endsWith that made "notexample.com" a
+                // subdomain of "ample.com" in the other sweep, and it
+                // bites harder here: Cert Spotter returns every name
+                // on each certificate, so one multi-tenant cert hands
+                // this a list of other people's domains to attribute
+                // to the target. crt.sh is graded A, so they went
+                // into the corroboration pass at full weight.
+                if (v == d || v.endsWith(".$d")) subs.add(v)
             }
         }
 
@@ -81,19 +90,46 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
         }
     }
 
-    private fun dohTxt(name: String, type: String): List<String> = runCatching {
+    /**
+     * A DNS lookup, or null when the resolver could not be reached.
+     *
+     * Null and empty are different answers and this used to return
+     * the same thing for both. Everything built on it then read a
+     * failed lookup as "there is no such record": a domain with full
+     * SPF and DMARC was reported as "Spoofing risk: HIGH (no SPF or
+     * DMARC)" when DoH was blocked, every blocklist came back clean
+     * when none of them had answered, and a hundred and sixty
+     * lookalike domains were reported as "generated and resolved"
+     * having resolved none.
+     */
+    private fun dohOrNull(name: String, type: String): List<String>? = runCatching {
         json.parseToJsonElement(getBody("https://dns.google/resolve?name=$name&type=$type"))
             .jsonObject["Answer"]?.jsonArray?.mapNotNull {
                 ((it as? JsonObject)?.get("data") as? JsonPrimitive)?.contentOrNull?.trim('"')
             } ?: emptyList()
-    }.getOrDefault(emptyList())
+    }.getOrNull()
+
+    /** The same, for callers that genuinely do not care which it was. */
+    private fun dohTxt(name: String, type: String): List<String> =
+        dohOrNull(name, type) ?: emptyList()
 
     /** Email-domain security posture: MX, SPF and DMARC via DoH (keyless). */
     fun mailSecurity(input: String): Result<String> = runCatching {
         val domain = input.substringAfter('@').trim().lowercase()
-        val mx = dohTxt(domain, "MX")
-        val spf = dohTxt(domain, "TXT").filter { it.startsWith("v=spf1", true) }
-        val dmarc = dohTxt("_dmarc.$domain", "TXT").filter { it.startsWith("v=DMARC1", true) }
+        val mxAnswer = dohOrNull(domain, "MX")
+        val txtAnswer = dohOrNull(domain, "TXT")
+        val dmarcAnswer = dohOrNull("_dmarc.$domain", "TXT")
+        // A resolver that did not answer is not a domain with no
+        // records. Reported as HIGH risk, this was the app telling
+        // someone that a correctly configured domain can be spoofed.
+        if (mxAnswer == null || txtAnswer == null || dmarcAnswer == null) {
+            return@runCatching "Mail security could not be reached for $domain: " +
+                "the DNS resolver did not answer, so nothing is known about " +
+                "its SPF, DMARC or MX records."
+        }
+        val mx = mxAnswer
+        val spf = txtAnswer.filter { it.startsWith("v=spf1", true) }
+        val dmarc = dmarcAnswer.filter { it.startsWith("v=DMARC1", true) }
         buildString {
             append("Domain: $domain\n")
             append("MX: ${mx.joinToString(", ").ifBlank { "(none — domain may not receive mail)" }}\n")

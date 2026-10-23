@@ -376,16 +376,27 @@ class DeepApis(
                 }
             },
             "Stack Overflow" to {
+                // `inname` is a fuzzy search over display names, not a
+                // handle lookup — every other probe here is exact. So
+                // searching "mike" returned the first three Stack
+                // Overflow users with "mike" anywhere in their name,
+                // printed their reputation, location and profile
+                // link, and counted them as an account belonging to
+                // the person being investigated. Only an exact
+                // display name counts now, and even that is marked
+                // for what it is.
                 val items = json.parseToJsonElement(
-                    get("https://api.stackexchange.com/2.3/users?inname=$e&site=stackoverflow&pagesize=3")
+                    get("https://api.stackexchange.com/2.3/users?inname=$e&site=stackoverflow&pagesize=10")
                 ).jsonObject["items"] as? JsonArray
-                items?.takeIf { it.isNotEmpty() }?.let { arr ->
-                    arr.take(3).joinToString("\n") { el ->
-                        val o = el as? JsonObject
+                items?.mapNotNull { it as? JsonObject }
+                    ?.filter { it.str("display_name").equals(u, ignoreCase = true) }
+                    ?.takeIf { it.isNotEmpty() }
+                    ?.take(3)
+                    ?.joinToString("\n") { o ->
                         "  ${o.str("display_name")} — ${o.int("reputation") ?: 0} rep, " +
-                            "${o.str("location") ?: "no location"}\n  ${o.str("link")}"
+                            "${o.str("location") ?: "no location"}\n  ${o.str("link")}" +
+                            "\n  (display name, which anyone may choose)"
                     }
-                }
             },
             "Bitbucket" to {
                 val o = json.parseToJsonElement(get("https://api.bitbucket.org/2.0/users/$e")).jsonObject
@@ -405,7 +416,10 @@ class DeepApis(
                         pkg.str("name")
                     }
                     buildString {
-                        append("  ${arr.size} packages: ${names.take(10).joinToString(", ")}")
+                        // "10 packages" for anyone prolific, because
+                        // the request asks for ten. Said as what it is.
+                        val more = if (arr.size >= 10) "at least " else ""
+                        append("  $more${arr.size} packages: ${names.take(10).joinToString(", ")}")
                         if (emails.isNotEmpty()) append("\n  Publishing email: ${emails.joinToString(", ")}")
                     }
                 }
@@ -580,9 +594,15 @@ class DeepApis(
             if (belongs && h.isNotEmpty()) found.getOrPut(h) { LinkedHashSet() }.add(src)
         }
         runCatching {
-            get("https://api.hackertarget.com/hostsearch/?q=$d").lineSequence().forEach {
-                val host = it.substringBefore(",").trim()
-                if (host.isNotEmpty()) record(host, "hackertarget")
+            // Same quota notice as the host-intel path. Here it would
+            // be filed as a subdomain — except that the belongs test
+            // above throws it out, which is luck rather than design.
+            val body = get("https://api.hackertarget.com/hostsearch/?q=$d")
+            if (hackertargetAnswered(body)) {
+                body.lineSequence().forEach {
+                    val host = it.substringBefore(",").trim()
+                    if (host.isNotEmpty()) record(host, "hackertarget")
+                }
             }
         }
         runCatching {
@@ -624,13 +644,46 @@ class DeepApis(
         sb.toString()
     }
 
+    /**
+     * Whether hackertarget actually answered the question asked.
+     *
+     * Its free tier replies HTTP 200 with a sentence when the daily
+     * quota is spent — "API count exceeded - Increase Quota with
+     * Membership" — and the guard only rejected bodies starting with
+     * "error". So the quota notice was printed as the one other site
+     * on the target's IP, with a bullet in front of it.
+     */
+    private fun hackertargetAnswered(body: String): Boolean {
+        if (body.isBlank()) return false
+        val head = body.lineSequence().firstOrNull()?.lowercase().orEmpty()
+        if (head.startsWith("error")) return false
+        return NOT_AN_ANSWER.none { head.contains(it) }
+    }
+
+    private val NOT_AN_ANSWER = listOf(
+        "api count exceeded", "increase quota", "api limit",
+        "no records found", "invalid", "rate limit"
+    )
+
     /** hackertarget's keyless toolbox: reverse IP, AS lookup, page links. */
     fun hostIntel(input: String): Result<String> = runCatching {
         val t = input.trim().removePrefix("https://").removePrefix("http://").substringBefore("/")
         val sb = StringBuilder("Host intel — $t\n")
+        // Measured, not guessed.
+        //
+        // The test for "found nothing" was a magic number against the
+        // whole buffer — thirty here, forty and forty-five elsewhere —
+        // and the header is "Host intel — " plus the target. So for
+        // any target longer than about sixteen characters the header
+        // alone cleared the threshold and a lookup that found nothing
+        // returned the header, which the classifier then read as a
+        // finding. The verdict depended on the length of the domain
+        // name. Comparing against the header's own length is what
+        // those numbers were trying to approximate.
+        val headerOnly = sb.length
         runCatching {
             val r = get("https://api.hackertarget.com/reverseiplookup/?q=$t").trim()
-            if (r.isNotBlank() && !r.startsWith("error")) {
+            if (hackertargetAnswered(r)) {
                 val hosts = r.lines().filter { it.isNotBlank() }
                 sb.append("\nOther sites on this IP (${hosts.size}):\n")
                 hosts.take(60).forEach { sb.append("• $it\n") }
@@ -638,18 +691,18 @@ class DeepApis(
         }
         runCatching {
             val a = get("https://api.hackertarget.com/aslookup/?q=$t").trim()
-            if (a.isNotBlank() && !a.startsWith("error")) sb.append("\nAS: $a\n")
+            if (hackertargetAnswered(a)) sb.append("\nAS: $a\n")
         }
         runCatching {
             val l = get("https://api.hackertarget.com/pagelinks/?q=http://$t").trim()
-            if (l.isNotBlank() && !l.startsWith("error")) {
+            if (hackertargetAnswered(l)) {
                 val links = l.lines().filter { it.isNotBlank() }
                 val external = links.filterNot { it.contains(t) }.distinct()
                 sb.append("\nOutbound links (${external.size} external):\n")
                 external.take(40).forEach { sb.append("• $it\n") }
             }
         }
-        if (sb.length < 30) "Host intel: no data returned for $t." else sb.toString()
+        if (sb.length <= headerOnly) "Host intel: no data returned for $t." else sb.toString()
     }
 
     /**
@@ -677,16 +730,28 @@ class DeepApis(
         val listed = ArrayList<String>()
         val clean = ArrayList<String>()
         val refused = ArrayList<String>()
+        val unreachable = ArrayList<String>()
         lists.forEach { (zone, label) ->
+            // Null when the resolver did not answer, which is not the
+            // same as a blocklist saying no. This tool's own
+            // description promises it "reports refusals honestly
+            // rather than as hits", and the one case it did not
+            // distinguish was the one where nothing answered at all —
+            // six failed lookups read as six clean sheets.
             val answers = runCatching {
                 val o = json.parseToJsonElement(get("https://dns.google/resolve?name=$reversed.$zone&type=A")).jsonObject
                 (o["Answer"] as? JsonArray)?.mapNotNull { (it as? JsonObject).str("data") } ?: emptyList()
-            }.getOrDefault(emptyList())
+            }.getOrNull()
             when {
+                answers == null -> unreachable.add(label)
                 answers.isEmpty() -> clean.add(label)
                 answers.any { it.startsWith("127.255.255.") } -> refused.add(label)
                 else -> listed.add("$label → ${answers.joinToString(", ")}")
             }
+        }
+        if (clean.isEmpty() && listed.isEmpty() && refused.isEmpty()) {
+            return@runCatching "IP reputation could not be reached for $ip: " +
+                "no blocklist answered, so this says nothing either way."
         }
         buildString {
             append("IP reputation — $ip\n")
@@ -697,6 +762,11 @@ class DeepApis(
                 listed.forEach { append("• $it\n") }
             }
             if (clean.isNotEmpty()) append("\nClean on: ${clean.joinToString(", ")}\n")
+            if (unreachable.isNotEmpty()) {
+                append("\nDid not answer, so nothing is claimed about these: ")
+                append(unreachable.joinToString(", "))
+                append("\n")
+            }
             if (refused.isNotEmpty()) {
                 append("\nNo answer (these lists refuse public-resolver queries, ")
                 append("so this is not a clean result): ${refused.joinToString(", ")}\n")
@@ -714,6 +784,7 @@ class DeepApis(
     fun asnIntel(input: String): Result<String> = runCatching {
         val t = input.trim().uppercase().removePrefix("AS").let { if (it.all(Char::isDigit)) "AS$it" else input.trim() }
         val sb = StringBuilder("Network intel — $t\n")
+        val headerOnly = sb.length
 
         runCatching {
             val d = json.parseToJsonElement(
@@ -763,7 +834,7 @@ class DeepApis(
                 }
             }
         }
-        if (sb.length < 40) "No network data for $t." else sb.toString()
+        if (sb.length <= headerOnly) "No network data for $t." else sb.toString()
     }
 
     /** AlienVault OTX, keyless: passive DNS, hosted URLs and malware seen on
@@ -773,6 +844,7 @@ class DeepApis(
         val kind = if (Regex("""^(?:\d{1,3}\.){3}\d{1,3}$""").matches(t)) "IPv4" else "domain"
         val base = "https://otx.alienvault.com/api/v1/indicators/$kind/$t"
         val sb = StringBuilder("Threat exchange (OTX) — $t\n")
+        val headerOnly = sb.length
 
         runCatching {
             val o = json.parseToJsonElement(get("$base/general")).jsonObject
@@ -814,7 +886,7 @@ class DeepApis(
                 }
             }
         }
-        if (sb.length < 45) "OTX has nothing on $t." else sb.toString()
+        if (sb.length <= headerOnly) "OTX has nothing on $t." else sb.toString()
     }
 
     /** Internet outages happening right now, worldwide (Georgia Tech IODA). */
@@ -1041,6 +1113,7 @@ class DeepApis(
     fun photosNear(input: String): Result<String> = runCatching {
         val (lat, lon) = parseCoord(input) ?: return@runCatching "Not a coordinate: $input"
         val sb = StringBuilder("Imagery near %.5f, %.5f\n".format(Locale.US, lat, lon))
+        val headerOnly = sb.length
 
         runCatching {
             val pages = (json.parseToJsonElement(
@@ -1091,7 +1164,7 @@ class DeepApis(
             }
         }
 
-        if (sb.length < 40) {
+        if (sb.length <= headerOnly) {
             sb.append("\nNo geotagged imagery found here. Wider options:\n")
             sb.append("Google Street View: https://www.google.com/maps/@$lat,$lon,17z\n")
             // Said plainly, because it is slow enough on a phone to
@@ -1259,8 +1332,13 @@ class DeepApis(
         val mx = runCatching {
             val o = json.parseToJsonElement(get("https://dns.google/resolve?name=$domain&type=MX")).jsonObject
             (o["Answer"] as? JsonArray)?.mapNotNull { (it as? JsonObject).str("data") } ?: emptyList()
-        }.getOrDefault(emptyList())
-        if (mx.isEmpty()) {
+        }.getOrNull()
+        if (mx == null) {
+            // Not the same as no MX record, which this used to print
+            // as a warning that the domain may not receive mail.
+            sb.append("\nThe DNS resolver did not answer, so nothing is known ")
+            sb.append("about where this domain's mail goes.\n")
+        } else if (mx.isEmpty()) {
             sb.append("\nWARNING: $domain publishes no MX record, so it may not receive mail at all.\n")
         } else {
             sb.append("\nMail handled by: ${mx.take(3).joinToString(", ") { it.substringAfter(" ").trimEnd('.') }}\n")
@@ -1342,20 +1420,42 @@ class DeepApis(
                         (o["Answer"] as? JsonArray)?.mapNotNull { (it as? JsonObject).str("data") }
                             ?.filter { Regex("""^(?:\d{1,3}\.){3}\d{1,3}$""").matches(it) } ?: emptyList()
                     }
-                }.getOrDefault(emptyList())
-                if (a.isEmpty()) null else cand to a.first()
+                }.getOrNull()
+                when {
+                    a == null -> cand to null
+                    a.isEmpty() -> null
+                    else -> cand to a.first()
+                }
             }
         }.mapNotNull { it.await() }
 
+        // Split, because "did not resolve" and "could not be asked"
+        // are the difference between reassurance and nothing at all.
+        // This counted every failed lookup as a lookalike that does
+        // not exist, and then said all hundred and sixty had been
+        // "generated and resolved" having resolved none of them.
+        val asked = live.filter { it.second != null }
+        val notAsked = live.count { it.second == null }
+        val answered = candidates.size - notAsked
+
+        if (answered == 0) {
+            return@coroutineScope "Typosquat sweep could not be reached for $domain: " +
+                "no lookalike could be resolved, so this says nothing either way."
+        }
+
         buildString {
             append("Typosquat sweep — $domain\n")
-            append("${candidates.size} lookalikes generated and resolved; ${live.size} are registered and live.\n")
-            if (live.isEmpty()) {
+            append("${candidates.size} lookalikes generated, $answered resolved; ")
+            append("${asked.size} are registered and live.\n")
+            if (notAsked > 0) {
+                append("$notAsked could not be looked up and are not counted either way.\n")
+            }
+            if (asked.isEmpty()) {
                 append("\nNone of the obvious lookalikes resolve. That is unusual for a well-known brand ")
                 append("and good news for this one.")
             } else {
                 append("\nRegistered lookalikes:\n")
-                live.forEach { (d, ip) -> append("• $d → $ip\n") }
+                asked.forEach { (d, ip) -> append("• $d → $ip\n") }
                 append("\nA live lookalike is not proof of malice — brands register their own ")
                 append("defensively. Check each one's registration date and TLS certificate ")
                 append("to tell a defensive registration from a phishing host.")
@@ -1510,6 +1610,7 @@ class DeepApis(
         val results = (json.parseToJsonElement(get("https://cve.circl.lu/api/search/$vendor/$product"))
             .jsonObject["results"] as? JsonObject) ?: return@runCatching "No CVEs found for $vendor $product."
         val sb = StringBuilder("CVEs for $vendor $product\n")
+        val headerOnly = sb.length
         results.forEach { (source, arr) ->
             val rows = arr as? JsonArray ?: return@forEach
             if (rows.isEmpty()) return@forEach
@@ -1526,7 +1627,7 @@ class DeepApis(
                 sb.append("\n")
             }
         }
-        if (sb.length < 40) "No CVEs found for $vendor $product." else sb.toString()
+        if (sb.length <= headerOnly) "No CVEs found for $vendor $product." else sb.toString()
     }
 
     // ------------------------------------------------------------------
