@@ -587,6 +587,27 @@ class GodEyeViewModel(
         }
     }
 
+    /**
+     * Why it was wrong, which is worth more in a report than the fact.
+     *
+     * Separate from [setDismissed] because marking something wrong has
+     * to be one tap or nobody does it; the reason is offered afterwards
+     * and most of the time will be left empty, which is fine.
+     */
+    fun setDismissalReason(kind: String, value: String, reason: String) {
+        val observable = _state.value.observable ?: return
+        val key = kind to value.lowercase()
+        if (key !in _state.value.dismissals) return
+        _state.update { it.copy(dismissals = it.dismissals + (key to reason.trim())) }
+        viewModelScope.launch {
+            runCatching {
+                repository.setDismissalReason(
+                    ensureInvestigation(observable), kind, value, reason
+                )
+            }
+        }
+    }
+
     fun setActiveRecon(on: Boolean) {
         settings.activeReconEnabled = on
         _state.update { it.copy(activeRecon = on) }

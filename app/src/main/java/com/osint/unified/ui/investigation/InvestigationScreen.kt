@@ -21,6 +21,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.foundation.verticalScroll
@@ -57,6 +59,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -308,6 +311,9 @@ fun InvestigationScreen(
                     viewModel.setDismissed(e.kind, e.value, wrong)
                 }
                 val chase: (String) -> Unit = { value -> viewModel.onPivot(value) }
+                val why: (Corroboration.Entity, String) -> Unit = { e, reason ->
+                    viewModel.setDismissalReason(e.kind, e.value, reason)
+                }
                 leads.groupBy { it.kind }.forEach { (kind, group) ->
                     SectionHeader("$kind — ${group.size}", Intel.Cyan)
                     group.take(20).forEach { entity ->
@@ -315,7 +321,8 @@ fun InvestigationScreen(
                             entity,
                             mark,
                             onPivot = chase,
-                            chased = entity.value in alreadyChased
+                            chased = entity.value in alreadyChased,
+                            onReason = why
                         )
                     }
                 }
@@ -332,7 +339,9 @@ fun InvestigationScreen(
                             .padding(top = 8.dp)
                             .clickable { showMachinery = !showMachinery }
                     )
-                    if (showMachinery) machinery.forEach { EntityRow(it, mark) }
+                    if (showMachinery) machinery.forEach {
+                        EntityRow(it, mark, onReason = why)
+                    }
                 }
                 // Kept visible rather than deleted: a case that silently
                 // drops what was considered and rejected invites the next
@@ -348,7 +357,7 @@ fun InvestigationScreen(
                             .padding(top = 8.dp)
                             .clickable { showStruck = !showStruck }
                     )
-                    if (showStruck) struck.forEach { EntityRow(it, mark) }
+                    if (showStruck) struck.forEach { EntityRow(it, mark, onReason = why) }
                 }
             }
 
@@ -984,7 +993,8 @@ private fun EntityRow(
     entity: Corroboration.Entity,
     onMark: (Corroboration.Entity, Boolean) -> Unit = { _, _ -> },
     onPivot: ((String) -> Unit)? = null,
-    chased: Boolean = false
+    chased: Boolean = false,
+    onReason: ((Corroboration.Entity, String) -> Unit)? = null
 ) {
     val tint = when (entity.credibility.code) {
         1 -> Intel.Success
@@ -1032,6 +1042,61 @@ private fun EntityRow(
                 style = MaterialTheme.typography.labelSmall,
                 color = Intel.TextLow
             )
+            // Why it was wrong, offered after the fact rather than in
+            // the way of it. "We looked at this and it was not him"
+            // tells the next reader almost nothing; the because is the
+            // part that stops them chasing it again.
+            if (entity.dismissed && onReason != null) {
+                var writing by rememberSaveable(entity.value) { mutableStateOf(false) }
+                if (!writing) {
+                    Text(
+                        entity.dismissalReason.ifBlank { "say why" },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (entity.dismissalReason.isBlank()) Intel.TextLow
+                        else Intel.CyanBright,
+                        modifier = Modifier
+                            .padding(top = 2.dp)
+                            .clickable { writing = true }
+                    )
+                } else {
+                    var text by rememberSaveable(entity.value) {
+                        mutableStateOf(entity.dismissalReason)
+                    }
+                    OutlinedTextField(
+                        value = text,
+                        onValueChange = { text = it },
+                        singleLine = true,
+                        textStyle = MaterialTheme.typography.bodySmall,
+                        placeholder = {
+                            Text(
+                                "why this is not them",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        },
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = {
+                            onReason(entity, text)
+                            writing = false
+                        }),
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                    )
+                    Text(
+                        "SAVE",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Intel.Cyan,
+                        modifier = Modifier
+                            .padding(top = 4.dp)
+                            .minimumInteractiveComponentSize()
+                            .clip(RoundedCornerShape(4.dp))
+                            .clickable {
+                                onReason(entity, text)
+                                writing = false
+                            }
+                            .background(Intel.Elevated)
+                            .padding(horizontal = 10.dp, vertical = 4.dp)
+                    )
+                }
+            }
         }
         // Reading a finding and acting on it should not be two different
         // places. The pivot list further down the dossier has the same

@@ -172,6 +172,13 @@ class InvestigationRepository(
         caseDao.delete(id)
     }
 
+    suspend fun setDismissalReason(
+        investigationId: Long,
+        kind: String,
+        value: String,
+        reason: String
+    ) = dismissalDao.setReason(investigationId, kind, value.lowercase(), reason.trim())
+
     /** One case, for a screen that has only its id. */
     suspend fun byId(id: Long): Investigation? = investigationDao.getById(id)
 

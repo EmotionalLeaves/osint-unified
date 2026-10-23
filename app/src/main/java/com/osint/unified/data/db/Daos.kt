@@ -145,6 +145,19 @@ interface DismissalDao {
             "AND kind = :kind AND value = :value"
     )
     suspend fun remove(investigationId: Long, kind: String, value: String)
+
+    /**
+     * The reason, written after the fact.
+     *
+     * Marking a finding wrong has to be one tap or nobody does it, so
+     * the reason is a second, optional step — and the insert above
+     * ignores conflicts, which would silently drop it.
+     */
+    @Query(
+        "UPDATE dismissals SET reason = :reason WHERE " +
+            "investigationId = :investigationId AND kind = :kind AND value = :value"
+    )
+    suspend fun setReason(investigationId: Long, kind: String, value: String, reason: String)
 }
 
 @Dao
