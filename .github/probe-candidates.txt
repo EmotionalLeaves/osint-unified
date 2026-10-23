@@ -1,10 +1,7 @@
-https://feeds.meteoalarm.org/feeds/meteoalarm-legacy-atom-france
-https://feeds.meteoalarm.org/feeds/meteoalarm-legacy-atom-united-kingdom
-https://feeds.meteoalarm.org/feeds/meteoalarm-legacy-atom-germany@@400
-https://severeweather.wmo.int/
-https://severeweather.wmo.int/json/alerts.json
-https://severeweather.wmo.int/data/alerts.json
-https://alerts.weather.gov/cap/us.php?x=0
-https://api.weather.gc.ca/collections/alerts/items?limit=2
-https://www.metalerts.met.no/weatherapi/metalerts/2.0/current.json
-https://api.met.no/weatherapi/metalerts/2.0/current.json
+https://feeds.meteoalarm.org/feeds/meteoalarm-legacy-atom-united-kingdom##<cap:polygon>[^<]{0,80}
+https://feeds.meteoalarm.org/feeds/meteoalarm-legacy-atom-united-kingdom##<cap:areaDesc>[^<]{0,60}
+https://feeds.meteoalarm.org/feeds/meteoalarm-legacy-atom-united-kingdom##<cap:(geocode|valueName|value)>[^<]{0,50}
+https://feeds.meteoalarm.org/feeds/meteoalarm-legacy-atom-united-kingdom##<(title|cap:event|cap:severity|cap:urgency)>[^<]{0,60}
+https://severeweather.wmo.int/##(json|data|api)/[A-Za-z0-9_./-]{3,50}
+https://severeweather.wmo.int/##(getJSON|fetch|ajax|url:)[^,;)]{0,70}
+https://api.met.no/weatherapi/metalerts/2.0/current.json##"(event|area|awareness_level|title)":"[^"]{0,40}
