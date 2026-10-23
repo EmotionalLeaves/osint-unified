@@ -60,7 +60,6 @@ fun GlobeView(
     points: List<GlobePoint>,
     camera: GlobeCamera,
     onCamera: (GlobeCamera) -> Unit,
-    onSize: (Int, Int) -> Unit,
     onInspect: (GlobePoint) -> Unit,
     onPress: (Double, Double) -> Unit,
     onLongPress: (Double, Double, Double) -> Unit,
@@ -196,10 +195,7 @@ fun GlobeView(
             // state during a draw schedules the next frame, which draws,
             // which writes, and the globe spins the CPU instead of
             // itself.
-            .onSizeChanged {
-                viewport = it
-                onSize(it.width, it.height)
-            }
+            .onSizeChanged { viewport = it }
             .pointerInput(Unit) {
                 detectTransformGestures { _, pan, gestureZoom, _ ->
                     val radius = globeRadius(size.width, size.height, zoom)

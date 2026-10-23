@@ -59,6 +59,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
@@ -584,6 +585,12 @@ fun GodEyeViewScreen(
                     .weight(1f)
                     .padding(top = 2.dp)
                     .clipToBounds()
+                    // Measured on the container both views fill, not
+                    // on the globe. Measuring it on the globe meant
+                    // that a session which started on the map had no
+                    // size, and zooming the map out could never hand
+                    // back to a sphere whose dimensions were unknown.
+                    .onSizeChanged { globeSize = it.width to it.height }
             ) {
                 val layers = MapLayers(
                     aircraft = vis(showAircraft || god, visibleAircraft),
@@ -654,7 +661,6 @@ fun GodEyeViewScreen(
                                 roundEarth = false
                             }
                         },
-                        onSize = { w, h -> globeSize = w to h },
                         onInspect = { p ->
                             inspected = Inspected(
                                 p.kind, p.title.orEmpty().ifBlank { p.kind },
