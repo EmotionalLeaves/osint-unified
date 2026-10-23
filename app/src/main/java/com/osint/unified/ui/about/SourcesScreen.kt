@@ -53,6 +53,11 @@ fun SourcesScreen(onBack: () -> Unit) {
         Source("NOAA NHC", "tropical cyclones", "US public domain"),
         Source("NOAA NWS / tsunami.gov", "severe weather and tsunami bulletins", "US public domain"),
         Source(
+            "US Navy Joint Typhoon Warning Center",
+            "tropical cyclones in the west Pacific, south Pacific and Indian Ocean",
+            "US public domain"
+        ),
+        Source(
             "WMO Severe Weather Information Centre",
             "official severe-weather warnings issued by WMO member states worldwide",
             "WMO — free use with attribution; warnings belong to the issuing service"

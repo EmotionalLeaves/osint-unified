@@ -142,7 +142,7 @@ object WorldBrief {
                 else -> 1
             }
         })
-        blips("TROPICAL CYCLONES · ATL/EPAC", state.cyclones, 9, rank = { b ->
+        blips("TROPICAL CYCLONES · WORLD", state.cyclones, 9, rank = { b ->
             val l = b.label.lowercase()
             when {
                 l.contains("typhoon") || l.contains("hurricane") -> 3
@@ -216,7 +216,7 @@ object WorldBrief {
         // Named by their real coverage. A regional source reporting nothing
         // is not the world reporting nothing, and "no tropical cyclones"
         // during a West Pacific typhoon is a lie the NHC never told.
-        maybeQuiet("cyclones", "cyclones in the Atlantic or east Pacific", state.cyclones.size)
+        maybeQuiet("cyclones", "tropical cyclones anywhere in the world", state.cyclones.size)
         maybeQuiet("tsunamis", "Pacific and Caribbean tsunami bulletins", state.tsunamis.size)
         maybeQuiet("airportStatus", "US airport delays", state.airportStatus.size)
 

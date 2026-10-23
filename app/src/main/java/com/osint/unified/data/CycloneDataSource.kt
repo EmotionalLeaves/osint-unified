@@ -17,16 +17,26 @@ import java.io.IOException
 import java.util.Locale
 
 /**
- * Named tropical cyclones currently in the water, from the US National
- * Hurricane Center.
+ * Every tropical cyclone in the water, worldwide.
  *
  * GDACS carries cyclones too, but as a humanitarian alert after the fact —
- * a storm appears when it is about to hit someone. The NHC publishes the
- * storm itself: where its centre is right now, how hard it is blowing, and
- * which way it is going. On a globe that is a different object, and it is
- * the one a person means when they ask what storms are out there.
+ * a storm appears when it is about to hit someone. A warning centre
+ * publishes the storm itself: where its centre is right now, how hard it
+ * is blowing, and which way it is going. On a globe that is a different
+ * object, and it is the one a person means when they ask what storms are
+ * out there.
  *
- * Keyless, small, and updated with each advisory.
+ * Two centres, because one is not the world. The National Hurricane
+ * Center has the Atlantic and the east Pacific and nothing else — so
+ * most of the planet's typhoons, which form in the west Pacific, were
+ * simply absent, and the layer said "no cyclones" through a landfall on
+ * Luzon. The Joint Typhoon Warning Center covers the rest and publishes
+ * it as plain message text, which [JtwcAdvisory] reads.
+ *
+ * Both keyless. Either one failing leaves the other's storms on the map,
+ * because half the world's cyclones is better than none; only a total
+ * failure raises, since an empty list here is read out loud as "no named
+ * storms anywhere".
  */
 class CycloneDataSource(private val client: OkHttpClient = Http.feedClient) {
 
@@ -43,15 +53,44 @@ class CycloneDataSource(private val client: OkHttpClient = Http.feedClient) {
     )
 
     /**
-     * Throws when the feed could not be read.
+     * Every storm both centres can see, or a failure.
      *
-     * An empty list has to mean "no named storms in the water", because the
-     * globe and the world brief go on to say so out loud. Returning it for a
-     * failed request as well would have the app announce an all-clear during
-     * an outage, so a failure is raised and the caller leaves the layer
-     * unloaded instead.
+     * An empty list has to mean "no named storms in the water", because
+     * the globe and the world brief go on to say so out loud. Returning
+     * it for a failed request as well would have the app announce an
+     * all-clear during an outage, so a total failure is raised and the
+     * caller leaves the layer unloaded instead.
      */
     suspend fun fetch(): List<GeoBlip> = withContext(Dispatchers.IO) {
+        val atlantic = runCatching { nhc() }
+        val elsewhere = JTWC_ADVISORIES.map { url -> runCatching { jtwc(url) } }
+        // A failure is only a failure if nothing answered. One centre
+        // being unreachable must not blank the other's storms, and must
+        // not let the brief announce an all-clear either.
+        if (atlantic.isFailure && elsewhere.all { it.isFailure }) {
+            throw atlantic.exceptionOrNull()
+                ?: elsewhere.firstNotNullOfOrNull { it.exceptionOrNull() }
+                ?: IOException("No cyclone centre could be reached")
+        }
+        atlantic.getOrDefault(emptyList()) +
+            elsewhere.flatMap { it.getOrDefault(emptyList()) }
+    }
+
+    /** One JTWC advisory, as plain military message text. */
+    private fun jtwc(url: String): List<GeoBlip> {
+        val request = Request.Builder()
+            .url(url)
+            .header("User-Agent", "OSINT-Unified/1.0 (research)")
+            .build()
+        return client.newCall(request).execute().use { resp ->
+            val body = resp.body?.string()
+            if (!resp.isSuccessful) throw IOException("JTWC HTTP ${resp.code}")
+            if (body.isNullOrBlank()) throw IOException("JTWC returned an empty body")
+            JtwcAdvisory.parse(body, url)
+        }
+    }
+
+    private fun nhc(): List<GeoBlip> {
             val request = Request.Builder()
                 .url("https://www.nhc.noaa.gov/CurrentStorms.json")
                 .header("User-Agent", "OSINT-Unified/1.0 (research)")
@@ -95,5 +134,13 @@ class CycloneDataSource(private val client: OkHttpClient = Http.feedClient) {
                     GeoBlip(lat, lon, label, link)
                 }
             }
+    }
+
+    private companion object {
+        /** The two basins the hurricane centre does not cover. */
+        val JTWC_ADVISORIES = listOf(
+            "https://www.metoc.navy.mil/jtwc/products/abpwweb.txt",
+            "https://www.metoc.navy.mil/jtwc/products/abioweb.txt"
+        )
     }
 }

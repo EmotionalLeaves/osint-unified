@@ -435,7 +435,7 @@ fun GodEyeViewScreen(
                     if (showCameras) viewModel.ensureCameras()
                 }
                 LayerPill("CABLE", state.cables.size, Color(0xFF7FFFD4), showCables || god, loaded = "cables" in state.loaded, trouble = "cables" in state.feedTrouble) { showCables = !showCables }
-                LayerPill("CYCLONE·ATL/EPAC", state.cyclones.size, Color(0xFFFF7AC6), showCyclones || god, loaded = "cyclones" in state.loaded, trouble = "cyclones" in state.feedTrouble) { showCyclones = !showCyclones }
+                LayerPill("CYCLONE·GLOBAL", state.cyclones.size, Color(0xFFFF7AC6), showCyclones || god, loaded = "cyclones" in state.loaded, trouble = "cyclones" in state.feedTrouble) { showCyclones = !showCyclones }
                 LayerPill("TSUNAMI·PAC", state.tsunamis.size, Color(0xFF4DF0FF), showTsunami || god, loaded = "tsunamis" in state.loaded, trouble = "tsunamis" in state.feedTrouble) { showTsunami = !showTsunami }
                 LayerPill("ATC·US", state.airportStatus.size, Color(0xFFFFA64D), showAirportStatus || god, loaded = "airportStatus" in state.loaded, trouble = "airportStatus" in state.feedTrouble) { showAirportStatus = !showAirportStatus }
                 LayerPill(
