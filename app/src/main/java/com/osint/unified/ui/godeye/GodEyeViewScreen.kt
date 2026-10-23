@@ -576,52 +576,55 @@ fun GodEyeViewScreen(
                 // When a callsign filter is on, the feed size is not what is
                 // on screen, and a pill reading 11,000 over a map holding
                 // forty dots is the map disagreeing with itself.
-                LayerPill("AIR·GLOBAL", visibleAircraft.size, Intel.NetCyan, showAircraft || god, loaded = "aircraft" in state.loaded, trouble = "aircraft" in state.feedTrouble) { showAircraft = !showAircraft }
-                LayerPill("MIL", state.milAircraft.size, Color(0xFFFFD23F), showMil || god, loaded = "milAircraft" in state.loaded, trouble = "milAircraft" in state.feedTrouble) { showMil = !showMil }
-                LayerPill("SEA·N.EUROPE", state.vessels.size, Intel.Teal, showVessels || god, loaded = "vessels" in state.loaded, trouble = "vessels" in state.feedTrouble) { showVessels = !showVessels }
-                LayerPill("SEIS", state.quakes.size, Intel.Coral, showQuakes || god, loaded = "quakes" in state.loaded, trouble = "quakes" in state.feedTrouble) { showQuakes = !showQuakes }
-                LayerPill("EVT", state.naturalEvents.size, Intel.Amber, showEvents || god, loaded = "naturalEvents" in state.loaded, trouble = "naturalEvents" in state.feedTrouble) { showEvents = !showEvents }
-                LayerPill("WX·US", state.weather.size, Color(0xFF7FB2FF), showWeather || god, loaded = "weather" in state.loaded, trouble = "weather" in state.feedTrouble) { showWeather = !showWeather }
-                LayerPill("FIRE·GLOBAL", state.fires.size, Color(0xFFFF5A4D), showFires || god, loaded = "fires" in state.loaded, trouble = "fires" in state.feedTrouble) { showFires = !showFires }
-                LayerPill("SAT", state.satellites.size, Color(0xFFC0A8FF), showSats || god, loaded = "satellites" in state.loaded, trouble = "satellites" in state.feedTrouble) { showSats = !showSats }
-                LayerPill("HAZARD", state.gdacs.size, Color(0xFFFF8A3D), showGdacs || god, loaded = "gdacs" in state.loaded, trouble = "gdacs" in state.feedTrouble) { showGdacs = !showGdacs }
-                LayerPill("OUTAGE·GLOBAL", state.outages.size, Color(0xFFFF6B6B), showOutages || god, loaded = "outages" in state.loaded, trouble = "outages" in state.feedTrouble) { showOutages = !showOutages }
-                LayerPill("LAUNCH·GLOBAL", state.launches.size, Color(0xFFFFF066), showLaunches || god, loaded = "launches" in state.loaded, trouble = "launches" in state.feedTrouble) { showLaunches = !showLaunches }
+                LayerPill("AIR·GLOBAL", full = "Aircraft", visibleAircraft.size, Intel.NetCyan, showAircraft || god, loaded = "aircraft" in state.loaded, trouble = "aircraft" in state.feedTrouble) { showAircraft = !showAircraft }
+                LayerPill("MIL", full = "Military aircraft", state.milAircraft.size, Color(0xFFFFD23F), showMil || god, loaded = "milAircraft" in state.loaded, trouble = "milAircraft" in state.feedTrouble) { showMil = !showMil }
+                LayerPill("SEA·N.EUROPE", full = "Vessels (AIS)", state.vessels.size, Intel.Teal, showVessels || god, loaded = "vessels" in state.loaded, trouble = "vessels" in state.feedTrouble) { showVessels = !showVessels }
+                LayerPill("SEIS", full = "Earthquakes", state.quakes.size, Intel.Coral, showQuakes || god, loaded = "quakes" in state.loaded, trouble = "quakes" in state.feedTrouble) { showQuakes = !showQuakes }
+                LayerPill("EVT", full = "Natural events", state.naturalEvents.size, Intel.Amber, showEvents || god, loaded = "naturalEvents" in state.loaded, trouble = "naturalEvents" in state.feedTrouble) { showEvents = !showEvents }
+                LayerPill("WX·US", full = "Weather alerts (US)", state.weather.size, Color(0xFF7FB2FF), showWeather || god, loaded = "weather" in state.loaded, trouble = "weather" in state.feedTrouble) { showWeather = !showWeather }
+                LayerPill("FIRE·GLOBAL", full = "Wildfires", state.fires.size, Color(0xFFFF5A4D), showFires || god, loaded = "fires" in state.loaded, trouble = "fires" in state.feedTrouble) { showFires = !showFires }
+                LayerPill("SAT", full = "Satellites overhead", state.satellites.size, Color(0xFFC0A8FF), showSats || god, loaded = "satellites" in state.loaded, trouble = "satellites" in state.feedTrouble) { showSats = !showSats }
+                LayerPill("HAZARD", full = "Disaster alerts", state.gdacs.size, Color(0xFFFF8A3D), showGdacs || god, loaded = "gdacs" in state.loaded, trouble = "gdacs" in state.feedTrouble) { showGdacs = !showGdacs }
+                LayerPill("OUTAGE·GLOBAL", full = "Internet outages", state.outages.size, Color(0xFFFF6B6B), showOutages || god, loaded = "outages" in state.loaded, trouble = "outages" in state.feedTrouble) { showOutages = !showOutages }
+                LayerPill("LAUNCH·GLOBAL", full = "Rocket launches", state.launches.size, Color(0xFFFFF066), showLaunches || god, loaded = "launches" in state.loaded, trouble = "launches" in state.feedTrouble) { showLaunches = !showLaunches }
                 LayerPill(
-                    "SITES", state.sites.size, Color(0xFFD98BFF), showSites || god,
+                    "SITES", full = "Borders, embassies, prisons",
+                    state.sites.size, Color(0xFFD98BFF), showSites || god,
                     loadsOnDemand = true, loaded = "sites" in state.loaded,
                     trouble = "sites" in state.feedTrouble
                 ) {
                     showSites = !showSites
                     if (showSites) viewModel.ensureSites()
                 }
-                LayerPill("PORTS·GLOBAL", state.ports.size, Color(0xFF7FD4FF), showPorts || god, loaded = "ports" in state.loaded, trouble = "ports" in state.feedTrouble) { showPorts = !showPorts }
-                LayerPill("TIDE·GLOBAL", state.seaLevel.size, Color(0xFF4DD0E1), showSeaLevel || god, loaded = "seaLevel" in state.loaded, trouble = "seaLevel" in state.feedTrouble) { showSeaLevel = !showSeaLevel }
-                LayerPill("WARN·GLOBAL", state.worldWarnings.size, Color(0xFFFFD166), showWorldWarnings || god, loaded = "worldWarnings" in state.loaded, trouble = "worldWarnings" in state.feedTrouble) { showWorldWarnings = !showWorldWarnings }
-                LayerPill("VOLC·GLOBAL", state.volcanoes.size, Color(0xFFFF4D4D), showVolcanoes || god, loaded = "volcanoes" in state.loaded, trouble = "volcanoes" in state.feedTrouble) { showVolcanoes = !showVolcanoes }
-                LayerPill("CONFLICT", state.conflicts.size, Color(0xFFFF2E2E), showConflict || god, loaded = "conflicts" in state.loaded, trouble = "conflicts" in state.feedTrouble) { showConflict = !showConflict }
-                LayerPill("AQI", state.airQuality.size, Color(0xFFB4E66B), showAqi || god, loaded = "airQuality" in state.loaded, trouble = "airQuality" in state.feedTrouble) { showAqi = !showAqi }
-                LayerPill("STATIONS", state.stations.size, Color(0xFF9AB0C0), showStations || god, loaded = "stations" in state.loaded, trouble = "stations" in state.feedTrouble) { showStations = !showStations }
-                LayerPill("APT", state.airports.size, Color(0xFF8FD3FF), showAirports || god, loaded = "airports" in state.loaded, trouble = "airports" in state.feedTrouble) { showAirports = !showAirports }
-                LayerPill("POWER", state.powerPlants.size, Color(0xFFFFC14D), showPower || god, loaded = "powerPlants" in state.loaded, trouble = "powerPlants" in state.feedTrouble) { showPower = !showPower }
-                LayerPill("AURORA", state.aurora.size, Color(0xFF66FFB2), showAurora || god, loaded = "aurora" in state.loaded, trouble = "aurora" in state.feedTrouble) { showAurora = !showAurora }
-                LayerPill("BUOY", state.buoys.size, Color(0xFF4DD0E1), showBuoys || god, loaded = "buoys" in state.loaded, trouble = "buoys" in state.feedTrouble) { showBuoys = !showBuoys }
-                LayerPill("METAR", state.metar.size, Color(0xFF9FE8FF), showMetar || god, loaded = "metar" in state.loaded, trouble = "metar" in state.feedTrouble) { showMetar = !showMetar }
-                LayerPill("NEWS", state.news.size, Color(0xFFFF79C6), showNews || god, loaded = "news" in state.loaded, trouble = "news" in state.feedTrouble) { showNews = !showNews }
+                LayerPill("PORTS·GLOBAL", full = "Ports", state.ports.size, Color(0xFF7FD4FF), showPorts || god, loaded = "ports" in state.loaded, trouble = "ports" in state.feedTrouble) { showPorts = !showPorts }
+                LayerPill("TIDE·GLOBAL", full = "Sea level gauges", state.seaLevel.size, Color(0xFF4DD0E1), showSeaLevel || god, loaded = "seaLevel" in state.loaded, trouble = "seaLevel" in state.feedTrouble) { showSeaLevel = !showSeaLevel }
+                LayerPill("WARN·GLOBAL", full = "Severe weather warnings", state.worldWarnings.size, Color(0xFFFFD166), showWorldWarnings || god, loaded = "worldWarnings" in state.loaded, trouble = "worldWarnings" in state.feedTrouble) { showWorldWarnings = !showWorldWarnings }
+                LayerPill("VOLC·GLOBAL", full = "Volcanoes", state.volcanoes.size, Color(0xFFFF4D4D), showVolcanoes || god, loaded = "volcanoes" in state.loaded, trouble = "volcanoes" in state.feedTrouble) { showVolcanoes = !showVolcanoes }
+                LayerPill("CONFLICT", full = "Armed conflict", state.conflicts.size, Color(0xFFFF2E2E), showConflict || god, loaded = "conflicts" in state.loaded, trouble = "conflicts" in state.feedTrouble) { showConflict = !showConflict }
+                LayerPill("AQI", full = "Air quality", state.airQuality.size, Color(0xFFB4E66B), showAqi || god, loaded = "airQuality" in state.loaded, trouble = "airQuality" in state.feedTrouble) { showAqi = !showAqi }
+                LayerPill("STATIONS", full = "Seismic stations", state.stations.size, Color(0xFF9AB0C0), showStations || god, loaded = "stations" in state.loaded, trouble = "stations" in state.feedTrouble) { showStations = !showStations }
+                LayerPill("APT", full = "Airports", state.airports.size, Color(0xFF8FD3FF), showAirports || god, loaded = "airports" in state.loaded, trouble = "airports" in state.feedTrouble) { showAirports = !showAirports }
+                LayerPill("POWER", full = "Power plants", state.powerPlants.size, Color(0xFFFFC14D), showPower || god, loaded = "powerPlants" in state.loaded, trouble = "powerPlants" in state.feedTrouble) { showPower = !showPower }
+                LayerPill("AURORA", full = "Aurora", state.aurora.size, Color(0xFF66FFB2), showAurora || god, loaded = "aurora" in state.loaded, trouble = "aurora" in state.feedTrouble) { showAurora = !showAurora }
+                LayerPill("BUOY", full = "Ocean buoys", state.buoys.size, Color(0xFF4DD0E1), showBuoys || god, loaded = "buoys" in state.loaded, trouble = "buoys" in state.feedTrouble) { showBuoys = !showBuoys }
+                LayerPill("METAR", full = "Airport weather", state.metar.size, Color(0xFF9FE8FF), showMetar || god, loaded = "metar" in state.loaded, trouble = "metar" in state.feedTrouble) { showMetar = !showMetar }
+                LayerPill("NEWS", full = "News", state.news.size, Color(0xFFFF79C6), showNews || god, loaded = "news" in state.loaded, trouble = "news" in state.feedTrouble) { showNews = !showNews }
                 LayerPill(
-                    "CAMERAS", state.cameras.size, Color(0xFFB388FF), showCameras || god,
+                    "CAMERAS", full = "Public cameras",
+                    state.cameras.size, Color(0xFFB388FF), showCameras || god,
                     loadsOnDemand = true, loaded = "cameras" in state.loaded,
                     trouble = "cameras" in state.feedTrouble
                 ) {
                     showCameras = !showCameras
                     if (showCameras) viewModel.ensureCameras()
                 }
-                LayerPill("CABLE", state.cables.size, Color(0xFF7FFFD4), showCables || god, loaded = "cables" in state.loaded, trouble = "cables" in state.feedTrouble) { showCables = !showCables }
-                LayerPill("CYCLONE·GLOBAL", state.cyclones.size, Color(0xFFFF7AC6), showCyclones || god, loaded = "cyclones" in state.loaded, trouble = "cyclones" in state.feedTrouble) { showCyclones = !showCyclones }
-                LayerPill("TSUNAMI·PAC", state.tsunamis.size, Color(0xFF4DF0FF), showTsunami || god, loaded = "tsunamis" in state.loaded, trouble = "tsunamis" in state.feedTrouble) { showTsunami = !showTsunami }
-                LayerPill("ATC·US", state.airportStatus.size, Color(0xFFFFA64D), showAirportStatus || god, loaded = "airportStatus" in state.loaded, trouble = "airportStatus" in state.feedTrouble) { showAirportStatus = !showAirportStatus }
+                LayerPill("CABLE", full = "Submarine cables", state.cables.size, Color(0xFF7FFFD4), showCables || god, loaded = "cables" in state.loaded, trouble = "cables" in state.feedTrouble) { showCables = !showCables }
+                LayerPill("CYCLONE·GLOBAL", full = "Tropical cyclones", state.cyclones.size, Color(0xFFFF7AC6), showCyclones || god, loaded = "cyclones" in state.loaded, trouble = "cyclones" in state.feedTrouble) { showCyclones = !showCyclones }
+                LayerPill("TSUNAMI", full = "Tsunami bulletins (Pacific, Caribbean, Indonesia)", state.tsunamis.size, Color(0xFF4DF0FF), showTsunami || god, loaded = "tsunamis" in state.loaded, trouble = "tsunamis" in state.feedTrouble) { showTsunami = !showTsunami }
+                LayerPill("ATC·US", full = "Airport delays (US)", state.airportStatus.size, Color(0xFFFFA64D), showAirportStatus || god, loaded = "airportStatus" in state.loaded, trouble = "airportStatus" in state.feedTrouble) { showAirportStatus = !showAirportStatus }
                 LayerPill(
-                    "RAD", state.radiation.size, Color(0xFFD4FF4D), showRadiation || god,
+                    "RAD", full = "Radiation monitors",
+                    state.radiation.size, Color(0xFFD4FF4D), showRadiation || god,
                     loadsOnDemand = true, loaded = "radiation" in state.loaded,
                     trouble = "radiation" in state.feedTrouble
                 ) {
@@ -629,7 +632,8 @@ fun GodEyeViewScreen(
                     viewModel.ensureRadiation(showRadiation)
                 }
                 LayerPill(
-                    "MIL GROUND", state.airspace.size, Color(0xFFFF5370), showAirspace || god,
+                    "MIL GROUND", full = "Military areas",
+                    state.airspace.size, Color(0xFFFF5370), showAirspace || god,
                     loadsOnDemand = true, loaded = "airspace" in state.loaded,
                     trouble = "airspace" in state.feedTrouble
                 ) {
@@ -637,7 +641,7 @@ fun GodEyeViewScreen(
                     if (showAirspace) viewModel.ensureAirspace()
                 }
                 if (state.overlayPoints.isNotEmpty()) {
-                    LayerPill("OVLY", state.overlayPoints.size, Intel.CyanBright, showOverlay || god, loaded = "overlayPoints" in state.loaded, trouble = "overlayPoints" in state.feedTrouble) { showOverlay = !showOverlay }
+                    LayerPill("OVLY", full = "Your own overlay", state.overlayPoints.size, Intel.CyanBright, showOverlay || god, loaded = "overlayPoints" in state.loaded, trouble = "overlayPoints" in state.feedTrouble) { showOverlay = !showOverlay }
                 }
             }
             }
@@ -1859,6 +1863,17 @@ private fun LayerPill(
     count: Int,
     color: Color,
     on: Boolean,
+    /**
+     * What this layer is, in words.
+     *
+     * The abbreviations are right for the row over the map, where
+     * there are a handful of them and space for none — but the picker
+     * is a list of thirty-three of them, and "SEIS", "EVT", "OVLY" and
+     * "ATC·US" are only legible to somebody who already knows what
+     * they are looking at. The clutter in a list of four-letter codes
+     * is not the length of the list.
+     */
+    full: String = "",
     /** Layers that only fetch when switched on. Until then they have no
      *  count, and showing "0" would read as "this layer is broken". */
     loadsOnDemand: Boolean = false,
@@ -1879,9 +1894,18 @@ private fun LayerPill(
     // what you have switched on, and before today it was every feed
     // this app has, which is thirty-three pills of clutter above a
     // map you cannot see.
-    if (!LocalShowAllLayers.current && !on) return
+    val picking = LocalShowAllLayers.current
+    if (!picking && !on) return
     val filter = LocalLayerFilter.current
-    if (filter.isNotBlank() && !label.contains(filter.trim(), ignoreCase = true)) return
+    // Matched against both, so "quake" and "SEIS" each find the same
+    // pill and nobody has to learn the codes to search.
+    if (filter.isNotBlank() &&
+        !label.contains(filter.trim(), ignoreCase = true) &&
+        !full.contains(filter.trim(), ignoreCase = true)
+    ) {
+        return
+    }
+    val shownLabel = if (picking && full.isNotBlank()) full else label
 
     // A screen reader could not tell whether a layer was on: the pill was a
     // plain clickable with the state carried only by colour, which is also
@@ -1905,7 +1929,10 @@ private fun LayerPill(
             .toggleable(value = on, role = Role.Switch) { onClick() }
             .semantics {
                 stateDescription = "$stateWord, $count items"
-                contentDescription = "$label layer"
+                // The words, not the code: "SEIS layer" read aloud
+                // is not a description of anything.
+                contentDescription =
+                    (if (full.isNotBlank()) full else label) + " layer"
             }
             .padding(horizontal = 10.dp, vertical = 7.dp)
     ) {
@@ -1923,7 +1950,7 @@ private fun LayerPill(
             else -> "0"
         }
         Text(
-            "$label $shown",
+            "$shownLabel $shown",
             style = MaterialTheme.typography.labelSmall,
             color = when {
                 trouble -> Intel.Danger
