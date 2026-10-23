@@ -162,11 +162,12 @@ fun InvestigationScreen(
         val found = state.results.count { Findings.isHit(it) }
         val facts = remember(state.results) { IntelSummary.synthesize(state.results) }
         // What the case found, as things rather than as tool output.
-        val entities = remember(state.results, observable.raw) {
+        val entities = remember(state.results, observable.raw, state.dismissals) {
             Corroboration.merge(
                 state.results,
                 observable.raw,
-                seedIsPlace = observable is com.osint.unified.domain.Observable.Coordinate
+                seedIsPlace = observable is com.osint.unified.domain.Observable.Coordinate,
+                dismissed = state.dismissals
             )
         }
         val pivots = remember(state.results) {
@@ -299,11 +300,16 @@ fun InvestigationScreen(
 
             if (entities.isNotEmpty()) {
                 var showMachinery by rememberSaveable { mutableStateOf(false) }
+                var showStruck by rememberSaveable { mutableStateOf(false) }
                 val leads = entities.filter { it.caveat == null }
-                val machinery = entities.filter { it.caveat != null }
+                val machinery = entities.filter { it.caveat != null && !it.dismissed }
+                val struck = entities.filter { it.dismissed }
+                val mark: (Corroboration.Entity, Boolean) -> Unit = { e, wrong ->
+                    viewModel.setDismissed(e.kind, e.value, wrong)
+                }
                 leads.groupBy { it.kind }.forEach { (kind, group) ->
                     SectionHeader("$kind — ${group.size}", Intel.Cyan)
-                    group.take(20).forEach { EntityRow(it) }
+                    group.take(20).forEach { EntityRow(it, mark) }
                 }
                 if (machinery.isNotEmpty()) {
                     Text(
@@ -318,7 +324,23 @@ fun InvestigationScreen(
                             .padding(top = 8.dp)
                             .clickable { showMachinery = !showMachinery }
                     )
-                    if (showMachinery) machinery.forEach { EntityRow(it) }
+                    if (showMachinery) machinery.forEach { EntityRow(it, mark) }
+                }
+                // Kept visible rather than deleted: a case that silently
+                // drops what was considered and rejected invites the next
+                // reader to find it again and chase it. "We looked at this
+                // and it was not him" is a finding.
+                if (struck.isNotEmpty()) {
+                    Text(
+                        if (showStruck) "— hide ${struck.size} ruled out"
+                        else "+ ${struck.size} you ruled out",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Intel.TextLow,
+                        modifier = Modifier
+                            .padding(top = 8.dp)
+                            .clickable { showStruck = !showStruck }
+                    )
+                    if (showStruck) struck.forEach { EntityRow(it, mark) }
                 }
             }
 
@@ -950,7 +972,10 @@ private fun shareFile(context: Context, file: File, format: ExportFormat) {
  * worth reading.
  */
 @Composable
-private fun EntityRow(entity: Corroboration.Entity) {
+private fun EntityRow(
+    entity: Corroboration.Entity,
+    onMark: (Corroboration.Entity, Boolean) -> Unit = { _, _ -> }
+) {
     val tint = when (entity.credibility.code) {
         1 -> Intel.Success
         2 -> Intel.CyanBright
@@ -989,11 +1014,35 @@ private fun EntityRow(entity: Corroboration.Entity) {
                     if (entity.independent > 1) {
                         append(" (${entity.independent} independent)")
                     }
+                    if (entity.demoted) {
+                        append(" · source downgraded for this case")
+                    }
                     entity.caveat?.let { append(" · ").append(it) }
                 },
                 style = MaterialTheme.typography.labelSmall,
                 color = Intel.TextLow
             )
         }
+        // The only control in the app where a person's judgement outranks
+        // a source's. Everything else here grades what the tools said;
+        // this says the tools were wrong, and the grades move accordingly.
+        Text(
+            if (entity.dismissed) "UNDO" else "WRONG",
+            style = MaterialTheme.typography.labelSmall,
+            color = if (entity.dismissed) Intel.CyanBright else Intel.TextLow,
+            fontFamily = FontFamily.Monospace,
+            modifier = Modifier
+                .padding(start = 8.dp)
+                .minimumInteractiveComponentSize()
+                .clip(RoundedCornerShape(4.dp))
+                .clickable { onMark(entity, !entity.dismissed) }
+                .background(Intel.Elevated)
+                .padding(horizontal = 8.dp, vertical = 4.dp)
+                .semantics {
+                    contentDescription = if (entity.dismissed)
+                        "Undo ruling out ${entity.value}"
+                    else "Mark ${entity.value} as wrong"
+                }
+        )
     }
 }

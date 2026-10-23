@@ -51,6 +51,21 @@ object Grading {
         UNJUDGED(6, "truth cannot be judged")
     }
 
+    /**
+     * One grade worse, for a source this case has caught being wrong.
+     *
+     * Reliability is meant to be a standing property, but it is a
+     * standing property *of how the source behaves here*. A sweep that
+     * has produced three false hits on this target and nothing that
+     * held up is not performing at its catalogue grade, and saying so
+     * is the whole point of grading sources separately from claims.
+     * One step only, and never past F: this is evidence, not a verdict.
+     */
+    fun demote(source: Reliability): Reliability {
+        val all = Reliability.entries
+        return all.getOrElse(all.indexOf(source) + 1) { Reliability.UNJUDGED }
+    }
+
     /** "B2", the way it is written everywhere else. */
     fun code(reliability: Reliability, credibility: Credibility): String =
         "${reliability.code}${credibility.code}"

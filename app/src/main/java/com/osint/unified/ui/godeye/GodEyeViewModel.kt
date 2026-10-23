@@ -138,7 +138,18 @@ data class GodEyeUiState(
     /** Off by default: the second pass reaches things nobody named. */
     val followUp: Boolean = false,
     /** What the investigator wrote about this target. */
-    val notes: String = ""
+    val notes: String = "",
+    /**
+     * Findings this case has been told are wrong, as kind to lowercased
+     * value, mapped to the reason given.
+     *
+     * The app grades what the sources returned; it has no way of knowing
+     * whether the J. Doe a sweep found is the right J. Doe. The person
+     * looking does, and until this existed had nowhere to put it, so the
+     * same false lead came back at the same confidence every time the
+     * case was reopened.
+     */
+    val dismissals: Map<Pair<String, String>, String> = emptyMap()
 )
 
 class GodEyeViewModel(
@@ -253,6 +264,7 @@ class GodEyeViewModel(
     private var pendingParentId: Long? = null
     private var pendingPivot: String? = null
     private var resultsJob: Job? = null
+    private var dismissalsJob: Job? = null
 
     init {
         // Staggered start-up so launch doesn't fire every feed at once (which
@@ -535,6 +547,41 @@ class GodEyeViewModel(
         }
     }
 
+    /**
+     * The investigator says a finding is wrong — or takes it back.
+     *
+     * This is the only place in the app where a person's judgement
+     * outranks a source's, and it is the piece every OSINT handbook
+     * assumes exists: the analyst correcting the collection. Beyond
+     * striking the row it also counts against the source that produced
+     * it, so a sweep that keeps being wrong about this target is read
+     * one grade lower for the rest of the case.
+     */
+    fun setDismissed(
+        kind: String,
+        value: String,
+        dismissed: Boolean,
+        reason: String = ""
+    ) {
+        val observable = _state.value.observable ?: return
+        val key = kind to value.lowercase()
+        // Optimistic, so the grade moves under the finger rather than a
+        // database round-trip later; the flow confirms it a moment after.
+        _state.update { st ->
+            st.copy(
+                dismissals = if (dismissed) st.dismissals + (key to reason)
+                else st.dismissals - key
+            )
+        }
+        viewModelScope.launch {
+            runCatching {
+                repository.setDismissed(
+                    ensureInvestigation(observable), kind, value, dismissed, reason
+                )
+            }
+        }
+    }
+
     fun setActiveRecon(on: Boolean) {
         settings.activeReconEnabled = on
         _state.update { it.copy(activeRecon = on) }
@@ -592,6 +639,9 @@ class GodEyeViewModel(
         // the old notes into the new case.
         notesJob?.cancel()
         notesJob = null
+        // Marks belong to the case they were made in, for the same reason.
+        dismissalsJob?.cancel()
+        dismissalsJob = null
         // A coordinate search focuses the globe immediately; other types get a
         // focus once a tool returns a location (see the results collector).
         val focus = (observable as? Observable.Coordinate)?.let { it.lat to it.lon }
@@ -608,6 +658,7 @@ class GodEyeViewModel(
                 enriching = emptyList(),
                 breadcrumb = emptyList(),
                 notes = "",
+                dismissals = emptyMap(),
                 navSignal = it.navSignal + 1
             )
         }
@@ -843,6 +894,12 @@ class GodEyeViewModel(
      * live view of its results. Runs nothing.
      */
     private fun attachTo(id: Long) {
+        dismissalsJob?.cancel()
+        dismissalsJob = viewModelScope.launch {
+            repository.observeDismissals(id).collect { marked ->
+                _state.update { it.copy(dismissals = marked) }
+            }
+        }
         viewModelScope.launch {
             // Re-opening a case brings its notes back with it.
             val saved = runCatching { repository.notesFor(id) }.getOrNull().orEmpty()
@@ -952,7 +1009,9 @@ class GodEyeViewModel(
         val observable = _state.value.observable ?: return null
         val results = _state.value.results
         if (results.isEmpty()) return null
-        return exporter.export(observable, results, format, _state.value.notes)
+        return exporter.export(
+            observable, results, format, _state.value.notes, _state.value.dismissals
+        )
     }
 
     fun saveSettings(

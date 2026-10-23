@@ -146,3 +146,38 @@ data class WatchEvent(
 
 /** How many unseen changes a watch has. Room fills both columns by name. */
 data class UnseenCount(val watchId: Long, val unseen: Int)
+
+/**
+ * A finding the investigator says is wrong.
+ *
+ * The app grades what the sources return; it has no idea whether the
+ * "J. Doe" a sweep found is the right J. Doe. The person looking does,
+ * and until now had nowhere to put that — so the same false lead came
+ * back at the same confidence every time the case was reopened, and
+ * three of them made a dossier untrustworthy in a way no amount of
+ * grading could fix.
+ *
+ * Kept per case rather than globally: an address that is noise in one
+ * investigation is the subject of another.
+ */
+@Entity(
+    tableName = "dismissals",
+    foreignKeys = [
+        ForeignKey(
+            entity = Investigation::class,
+            parentColumns = ["id"],
+            childColumns = ["investigationId"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
+    indices = [Index(value = ["investigationId", "kind", "value"], unique = true)]
+)
+data class Dismissal(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val investigationId: Long,
+    val kind: String,
+    val value: String,
+    val at: Long = System.currentTimeMillis(),
+    /** Why, when the person said. Worth more in a report than the fact. */
+    val reason: String = ""
+)

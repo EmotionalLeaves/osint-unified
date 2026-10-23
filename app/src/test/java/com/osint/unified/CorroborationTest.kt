@@ -138,4 +138,102 @@ class CorroborationTest {
             values.indexOf("j.doe@example.org") < values.indexOf("abuse@example.org")
         )
     }
+
+    /**
+     * The investigator's judgement outranks the source's.
+     *
+     * The app grades what came back; it cannot know whether the host a
+     * log asserted belongs to this target. Before this, saying so was
+     * impossible and the same false lead returned at the same confidence
+     * every time the case was reopened.
+     */
+    @Test
+    fun aFindingMarkedWrongIsStruckAndSaysWhy() {
+        val entities = Corroboration.merge(
+            listOf(row("crtsh", "mail.example.org\n")),
+            seed = "example.com",
+            dismissed = mapOf(("HOST" to "mail.example.org") to "belongs to the hosting company")
+        )
+        val host = entities.first { it.value == "mail.example.org" }
+        assertTrue(host.dismissed)
+        assertEquals("you marked this wrong", host.caveat)
+        assertEquals("belongs to the hosting company", host.dismissalReason)
+        assertEquals(Grading.Credibility.DOUBTFUL, host.credibility)
+    }
+
+    /** Struck findings sort below everything, including the machinery. */
+    @Test
+    fun struckFindingsSinkToTheBottom() {
+        val entities = Corroboration.merge(
+            listOf(row("crtsh", "good.example.org\nbad.example.org\n")),
+            seed = "example.com",
+            dismissed = mapOf(("HOST" to "bad.example.org") to "")
+        )
+        assertEquals("bad.example.org", entities.last().value)
+    }
+
+    /**
+     * One bad hit is an ordinary day; a pattern is evidence about the
+     * source. A sweep caught being wrong twice, with nothing that held
+     * up, is read one grade below its catalogue reliability for the rest
+     * of the case.
+     */
+    @Test
+    fun aSourceWrongTwiceWithNothingKeptIsDowngradedForTheCase() {
+        val output = "a.example.org\nb.example.org\nc.example.org\n"
+        val clean = Corroboration.merge(listOf(row("crtsh", output)), seed = "example.com")
+        assertEquals(Grading.Reliability.COMPLETE, clean.first { it.value == "c.example.org" }.reliability)
+
+        val marked = Corroboration.merge(
+            listOf(row("crtsh", output)),
+            seed = "example.com",
+            dismissed = mapOf(
+                ("HOST" to "a.example.org") to "",
+                ("HOST" to "b.example.org") to ""
+            )
+        )
+        val survivor = marked.first { it.value == "c.example.org" }
+        assertEquals(Grading.Reliability.USUALLY, survivor.reliability)
+        assertTrue(survivor.demoted)
+    }
+
+    /** A single mistake must not rewrite a source's grade. */
+    @Test
+    fun oneWrongHitDoesNotDowngradeASource() {
+        val marked = Corroboration.merge(
+            listOf(row("crtsh", "a.example.org\nc.example.org\n")),
+            seed = "example.com",
+            dismissed = mapOf(("HOST" to "a.example.org") to "")
+        )
+        val survivor = marked.first { it.value == "c.example.org" }
+        assertEquals(Grading.Reliability.COMPLETE, survivor.reliability)
+        assertTrue(!survivor.demoted)
+    }
+
+    /** Nor does being wrong twice while also being right more often. */
+    @Test
+    fun aSourceThatIsMostlyRightKeepsItsGrade() {
+        val marked = Corroboration.merge(
+            listOf(row("crtsh", (1..6).joinToString("\n") { "h$it.example.org" })),
+            seed = "example.com",
+            dismissed = mapOf(
+                ("HOST" to "h1.example.org") to "",
+                ("HOST" to "h2.example.org") to ""
+            )
+        )
+        val survivor = marked.first { it.value == "h6.example.org" }
+        assertEquals(Grading.Reliability.COMPLETE, survivor.reliability)
+    }
+
+    /** The headline counts what was struck, so the reader is not misled. */
+    @Test
+    fun theAssessmentSaysHowManyWereRuledOut() {
+        val results = listOf(row("crtsh", "a.example.org\nb.example.org\n"))
+        val entities = Corroboration.merge(
+            results,
+            seed = "example.com",
+            dismissed = mapOf(("HOST" to "a.example.org") to "")
+        )
+        assertTrue(Corroboration.assessment(entities, results).contains("1 marked wrong"))
+    }
 }

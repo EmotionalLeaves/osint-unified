@@ -125,3 +125,21 @@ interface WatchEventDao {
     )
     suspend fun trim(watchId: Long, keep: Int)
 }
+
+@Dao
+interface DismissalDao {
+    @Query("SELECT * FROM dismissals WHERE investigationId = :investigationId")
+    fun observeFor(investigationId: Long): Flow<List<Dismissal>>
+
+    @Query("SELECT * FROM dismissals WHERE investigationId = :investigationId")
+    suspend fun forInvestigation(investigationId: Long): List<Dismissal>
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insert(dismissal: Dismissal)
+
+    @Query(
+        "DELETE FROM dismissals WHERE investigationId = :investigationId " +
+            "AND kind = :kind AND value = :value"
+    )
+    suspend fun remove(investigationId: Long, kind: String, value: String)
+}

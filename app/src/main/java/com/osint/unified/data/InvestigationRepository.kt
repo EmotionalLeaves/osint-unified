@@ -1,6 +1,7 @@
 package com.osint.unified.data
 
 import com.osint.unified.data.db.AppDatabase
+import com.osint.unified.data.db.Dismissal
 import com.osint.unified.data.db.Investigation
 import com.osint.unified.data.db.Result as ResultRow
 import com.osint.unified.domain.Findings
@@ -8,6 +9,7 @@ import com.osint.unified.domain.Observable
 import com.osint.unified.domain.Tool
 import com.osint.unified.domain.executor.ExecutorFactory
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
@@ -23,6 +25,7 @@ class InvestigationRepository(
 ) {
     private val investigationDao = db.investigationDao()
     private val resultDao = db.resultDao()
+    private val dismissalDao = db.dismissalDao()
 
     suspend fun createInvestigation(
         observable: Observable,
@@ -65,6 +68,44 @@ class InvestigationRepository(
 
     /** What was written about this case, for re-opening it. */
     suspend fun notesFor(id: Long): String = investigationDao.getById(id)?.notes.orEmpty()
+
+    /**
+     * Findings this case says are wrong, as kind to lowercased value.
+     *
+     * Observed rather than read once: marking something wrong has to
+     * change the grades on screen immediately, or the person cannot tell
+     * whether the app took it.
+     */
+    fun observeDismissals(investigationId: Long): Flow<Map<Pair<String, String>, String>> =
+        dismissalDao.observeFor(investigationId).map { rows ->
+            rows.associate { (it.kind to it.value) to it.reason }
+        }
+
+    suspend fun dismissalsFor(investigationId: Long): Map<Pair<String, String>, String> =
+        dismissalDao.forInvestigation(investigationId)
+            .associate { (it.kind to it.value) to it.reason }
+
+    suspend fun setDismissed(
+        investigationId: Long,
+        kind: String,
+        value: String,
+        dismissed: Boolean,
+        reason: String = ""
+    ) {
+        val key = value.lowercase()
+        if (dismissed) {
+            dismissalDao.insert(
+                Dismissal(
+                    investigationId = investigationId,
+                    kind = kind,
+                    value = key,
+                    reason = reason
+                )
+            )
+        } else {
+            dismissalDao.remove(investigationId, kind, key)
+        }
+    }
 
     /** One case, for a screen that has only its id. */
     suspend fun byId(id: Long): Investigation? = investigationDao.getById(id)

@@ -9,8 +9,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 
 @Database(
-    entities = [Investigation::class, Result::class, Watch::class, WatchEvent::class],
-    version = 5,
+    entities = [
+        Investigation::class, Result::class, Watch::class,
+        WatchEvent::class, Dismissal::class
+    ],
+    version = 6,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -18,12 +21,13 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun resultDao(): ResultDao
     abstract fun watchDao(): WatchDao
     abstract fun watchEventDao(): WatchEventDao
+    abstract fun dismissalDao(): DismissalDao
 
     companion object {
         /** The same number as the `version` in the @Database annotation
          *  above, which cannot reference this one. The pre-flight check
          *  refuses a commit where the two disagree. */
-        const val SCHEMA_VERSION = 5
+        const val SCHEMA_VERSION = 6
 
         @Volatile private var INSTANCE: AppDatabase? = null
 
@@ -65,6 +69,36 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `investigations` ADD COLUMN `parentId` INTEGER")
                 db.execSQL("ALTER TABLE `investigations` ADD COLUMN `viaPivot` TEXT")
+            }
+        }
+
+        /**
+         * Somewhere to record that a finding is wrong.
+         *
+         * Per case, because an address that is noise in one
+         * investigation is the subject of another.
+         */
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `dismissals` (
+                        `id` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                        `investigationId` INTEGER NOT NULL,
+                        `kind` TEXT NOT NULL,
+                        `value` TEXT NOT NULL,
+                        `at` INTEGER NOT NULL,
+                        `reason` TEXT NOT NULL,
+                        FOREIGN KEY(`investigationId`) REFERENCES `investigations`(`id`)
+                            ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS " +
+                        "`index_dismissals_investigationId_kind_value` " +
+                        "ON `dismissals` (`investigationId`, `kind`, `value`)"
+                )
             }
         }
 
@@ -203,7 +237,7 @@ abstract class AppDatabase : RoomDatabase() {
                     app, AppDatabase::class.java, DatabaseEncryption.ENCRYPTED_NAME
                 )
                     .openHelperFactory(SupportOpenHelperFactory(passphrase))
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                     .build()
                 // Opened and read from here on purpose: a key, a library
                 // or a migration problem has to surface now, while the
@@ -251,6 +285,6 @@ abstract class AppDatabase : RoomDatabase() {
 
         private fun plain(app: Context): AppDatabase = Room.databaseBuilder(
             app, AppDatabase::class.java, DatabaseEncryption.PLAIN_NAME
-        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build()
+        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6).build()
     }
 }

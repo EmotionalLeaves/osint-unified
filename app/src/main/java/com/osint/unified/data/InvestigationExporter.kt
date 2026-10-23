@@ -49,7 +49,11 @@ class InvestigationExporter(private val appContext: Context) {
         format: ExportFormat,
         /** What the investigator wrote. The one part of a case no source
          *  produced, and for a long time the one part no export carried. */
-        notes: String = ""
+        notes: String = "",
+        /** Findings the investigator marked wrong, kind to lowercased value.
+         *  A report that reprints a lead its own author struck is worse
+         *  than one that never found it. */
+        dismissals: Map<Pair<String, String>, String> = emptyMap()
     ): File = withContext(Dispatchers.IO) {
         val dir = File(appContext.cacheDir, "exports").apply { mkdirs() }
         // Old reports used to accumulate here for ever, each named after the
@@ -58,10 +62,12 @@ class InvestigationExporter(private val appContext: Context) {
         purgeOldExports(dir)
         val file = File(dir, "osint-case-${stamp.format(Date())}.${format.ext}")
         when (format) {
-            ExportFormat.JSON -> file.writeText(toJson(observable, results, notes))
+            ExportFormat.JSON ->
+                file.writeText(toJson(observable, results, notes, dismissals))
             ExportFormat.CSV -> file.writeText(toCsv(results))
-            ExportFormat.TEXT -> file.writeText(toDossier(observable, results, notes))
-            ExportFormat.PDF -> writePdf(file, observable, results, notes)
+            ExportFormat.TEXT ->
+                file.writeText(toDossier(observable, results, notes, dismissals))
+            ExportFormat.PDF -> writePdf(file, observable, results, notes, dismissals)
         }
         file
     }
@@ -79,9 +85,10 @@ class InvestigationExporter(private val appContext: Context) {
         file: File,
         observable: Observable,
         results: List<ResultRow>,
-        notes: String
+        notes: String,
+        dismissals: Map<Pair<String, String>, String>
     ) {
-        val text = toDossier(observable, results, notes)
+        val text = toDossier(observable, results, notes, dismissals)
         val document = PdfDocument()
         val paint = Paint().apply {
             textSize = 10f
@@ -140,7 +147,8 @@ class InvestigationExporter(private val appContext: Context) {
     private fun toJson(
         observable: Observable,
         results: List<ResultRow>,
-        notes: String
+        notes: String,
+        dismissals: Map<Pair<String, String>, String> = emptyMap()
     ): String {
         val doc = buildJsonObject {
             put("observable", observable.raw)
@@ -148,6 +156,20 @@ class InvestigationExporter(private val appContext: Context) {
             if (notes.isNotBlank()) put("notes", notes)
             put("generatedAt", java.time.Instant.now().toString())
             put("appBuild", com.osint.unified.BuildConfig.VERSION_NAME)
+            // What the investigator ruled out. A machine-readable case
+            // that carries only what the tools said, and not what the
+            // person decided about it, is half a case.
+            if (dismissals.isNotEmpty()) {
+                putJsonArray("ruledOut") {
+                    dismissals.forEach { (key, reason) ->
+                        addJsonObject {
+                            put("kind", key.first)
+                            put("value", key.second)
+                            if (reason.isNotBlank()) put("reason", reason)
+                        }
+                    }
+                }
+            }
             putJsonArray("results") {
                 results.forEach { r ->
                     addJsonObject {
@@ -230,7 +252,8 @@ class InvestigationExporter(private val appContext: Context) {
     private fun toDossier(
         observable: Observable,
         results: List<ResultRow>,
-        notes: String
+        notes: String,
+        dismissals: Map<Pair<String, String>, String> = emptyMap()
     ): String = buildString {
         val seed = observable.raw.trim().lowercase()
         val sorted = Findings.sort(results)
@@ -256,7 +279,10 @@ class InvestigationExporter(private val appContext: Context) {
         // done it, and leaves the reader to discover for themselves that
         // half of it is a CDN.
         val entities = Corroboration.merge(
-            results, observable.raw, seedIsPlace = observable is Observable.Coordinate
+            results,
+            observable.raw,
+            seedIsPlace = observable is Observable.Coordinate,
+            dismissed = dismissals
         )
         append("\nASSESSMENT\n----------\n")
         append(Corroboration.assessment(entities, results)).append('\n')
@@ -284,7 +310,36 @@ class InvestigationExporter(private val appContext: Context) {
             }
         }
 
-        val machinery = entities.filter { it.caveat != null }
+        // Struck by the investigator. Printed rather than deleted: a
+        // report that silently drops what was considered and rejected
+        // invites the next reader to find it again and chase it, and
+        // "we looked at this and it was not him" is a finding.
+        val struck = entities.filter { it.dismissed }
+        if (struck.isNotEmpty()) {
+            append("\nRULED OUT BY THE INVESTIGATOR\n")
+            append("-----------------------------\n")
+            struck.forEach { e ->
+                append("  ${e.kind}  ${e.value}")
+                if (e.dismissalReason.isNotBlank()) append(" — ${e.dismissalReason}")
+                append("\n        asserted by ")
+                append(e.sourceNames.joinToString(", ")).append('\n')
+            }
+        }
+
+        val demotedSources = entities.filter { it.demoted }
+            .flatMap { it.sourceNames }.distinct().sorted()
+        if (demotedSources.isNotEmpty()) {
+            append("\nSOURCES DOWNGRADED FOR THIS CASE\n")
+            append("--------------------------------\n")
+            append(
+                "More of what these returned was ruled out than was kept, " +
+                    "so their findings here are read one grade below their " +
+                    "catalogue reliability: "
+            )
+            append(demotedSources.joinToString(", ")).append('\n')
+        }
+
+        val machinery = entities.filter { it.caveat != null && !it.dismissed }
         if (machinery.isNotEmpty()) {
             append("\nSET ASIDE AS MACHINERY\n----------------------\n")
             append(

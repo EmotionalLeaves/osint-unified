@@ -35,7 +35,16 @@ object Corroboration {
         val credibility: Grading.Credibility,
         val mentions: Int,
         /** Why it is not being counted as a finding, when it is not. */
-        val caveat: String? = null
+        val caveat: String? = null,
+        /** The investigator marked this wrong. */
+        val dismissed: Boolean = false,
+        /** Their reason, when they gave one. */
+        val dismissalReason: String = "",
+        /**
+         * The source's grade was lowered for this case because it has
+         * been wrong here more often than it has been right.
+         */
+        val demoted: Boolean = false
     ) {
         val grade: String get() = Grading.code(reliability, credibility)
 
@@ -134,7 +143,9 @@ object Corroboration {
     fun merge(
         results: List<ResultRow>,
         seed: String,
-        seedIsPlace: Boolean = false
+        seedIsPlace: Boolean = false,
+        /** kind to lowercased value, for findings marked wrong, and why. */
+        dismissed: Map<Pair<String, String>, String> = emptyMap()
     ): List<Entity> {
         val assertions = HashMap<Pair<String, String>, MutableList<Pair<String, Int>>>()
 
@@ -148,17 +159,30 @@ object Corroboration {
             }
         }
 
+        val unreliableHere = caughtOut(assertions, dismissed)
+
         return assertions.map { (key, claims) ->
             val (kind, value) = key
             val sources = claims.map { it.first }.distinct()
             val independent = sources.map { family(it) }.distinct().size
             // The best source that asserted it — the grade should reflect
             // the strongest witness, not an average that a weak one drags
-            // down.
+            // down. A source this case has caught being wrong is read one
+            // grade lower, which is the only way marking something wrong
+            // can affect anything beyond the row it was marked on.
+            val demoted = sources.any { family(it) in unreliableHere }
             val reliability = sources
-                .mapNotNull { ToolRegistry.byId(it)?.reliability }
+                .mapNotNull { id ->
+                    ToolRegistry.byId(id)?.reliability?.let {
+                        if (family(id) in unreliableHere) Grading.demote(it) else it
+                    }
+                }
                 .minOrNull() ?: Grading.Reliability.UNJUDGED
-            val caveat = noise(kind, value)
+            val wrong = dismissed[key]
+            val caveat = when {
+                wrong != null -> "you marked this wrong"
+                else -> noise(kind, value)
+            }
             Entity(
                 kind = kind,
                 value = value,
@@ -168,14 +192,48 @@ object Corroboration {
                 credibility = if (caveat != null) Grading.Credibility.DOUBTFUL
                 else Grading.credibility(reliability, agreeing = independent - 1),
                 mentions = claims.sumOf { it.second },
-                caveat = caveat
+                caveat = caveat,
+                dismissed = wrong != null,
+                dismissalReason = wrong.orEmpty(),
+                demoted = demoted && wrong == null
             )
         }.sortedWith(
-            compareBy<Entity> { it.caveat != null }
+            compareBy<Entity> { it.dismissed }
+                .thenBy { it.caveat != null }
                 .thenBy { it.credibility.code }
                 .thenBy { it.reliability.code }
                 .thenByDescending { it.mentions }
         )
+    }
+
+    /**
+     * Which source families this case has caught being wrong.
+     *
+     * A source earns this by having at least two of its assertions
+     * marked wrong *and* more wrong than kept. Two, because one bad hit
+     * is an ordinary day for a username sweep and demoting on it would
+     * make the grade a record of the last thing the investigator
+     * clicked. More wrong than kept, because a source that also found
+     * five things that stood up is not the problem.
+     *
+     * Families rather than tools: three sweeps sharing one ruleset
+     * produce the same false hit, and demoting only the one that was
+     * tapped would leave the other two still vouching for it.
+     */
+    private fun caughtOut(
+        assertions: Map<Pair<String, String>, MutableList<Pair<String, Int>>>,
+        dismissed: Map<Pair<String, String>, String>
+    ): Set<String> {
+        if (dismissed.isEmpty()) return emptySet()
+        val wrong = HashMap<String, Int>()
+        val kept = HashMap<String, Int>()
+        assertions.forEach { (key, claims) ->
+            val bucket = if (key in dismissed) wrong else kept
+            claims.map { family(it.first) }.distinct().forEach {
+                bucket[it] = (bucket[it] ?: 0) + 1
+            }
+        }
+        return wrong.filter { (fam, bad) -> bad >= 2 && bad > (kept[fam] ?: 0) }.keys
     }
 
     /**
@@ -189,11 +247,13 @@ object Corroboration {
             it.caveat == null && it.credibility == Grading.Credibility.CONFIRMED
         }
         val leads = entities.count { it.caveat == null && it.credibility.code in 2..3 }
+        val wrong = entities.count { it.dismissed }
         val sorted = Findings.sort(results)
         val parts = ArrayList<String>()
         if (confirmed > 0) parts.add("$confirmed corroborated")
         if (leads > 0) parts.add("$leads single-source")
         if (parts.isEmpty()) parts.add("nothing corroborated")
+        if (wrong > 0) parts.add("$wrong marked wrong")
         return parts.joinToString(" · ") +
             " · ${sorted.hits.size} of ${results.size} sources returned something" +
             if (sorted.failed.isNotEmpty()) " · ${sorted.failed.size} unreachable" else ""
