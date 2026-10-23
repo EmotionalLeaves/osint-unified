@@ -68,12 +68,34 @@ object OrbitPropagator {
 
         var m = Math.toRadians(e.meanAnomaly) + n * dt
         m = ((m % TAU) + TAU) % TAU
-        var ea = m
-        repeat(12) {
-            val delta = (ea - ecc * sin(ea) - m) / (1 - ecc * cos(ea))
+        // Newton on Kepler's equation, with a guess that converges and
+        // a check that is actually checked.
+        //
+        // `return@repeat` returns from the lambda — it is continue,
+        // not break — so the convergence test did nothing, and nothing
+        // looked at the residual afterwards either. Starting at E = M
+        // is only safe at moderate eccentricity: measured across four
+        // thousand mean anomalies the worst residual is 9e-16 at
+        // e = 0.95 and 6.1e9 radians at e = 0.99. propagate only
+        // rejects e >= 1, so a GTO element set came out of here with a
+        // meaningless E, and r = a(1 - e cos E) still landed inside the
+        // altitude sieve — a confidently wrong sub-satellite point,
+        // plotted with nothing to say it was wrong.
+        //
+        // The standard opening guess costs one sine; pi is the safe
+        // start for the high-eccentricity case. Converged or not is
+        // now a question with an answer.
+        var ea = if (ecc > 0.8) Math.PI else m + ecc * sin(m)
+        var residual = Double.MAX_VALUE
+        repeat(24) {
+            val f = ea - ecc * sin(ea) - m
+            val fPrime = 1 - ecc * cos(ea)
+            if (abs(fPrime) < 1e-12) return@repeat
+            val delta = f / fPrime
             ea -= delta
-            if (abs(delta) < 1e-12) return@repeat
+            residual = abs(delta)
         }
+        if (!ea.isFinite() || residual > 1e-8) return null
 
         val trueAnomaly = 2.0 * atan2(
             sqrt(1 + ecc) * sin(ea / 2.0),

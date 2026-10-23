@@ -18,22 +18,72 @@ object SanctionsNames {
         return decomposed
             .replace(Regex("\\p{Mn}+"), "")
             .lowercase()
+            // A few Latin letters have no canonical decomposition, so
+            // NFKD leaves them whole and the class below turned them
+            // into spaces: "Jørgensen" became "j rgensen" and could
+            // never match the list's romanised JORGENSEN. Mapped by
+            // hand, the way every transliteration table does.
+            .let { t ->
+                val sb = StringBuilder(t.length)
+                t.forEach { c ->
+                    when (c) {
+                        'ø' -> sb.append("o")
+                        'æ' -> sb.append("ae")
+                        'ł' -> sb.append("l")
+                        'đ', 'ð' -> sb.append("d")
+                        'þ' -> sb.append("th")
+                        'ß' -> sb.append("ss")
+                        'œ' -> sb.append("oe")
+                        'ı' -> sb.append("i")
+                        'ħ' -> sb.append("h")
+                        'ŋ' -> sb.append("ng")
+                        else -> sb.append(c)
+                    }
+                }
+                sb.toString()
+            }
             .replace(Regex("[^a-z0-9 ]+"), " ")
             .replace(Regex("\\s+"), " ")
             .trim()
     }
 
+    /** True when a query has no Latin letters left after normalising. */
+    fun isUnromanised(raw: String): Boolean =
+        raw.isNotBlank() && normalise(raw).isBlank()
+
     /** The query's words, long enough to be worth matching on. */
+    /**
+     * Particles that are not a search on their own.
+     *
+     * The old rule was a three-letter floor, which was right about
+     * "al" and wrong about everything else: Korean, Chinese and
+     * Vietnamese names are mostly two-letter syllables, so "Ri Yong
+     * Ho" reduced to ["yong"] and matched every OFAC entry containing
+     * that one syllable — an innocent person reported as sanctioned
+     * on a shared syllable — while "Li Na" reduced to nothing at all
+     * and was refused as "give at least three characters" for a
+     * five-character query. A stop list is what the floor was
+     * standing in for.
+     */
+    private val PARTICLES = setOf(
+        "al", "el", "bin", "ibn", "abu", "umm", "bint", "van", "von",
+        "der", "den", "de", "del", "della", "di", "da", "dos", "das",
+        "du", "la", "le", "les", "mac", "mc", "ben", "bar", "ter",
+        "ten", "op", "aan", "the", "and", "of"
+    )
+
     /**
      * The words of a query worth matching on.
      *
-     * Three letters, not two. At two, "al x" reduced to ["al"] and
-     * matched every al-something on the list — forty of them, capped,
-     * and reported as a hit against a real person's name. A two-letter
-     * particle is not a search.
+     * Everything that is not a particle, at any length — because in
+     * a great many of the world's naming systems the discriminating
+     * part of a name IS two letters, and throwing it away is both a
+     * false positive against whatever is left and a refusal to
+     * search when nothing is.
      */
     fun tokens(query: String): List<String> =
-        normalise(query).split(" ").filter { it.length >= 3 }
+        normalise(query).split(" ")
+            .filter { it.isNotBlank() && it !in PARTICLES }
 
     /**
      * Whether every token of the query appears as a whole word in the name.

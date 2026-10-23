@@ -48,6 +48,22 @@ object Identify {
             "|^(?:[0-9a-fA-F]{1,4})?(?::[0-9a-fA-F]{1,4}){0,6}" +
             "::(?:[0-9a-fA-F]{1,4})?(?::[0-9a-fA-F]{1,4}){0,6}$"
     )
+
+    /**
+     * The shape is not enough: the hextets have to add up.
+     *
+     * The compressed branch allows up to seven groups on each side of
+     * "::", so "1:2:3:4:5:6:7::8" matched — eight explicit groups plus
+     * a "::" that must stand for at least one more — and so did a
+     * thirteen-group string. Both were reported as an IPv6 address at
+     * confidence 85.
+     */
+    internal fun looksLikeIpv6(v: String): Boolean {
+        if (!IPV6.matches(v)) return false
+        val compressed = v.contains("::")
+        val groups = v.split(":").count { it.isNotEmpty() }
+        return if (compressed) groups <= 7 else groups == 8
+    }
     private val EMAIL = Regex("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,24}$")
     private val DOMAIN = Regex("^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\\.)+[A-Za-z]{2,24}$")
     private val COORD = Regex("^(-?\\d{1,2}(?:\\.\\d+)?)\\s*,\\s*(-?\\d{1,3}(?:\\.\\d+)?)$")
@@ -85,15 +101,60 @@ object Identify {
 
         if (EMAIL.matches(v)) out.add(Guess("Email address", "Local part and a resolvable-looking domain.", confidence = 95))
         if (IPV4.matches(v)) out.add(Guess("IPv4 address", "Four octets, each in range.", confidence = 97))
-        val looksIpv6 = IPV6.matches(v) && (v.contains("::") || v.count { it == ':' } == 7)
+        val looksIpv6 = looksLikeIpv6(v)
         if (looksIpv6) {
             out.add(Guess("IPv6 address", "Colon-separated hextets.", confidence = 85))
         }
         if (MAC.matches(v)) out.add(Guess("MAC address", "Six octets; the first three are the vendor OUI.", confidence = 95))
         if (UUID.matches(v)) out.add(Guess("UUID", "8-4-4-4-12 hex. Version ${v[14]}.", confidence = 97))
         if (PHONE.matches(v)) out.add(Guess("Phone number", "E.164-style, with a country prefix.", confidence = 80))
-        if (BTC.matches(v)) out.add(Guess("Bitcoin address", "Base58 or bech32 payment address.", confidence = 90))
-        if (ETH.matches(v)) out.add(Guess("Ethereum address", "20 bytes of hex behind 0x.", confidence = 93))
+        if (BTC.matches(v)) {
+            // The shape, and the checksum where there is one to read.
+            //
+            // The class header claims recognition is by "length,
+            // alphabet, checksum, magic bytes" and no checksum was
+            // ever computed, so the genesis address with its last
+            // character changed — which no wallet would accept — was
+            // reported as a Bitcoin address at confidence 90.
+            val checked = base58Check(v)
+            out.add(
+                when (checked) {
+                    true -> Guess(
+                        "Bitcoin address",
+                        "Base58Check, and the checksum is right.",
+                        confidence = 97
+                    )
+                    false -> Guess(
+                        "Bitcoin address (bad checksum)",
+                        "The shape is right and the Base58Check digest is not, " +
+                            "so this is a typo or an invented address.",
+                        confidence = 40
+                    )
+                    // bech32: a different checksum scheme, not read here.
+                    null -> Guess(
+                        "Bitcoin address",
+                        "bech32 shape; the checksum is not verified.",
+                        confidence = 75
+                    )
+                }
+            )
+        }
+        if (ETH.matches(v)) {
+            val mixed = v.drop(2).any { it.isUpperCase() } && v.drop(2).any { it.isLowerCase() }
+            out.add(
+                Guess(
+                    "Ethereum address",
+                    if (mixed) {
+                        "20 bytes of hex behind 0x. The mixed case is an EIP-55 " +
+                            "checksum, which is not verified here."
+                    } else {
+                        "20 bytes of hex behind 0x. All one case, so there is no " +
+                            "EIP-55 checksum to read."
+                    },
+                    confidence = 90
+                )
+            )
+        }
         if (MGRS.matches(v)) out.add(Guess("MGRS grid reference", "Military grid; a place, not a number.", confidence = 85))
 
         COORD.find(v)?.let { m ->
@@ -171,5 +232,42 @@ object Identify {
         }
 
         return out.sortedByDescending { it.confidence }
+    }
+
+    private const val B58 =
+        "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+
+    /**
+     * Base58Check: true, false, or null when there is nothing to check.
+     *
+     * A legacy Bitcoin address is a version byte, twenty bytes of hash
+     * and the first four bytes of the double SHA-256 of both. Getting
+     * one character wrong changes the digest, which is the entire
+     * point of the scheme and the reason an address can be read aloud.
+     * Null for bech32, which carries a BCH checksum over a different
+     * alphabet and is not decoded here.
+     */
+    internal fun base58Check(address: String): Boolean? {
+        if (address.startsWith("bc1")) return null
+        return runCatching {
+            var num = java.math.BigInteger.ZERO
+            val radix = java.math.BigInteger.valueOf(58)
+            address.forEach { c ->
+                val d = B58.indexOf(c)
+                if (d < 0) return false
+                num = num.multiply(radix).add(java.math.BigInteger.valueOf(d.toLong()))
+            }
+            // Leading '1's are leading zero bytes, which BigInteger
+            // cannot carry.
+            val leading = address.takeWhile { it == '1' }.length
+            val body = num.toByteArray().dropWhile { it == 0.toByte() }
+            val full = ByteArray(leading) + body.toByteArray()
+            if (full.size != 25) return false
+            val payload = full.copyOfRange(0, 21)
+            val checksum = full.copyOfRange(21, 25)
+            val sha = java.security.MessageDigest.getInstance("SHA-256")
+            val digest = sha.digest(sha.digest(payload))
+            checksum.contentEquals(digest.copyOfRange(0, 4))
+        }.getOrDefault(false)
     }
 }

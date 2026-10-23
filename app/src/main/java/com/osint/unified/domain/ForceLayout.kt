@@ -31,12 +31,24 @@ object ForceLayout {
      */
     fun compute(
         graph: GraphBuilder.Graph,
-        width: Float,
-        height: Float,
+        canvasWidth: Float,
+        canvasHeight: Float,
         iterations: Int = 300
     ): Layout {
         val n = graph.nodes.size
         if (n == 0) return Layout(emptyList(), emptyList())
+
+        // A canvas too small to hold the 24-pixel margin.
+        //
+        // `coerceIn(24f, width - 24f)` throws on an empty range, and
+        // the caller only guarded the width — a measure pass that
+        // reports a width with height 0 reached here, area became 0,
+        // k became 0, the attraction force divided by it, opposed
+        // infinities summed to NaN, and the clamp threw out of a
+        // background coroutine. Floored instead: a cramped layout is
+        // a picture, an exception is not.
+        val width = if (canvasWidth.isFinite()) canvasWidth.coerceAtLeast(64f) else 64f
+        val height = if (canvasHeight.isFinite()) canvasHeight.coerceAtLeast(64f) else 64f
 
         val index = graph.nodes.withIndex().associate { (i, node) -> node.id to i }
         val xs = FloatArray(n)

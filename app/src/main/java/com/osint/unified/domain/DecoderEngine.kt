@@ -31,7 +31,21 @@ object DecoderEngine {
 
     fun run(opId: String, input: String): String = try {
         when (opId) {
-            "b64d" -> String(Base64.decode(input, Base64.DEFAULT))
+            // Both alphabets.
+            //
+            // Base64.DEFAULT rejects - and _, and the identifier
+            // screen offers this very operation for a string it has
+            // just labelled "Base64url — uses - and _ in place of +
+            // and /". Tapping the decoder it recommended answered
+            // "Error: bad base-64". The JWT branch below has done the
+            // translation all along.
+            "b64d" -> String(
+                Base64.decode(
+                    input.trim().replace('-', '+').replace('_', '/')
+                        .let { it + "=".repeat((4 - it.length % 4) % 4) },
+                    Base64.DEFAULT
+                )
+            )
             "b64e" -> Base64.encodeToString(input.toByteArray(), Base64.NO_WRAP)
             "hexd" -> hexDecode(input)
             "hexe" -> input.toByteArray().joinToString("") { "%02x".format(it) }
@@ -64,11 +78,32 @@ object DecoderEngine {
         MessageDigest.getInstance(algo).digest(input.toByteArray())
             .joinToString("") { "%02x".format(it) }
 
+    /**
+     * Hex, with only the punctuation stripped.
+     *
+     * This used to strip everything that was not a hex digit, which
+     * also keeps any a-f that happened to be prose: pasting
+     * "MD5: 5d41402abc4b2a76b9719d911017c592" kept the D of MD5 as a
+     * leading nibble, so every byte after it was shifted by half a
+     * byte and the output was entirely wrong with no complaint. An
+     * odd number of digits was silently truncated for the same
+     * reason — "0xdeadbeef" dropped the f.
+     */
     private fun hexDecode(input: String): String {
-        val clean = input.replace(Regex("[^0-9a-fA-F]"), "")
-        if (clean.length < 2) return "(no hex bytes)"
+        val clean = input.trim()
+            .removePrefix("0x").removePrefix("0X")
+            .replace(Regex("[\\s:,\\-]+"), "")
+        if (clean.isEmpty()) return "(no hex bytes)"
+        if (!clean.all { it.isDigit() || it in 'a'..'f' || it in 'A'..'F' }) {
+            return "Not hex: remove anything that is not a hex digit " +
+                "(spaces, colons, dashes and a leading 0x are fine)."
+        }
+        if (clean.length % 2 != 0) {
+            return "An odd number of hex digits (${clean.length}) — a byte is two."
+        }
         val bytes = ByteArray(clean.length / 2) {
-            ((Character.digit(clean[it * 2], 16) shl 4) + Character.digit(clean[it * 2 + 1], 16)).toByte()
+            ((Character.digit(clean[it * 2], 16) shl 4) +
+                Character.digit(clean[it * 2 + 1], 16)).toByte()
         }
         return String(bytes)
     }

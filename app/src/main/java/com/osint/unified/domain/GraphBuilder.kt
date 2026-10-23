@@ -21,7 +21,17 @@ object GraphBuilder {
         val seedId = "seed"
         nodes[seedId] = Node(seedId, seed, 0)
 
-        results.filter { it.status == "success" }.forEach { r ->
+        // Only what was found.
+        //
+        // `status == "success"` includes every tool that reached its
+        // source and was told there is nothing there, and every tool
+        // whose failure was reported in prose — Findings.kindOf
+        // exists because those are different things. So "No accounts
+        // found for this username." was drawn as a tool node with a
+        // leaf hanging off it, visually identical to a real finding,
+        // on the screen most likely to be screenshotted. Timeline
+        // already filters this way.
+        results.filter { Findings.kindOf(it) == Findings.Kind.HIT }.forEach { r ->
             val toolId = "tool:${r.toolId}"
             nodes.getOrPut(toolId) { Node(toolId, r.toolName, 1) }
             links.add(Link(seedId, toolId))
@@ -29,7 +39,16 @@ object GraphBuilder {
             ResultFormatter.format(r.toolId, r.rawOutput).lines.take(12).forEach { raw ->
                 val label = raw.take(48)
                 if (label.isNotBlank()) {
-                    val itemId = "item:${label.hashCode()}"
+                    // The label itself, not its 32-bit hash.
+                    //
+                    // These labels are third-party page titles, bios
+                    // and WHOIS fields. String.hashCode collides
+                    // trivially and on purpose — "Aa" and "BB" have
+                    // the same hash, and so do "admin@Aa.com" and
+                    // "admin@BB.com" — so two distinct findings were
+                    // silently merged into one node and the second
+                    // one's edge pointed at the first one's text.
+                    val itemId = "item:$label"
                     nodes.getOrPut(itemId) { Node(itemId, label, 2) }
                     links.add(Link(toolId, itemId))
                 }

@@ -44,7 +44,12 @@ object Mgrs {
     internal fun zoneFor(lat: Double, lon: Double): Int {
         val arithmetic = (floor((lon + 180) / 6).toInt() % 60) + 1
         if (lat >= 56 && lat < 64 && lon >= 3 && lon < 12) return 32
-        if (lat >= 72 && lat < 84) {
+        // Band X runs 72 to 84 INCLUSIVE — it is the one band that is
+        // twelve degrees tall. `lat < 84` let the top edge fall
+        // through to the arithmetic zone and emit 32X, 34X or 36X,
+        // which are grid zones that do not exist: at 84.0N, 7E the
+        // answer is 31X and this said 32X.
+        if (lat >= 72 && lat <= 84) {
             return when {
                 lon >= 0 && lon < 9 -> 31
                 lon >= 9 && lon < 21 -> 33
