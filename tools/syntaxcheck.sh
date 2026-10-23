@@ -54,6 +54,26 @@ trap 'rm -rf "$WORK"' EXIT
 grep -iE "error:.*(conflicting declaration|redeclaration|expecting |unexpected token|unbalanced|unclosed|syntax error|already defined|expecting an element|expecting a top level|expecting member declaration|return. expression required|missing return statement|cannot be reassigned|variable expected|modifier .* is not applicable|annotation is not applicable)" \
   "$WORK/full.txt" > "$WORK/real.txt" || true
 
+# A call that does not supply an argument the function requires.
+#
+# Nothing about this needs a classpath when the function is ours, and
+# it is the error that broke r269 and r270: adding a parameter with a
+# default and then passing it by name *before* the positional
+# arguments, which Kotlin reads as the positional ones having been
+# skipped. Thirty-three call sites, all wrong, and the pre-flight said
+# nothing.
+#
+# Two parameter names are excluded, and both for the same reason: the
+# offline compiler resolves an AndroidX name to a stdlib one that
+# happens to need an argument the AndroidX one does not.
+# `Result.success()` becomes kotlin.Result.success(value), and a
+# coroutine builder whose lambda mentions an unresolvable symbol
+# reports as a missing `block`. The cost is that a genuinely missing
+# argument called `value` or `block` is not caught here; the broad
+# case, which is the one that cost two builds, still is.
+grep -iE "error: no value passed for parameter" "$WORK/full.txt" \
+  | grep -vE "parameter '(block|value)'" >> "$WORK/real.txt" || true
+
 # ${'$'}{...} — a literal dollar followed by a brace. This is what a string
 # template becomes when it is written out through a shell heredoc that has
 # already escaped the dollar, and the result compiles: Kotlin reads it as the
