@@ -135,17 +135,55 @@ object OsintFramework {
     fun fillTarget(url: String, target: String): String? {
         if (target.isBlank()) return null
         val encoded = java.net.URLEncoder.encode(target.trim(), "UTF-8").replace("+", "%20")
-        var filled = url
+        // The host is off limits.
+        //
+        // A plain substring replace turned https://www.example.com/tool
+        // into a link to a host that does not exist, and
+        // ?username=&x=1 into ?<target>=&x=1 — the parameter's NAME
+        // overwritten with its value. Both produced links that looked
+        // filled in and went nowhere, which is worse than an honest
+        // "open this and paste the target".
+        val afterScheme = url.indexOf("://").let { if (it < 0) 0 else it + 3 }
+        val hostEnd = url.drop(afterScheme)
+            .indexOfFirst { it == '/' || it == '?' || it == '#' }
+            .let { if (it < 0) url.length else afterScheme + it }
+
+        val out = StringBuilder()
+        var cursor = 0
         var replaced = false
-        EXAMPLE_VALUES.forEach { example ->
-            if (filled.contains(example, ignoreCase = true)) {
-                filled = Regex(Regex.escape(example), RegexOption.IGNORE_CASE).replace(filled, encoded)
-                replaced = true
-            }
+        PLACEHOLDER.findAll(url).forEach { m ->
+            val start = m.range.first
+            val end = m.range.last + 1
+            if (start < cursor) return@forEach
+            // Inside the scheme or the host: not a placeholder.
+            if (start < hostEnd) return@forEach
+            // Glued to a longer word, so the match is a coincidence.
+            val before = url.getOrNull(start - 1)
+            val after = url.getOrNull(end)
+            if (before != null && (before.isLetterOrDigit())) return@forEach
+            if (after != null && after.isLetterOrDigit()) return@forEach
+            // Immediately followed by '=', so this is the name of a query
+            // parameter rather than an example of its value.
+            if (after == '=') return@forEach
+            out.append(url, cursor, start).append(encoded)
+            cursor = end
+            replaced = true
         }
-        if (replaced) return filled
+        if (replaced) {
+            out.append(url, cursor, url.length)
+            return out.toString()
+        }
         // Otherwise fall back to a recognised query parameter.
         return com.osint.unified.domain.ToolTemplates.templateFor(url)?.resolve(target)
+    }
+
+    /** One alternation, longest example first, so "USERNAMEHERE" wins over
+     *  "USERNAME" and a match is never half a placeholder. */
+    private val PLACEHOLDER by lazy {
+        Regex(
+            EXAMPLE_VALUES.joinToString("|") { Regex.escape(it) },
+            RegexOption.IGNORE_CASE
+        )
     }
 
     /** Example values catalogue authors leave in their URLs. Ordered longest

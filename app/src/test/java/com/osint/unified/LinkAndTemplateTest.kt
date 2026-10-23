@@ -1,5 +1,6 @@
 package com.osint.unified
 
+import com.osint.unified.data.OsintFramework
 import com.osint.unified.domain.ToolTemplates
 import com.osint.unified.ui.common.LinkOpener
 import org.junit.Assert.assertEquals
@@ -90,5 +91,59 @@ class LinkAndTemplateTest {
                 assertTrue("${t.name} is not https: ${t.url}", t.url.startsWith("https://"))
             }
         }
+    }
+
+    // ---- OSINT Framework placeholder substitution ----
+    //
+    // The catalogue URLs carry the author's own example data. Filling
+    // them in is the whole point of running the directory against a
+    // target; filling in the wrong part of the URL produces a link that
+    // looks right and goes nowhere, which is the failure worth guarding.
+
+    @Test
+    fun theExampleValueIsReplacedWithTheTarget() {
+        val filled = OsintFramework.fillTarget(
+            "https://tools.example.org/lookup?q=email@gmail.com", "ada@lovelace.net"
+        )
+        assertEquals(
+            "https://tools.example.org/lookup?q=ada%40lovelace.net", filled
+        )
+    }
+
+    @Test
+    fun theHostIsNeverTreatedAsAPlaceholder() {
+        // "example.com" is in the example list because catalogue authors
+        // use it as a sample domain. It is also a real host, and
+        // rewriting the host is how a filled link stops resolving.
+        val url = "https://www.example.com/whois"
+        assertNull(OsintFramework.fillTarget(url, "acme.co"))
+    }
+
+    @Test
+    fun aParameterNameIsNotItsOwnExampleValue() {
+        // ?username= is the name of the field, not a sample of it.
+        val url = "https://site.test/search?username=&page=1"
+        val filled = OsintFramework.fillTarget(url, "ada")
+        assertTrue(
+            "the parameter name was overwritten: $filled",
+            filled == null || filled.contains("username=")
+        )
+    }
+
+    @Test
+    fun aLongerPlaceholderWinsOverAShorterOneInsideIt() {
+        val filled = OsintFramework.fillTarget(
+            "https://site.test/u/USERNAME-HERE", "ada"
+        )
+        assertEquals("https://site.test/u/ada", filled)
+    }
+
+    @Test
+    fun anExampleGluedIntoALongerWordIsLeftAlone() {
+        // "johndoe" inside "johndoerstudio" is a coincidence, in the
+        // path where the rule has to do the work rather than in the
+        // host where it is excluded anyway.
+        assertNull(OsintFramework.fillTarget("https://site.test/u/johndoerstudio", "ada"))
+        assertNull(OsintFramework.fillTarget("https://johndoerstudio.test/about", "ada"))
     }
 }
