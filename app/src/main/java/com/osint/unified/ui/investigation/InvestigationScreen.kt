@@ -61,6 +61,7 @@ import com.osint.unified.domain.GraphBuilder
 import com.osint.unified.data.WatchRepository
 import com.osint.unified.domain.EntityExtractor
 import com.osint.unified.domain.Findings
+import com.osint.unified.domain.Corroboration
 import com.osint.unified.domain.IntelSummary
 import com.osint.unified.domain.Observable
 import com.osint.unified.domain.Tool
@@ -155,6 +156,14 @@ fun InvestigationScreen(
         }
         val found = state.results.count { Findings.isHit(it) }
         val facts = remember(state.results) { IntelSummary.synthesize(state.results) }
+        // What the case found, as things rather than as tool output.
+        val entities = remember(state.results, observable.raw) {
+            Corroboration.merge(
+                state.results,
+                observable.raw,
+                seedIsPlace = observable is com.osint.unified.domain.Observable.Coordinate
+            )
+        }
         val pivots = remember(state.results) {
             EntityExtractor.extract(
                 state.results,
@@ -249,6 +258,62 @@ fun InvestigationScreen(
                     ) {
                         facts.forEach { FactChip(it) }
                     }
+                }
+            }
+
+            // ---- What this adds up to ----
+            //
+            // A dossier that opens with sixty tool cards makes the reader
+            // do the summarising. This is the sentence they would have
+            // written, followed by the things themselves — graded, with
+            // the sources that asserted each one — and the tool output
+            // underneath where it belongs.
+            if (state.results.isNotEmpty()) {
+                Text(
+                    "ASSESSMENT",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Intel.TextHi,
+                    modifier = Modifier.padding(top = 14.dp)
+                )
+                Text(
+                    Corroboration.assessment(entities, state.results),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Intel.CyanBright,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+                Text(
+                    "Graded the way intelligence is graded: a letter for how " +
+                        "much the source is worth, a number for how much this " +
+                        "particular claim is worth. One source is never a " +
+                        "confirmation, however good it is.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Intel.TextLow,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
+
+            if (entities.isNotEmpty()) {
+                var showMachinery by rememberSaveable { mutableStateOf(false) }
+                val leads = entities.filter { it.caveat == null }
+                val machinery = entities.filter { it.caveat != null }
+                leads.groupBy { it.kind }.forEach { (kind, group) ->
+                    SectionHeader("$kind — ${group.size}", Intel.Cyan)
+                    group.take(20).forEach { EntityRow(it) }
+                }
+                if (machinery.isNotEmpty()) {
+                    Text(
+                        if (showMachinery)
+                            "— hide ${machinery.size} that are machinery"
+                        else
+                            "+ ${machinery.size} identifiers that belong to the " +
+                                "machinery, not to anyone",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Intel.TextLow,
+                        modifier = Modifier
+                            .padding(top = 8.dp)
+                            .clickable { showMachinery = !showMachinery }
+                    )
+                    if (showMachinery) machinery.forEach { EntityRow(it) }
                 }
             }
 
@@ -782,4 +847,59 @@ private fun shareFile(context: Context, file: File, format: ExportFormat) {
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
     context.startActivity(Intent.createChooser(intent, "Export dossier"))
+}
+
+/**
+ * One thing the case found: its grade, what it is, and who said so.
+ *
+ * The grade is first because it is what decides whether the rest is
+ * worth reading.
+ */
+@Composable
+private fun EntityRow(entity: Corroboration.Entity) {
+    val tint = when (entity.credibility.code) {
+        1 -> Intel.Success
+        2 -> Intel.CyanBright
+        3 -> Intel.TextHi
+        else -> Intel.TextLow
+    }
+    Row(
+        verticalAlignment = Alignment.Top,
+        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)
+    ) {
+        Text(
+            entity.grade,
+            style = MaterialTheme.typography.labelMedium,
+            color = tint,
+            fontFamily = FontFamily.Monospace,
+            modifier = Modifier
+                .padding(end = 8.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(Intel.Elevated)
+                .padding(horizontal = 6.dp, vertical = 2.dp)
+        )
+        Column(Modifier.weight(1f)) {
+            SelectionContainer {
+                Text(
+                    entity.value,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = tint,
+                    fontFamily = FontFamily.Monospace
+                )
+            }
+            Text(
+                buildString {
+                    append(entity.credibility.label)
+                    append(" · ")
+                    append(entity.sourceNames.joinToString(", "))
+                    if (entity.independent > 1) {
+                        append(" (${entity.independent} independent)")
+                    }
+                    entity.caveat?.let { append(" · ").append(it) }
+                },
+                style = MaterialTheme.typography.labelSmall,
+                color = Intel.TextLow
+            )
+        }
+    }
 }

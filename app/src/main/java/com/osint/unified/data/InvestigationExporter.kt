@@ -7,6 +7,7 @@ import android.graphics.Typeface
 import android.graphics.pdf.PdfDocument
 import com.osint.unified.data.db.Result as ResultRow
 import com.osint.unified.domain.EntityExtractor
+import com.osint.unified.domain.Corroboration
 import com.osint.unified.domain.Findings
 import com.osint.unified.domain.IntelSummary
 import com.osint.unified.domain.Observable
@@ -239,6 +240,77 @@ class InvestigationExporter(private val appContext: Context) {
         append("App build  : ${com.osint.unified.BuildConfig.VERSION_NAME}\n")
         append("Sources    : ${results.size} queried — ${sorted.hits.size} returned intel, ")
         append("${sorted.empty.size} found nothing, ${sorted.failed.size} could not be reached\n")
+
+        // An assessment, not a transcript. A report that hands over sixty
+        // tool outputs and no judgement has moved the work rather than
+        // done it, and leaves the reader to discover for themselves that
+        // half of it is a CDN.
+        val entities = Corroboration.merge(
+            results, observable.raw, seedIsPlace = observable is Observable.Coordinate
+        )
+        append("\nASSESSMENT\n----------\n")
+        append(Corroboration.assessment(entities, results)).append('\n')
+        append(
+            "Graded on the Admiralty scale: a letter for the source " +
+                "(A, a record of the thing itself, down to E, a heuristic), " +
+                "a number for this particular claim (1, corroborated by " +
+                "another independent source, down to 6, unjudgeable). The two " +
+                "are rated separately. No single source produces a 1, however " +
+                "good it is.\n"
+        )
+
+        val leads = entities.filter { it.caveat == null }
+        if (leads.isNotEmpty()) {
+            append("\nWHAT WAS FOUND\n--------------\n")
+            leads.groupBy { it.kind }.forEach { (kind, group) ->
+                append("\n$kind\n")
+                group.take(30).forEach { e ->
+                    append("  ${e.grade}  ${e.value}\n")
+                    append("        ${e.credibility.label} · ")
+                    append(e.sourceNames.joinToString(", "))
+                    if (e.independent > 1) append(" (${e.independent} independent)")
+                    append('\n')
+                }
+            }
+        }
+
+        val machinery = entities.filter { it.caveat != null }
+        if (machinery.isNotEmpty()) {
+            append("\nSET ASIDE AS MACHINERY\n----------------------\n")
+            append(
+                "Real records that are not leads: role mailboxes, registrar " +
+                    "privacy proxies, content delivery hosts.\n"
+            )
+            machinery.take(30).forEach { e ->
+                append("  ${e.value} — ${e.caveat}\n")
+            }
+        }
+
+        // What was not done is part of the report. A reader cannot tell a
+        // question that was asked and answered "no" from one that was
+        // never asked, unless the report says.
+        append("\nLIMITATIONS\n-----------\n")
+        if (sorted.failed.isNotEmpty()) {
+            append("Could not be reached, so they said nothing either way: ")
+            append(sorted.failed.joinToString(", ") { it.toolName })
+            append("\n")
+        }
+        val active = results.filter {
+            com.osint.unified.domain.ToolRegistry.byId(it.toolId)?.touchesTarget == true
+        }
+        append(
+            if (active.isEmpty())
+                "Nothing here contacted the target's own infrastructure; every " +
+                    "source is a third party reporting what it already held.\n"
+            else
+                "${active.size} of these sources connected to the target's own " +
+                    "infrastructure, so this enquiry appears in their logs.\n"
+        )
+        append(
+            "Absence of a finding is not evidence of absence. A name missing " +
+                "from a sanctions list is missing from one list; an account not " +
+                "found is not found by the rules this build carries.\n"
+        )
 
         // First, because it is the only part of the document a person
         // wrote, and the rest is there to support it.

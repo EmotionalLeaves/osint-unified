@@ -15,7 +15,9 @@ import com.osint.unified.domain.ToolCategory.SOCMINT
  */
 object ToolRegistry {
 
-    val all: List<Tool> = listOf(
+    val all: List<Tool> get() = graded
+
+    private val declared: List<Tool> = listOf(
         // ---- SOCMINT ----
         Tool("sherlock", "Sherlock", SOCMINT, "username", "json", DIRECT,
             "Verifies public account existence across hundreds of sites (native on-device check).",
@@ -286,6 +288,81 @@ object ToolRegistry {
             "Worldwide coverage of a query with sources, reporting countries and dates (GDELT article API).",
             "https://www.gdeltproject.org"),
     )
+
+
+    /**
+     * What each source is worth, before it says anything.
+     *
+     * One table rather than a field scattered across eighty declarations,
+     * so the grading can be read and argued with in one place — which is
+     * the only way a grade means anything.
+     *
+     * A: a record of the thing itself. Certificate transparency is a
+     * signed log of certificates that were actually issued; RDAP and
+     * GLEIF are the registries; OFAC and the UN publish their own lists.
+     * There is no interpretation between the event and the record.
+     *
+     * B: an operator publishing its own data — DNS as served, an archive
+     * saying what it holds, a government feed.
+     *
+     * C: a third party reporting what it observed. Scanners, aggregators
+     * of other people's crawls, breach catalogues: honest, secondhand.
+     *
+     * D: derived or aggregated without naming where it came from.
+     *
+     * E: a heuristic. The username sweeps belong here and nowhere else: a
+     * name being taken on a site is a fact about the name, not about the
+     * person, and presenting it at the same weight as a certificate was
+     * most of what made the dossier unusable.
+     */
+    private val RELIABILITY: Map<String, Grading.Reliability> = buildMap {
+        // A — the record of the thing itself.
+        listOf(
+            "crtsh", "rdap", "gleif", "edgar", "sanctions", "unsanctions",
+            "aircraftreg", "wallet", "bgpview", "asnintel", "cve", "wikidata"
+        ).forEach { put(it, Grading.Reliability.COMPLETE) }
+
+        // B — an operator publishing its own data.
+        listOf(
+            "dns", "ptr", "tlscert", "wayback", "archive", "commoncrawl",
+            "waybackurls", "gau", "subfinder", "github", "ghactivity",
+            "keybase", "pgpkey", "gravatar", "geocode", "revgeo",
+            "wikinearby", "osmrecon", "osmuser", "overpass_turbo",
+            "milsites", "photosnear", "ukcrime", "fbi", "histweather",
+            "sunterrain", "outages", "cctvnear", "reddit", "hackernews",
+            "telegram", "gdelt", "breaches", "tar1090", "exif", "exiftool"
+        ).forEach { put(it, Grading.Reliability.USUALLY) }
+
+        // C — a third party reporting what it saw.
+        listOf(
+            "httpx", "ipinfo", "shodan", "urlscan", "otx", "iprep",
+            "hostintel", "nuclei", "trufflehog", "opensanctions",
+            "hudsonrock", "breachcat", "webcrawl", "sitefiles", "headers",
+            "mailsec", "torexit", "torrelay", "subsweep", "phoneinfoga",
+            "holehe", "ghunt", "h8mail", "emailgithub", "emailperm"
+        ).forEach { put(it, Grading.Reliability.FAIRLY) }
+
+        // D — derived, of unclear provenance.
+        listOf("typosquat", "reverseimage").forEach {
+            put(it, Grading.Reliability.NOT_USUALLY)
+        }
+
+        // E — a heuristic, and it should look like one.
+        listOf(
+            "sherlock", "maigret", "blackbird", "socialsweep", "emailaccounts"
+        ).forEach { put(it, Grading.Reliability.UNRELIABLE) }
+
+        // F — directories and search pages. These are places to look, not
+        // sources that said anything, and they are graded as what they
+        // are rather than left to look like findings.
+        listOf("framework", "toolrun", "dorks", "websearch").forEach {
+            put(it, Grading.Reliability.UNJUDGED)
+        }
+    }
+
+    /** Every tool, carrying the grade the table above gives it. */
+    private val graded: List<Tool> =
+        declared.map { it.copy(reliability = RELIABILITY[it.id] ?: it.reliability) }
 
     private val byId: Map<String, Tool> = all.associateBy { it.id }
 

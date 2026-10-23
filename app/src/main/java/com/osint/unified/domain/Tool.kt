@@ -32,5 +32,14 @@ data class Tool(
      * Asking a registry about a domain is passive. Resolving its hosts,
      * fetching its files or probing its ports is not.
      */
-    val touchesTarget: Boolean = false
+    val touchesTarget: Boolean = false,
+    /**
+     * How much this source is worth before it says anything.
+     *
+     * Graded once, in one table in [ToolRegistry], because a reader of a
+     * dossier has to be able to tell a certificate transparency log from
+     * a site that answers 200 to every profile URL — and until now the
+     * app presented them identically.
+     */
+    val reliability: Grading.Reliability = Grading.Reliability.UNJUDGED
 )
