@@ -12,6 +12,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
@@ -91,13 +92,20 @@ fun GlobeView(
     val centreLat = camera.lat
     val centreLon = camera.lon
     val zoom = camera.zoom
+    // The loops below run for as long as a flick or a flight lasts and
+    // are not restarted while they do. Without this they would keep
+    // computing from the camera as it was when they started, write
+    // that back every frame, and pin the globe in place — which is
+    // exactly what "the globe will not move" looks like.
+    val live by rememberUpdatedState(camera)
+    val emit by rememberUpdatedState(onCamera)
     var spin by remember { mutableFloatStateOf(0f) }
 
     // Where a double tap is taking the camera, if one is in flight.
     var flight by remember { mutableStateOf<GlobeCamera?>(null) }
     LaunchedEffect(flight) {
         val target = flight ?: return@LaunchedEffect
-        val from = camera
+        val from = live
         var t = 0f
         while (t < 1f) {
             withFrameNanos { }
@@ -105,7 +113,7 @@ fun GlobeView(
             // Ease out: a camera that arrives at full speed and stops
             // dead reads as a jump cut rather than a move.
             val e = 1f - (1f - t) * (1f - t)
-            onCamera(
+            emit(
                 GlobeCamera(
                     lat = from.lat + (target.lat - from.lat) * e,
                     lon = from.lon + shortestTurn(from.lon, target.lon) * e,
@@ -123,7 +131,7 @@ fun GlobeView(
     LaunchedEffect(spin != 0f) {
         while (abs(spin) > SPIN_FLOOR) {
             withFrameNanos { }
-            onCamera(camera.copy(lon = wrapLon(camera.lon - spin)))
+            emit(live.copy(lon = wrapLon(live.lon - spin)))
             spin *= SPIN_DECAY
         }
         spin = 0f

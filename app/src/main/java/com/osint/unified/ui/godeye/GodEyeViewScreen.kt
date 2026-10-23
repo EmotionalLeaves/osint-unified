@@ -52,6 +52,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -209,6 +210,20 @@ fun GodEyeViewScreen(
     // other way about. Not the search focus: that is a different kind
     // of move and the map already has one.
     var handoff by remember { mutableStateOf<Triple<Double, Double, Double>?>(null) }
+    // Where the flat map is looking, so switching back to the globe
+    // lands on what was on screen rather than wherever the globe was
+    // left.
+    var mapCentre by remember { mutableStateOf<Pair<Double, Double>?>(null) }
+    // The last zoom the map reported, and when the map was arrived at.
+    //
+    // Returning to the globe needs both. The map opens at whatever
+    // zoom it was last left at, which is often wide enough to satisfy
+    // the "far enough out for a sphere" test — so arriving on the map
+    // bounced straight back to the globe and the toggle looked broken.
+    // It now takes a deliberate zoom *out*, and not in the first
+    // moment after arriving.
+    var lastMapZoom by remember { mutableDoubleStateOf(Double.NaN) }
+    var arrivedOnMap by remember { mutableLongStateOf(0L) }
     var flightFilter by rememberSaveable { mutableStateOf("ALL") }
     // Filtered once per change, not twice per recomposition over 11,000
     // aircraft — the pill and the map now also read the same list.
@@ -383,8 +398,14 @@ fun GodEyeViewScreen(
                                         GlobeHandoff.tileZoom(span, w)
                                     )
                                 }
+                                arrivedOnMap = System.currentTimeMillis()
+                                lastMapZoom = Double.NaN
                             } else if (w > 0 && zoomNow > 0.0) {
-                                globeCamera = globeCamera.copy(
+                                globeCamera = GlobeCamera(
+                                    lat = (mapCentre?.first ?: globeCamera.lat.toDouble())
+                                        .toFloat().coerceIn(-89f, 89f),
+                                    lon = (mapCentre?.second ?: globeCamera.lon.toDouble())
+                                        .toFloat(),
                                     zoom = GlobeHandoff.globeZoom(
                                         GlobeHandoff.mapSpanDegrees(zoomNow, w), w, h
                                     )
@@ -673,6 +694,8 @@ fun GodEyeViewScreen(
                                         GlobeHandoff.spanDegrees(w, h, next.zoom), w
                                     )
                                 )
+                                arrivedOnMap = System.currentTimeMillis()
+                                lastMapZoom = Double.NaN
                                 roundEarth = false
                             }
                         },
@@ -697,20 +720,33 @@ fun GodEyeViewScreen(
                     onInspect = { inspected = it },
                     onViewport = { lat, lon, zoom ->
                         zoomNow = zoom
+                        mapCentre = lat to lon
                         viewModel.onViewportChanged(lat, lon, zoom)
                         // And back the other way: zoom out far enough
                         // and the tiles become a sphere again, at the
                         // same place and showing the same ground.
+                        //
+                        // Only on a deliberate zoom out, though. The
+                        // map opens wherever it was last left, which is
+                        // often already wide enough to satisfy the
+                        // test — so simply arriving sent you straight
+                        // back and the toggle looked broken.
                         val (w, h) = globeSize
-                        if (w > 0 && GlobeHandoff.shouldReturnToGlobe(zoom, w)) {
+                        val zoomingOut = !lastMapZoom.isNaN() && zoom < lastMapZoom - 0.01
+                        val settled = System.currentTimeMillis() - arrivedOnMap > MAP_SETTLE_MS
+                        lastMapZoom = zoom
+                        if (w > 0 && zoomingOut && settled &&
+                            GlobeHandoff.shouldReturnToGlobe(zoom, w)
+                        ) {
                             globeCamera = GlobeCamera(
-                                lat.toFloat(),
+                                lat.toFloat().coerceIn(-89f, 89f),
                                 lon.toFloat(),
                                 GlobeHandoff.globeZoom(
                                     GlobeHandoff.mapSpanDegrees(zoom, w), w, h
                                 )
                             )
                             handoff = null
+                            lastMapZoom = Double.NaN
                             roundEarth = true
                         }
                     },
@@ -1467,6 +1503,10 @@ private fun investigableQuery(obj: Inspected): String? {
 /** The most of the screen the control panel may take, open or not. The
  *  map gets the rest, and it is never nothing. */
 private val PANEL_MAX_HEIGHT = 300.dp
+
+/** How long after arriving on the map before it may hand back. Long
+ *  enough for osmdroid to report the camera it opened with. */
+private const val MAP_SETTLE_MS = 1_500L
 
 /** Below this many layers the row is scannable and a filter is clutter. */
 private const val FILTER_WORTH_IT = 12

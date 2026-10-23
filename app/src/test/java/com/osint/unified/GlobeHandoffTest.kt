@@ -101,4 +101,19 @@ class GlobeHandoffTest {
         )
         assertEquals(3f, back, 0.01f)
     }
+
+    /**
+     * The map opens at whatever zoom it was last left at, and that is
+     * usually wide. The test on its own says "hand back to the globe"
+     * for most of the range a map is ever at — which is why arriving
+     * on the map sent you straight back to the sphere and the toggle
+     * looked broken. The arithmetic was right and the rule around it
+     * was not: it takes a deliberate zoom out now.
+     */
+    @Test
+    fun aMapAtItsUsualZoomWantsToBeAGlobe() {
+        assertTrue(GlobeHandoff.shouldReturnToGlobe(2.5, w))
+        assertTrue(GlobeHandoff.shouldReturnToGlobe(4.0, w))
+        assertFalse(GlobeHandoff.shouldReturnToGlobe(5.0, w))
+    }
 }
