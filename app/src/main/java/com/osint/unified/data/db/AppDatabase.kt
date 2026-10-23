@@ -10,7 +10,7 @@ import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 
 @Database(
     entities = [Investigation::class, Result::class, Watch::class, WatchEvent::class],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -23,7 +23,7 @@ abstract class AppDatabase : RoomDatabase() {
         /** The same number as the `version` in the @Database annotation
          *  above, which cannot reference this one. The pre-flight check
          *  refuses a commit where the two disagree. */
-        const val SCHEMA_VERSION = 4
+        const val SCHEMA_VERSION = 5
 
         @Volatile private var INSTANCE: AppDatabase? = null
 
@@ -65,6 +65,27 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `investigations` ADD COLUMN `parentId` INTEGER")
                 db.execSQL("ALTER TABLE `investigations` ADD COLUMN `viaPivot` TEXT")
+            }
+        }
+
+        /**
+         * Records what a source actually sent, not what was kept.
+         *
+         * The stored output is capped, so a hash taken from it later is
+         * a hash of a truncated copy — which is the one thing a
+         * provenance fingerprint must not be.
+         */
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE `results` ADD COLUMN `outputSha256` TEXT NOT NULL DEFAULT ''"
+                )
+                db.execSQL(
+                    "ALTER TABLE `results` ADD COLUMN `outputBytes` INTEGER NOT NULL DEFAULT 0"
+                )
+                db.execSQL(
+                    "ALTER TABLE `results` ADD COLUMN `truncated` INTEGER NOT NULL DEFAULT 0"
+                )
             }
         }
 
@@ -182,7 +203,7 @@ abstract class AppDatabase : RoomDatabase() {
                     app, AppDatabase::class.java, DatabaseEncryption.ENCRYPTED_NAME
                 )
                     .openHelperFactory(SupportOpenHelperFactory(passphrase))
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .build()
                 // Opened and read from here on purpose: a key, a library
                 // or a migration problem has to surface now, while the
@@ -230,6 +251,6 @@ abstract class AppDatabase : RoomDatabase() {
 
         private fun plain(app: Context): AppDatabase = Room.databaseBuilder(
             app, AppDatabase::class.java, DatabaseEncryption.PLAIN_NAME
-        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build()
+        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build()
     }
 }

@@ -56,7 +56,22 @@ data class Result(
     val rawOutput: String,     // verbatim JSON/text from the tool
     val errorMessage: String? = null,
     val startedAt: Long,
-    val finishedAt: Long? = null
+    val finishedAt: Long? = null,
+    /**
+     * The digest of what the source actually sent, before this row
+     * truncated it.
+     *
+     * The export computed its hash from [rawOutput], which is capped at
+     * 256 KB — so a report claiming to fingerprint "exactly what came
+     * back" was fingerprinting a copy with the end cut off, and the hash
+     * would not match the source's own output for any large answer.
+     * Taken at capture, when the whole thing is still in hand.
+     */
+    val outputSha256: String = "",
+    /** How many bytes the source sent, whole. */
+    val outputBytes: Long = 0,
+    /** Whether [rawOutput] is the whole of it. */
+    val truncated: Boolean = false
 )
 
 /**

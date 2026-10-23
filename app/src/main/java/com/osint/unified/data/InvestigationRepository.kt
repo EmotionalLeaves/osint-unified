@@ -151,6 +151,10 @@ class InvestigationRepository(
                 // search came back clean.
                 val stated = runCatching { executors.forTool(tool).classify(tool, raw) }
                     .getOrNull()
+                // Fingerprinted here, where the whole answer is still in
+                // hand. Taking the digest later, from the stored row, is
+                // taking it from a copy this method truncated.
+                val bytes = raw.toByteArray()
                 ResultRow(
                     id = rowId,
                     investigationId = investigationId,
@@ -164,7 +168,10 @@ class InvestigationRepository(
                     },
                     rawOutput = cap(raw),
                     startedAt = started,
-                    finishedAt = finished
+                    finishedAt = finished,
+                    outputSha256 = sha256(bytes),
+                    outputBytes = bytes.size.toLong(),
+                    truncated = raw.length > MAX_RESULT_CHARS
                 )
             },
             onFailure = { err ->
@@ -206,6 +213,12 @@ class InvestigationRepository(
      * collector, so the investigation can never be opened again. One
      * talkative source should not be able to do that.
      */
+    /** The digest of exactly what the source sent. */
+    private fun sha256(bytes: ByteArray): String = runCatching {
+        java.security.MessageDigest.getInstance("SHA-256").digest(bytes)
+            .joinToString("") { "%02x".format(it) }
+    }.getOrDefault("")
+
     private fun cap(raw: String): String =
         if (raw.length <= MAX_RESULT_CHARS) raw
         else raw.take(MAX_RESULT_CHARS) +

@@ -11,6 +11,7 @@ import com.osint.unified.domain.Corroboration
 import com.osint.unified.domain.Findings
 import com.osint.unified.domain.IntelSummary
 import com.osint.unified.domain.Observable
+import com.osint.unified.domain.ToolRegistry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -156,7 +157,12 @@ class InvestigationExporter(private val appContext: Context) {
                         put("input", r.input)
                         put("startedAt", iso(r.startedAt))
                         r.finishedAt?.let { put("finishedAt", iso(it)) }
-                        put("sha256", sha256(r.rawOutput))
+                        put("sha256", r.outputSha256.ifBlank { sha256(r.rawOutput) })
+                        put("bytes", r.outputBytes)
+                        put("truncated", r.truncated)
+                        ToolRegistry.byId(r.toolId)?.reliability?.let {
+                            put("sourceReliability", it.code.toString())
+                        }
                         if (r.status == "error") put("error", r.errorMessage ?: "")
                         else put("output", r.rawOutput)
                     }
@@ -168,15 +174,18 @@ class InvestigationExporter(private val appContext: Context) {
 
     private fun toCsv(results: List<ResultRow>): String {
         val sb = StringBuilder(
-            "tool,tool_id,verdict,input,started_utc,finished_utc,sha256,output_or_error\n"
+            "tool,tool_id,source_grade,verdict,input,started_utc,finished_utc," +
+                "sha256,output_or_error\n"
         )
         results.forEach { r ->
             val payload = if (r.status == "error") (r.errorMessage ?: "") else r.rawOutput
             sb.append(
                 listOf(
-                    r.toolName, r.toolId, verdict(r), r.input,
+                    r.toolName, r.toolId,
+                    ToolRegistry.byId(r.toolId)?.reliability?.code?.toString().orEmpty(),
+                    verdict(r), r.input,
                     iso(r.startedAt), r.finishedAt?.let { iso(it) }.orEmpty(),
-                    sha256(r.rawOutput), payload
+                    r.outputSha256.ifBlank { sha256(r.rawOutput) }, payload
                 ).joinToString(",") { csv(it) }
             ).append("\n")
         }
@@ -311,6 +320,11 @@ class InvestigationExporter(private val appContext: Context) {
                 "from a sanctions list is missing from one list; an account not " +
                 "found is not found by the rules this build carries.\n"
         )
+        append(
+            "Every line of source output below is prefixed with | so that " +
+                "nothing a source wrote can be mistaken for part of this " +
+                "report.\n"
+        )
 
         // First, because it is the only part of the document a person
         // wrote, and the rest is there to support it.
@@ -376,9 +390,31 @@ class InvestigationExporter(private val appContext: Context) {
         append("ran        : ${iso(r.startedAt)}")
         r.finishedAt?.let { append(" → ${iso(it)}") }
         append("\n")
-        append("sha256     : ${sha256(r.rawOutput)}\n\n")
-        append(r.rawOutput.ifBlank { "(no output)" })
+        val grade = ToolRegistry.byId(r.toolId)?.reliability
+        grade?.let { append("source     : ${it.code} — ${it.label}, ${it.why}\n") }
+        // Taken when the answer arrived, from the whole of it. The old
+        // hash was computed here, from the stored copy, which this
+        // exporter had already truncated at 256 KB — so a fingerprint
+        // advertised as "exactly what came back" did not match the
+        // source's own output for any large answer.
+        if (r.outputSha256.isNotBlank()) {
+            append("sha256     : ${r.outputSha256}  (${r.outputBytes} bytes as received)\n")
+            if (r.truncated) {
+                append(
+                    "             the text below is the first " +
+                        "${r.rawOutput.length} characters of it\n"
+                )
+            }
+        } else {
+            append("sha256     : not recorded (captured before this build)\n")
+        }
         append("\n")
+        // Every line of somebody else's text is prefixed. Without that, a
+        // source could put "--- Something [trusted] ---" and a sha256 line
+        // in its own output and forge a section of this report.
+        r.rawOutput.ifBlank { "(no output)" }.lineSequence().forEach {
+            append("| ").append(it).append('\n')
+        }
     }
 
     /**

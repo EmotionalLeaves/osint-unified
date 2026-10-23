@@ -223,6 +223,7 @@ internal object DatabaseEncryption {
                 }.getOrDefault(false)
 
             val actual = when {
+                hasColumn("results", "outputSha256") -> 5
                 hasTable("watch_events") -> 4
                 hasColumn("investigations", "parentId") -> 3
                 hasTable("watches") -> 2
