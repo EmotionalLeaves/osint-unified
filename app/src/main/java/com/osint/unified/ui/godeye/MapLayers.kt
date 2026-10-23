@@ -26,6 +26,7 @@ data class MapLayers(
     val outages: List<GeoBlip> = emptyList(),
     val ports: List<GeoBlip> = emptyList(),
     val launches: List<GeoBlip> = emptyList(),
+    val sites: List<GeoBlip> = emptyList(),
     val aurora: List<GeoBlip> = emptyList(),
     val buoys: List<GeoBlip> = emptyList(),
     val metar: List<GeoBlip> = emptyList(),
@@ -79,6 +80,9 @@ data class MapLayers(
         cameras.forEach { add("Traffic camera", it.lat, it.lon, 0xFFB388FF.toInt(), 6, it.label, true, it.url) }
         airspace.forEach { add("Restricted airspace", it.lat, it.lon, 0xFFFF5370.toInt(), 7, it.label, true, it.url) }
         cables.forEach { add("Cable landing", it.lat, it.lon, 0xFF7FFFD4.toInt(), 5, it.label, true, it.url) }
+        sites.forEach {
+            add("Controlled site", it.lat, it.lon, 0xFFD98BFF.toInt(), 6, it.label, true, it.url)
+        }
         ports.forEach {
             add("Port", it.lat, it.lon, 0xFF7FD4FF.toInt(), 5, it.label, true, it.url)
         }

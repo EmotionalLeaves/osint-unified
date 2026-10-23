@@ -136,6 +136,7 @@ object AreaReport {
         blips("Tide gauge", state.seaLevel)
         blips("Launch", state.launches)
         blips("Port", state.ports)
+        blips("Controlled site", state.sites)
         sweep("Earthquake", state.quakes, { it.lat }, { it.lon }, { it.label }, { it.url })
         blips("Volcano", state.volcanoes)
         blips("Wildfire", state.fires)

@@ -34,6 +34,7 @@ import com.osint.unified.data.VolcanoDataSource
 import com.osint.unified.data.LaunchDataSource
 import com.osint.unified.data.OutageDataSource
 import com.osint.unified.data.SeaLevelDataSource
+import com.osint.unified.data.SitesDataSource
 import com.osint.unified.data.WorldWarningsDataSource
 import com.osint.unified.data.WeatherDataSource
 import com.osint.unified.domain.EntityExtractor
@@ -88,6 +89,8 @@ data class GodEyeUiState(
     val ports: List<GeoBlip> = emptyList(),
     /** Launches in the next three weeks, at the pads they leave from. */
     val launches: List<GeoBlip> = emptyList(),
+    /** Controlled places around the view: crossings, missions, prisons. */
+    val sites: List<GeoBlip> = emptyList(),
     val aurora: List<GeoBlip> = emptyList(),
     val buoys: List<GeoBlip> = emptyList(),
     val metar: List<GeoBlip> = emptyList(),
@@ -185,6 +188,7 @@ class GodEyeViewModel(
     private val outageDataSource: OutageDataSource,
     private val portDataSource: BundledPointsDataSource,
     private val launchDataSource: LaunchDataSource,
+    private val sitesDataSource: SitesDataSource,
     private val auroraDataSource: AuroraDataSource,
     private val buoyDataSource: BuoyDataSource,
     private val metarDataSource: MetarDataSource,
@@ -391,6 +395,32 @@ class GodEyeViewModel(
         // covers it. Without that test every pan gesture fired a fresh
         // query on someone's mobile data.
         if (radiationOn && movedBeyond(lat, lon, zoom)) ensureRadiation()
+    }
+
+    private var sitesJob: Job? = null
+    @Volatile private var sitesKey: String? = null
+
+    /**
+     * Controlled places around the view, when the layer is on.
+     *
+     * Asked again when the view moves somewhere the last answer does
+     * not cover, like the cameras — and not at all until somebody
+     * turns it on, because every one of these is a request to a
+     * volunteer-run server.
+     */
+    fun ensureSites() {
+        if (sitesJob?.isActive == true) return
+        val where = focus ?: return
+        val key = "%.1f,%.1f".format(java.util.Locale.US, where.first, where.second)
+        if (key == sitesKey && _state.value.sites.isNotEmpty()) return
+        sitesJob = viewModelScope.launch {
+            val v = runCatching { sitesDataSource.near(where.first, where.second) }.getOrNull()
+            if (v != null) {
+                sitesKey = key
+                _state.update { it.copy(sites = v, loaded = it.loaded + "sites") }
+            }
+            sitesJob = null
+        }
     }
 
     private var camerasJob: Job? = null
@@ -1104,6 +1134,7 @@ class GodEyeViewModel(
         private val outageDataSource: OutageDataSource,
         private val portDataSource: BundledPointsDataSource,
         private val launchDataSource: LaunchDataSource,
+        private val sitesDataSource: SitesDataSource,
         private val auroraDataSource: AuroraDataSource,
         private val buoyDataSource: BuoyDataSource,
         private val metarDataSource: MetarDataSource,
@@ -1127,7 +1158,7 @@ class GodEyeViewModel(
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            GodEyeViewModel(router, repository, aircraftDataSource, aisDataSource, earthquakeDataSource, naturalEventsDataSource, overlayDataSource, weatherDataSource, firesDataSource, satellitesDataSource, newsDataSource, gdacsDataSource, volcanoDataSource, worldWarningsDataSource, seaLevelDataSource, outageDataSource, portDataSource, launchDataSource, auroraDataSource, buoyDataSource, metarDataSource, milAircraftDataSource, airQualityDataSource, seismicStationDataSource, conflictDataSource, airportDataSource, powerPlantDataSource, cctvDataSource, airspaceDataSource, spaceWeatherDataSource, cableLandingDataSource, cycloneDataSource, tsunamiDataSource, radiationDataSource, airportStatusDataSource, availableLocalTools, settings, exporter) as T
+            GodEyeViewModel(router, repository, aircraftDataSource, aisDataSource, earthquakeDataSource, naturalEventsDataSource, overlayDataSource, weatherDataSource, firesDataSource, satellitesDataSource, newsDataSource, gdacsDataSource, volcanoDataSource, worldWarningsDataSource, seaLevelDataSource, outageDataSource, portDataSource, launchDataSource, sitesDataSource, auroraDataSource, buoyDataSource, metarDataSource, milAircraftDataSource, airQualityDataSource, seismicStationDataSource, conflictDataSource, airportDataSource, powerPlantDataSource, cctvDataSource, airspaceDataSource, spaceWeatherDataSource, cableLandingDataSource, cycloneDataSource, tsunamiDataSource, radiationDataSource, airportStatusDataSource, availableLocalTools, settings, exporter) as T
     }
 
     /**

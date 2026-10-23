@@ -128,6 +128,7 @@ fun GodEyeViewScreen(
     var showWorldWarnings by rememberSaveable { mutableStateOf(true) }
     var showSeaLevel by rememberSaveable { mutableStateOf(false) }
     var showPorts by rememberSaveable { mutableStateOf(false) }
+    var showSites by rememberSaveable { mutableStateOf(false) }
     var showLaunches by rememberSaveable { mutableStateOf(true) }
     var showOutages by rememberSaveable { mutableStateOf(true) }
     var showAurora by rememberSaveable { mutableStateOf(true) }
@@ -160,7 +161,7 @@ fun GodEyeViewScreen(
     val brief = remember(
         state.conflicts, state.gdacs, state.tsunamis, state.cyclones,
         state.volcanoes, state.worldWarnings, state.seaLevel, state.outages,
-        state.ports, state.launches,
+        state.ports, state.launches, state.sites,
         state.quakes, state.weather, state.fires,
         state.milAircraft, state.airportStatus, state.news,
         state.spaceWeather, state.loaded,
@@ -251,6 +252,7 @@ fun GodEyeViewScreen(
         showWorldWarnings,
         showSeaLevel,
         showPorts,
+        showSites,
         showLaunches,
         showOutages,
         showWeather,
@@ -270,6 +272,7 @@ fun GodEyeViewScreen(
             if (showWorldWarnings || god) add("worldWarnings")
             if (showSeaLevel || god) add("seaLevel")
             if (showPorts || god) add("ports")
+            if (showSites || god) add("sites")
             if (showLaunches || god) add("launches")
             if (showOutages || god) add("outages")
             if (showConflict || god) add("conflicts")
@@ -476,6 +479,14 @@ fun GodEyeViewScreen(
                 LayerPill("HAZARD", state.gdacs.size, Color(0xFFFF8A3D), showGdacs || god, loaded = "gdacs" in state.loaded, trouble = "gdacs" in state.feedTrouble) { showGdacs = !showGdacs }
                 LayerPill("OUTAGE·GLOBAL", state.outages.size, Color(0xFFFF6B6B), showOutages || god, loaded = "outages" in state.loaded, trouble = "outages" in state.feedTrouble) { showOutages = !showOutages }
                 LayerPill("LAUNCH·GLOBAL", state.launches.size, Color(0xFFFFF066), showLaunches || god, loaded = "launches" in state.loaded, trouble = "launches" in state.feedTrouble) { showLaunches = !showLaunches }
+                LayerPill(
+                    "SITES", state.sites.size, Color(0xFFD98BFF), showSites || god,
+                    loadsOnDemand = true, loaded = "sites" in state.loaded,
+                    trouble = "sites" in state.feedTrouble
+                ) {
+                    showSites = !showSites
+                    if (showSites) viewModel.ensureSites()
+                }
                 LayerPill("PORTS·GLOBAL", state.ports.size, Color(0xFF7FD4FF), showPorts || god, loaded = "ports" in state.loaded, trouble = "ports" in state.feedTrouble) { showPorts = !showPorts }
                 LayerPill("TIDE·GLOBAL", state.seaLevel.size, Color(0xFF4DD0E1), showSeaLevel || god, loaded = "seaLevel" in state.loaded, trouble = "seaLevel" in state.feedTrouble) { showSeaLevel = !showSeaLevel }
                 LayerPill("WARN·GLOBAL", state.worldWarnings.size, Color(0xFFFFD166), showWorldWarnings || god, loaded = "worldWarnings" in state.loaded, trouble = "worldWarnings" in state.feedTrouble) { showWorldWarnings = !showWorldWarnings }
@@ -589,6 +600,7 @@ fun GodEyeViewScreen(
                     worldWarnings = vis(showWorldWarnings, state.worldWarnings),
                     seaLevel = vis(showSeaLevel, state.seaLevel),
                     ports = vis(showPorts, state.ports),
+                    sites = vis(showSites, state.sites),
                     launches = vis(showLaunches, state.launches),
                     outages = vis(showOutages, state.outages),
                     aurora = vis(showAurora, state.aurora),
@@ -800,6 +812,7 @@ fun GodEyeViewScreen(
                             god = !god
                             if (god) {
                                 viewModel.ensureCameras()
+                                viewModel.ensureSites()
                                 viewModel.ensureAirspace()
                                 viewModel.ensureRadiation(true)
                             }

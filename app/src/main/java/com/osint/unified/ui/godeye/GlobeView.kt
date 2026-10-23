@@ -87,6 +87,29 @@ fun GlobeView(
     val zoom = camera.zoom
     var spin by remember { mutableFloatStateOf(0f) }
 
+    // Where a double tap is taking the camera, if one is in flight.
+    var flight by remember { mutableStateOf<GlobeCamera?>(null) }
+    LaunchedEffect(flight) {
+        val target = flight ?: return@LaunchedEffect
+        val from = camera
+        var t = 0f
+        while (t < 1f) {
+            withFrameNanos { }
+            t = (t + FLY_STEP).coerceAtMost(1f)
+            // Ease out: a camera that arrives at full speed and stops
+            // dead reads as a jump cut rather than a move.
+            val e = 1f - (1f - t) * (1f - t)
+            onCamera(
+                GlobeCamera(
+                    lat = from.lat + (target.lat - from.lat) * e,
+                    lon = from.lon + shortestTurn(from.lon, target.lon) * e,
+                    zoom = from.zoom + (target.zoom - from.zoom) * e
+                )
+            )
+        }
+        flight = null
+    }
+
     // A flick keeps turning and slows down, the way a globe does. It
     // stops at zero rather than drifting for ever: a sphere redrawing
     // ten thousand coastline points sixty times a second, all night, to
@@ -198,6 +221,25 @@ fun GlobeView(
             }
             .pointerInput(points) {
                 detectTapGestures(
+                    // The gesture everybody tries first on a globe.
+                    // Without it, closing in means pinching with two
+                    // thumbs on a phone held in one hand.
+                    onDoubleTap = { tap ->
+                        val radius = globeRadius(size.width, size.height, zoom)
+                        val centre = Offset(size.width / 2f, size.height / 2f)
+                        Orthographic.unproject(
+                            tap.x, tap.y, camera.lat.toDouble(), camera.lon.toDouble(),
+                            radius, centre.x, centre.y
+                        )?.let { (lat, lon) ->
+                            spin = 0f
+                            flight = GlobeCamera(
+                                lat = lat.toFloat().coerceIn(-89f, 89f),
+                                lon = lon.toFloat(),
+                                zoom = (camera.zoom * DOUBLE_TAP_ZOOM)
+                                    .coerceIn(MIN_ZOOM, MAX_ZOOM)
+                            )
+                        }
+                    },
                     onTap = { tap ->
                         val radius = globeRadius(size.width, size.height, zoom)
                         val centre = Offset(size.width / 2f, size.height / 2f)
@@ -357,6 +399,20 @@ private fun nearest(
         }
     }
     return best
+}
+
+/**
+ * The short way round.
+ *
+ * Flying from 170°E to 170°W is twenty degrees east, not three
+ * hundred and forty degrees west, and interpolating the raw numbers
+ * takes the long way across the entire Pacific.
+ */
+private fun shortestTurn(from: Float, to: Float): Float {
+    var delta = to - from
+    while (delta > 180f) delta -= 360f
+    while (delta < -180f) delta += 360f
+    return delta
 }
 
 private fun wrapLon(lon: Float): Float {
@@ -613,6 +669,12 @@ private const val SETTLE_MS = 140L
 private const val MAX_RENDER_PX = 1400
 
 private const val STAR_COUNT = 220
+
+/** How much closer a double tap takes you. */
+private const val DOUBLE_TAP_ZOOM = 2.2f
+
+/** A quarter of a second at sixty frames. */
+private const val FLY_STEP = 0.066f
 
 /** Over imagery a border is a hint; the eye finds it without help and
  *  anything stronger competes with the ground it is describing. */

@@ -174,6 +174,16 @@ private val coverage = listOf(
             "rather than an event."
     ),
     Coverage(
+        "Controlled sites",
+        "worldwide, around the view",
+        "Border crossings, diplomatic missions, prisons and the " +
+            "substations the lights depend on — the four kinds of " +
+            "place a person looking at an area asks about that the " +
+            "other layers do not hold. Off until you turn it on, " +
+            "because each query costs a volunteer-run server " +
+            "something."
+    ),
+    Coverage(
         "Cameras",
         "worldwide, with live stills in California",
         "OpenStreetMap's mapped cameras around the view, anywhere. " +
@@ -291,7 +301,8 @@ fun SourcesScreen(onBack: () -> Unit) {
         ),
         Source(
             "Overpass API (OpenStreetMap)",
-            "cameras and military ground around the view, queried live",
+            "cameras, military ground, border crossings, diplomatic " +
+                "missions, prisons and substations around the view, queried live",
             "ODbL 1.0 — volunteer-run, rate limited"
         ),
         Source("US Treasury OFAC", "sanctions lists", "US public domain"),

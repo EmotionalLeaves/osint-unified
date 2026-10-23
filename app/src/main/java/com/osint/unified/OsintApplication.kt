@@ -33,6 +33,7 @@ import com.osint.unified.data.VolcanoDataSource
 import com.osint.unified.data.LaunchDataSource
 import com.osint.unified.data.OutageDataSource
 import com.osint.unified.data.SeaLevelDataSource
+import com.osint.unified.data.SitesDataSource
 import com.osint.unified.data.WorldWarningsDataSource
 import com.osint.unified.data.WeatherDataSource
 import com.osint.unified.data.ExifReader
@@ -113,6 +114,9 @@ class OsintApplication : Application() {
     val portDataSource: BundledPointsDataSource by lazy {
         BundledPointsDataSource.ports(this)
     }
+
+    /** Border crossings, missions, prisons and substations around the view. */
+    val sitesDataSource: SitesDataSource by lazy { SitesDataSource() }
 
     /** What is going to space in the next three weeks, and from where. */
     val launchDataSource: LaunchDataSource by lazy { LaunchDataSource(diskCache) }
