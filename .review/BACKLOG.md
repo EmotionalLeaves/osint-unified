@@ -228,6 +228,36 @@ observable types (B3).
 
 ## G. Asked for on 23 Oct
 
+- **G3. Live public webcams, worldwide — YES. Unsecured private
+  cameras — NO, and the line is firm.**
+  The request was for "live feed of anywhere in the world using cctv
+  and unsecured video devices", à la Shodan/Insecam. Split it:
+    - **Build: a layer of genuinely public webcams** the operator
+      meant to be public — traffic and roadway cams, tourism and
+      beach cams, weather cams, port and airport cams. There are
+      keyless, no-account sources for these (Windy's webcam list is
+      the big one but is keyed; many DOTs publish open MJPEG/HLS
+      directly; Wikimedia and OSM tag public webcams). This is a
+      real, legal OSINT capability and it fits the globe perfectly:
+      a camera is a marker, and tapping it opens the operator's own
+      public stream. Probe the keyless DOT/tourism feeds and wire the
+      ones that answer, the same way every other layer here was
+      built. APK size does not matter, data does — so a tap fetches
+      one stream, the layer does not pull video on its own.
+    - **Do not build: access to cameras that were not meant to be
+      public.** Insecam, default-credential IP cameras, misconfigured
+      DVRs — these are private individuals' cameras reached because
+      they were left open, not because anyone published them.
+      Streaming them is unauthorised access to someone's system and a
+      camera pointed at a private individual, which is exactly what
+      this app's own rules refuse. "Unsecured" is not a category of
+      public data; it is a category of break-in that has not been
+      locked yet. No Insecam, no default-credential probing, no
+      Shodan camera dorking in the app, and this stays decided.
+    The honest version of "see anywhere in the world" is the public
+    webcam layer plus the street-level imagery (KartaView, Panoramax)
+    that is already here.
+
 - **G1. Image geolocation — GeoSpy, GeoInfer, Picarta.**
   All three are keyed: GeoSpy is commercial, Picarta's free tier
   still issues a key, GeoInfer likewise. The standing rule for this
@@ -263,19 +293,37 @@ observable types (B3).
   is unusually well placed to have, and it is the difference between
   a lookup tool and something you keep running.
 
-- **G3. Public live-camera layer near a point.** Asked for on 23
-  Oct. The request as phrased — find and view "unsecured video
-  devices" via Shodan-style discovery — is declined: that is
-  watching private individuals who never published anything, which
-  is the line the whole app is built not to cross, and it is not
-  built regardless of how it is asked for. The legitimate feature
-  that answers the real need: aggregate cameras whose operators
-  chose to publish them — traffic and highway, transit and airport,
-  official city and tourism, weather and harbour, park and ski
-  streams. Keyless, intentionally-public feeds only, drawn near a
-  coordinate. Extends the Caltrans source the app already has and
-  the OSM mapped-camera positions. No device discovery, no default
-  credentials, nothing that was not meant to be seen.
+- **G3. Public live-feed layer, worldwide.** Asked for on 23 Oct
+  ("public live-camera layer near a point"), broadened the same day
+  ("live feed of anywhere in the world using any means"). The line
+  holds whatever the wording: "any means" does not reach a feed its
+  operator did not publish. Device discovery, default credentials,
+  unsecured-camera search — the Insecam/Shodan-eye class — is
+  declined here and stays declined however it is asked, because
+  watching a private individual who published nothing is the one
+  thing this app is built not to do, and the first-run screen says
+  so in the user's own install.
+  The legitimate feature, and it is a good one: aggregate the feeds
+  whose operators chose to make them public, and reach for global
+  coverage rather than one coordinate. Keyless, intentionally-public
+  only:
+    - **Government transport feeds**, which are the backbone and are
+      nearly worldwide once assembled: US state DOT 511 systems
+      (Caltrans is already in, ~40 more states expose the same kind
+      of JSON), UK/NL/DE/AU/NZ/JP road authorities, and the open
+      camera endpoints several publish.
+    - **Official city, harbour, airport and weather streams**, and
+      the park/ski/tourism webcams that are posted to be watched.
+    - **Public broadcast and YouTube live** for a place, where a feed
+      is an embedded public stream rather than a device.
+    - **OSM `man_made=surveillance` positions** the app already
+      reads — positions only, never a feed into a private camera.
+  Honest limit to record: truly keyless worldwide webcam coverage is
+  patchy — the big aggregators (Windy, webcams.travel) are keyed, so
+  those go behind the bring-your-own-key door (C7) rather than being
+  worked around. What is keyless is the government and official-feed
+  layer, which is most of what "live feed of anywhere" actually
+  wants and all of what can be done within the app's rules.
 
 ## F. Then
 
