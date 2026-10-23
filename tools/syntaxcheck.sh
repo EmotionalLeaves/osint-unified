@@ -66,6 +66,18 @@ grep -E "error: unresolved reference: @[A-Za-z]" "$WORK/full.txt" >> "$WORK/real
 # template, where Kotlin swallows the underscore into the identifier.
 grep -E "error: unresolved reference: [A-Za-z0-9]+_$" "$WORK/full.txt" >> "$WORK/real.txt" || true
 
+# The Room schema version is written twice — once in the @Database
+# annotation, which cannot reference a constant declared inside the class
+# it annotates, and once as SCHEMA_VERSION for the recovery code. If they
+# drift, the recovery code probes the wrong range and a database one
+# version newer than it looks for is reported as unreadable.
+DB=app/src/main/java/com/osint/unified/data/db/AppDatabase.kt
+ANNOTATED=$(grep -oE "^\s*version = [0-9]+" "$DB" | grep -oE "[0-9]+" | head -1)
+DECLARED=$(grep -oE "const val SCHEMA_VERSION = [0-9]+" "$DB" | grep -oE "[0-9]+" | head -1)
+if [ -n "$ANNOTATED" ] && [ "$ANNOTATED" != "$DECLARED" ]; then
+  echo "error: @Database(version = $ANNOTATED) but SCHEMA_VERSION = $DECLARED" >> "$WORK/real.txt"
+fi
+
 # A Compose scope member imported as though it were a top-level function.
 # `Modifier.weight` belongs to ColumnScope and is internal at package level,
 # so importing it compiles locally and fails in CI with "it is internal" —

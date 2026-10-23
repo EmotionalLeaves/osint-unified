@@ -174,7 +174,12 @@ fun ForensicsScreen(exifReader: ExifReader, onBack: () -> Unit) {
                 onClick = {
                     scope.launch {
                         exifBusy = true
-                        output = exifReader.fromUrl(imageUrl.trim())
+                        // The reader throws on a failure now rather than
+                        // returning the word "Error", so this screen says
+                        // what went wrong instead of printing it as a
+                        // finding.
+                        output = runCatching { exifReader.fromUrl(imageUrl.trim()) }
+                            .getOrElse { "Could not read that image: ${it.message}" }
                         exifBusy = false
                     }
                 },

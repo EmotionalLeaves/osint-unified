@@ -56,6 +56,16 @@ android {
         versionCode = verCode
         versionName = verName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // The fingerprint of the key that is committed to this repository.
+        // The app compares its own signing certificate against it and says
+        // so when they match, because a published private key means
+        // anyone can install an app with this identity — and the database
+        // encryption rests on exactly that not being possible.
+        buildConfigField(
+            "String",
+            "PUBLIC_KEY_SHA256",
+            "\"34277c715bd7124b541c048915dd3bfb5ab065026aec3106e6271b5f85307a51\""
+        )
     }
 
     buildTypes {
@@ -87,8 +97,8 @@ android {
         jvmTarget = "17"
     }
     buildFeatures {
-        compose = true
         buildConfig = true
+        compose = true
     }
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.14"

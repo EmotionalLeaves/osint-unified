@@ -24,6 +24,16 @@ internal object DatabaseEncryption {
     private const val WORKING_NAME = "osint-unified-enc.db.migrating"
 
     /**
+     * The plaintext database is kept under this name rather than deleted.
+     *
+     * It is removed only once Room has actually opened the encrypted copy
+     * and read from it. Deleting it at the moment the bytes were copied
+     * left no way back from any later failure, and the first version of
+     * this code had one.
+     */
+    const val BACKUP_NAME = "osint-unified.db.pre-encryption"
+
+    /**
      * Copies [PLAIN_NAME] into [ENCRYPTED_NAME] if the first exists and the
      * second does not. Returns a description of what happened, for the
      * screen that reports on it; null means there was nothing to do.
@@ -39,7 +49,15 @@ internal object DatabaseEncryption {
         return try {
             val before = inspectPlaintext(plain)
             copyInto(context, working, passphrase, plain, before.version)
-            val after = countTables(context, WORKING_NAME, passphrase, before.counts.keys)
+            // Opened at the version the file now has. Opening it at any
+            // other number makes the helper treat the difference as an
+            // upgrade or a downgrade and stamp the file to match — which
+            // is precisely what went wrong: the check re-stamped a
+            // version-4 database as version 1, Room then replayed every
+            // migration against a schema that already had them, and the
+            // whole case history ended up stranded in a file nothing
+            // would open.
+            val after = countTables(context, WORKING_NAME, passphrase, before.version, before.counts.keys)
             if (after != before.counts) {
                 cleanUp(working)
                 "the copy did not match the original ($before -> $after), " +
@@ -48,8 +66,11 @@ internal object DatabaseEncryption {
                 cleanUp(working)
                 "the encrypted copy could not be put in place"
             } else {
-                // Only now, with a verified encrypted copy in place.
-                cleanUp(plain)
+                // Kept, not deleted. It is removed once Room has opened
+                // the encrypted database and read a row out of it.
+                val backup = File(plain.parentFile, BACKUP_NAME)
+                cleanUp(backup)
+                if (!plain.renameTo(backup)) cleanUp(plain)
                 "moved ${before.counts.values.sum()} rows into an encrypted database"
             }
         } catch (e: Exception) {
@@ -116,9 +137,10 @@ internal object DatabaseEncryption {
         context: Context,
         name: String,
         passphrase: ByteArray,
+        version: Int,
         tables: Set<String>
     ): Map<String, Int> {
-        val helper = open(context, name, passphrase, 0)
+        val helper = open(context, name, passphrase, version)
         helper.use {
             val db = it.writableDatabase
             return tables.associateWith { table ->
@@ -142,16 +164,101 @@ internal object DatabaseEncryption {
         passphrase: ByteArray,
         version: Int
     ): SupportSQLiteOpenHelper {
+        // onCreate is permitted — that is how the empty encrypted file is
+        // made — but a version mismatch throws rather than being waved
+        // through. The helper writes the new version number at the end of
+        // the upgrade transaction, so a callback that returns quietly is a
+        // callback that renumbers the database. That is the whole of the
+        // bug in r173: a check that opened a version-4 file as version 1
+        // left it stamped 1, and Room then replayed four migrations over a
+        // schema that already had them.
         val callback = object : SupportSQLiteOpenHelper.Callback(maxOf(version, 1)) {
             override fun onCreate(db: SupportSQLiteDatabase) = Unit
-            override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
-            override fun onDowngrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+            override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) =
+                throw VersionMismatch(oldVersion, newVersion)
+            override fun onDowngrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) =
+                throw VersionMismatch(oldVersion, newVersion)
         }
         val configuration = SupportSQLiteOpenHelper.Configuration.builder(context)
             .name(name)
             .callback(callback)
             .build()
         return SupportOpenHelperFactory(passphrase).create(configuration)
+    }
+
+    /**
+     * Puts the schema version back where the schema says it should be.
+     *
+     * Builds r173 to r176 stamped the encrypted database as version 1
+     * while its tables were at version 3 or 4. Room then replayed the
+     * migrations, hit "table already exists", and the app fell back to a
+     * new empty database while the real one sat there unopened. Nothing
+     * was corrupted — only the number at the top of the file was wrong —
+     * so it can be put back by looking at which tables and columns are
+     * actually present.
+     *
+     * Returns the version it set, or null if there was nothing to fix.
+     */
+    fun repairVersion(context: Context, passphrase: ByteArray): Int? = runCatching {
+        if (!context.getDatabasePath(ENCRYPTED_NAME).exists()) return@runCatching null
+        val claimed = probeVersion(context, passphrase) ?: return@runCatching null
+
+        open(context, ENCRYPTED_NAME, passphrase, claimed).use { helper ->
+            val db = helper.writableDatabase
+            fun hasTable(name: String): Boolean =
+                db.query(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                    arrayOf<Any>(name)
+                ).use { c -> c.moveToFirst() }
+            fun hasColumn(table: String, column: String): Boolean =
+                runCatching {
+                    db.query("PRAGMA table_info(`$table`)").use { c ->
+                        val index = c.getColumnIndex("name")
+                        if (index < 0) return@runCatching false
+                        while (c.moveToNext()) {
+                            if (c.getString(index) == column) return@runCatching true
+                        }
+                        false
+                    }
+                }.getOrDefault(false)
+
+            val actual = when {
+                hasTable("watch_events") -> 4
+                hasColumn("investigations", "parentId") -> 3
+                hasTable("watches") -> 2
+                hasTable("investigations") -> 1
+                else -> return@runCatching null
+            }
+            if (actual == claimed) null else {
+                db.execSQL("PRAGMA user_version = $actual")
+                actual
+            }
+        }
+    }.getOrNull()
+
+    /** Raised instead of silently renumbering a database. */
+    private class VersionMismatch(val from: Int, val to: Int) :
+        RuntimeException("database is version $from, opened as $to")
+
+    /**
+     * What version the encrypted file is, found by asking.
+     *
+     * There is no way to read it without opening the file, and opening it
+     * at the wrong version is what rewrites it — so each candidate is
+     * tried and the one that opens without a mismatch is the answer. The
+     * mismatches throw before the helper reaches the line that would
+     * renumber anything.
+     */
+    private fun probeVersion(context: Context, passphrase: ByteArray): Int? {
+        for (candidate in AppDatabase.SCHEMA_VERSION downTo 1) {
+            val found = runCatching {
+                open(context, ENCRYPTED_NAME, passphrase, candidate).use {
+                    it.writableDatabase.version
+                }
+            }.getOrNull()
+            if (found != null) return found
+        }
+        return null
     }
 
     /** A half-written file is worse than no file. */

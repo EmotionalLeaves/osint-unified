@@ -37,6 +37,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.osint.unified.data.db.Result as ResultRow
+import com.osint.unified.domain.Findings
 import com.osint.unified.domain.ObservableExtractor
 import com.osint.unified.domain.ResultFormatter
 import com.osint.unified.domain.ToolRegistry
@@ -58,7 +59,14 @@ fun ResultCard(row: ResultRow, onPivot: ((String) -> Unit)? = null) {
     val accent = remember(row.toolId) {
         ToolRegistry.byId(row.toolId)?.category?.let { categoryColor(it) } ?: Intel.Cyan
     }
-    val summary = if (row.status == "success") {
+    // A source that looked and found nothing, and one that could not be
+    // reached, are both finished: they have output, and it is the output
+    // that says which of the two happened. Treating them as unfinished
+    // left a card with no body, no COPY, no RAW and the same amber dot as
+    // a source still running — so the carefully worded "no OFAC entry
+    // matched this name" was never shown to anybody.
+    val finished = row.status in FINISHED_WITH_OUTPUT
+    val summary = if (finished) {
         remember(row.id, row.rawOutput) { ResultFormatter.format(row.toolId, row.rawOutput) }
     } else null
     val lines = summary?.lines ?: emptyList()
@@ -83,7 +91,7 @@ fun ResultCard(row: ResultRow, onPivot: ((String) -> Unit)? = null) {
                     color = Intel.TextHi,
                     modifier = Modifier.weight(1f)
                 )
-                if (row.status == "success" && lines.isNotEmpty()) {
+                if (finished && lines.isNotEmpty()) {
                     CountBadge(lines.size, accent)
                 }
             }
@@ -92,7 +100,7 @@ fun ResultCard(row: ResultRow, onPivot: ((String) -> Unit)? = null) {
             // parsed lines are not selectable — every one of them is a tap
             // target for a link or a pivot — so copying is a button, and
             // the verbatim output is one tap away and selectable.
-            if (row.status == "success" || row.status == "error") {
+            if (finished || row.status == "error") {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.padding(top = 2.dp)
@@ -129,8 +137,8 @@ fun ResultCard(row: ResultRow, onPivot: ((String) -> Unit)? = null) {
                 )
             }
 
-            when (row.status) {
-                "success" -> {
+            when {
+                finished -> {
                     if (lines.isEmpty()) {
                         Text(
                             "no findings",
@@ -155,10 +163,17 @@ fun ResultCard(row: ResultRow, onPivot: ((String) -> Unit)? = null) {
                         }
                     }
                 }
-                "error" -> Text(
+                row.status == "error" -> Text(
                     row.errorMessage ?: "Unknown error",
                     style = MaterialTheme.typography.bodySmall,
                     color = Intel.Danger,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+                row.status == "cancelled" || row.status == "interrupted" -> Text(
+                    if (row.status == "cancelled") "Stopped before it finished."
+                    else "Interrupted — the app was closed while this was running.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Intel.TextLow,
                     modifier = Modifier.padding(top = 8.dp)
                 )
                 else -> Row(
@@ -219,6 +234,11 @@ fun ResultCard(row: ResultRow, onPivot: ((String) -> Unit)? = null) {
 
 /** Enough to read; short enough that a Text can lay it out. */
 private const val RAW_PREVIEW_CHARS = 4_000
+
+/** Statuses that mean the source answered, whatever the answer was. */
+private val FINISHED_WITH_OUTPUT = setOf(
+    "success", Findings.STATUS_ABSENT, Findings.STATUS_UNREACHABLE
+)
 
 /**
  * What the clipboard gets: the source, what it was asked, and its answer.
@@ -309,6 +329,12 @@ private fun StatusDot(status: String) {
     val color = when (status) {
         "success" -> Intel.Success
         "error" -> Intel.Danger
+        // Three finished states that are not success, and none of them is
+        // "still working". They shared the running colour, so a dossier of
+        // absences looked like a dossier still loading.
+        Findings.STATUS_ABSENT -> Intel.TextLow
+        Findings.STATUS_UNREACHABLE -> Intel.Amber
+        "cancelled", "interrupted" -> Intel.TextLow
         else -> Intel.Amber
     }
     Box(Modifier.size(8.dp).clip(RoundedCornerShape(50)).background(color))

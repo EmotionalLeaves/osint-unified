@@ -36,7 +36,22 @@ import java.util.concurrent.TimeUnit
  */
 object Http {
 
-    private const val UA = "OSINT-Unified/1.0 (research)"
+    /**
+     * What this app calls itself to a server it has never met.
+     *
+     * Not "OSINT-Unified". Several of these requests go to hosts the
+     * target controls — fetching an image for its metadata, reading a
+     * profile page — and a user agent announcing an OSINT tool writes
+     * "somebody is investigating you" into their access log. A plain
+     * mobile browser string says nothing that the request did not
+     * already say.
+     *
+     * Where a service asks to be identified — the ones whose terms
+     * require a contact or a project name — the data source sets its own
+     * header and this is not applied.
+     */
+    private const val UA = "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 " +
+        "(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
 
     /** At once, to any one host. Enough to be quick, few enough that no
      *  free service sees this app as a burst of traffic. */

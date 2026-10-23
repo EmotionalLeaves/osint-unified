@@ -185,13 +185,25 @@ jobs:
           echo "::notice title=bundled-assets::${SUMMARY}"
           echo "::notice title=rule-counts::${COUNTS}"
 
+      # The condition reads the secret directly. It used to read an env
+      # var defined in this same step, and a step's `if` is evaluated
+      # before its own `env` block exists — so the condition was always
+      # false and every build was signed with the committed key no matter
+      # what secret had been set.
       - name: Use the private signing key when one is configured
-        if: ${{ env.OSINT_KEYSTORE_B64 != '' }}
+        if: ${{ secrets.OSINT_KEYSTORE_B64 != '' }}
         env:
           OSINT_KEYSTORE_B64: ${{ secrets.OSINT_KEYSTORE_B64 }}
         run: |
+          mkdir -p keystore
           echo "$OSINT_KEYSTORE_B64" | base64 -d > keystore/ci.jks
-          echo "Signing with the configured private key."
+          test -s keystore/ci.jks
+          echo "::notice title=signing::Signing with the configured private key."
+
+      - name: Say so when the signing key is the public one
+        if: ${{ secrets.OSINT_KEYSTORE_B64 == '' }}
+        run: |
+          echo "::warning title=signing::No OSINT_KEYSTORE_B64 secret is set, so this build is signed with the key committed to the repository. Anyone can sign an app with the same identity, which is what the database encryption assumes cannot happen."
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4

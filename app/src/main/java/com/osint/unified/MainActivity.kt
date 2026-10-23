@@ -176,11 +176,11 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                     }
 
                     // System back returns to the globe from any sub-screen.
-                    // The framework directory is excluded: it has its own
-                    // folder stack, and back there should go up one level
-                    // like its toolbar arrow does, not leap to the globe
-                    // from three folders deep.
-                    BackHandler(enabled = screen != "godeye" && screen != "framework") {
+                    // The tool directory is included: its own handler takes
+                    // precedence while it is inside a folder, so this one
+                    // only sees the press when it is at the root. Excluding
+                    // it meant back at the root of TOOLS closed the app.
+                    BackHandler(enabled = screen != "godeye") {
                         // From a dossier reached by a pivot, back belongs to
                         // the investigation it came out of. An enquiry is a
                         // chain, and leaping to the globe from three steps in
@@ -291,12 +291,6 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                             settings = (application as OsintApplication).settings,
                             lockAvailable = com.osint.unified.ui.common.AppLock
                                 .available(this@MainActivity),
-                            // Touching the database first, so the report is
-                            // about an open database and not about one that
-                            // has not been tried yet.
-                            encrypted = (application as OsintApplication)
-                                .database.let { com.osint.unified.data.db.AppDatabase.encrypted },
-                            storageNote = com.osint.unified.data.db.AppDatabase.encryptionNote,
                             onOpenForensics = { screen = "forensics" },
                             onOpenDiagnostics = { screen = "diagnostics" },
                             onOpenSources = { screen = "sources" }
@@ -309,13 +303,11 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                     }
                     }
                     // Named destinations along the bottom, within reach of a
-                    // thumb. The framework keeps the whole screen: it has its
-                    // own folder stack and a bar underneath it competes with
-                    // the one it already draws.
-                    if (screen != "framework") {
-                        OsintNavBar(screen, unseenWatches) { target ->
-                            screen = target
-                        }
+                    // thumb — on every screen, including the tool
+                    // directory. Hiding it there left that tab with no way
+                    // out but a system back that closed the app.
+                    OsintNavBar(screen, unseenWatches) { target ->
+                        screen = target
                     }
                     }
                 }

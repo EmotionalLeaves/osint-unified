@@ -302,24 +302,26 @@ class DirectToolExecutor(
                 starts("Give at least three") -> Findings.Kind.UNREACHABLE
                 else -> null
             }
-            // The same sweep, but its output opens with a caveat rather
-            // than its verdict, so the verdict has to be looked for.
-            "emailaccounts" -> when {
-                output.contains("Could not load any site ruleset") -> Findings.Kind.UNREACHABLE
-                output.contains("This is not a clean sheet") -> Findings.Kind.UNREACHABLE
-                output.contains("No accounts found") -> Findings.Kind.ABSENT
-                Regex("""(?m)^Found \d""").containsMatchIn(output) -> Findings.Kind.HIT
-                else -> null
-            }
-            "sherlock", "maigret", "blackbird", "socialsweep" -> when {
-                starts("Could not load any site ruleset") -> Findings.Kind.UNREACHABLE
-                // The sweep states its own coverage; partial coverage is
-                // closer to "could not ask" than to "looked and found
-                // nothing", and the output says so in those words.
-                output.contains("This is not a clean sheet") -> Findings.Kind.UNREACHABLE
-                starts("No accounts found") -> Findings.Kind.ABSENT
-                starts("Found ") -> Findings.Kind.HIT
-                else -> null
+            // Every sweep, including the email one, states its verdict
+            // on its first line as a field it computed from its own
+            // counts. Matching English prose is what produced both of the
+            // previous bugs here — first "no accounts" read as a hit, then
+            // a full-coverage absence read as unreachable — so the prose
+            // is no longer consulted.
+            "sherlock", "maigret", "blackbird", "socialsweep", "emailaccounts" -> {
+                val field = output.lineSequence()
+                    .firstOrNull { it.startsWith(UsernameChecker.VERDICT_FIELD) }
+                    ?.removePrefix(UsernameChecker.VERDICT_FIELD)?.trim()
+                when (field) {
+                    UsernameChecker.VERDICT_HIT -> Findings.Kind.HIT
+                    UsernameChecker.VERDICT_ABSENT -> Findings.Kind.ABSENT
+                    // Partial coverage is neither: some of the list was
+                    // asked and said no, and the rest was never asked.
+                    UsernameChecker.VERDICT_PARTIAL -> Findings.Kind.UNREACHABLE
+                    UsernameChecker.VERDICT_UNREACHABLE -> Findings.Kind.UNREACHABLE
+                    else -> if (starts("Could not load any site ruleset"))
+                        Findings.Kind.UNREACHABLE else null
+                }
             }
             "framework", "toolrun", "dorks", "websearch", "reverseimage" ->
                 // These are lists of places to look, not findings about the

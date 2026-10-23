@@ -149,8 +149,12 @@ fun GodEyeViewScreen(
     ) { WorldBrief.build(state) }
     // The panel of search controls and layer pills is most of a phone
     // screen. On something called a God's Eye View the globe should be the
-    // thing you are looking at, so the panel folds away.
-    var panelOpen by rememberSaveable { mutableStateOf(true) }
+    // thing you are looking at, so the panel folds away — and starts
+    // folded. Twenty-eight layer buttons, each 48 dp tall for the sake of
+    // thumbs, plus a search box and three hint lines, is more than a 360 dp
+    // phone has: the front door was a wall of buttons with a sliver of map
+    // underneath.
+    var panelOpen by rememberSaveable { mutableStateOf(false) }
     var flightFilter by rememberSaveable { mutableStateOf("ALL") }
     // Filtered once per change, not twice per recomposition over 11,000
     // aircraft — the pill and the map now also read the same list.
@@ -307,6 +311,16 @@ fun GodEyeViewScreen(
                 }
             }
 
+            // However much the panel wants, it gets at most this. Before,
+            // it was laid out at whatever height its contents came to and
+            // the map took what was left — which on a small screen was
+            // nothing at all.
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = PANEL_MAX_HEIGHT)
+                    .verticalScroll(rememberScrollState())
+            ) {
             if (panelOpen) {
             // ---- Command search ----
             OutlinedTextField(
@@ -452,6 +466,7 @@ fun GodEyeViewScreen(
                         TypeChip(f, flightFilter == f) { flightFilter = f }
                     }
                 }
+            }
             }
 
             Box(
@@ -1273,6 +1288,10 @@ private fun investigableQuery(obj: Inspected): String? {
 
 /** The most markers drawn at once. Layers may hold far more than this;
  *  what is off screen costs nothing, and what is left is thinned evenly. */
+/** The most of the screen the control panel may take, open or not. The
+ *  map gets the rest, and it is never nothing. */
+private val PANEL_MAX_HEIGHT = 300.dp
+
 private const val MARKER_BUDGET = 2500
 
 /** How finely the thinning hash divides the markers of one layer. */
@@ -1409,6 +1428,11 @@ private fun LayerPill(
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
+            // Outermost, so it enlarges the area a thumb can hit without
+            // enlarging the pill. Applied after the background and border,
+            // it stretched those to 48 dp as well, and twenty-eight
+            // half-height buttons became twenty-eight full-height ones.
+            .minimumInteractiveComponentSize()
             .clip(RoundedCornerShape(50))
             .background(if (on) Intel.Elevated else Intel.Surface)
             .border(1.dp, if (on) color else Intel.Hairline, RoundedCornerShape(50))
@@ -1417,7 +1441,6 @@ private fun LayerPill(
                 stateDescription = "$stateWord, $count items"
                 contentDescription = "$label layer"
             }
-            .minimumInteractiveComponentSize()
             .padding(horizontal = 10.dp, vertical = 7.dp)
     ) {
         Box(Modifier.size(8.dp).clip(RoundedCornerShape(50)).background(if (on) color else Intel.TextLow))

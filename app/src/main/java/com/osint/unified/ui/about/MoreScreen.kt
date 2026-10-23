@@ -27,17 +27,23 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import com.osint.unified.BuildConfig
 import com.osint.unified.data.AppSettings
+import com.osint.unified.data.SigningIdentity
+import com.osint.unified.data.db.AppDatabase
 import com.osint.unified.network.Http
 import com.osint.unified.ui.theme.Intel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * The things that are used occasionally, named rather than iconified.
@@ -51,12 +57,23 @@ import com.osint.unified.ui.theme.Intel
 fun MoreScreen(
     settings: AppSettings,
     lockAvailable: Boolean,
-    encrypted: Boolean,
-    storageNote: String,
     onOpenForensics: () -> Unit,
     onOpenDiagnostics: () -> Unit,
     onOpenSources: () -> Unit
 ) {
+    // Asking the database how it opened means waiting for it to open, and
+    // after an upgrade that includes copying every case into an encrypted
+    // file. Off the main thread, with the panel filling in when it knows.
+    val context = LocalContext.current
+    val storage by produceState(initialValue = false to "checking…", context) {
+        value = withContext(Dispatchers.IO) {
+            runCatching { AppDatabase.get(context) }
+            AppDatabase.encrypted to AppDatabase.encryptionNote
+        }
+    }
+    val encrypted = storage.first
+    val storageNote = storage.second
+
     Scaffold(
         containerColor = Intel.Base,
         topBar = {

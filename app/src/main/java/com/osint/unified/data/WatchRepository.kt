@@ -100,8 +100,15 @@ class WatchRepository(
     /** One target. Returns a description if something changed, else null. */
     private suspend fun check(watch: Watch): Change? {
         val observable = router.classify(watch.observable)
+        // Passive only, always. A watch runs by itself, four times a day,
+        // with nobody there to decide anything — so it is the last place
+        // that should be knocking on a target's own door. It was running
+        // tlscert, headers, sitefiles, webcrawl and the account sweeps
+        // from the investigator's address every six hours, which
+        // contradicted the promise on the first-run screen in the most
+        // direct way available.
         val tools = router.suggestTools(observable)
-            .filter { it.executionMode == ExecutionMode.DIRECT }
+            .filter { it.executionMode == ExecutionMode.DIRECT && !it.touchesTarget }
             .take(TOOLS_PER_CHECK)
         if (tools.isEmpty()) return null
 

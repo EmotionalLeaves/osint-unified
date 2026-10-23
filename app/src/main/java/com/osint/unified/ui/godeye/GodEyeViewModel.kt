@@ -122,6 +122,9 @@ data class GodEyeUiState(
     val enriching: List<String> = emptyList(),
     /** The chain back to the first thing searched: "jdoe → jdoe@x.com → 1.2.3.4". */
     val breadcrumb: List<String> = emptyList(),
+    /** The same chain as case ids, so going back opens the stored case
+     *  rather than searching its target all over again. */
+    val breadcrumbIds: List<Long> = emptyList(),
     val navSignal: Long = 0,
     val backendUrl: String = "",
     val tar1090Url: String = "",
@@ -451,6 +454,14 @@ class GodEyeViewModel(
 
     /** Back to the investigation this one came out of. */
     fun onOpenParent() {
+        val ids = _state.value.breadcrumbIds
+        if (ids.size >= 2) {
+            openStored(ids[ids.size - 2])
+            return
+        }
+        // No stored lineage — an older case, or one whose chain could not
+        // be read. Searching is then the only way back, and losing the
+        // chain is better than going nowhere.
         val chain = _state.value.breadcrumb
         if (chain.size < 2) return
         pendingParentId = null
@@ -481,6 +492,11 @@ class GodEyeViewModel(
         notesJob?.cancel()
         notesJob = viewModelScope.launch {
             delay(NOTES_DEBOUNCE_MS)
+            // The target is checked again after the wait. Between the
+            // keystroke and the write the person may have searched
+            // something else, and a note about one target written into
+            // another case is evidence in the wrong file.
+            if (_state.value.observable?.raw != observable.raw) return@launch
             runCatching {
                 repository.setNotes(ensureInvestigation(observable), text)
             }
@@ -535,6 +551,15 @@ class GodEyeViewModel(
         searchJobs.clear()
         resultsJob?.cancel()
         dispatched.clear()
+        // The notes belong to the case that was open, not to the next one.
+        // Left in place they appeared under the new target, were saved
+        // into its row and were printed in its exported report — one
+        // target's analyst conclusions filed as evidence about another.
+        // The pending write is cancelled for the same reason: it would
+        // have resolved the investigation id after this line and written
+        // the old notes into the new case.
+        notesJob?.cancel()
+        notesJob = null
         // A coordinate search focuses the globe immediately; other types get a
         // focus once a tool returns a location (see the results collector).
         val focus = (observable as? Observable.Coordinate)?.let { it.lat to it.lon }
@@ -550,6 +575,7 @@ class GodEyeViewModel(
                 enrichmentRunning = false,
                 enriching = emptyList(),
                 breadcrumb = emptyList(),
+                notes = "",
                 navSignal = it.navSignal + 1
             )
         }
@@ -770,14 +796,28 @@ class GodEyeViewModel(
         pendingParentId = null
         pendingPivot = null
         currentInvestigationId = id
+        attachTo(id)
+        return id
+    }
+
+    /**
+     * Points the screen at a stored case: its notes, its lineage and a
+     * live view of its results. Runs nothing.
+     */
+    private fun attachTo(id: Long) {
         viewModelScope.launch {
             // Re-opening a case brings its notes back with it.
             val saved = runCatching { repository.notesFor(id) }.getOrNull().orEmpty()
-            if (saved.isNotBlank()) _state.update { it.copy(notes = saved) }
+            _state.update { it.copy(notes = saved) }
         }
         viewModelScope.launch {
             val chain = runCatching { repository.lineage(id) }.getOrDefault(emptyList())
-            _state.update { st -> st.copy(breadcrumb = chain.map { it.seedObservable }) }
+            _state.update { st ->
+                st.copy(
+                    breadcrumb = chain.map { it.seedObservable },
+                    breadcrumbIds = chain.map { it.id }
+                )
+            }
         }
         resultsJob?.cancel()
         resultsJob = viewModelScope.launch {
@@ -798,7 +838,45 @@ class GodEyeViewModel(
                 }
             }
         }
-        return id
+    }
+
+    /**
+     * Opens a case that already exists, without asking anything again.
+     *
+     * Going back up a pivot chain used to re-run the parent search: every
+     * automatic source fired at the parent for a second time, a fresh
+     * investigation was created with no parent, and the chain above it
+     * became unreachable. Going back is navigation, not an enquiry.
+     */
+    fun openStored(id: Long) {
+        viewModelScope.launch {
+            val investigation = runCatching { repository.byId(id) }.getOrNull() ?: return@launch
+            searchJobs.forEach { it.cancel() }
+            searchJobs.clear()
+            notesJob?.cancel()
+            notesJob = null
+            dispatched.clear()
+            pendingParentId = null
+            pendingPivot = null
+            currentInvestigationId = id
+            val observable = router.classify(investigation.seedObservable)
+            _state.update {
+                it.copy(
+                    query = investigation.seedObservable,
+                    observable = observable,
+                    suggestedTools = runnable(router.suggestTools(observable)),
+                    workflowName = Workflows.forObservable(observable)?.name,
+                    results = emptyList(),
+                    findings = emptyList(),
+                    runningTools = emptyMap(),
+                    enrichmentRunning = false,
+                    enriching = emptyList(),
+                    notes = "",
+                    navSignal = it.navSignal + 1
+                )
+            }
+            attachTo(id)
+        }
     }
 
     /** Builds an export file for the current observable + results, or null. */

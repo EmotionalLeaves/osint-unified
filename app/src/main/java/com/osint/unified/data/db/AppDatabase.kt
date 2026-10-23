@@ -20,6 +20,11 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun watchEventDao(): WatchEventDao
 
     companion object {
+        /** The same number as the `version` in the @Database annotation
+         *  above, which cannot reference this one. The pre-flight check
+         *  refuses a commit where the two disagree. */
+        const val SCHEMA_VERSION = 4
+
         @Volatile private var INSTANCE: AppDatabase? = null
 
         /**
@@ -157,29 +162,69 @@ abstract class AppDatabase : RoomDatabase() {
                 encryptionNote = "this device's keystore would not provide a key"
                 return plain(app)
             }
+            runCatching { System.loadLibrary("sqlcipher") }
+
+            // Builds r173 to r176 verified the copied database by opening
+            // it at the wrong version, which renumbered it, after which
+            // Room replayed migrations over a schema that already had them
+            // and this method fell back to a new empty database. The real
+            // one was still there, intact, with only the number at the top
+            // of the file wrong. Putting that number back is the first
+            // thing that happens now, before anything else is tried.
+            val repaired = DatabaseEncryption.repairVersion(app, passphrase)
+
+            val moved = runCatching {
+                DatabaseEncryption.migrateIfNeeded(app, passphrase)
+            }.getOrNull()
+
             val attempt = runCatching {
-                runCatching { System.loadLibrary("sqlcipher") }
-                val moved = DatabaseEncryption.migrateIfNeeded(app, passphrase)
                 val db = Room.databaseBuilder(
                     app, AppDatabase::class.java, DatabaseEncryption.ENCRYPTED_NAME
                 )
                     .openHelperFactory(SupportOpenHelperFactory(passphrase))
                     .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                     .build()
-                // Opened here on purpose: a key or library problem should
-                // surface now, where there is still a fallback, rather than
-                // on the first query from a screen.
-                db.openHelper.writableDatabase
-                db to moved
+                // Opened and read from here on purpose: a key, a library
+                // or a migration problem has to surface now, while the
+                // plaintext copy is still on disk, and not on the first
+                // query from a screen.
+                db.openHelper.writableDatabase.query("SELECT count(*) FROM investigations")
+                    .use { it.moveToFirst() }
+                db
             }
-            attempt.getOrNull()?.let { (db, moved) ->
+            attempt.getOrNull()?.let { db ->
                 encrypted = true
-                encryptionNote = moved ?: "encrypted at rest"
+                encryptionNote = when {
+                    repaired != null ->
+                        "recovered a database that an earlier build had " +
+                            "renumbered, and encrypted at rest"
+                    moved != null -> moved
+                    else -> "encrypted at rest"
+                }
+                // Only now is the plaintext copy of any existing database
+                // no longer needed.
+                runCatching { app.getDatabasePath(DatabaseEncryption.BACKUP_NAME).delete() }
                 return db
             }
-            encryptionNote =
-                "encryption failed (${attempt.exceptionOrNull()?.message}); the " +
-                    "database is readable by anything that can read this app's files"
+
+            // The encrypted database would not open. If the plaintext copy
+            // is still there, that is the one with the data in it — far
+            // better to run unencrypted off real cases than encrypted off
+            // an empty file.
+            val backup = app.getDatabasePath(DatabaseEncryption.BACKUP_NAME)
+            val plainFile = app.getDatabasePath(DatabaseEncryption.PLAIN_NAME)
+            val why = attempt.exceptionOrNull()?.message
+            if (backup.exists() && !plainFile.exists()) {
+                runCatching { backup.renameTo(plainFile) }
+            }
+            encryptionNote = if (plainFile.exists()) {
+                "encryption failed ($why), so the unencrypted copy of your " +
+                    "cases is being used — nothing was lost, but nothing is " +
+                    "encrypted either"
+            } else {
+                "encryption failed ($why); the database is readable by " +
+                    "anything that can read this app's files"
+            }
             return plain(app)
         }
 

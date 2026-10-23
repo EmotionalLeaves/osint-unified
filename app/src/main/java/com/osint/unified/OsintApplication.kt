@@ -61,6 +61,12 @@ class OsintApplication : Application() {
         // Idempotent and cheap: with no watched targets the worker returns
         // immediately, so there is nothing to turn on or off.
         com.osint.unified.work.WatchWorker.schedule(this)
+        // Opening the database can mean unsealing a key, running a
+        // migration and, after an upgrade, copying every case into an
+        // encrypted file. None of that belongs on the thread that draws
+        // the first frame, so it is started here and is usually finished
+        // before anything asks for it.
+        Thread({ runCatching { database } }, "db-warmup").start()
     }
 
     val database: AppDatabase by lazy { AppDatabase.get(this) }

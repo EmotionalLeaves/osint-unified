@@ -19,6 +19,54 @@ class ObservableRouterTest {
         router = ObservableRouter()
     }
 
+    /**
+     * Ten addresses people actually type, and the things nearest to them.
+     *
+     * The previous test used 8.8.8.8, whose four digits slipped under the
+     * phone-number threshold, so it passed while 192.168.1.1 — eight
+     * digits, dots for separators — was being investigated as a telephone
+     * number, tool set and all.
+     */
+    @Test
+    fun realAddressesAreAddressesAndNotTelephones() {
+        listOf(
+            "192.168.1.1", "10.0.0.138", "172.16.254.1", "203.0.113.45",
+            "198.51.100.14", "8.8.4.4", "1.1.1.1", "140.82.121.4",
+            "93.184.216.34", "127.0.0.1"
+        ).forEach { address ->
+            val classified = router.classify(address)
+            assertTrue(
+                "$address came back as ${classified::class.simpleName}",
+                classified is Observable.IpAddress
+            )
+        }
+    }
+
+    /** Things with digits and dots that are not addresses either. */
+    @Test
+    fun digitsAndDotsAreNotAutomaticallyATelephone() {
+        listOf("3.14159265", "1.2.3.4", "999.999.999.999", "2026-10-22").forEach {
+            assertTrue(
+                "$it was read as a phone number",
+                router.classify(it) !is Observable.PhoneNumber
+            )
+        }
+    }
+
+    /** And the numbers that are telephones still are. */
+    @Test
+    fun telephonesSurviveTheAddressCheck() {
+        listOf(
+            "+15551234567", "+44 20 7946 0958", "(415) 555-0123",
+            "415-555-0123", "5551234567"
+        ).forEach {
+            assertTrue(
+                "$it stopped being a phone number",
+                router.classify(it) is Observable.PhoneNumber
+            )
+        }
+    }
+
     @Test
     fun classifiesEmail() {
         assertTrue(router.classify("jane.doe@example.com") is Observable.Email)

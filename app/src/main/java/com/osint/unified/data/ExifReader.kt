@@ -8,6 +8,7 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
+import java.io.IOException
 
 /**
  * Downloads an image and extracts its EXIF metadata (GPS, camera, times).
@@ -34,8 +35,12 @@ class ExifReader(
         try {
             val request = Request.Builder().url(url).build()
             client.newCall(request).execute().use { resp ->
-                if (!resp.isSuccessful) return@withContext "HTTP ${resp.code}"
-                val body = resp.body ?: return@withContext "Empty response"
+                // Thrown, not returned. A string beginning "HTTP 404" was
+                // stored as a successful result, counted as a finding and
+                // shown with a green dot — the app reporting that it had
+                // read the metadata of a page that does not exist.
+                if (!resp.isSuccessful) throw IOException("HTTP ${resp.code} fetching the image")
+                val body = resp.body ?: throw IOException("the server sent no body")
                 val file = File.createTempFile("exif", ".img", appContext.cacheDir)
                 try {
                     var written = 0L
@@ -54,7 +59,7 @@ class ExifReader(
                             }
                         }
                     }
-                    if (written == 0L) return@withContext "Empty response"
+                    if (written == 0L) throw IOException("the server sent an empty image")
 
                     val exif = ExifInterface(file.absolutePath)
                     val sb = StringBuilder()
@@ -88,7 +93,10 @@ class ExifReader(
                 }
             }
         } catch (e: Exception) {
-            "Error: ${e.message}"
+            // Rethrown so the caller files this as a failure. Returning
+            // the words "Error: ..." made every failure a success with an
+            // apology in it.
+            throw e
         }
     }
 }

@@ -38,6 +38,13 @@ class ObservableRouter {
     // "2026-10-22" has the same alphabet and would otherwise be a phone
     // number, and so would a plain year range.
     private val dateLikeRegex = Regex("""^\d{4}-\d{1,2}-\d{1,2}$""")
+    // Four groups of up to three digits is an address, whatever the
+    // digits add up to. Allowing dots as a separator — French numbers use
+    // them — meant 192.168.1.1 had eight digits and the right shape, and
+    // every private address anyone typed was investigated as a telephone.
+    private val dottedQuadRegex = Regex("""^\d{1,3}(?:\.\d{1,3}){3}$""")
+    // And a decimal number is a number. 3.14159265 was a phone call.
+    private val decimalRegex = Regex("""^-?\d+\.\d+$""")
     private val domainRegex = Regex("""^(?=.{1,253}$)(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$""")
     private val usernameRegex = Regex("""^[a-zA-Z0-9_.-]{3,30}$""")
     private val btcRegex = Regex("""^(?:bc1[a-z0-9]{25,62}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})$""")
@@ -72,6 +79,9 @@ class ObservableRouter {
     private fun looksLikePhone(input: String): Boolean {
         if (!phoneShapeRegex.matches(input)) return false
         if (dateLikeRegex.matches(input)) return false
+        if (dottedQuadRegex.matches(input)) return false
+        if (decimalRegex.matches(input)) return false
+        if (ipv4Regex.matches(input)) return false
         val digits = input.count { it.isDigit() }
         return digits in 7..15
     }
@@ -99,6 +109,12 @@ class ObservableRouter {
                 }
             }
 
+            // Addresses are decided before telephones, not after. An IP
+            // and a phone number are both digits and separators, and
+            // whichever test runs first wins — so the one with an exact
+            // definition goes first.
+            ipv4Regex.matches(input) || ipv6Regex.matches(input) -> Observable.IpAddress(input)
+
             looksLikePhone(input) -> Observable.PhoneNumber(input)
 
             btcRegex.matches(input) || ethRegex.matches(input) -> Observable.Wallet(input)
@@ -109,8 +125,6 @@ class ObservableRouter {
 
             input.startsWith("http://", true) || input.startsWith("https://", true) ->
                 if (imageExtRegex.matches(input)) Observable.ImageUrl(input) else Observable.Url(input)
-
-            ipv4Regex.matches(input) || ipv6Regex.matches(input) -> Observable.IpAddress(input)
 
             // A domain has to end in a real TLD. "john.doe" matched the
             // shape and was investigated as a domain, ahead of the username

@@ -98,6 +98,17 @@ class UsernameChecker(private val appContext: Context) {
         const val MAX_BODY_BYTES = 256L * 1024
 
         /** 40 + 15 = 55 s, inside the 70 s the registry allows this tool. */
+        /** The first line of a sweep's output, read as data. */
+        const val VERDICT_FIELD = "sweep-verdict="
+        const val VERDICT_HIT = "hit"
+        const val VERDICT_ABSENT = "absent"
+        const val VERDICT_PARTIAL = "partial"
+        const val VERDICT_UNREACHABLE = "unreachable"
+
+        /** The share of the list that has to have answered before "no
+         *  accounts" is reported as an absence rather than a shrug. */
+        const val GOOD_COVERAGE = 0.80
+
         const val SWEEP_BUDGET_MS = 40_000L
         const val CONTROL_BUDGET_MS = 15_000L
     }
@@ -148,7 +159,26 @@ class UsernameChecker(private val appContext: Context) {
         val discarded = byStatus.size - survived.size
         val hits = (byContent + survived).sortedBy { it.first.name.lowercase() }
 
+        // The verdict is worked out here, from the counts, and written as
+        // a field rather than left to be guessed from the prose. The
+        // previous arrangement appended "This is not a clean sheet" to
+        // every no-hit result and the classifier matched on that phrase,
+        // so a sweep with full coverage and no hits — the definition of an
+        // absence — was filed as "could not be reached". The inverse of
+        // the bug it replaced, and just as useless.
+        val reached = said.toDouble() / sites.size.coerceAtLeast(1)
+        val verdict = when {
+            hits.isNotEmpty() -> VERDICT_HIT
+            said == 0 -> VERDICT_UNREACHABLE
+            reached >= GOOD_COVERAGE && completed -> VERDICT_ABSENT
+            else -> VERDICT_PARTIAL
+        }
+
         buildString {
+            // A field, not a sentence: the first line is read by the code
+            // that decides what this result means, and stripped before
+            // anything is shown.
+            append(VERDICT_FIELD).append(verdict).append('\n')
             // Three numbers, because they mean three different things and
             // pooling them is how a sweep that reached a fifth of its list
             // reported a clean sheet.
@@ -158,8 +188,12 @@ class UsernameChecker(private val appContext: Context) {
                 append("No accounts found for \"$username\".\n")
                 append("Coverage: $coverage of ${sites.size} sites")
                 append(if (completed) "." else " — stopped at the time cap.")
-                append("\nThis is not a clean sheet: only the $said sites that ")
-                append("answered said no.")
+                if (verdict == VERDICT_ABSENT) {
+                    append("\nEvery site that was asked said no.")
+                } else {
+                    append("\nThis is not a clean sheet: only the $said sites that ")
+                    append("answered said no.")
+                }
             } else {
                 append("Found ${hits.size} accounts for \"$username\".\n")
                 append("Coverage: $coverage of ${sites.size} sites")

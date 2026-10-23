@@ -21,7 +21,16 @@ object ResultFormatter {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
-    fun format(toolId: String, raw: String): Summary {
+    /** Lines a tool addresses to the app rather than to the reader. */
+    private const val MACHINE_FIELD = "sweep-verdict="
+
+    fun format(toolId: String, rawWithFields: String): Summary {
+        // Machine fields a tool wrote for the code that judges its result
+        // are not findings, and showing them to a person is showing them
+        // the plumbing.
+        val raw = rawWithFields.lineSequence()
+            .filterNot { it.startsWith(MACHINE_FIELD) }
+            .joinToString("\n")
         if (raw.isBlank()) return Summary("No output", emptyList())
         return try {
             when (toolId) {
