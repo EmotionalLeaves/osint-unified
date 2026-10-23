@@ -1692,12 +1692,29 @@ private fun GlobeMap(
                     }
                 }
                 overlays.add(MapEventsOverlay(receiver))
+                // The moment the map has a size, say what it can see.
+                //
+                // Everything that decides which markers belong on
+                // screen, and every layer that queries around the
+                // view, needs a bounding box — and a MapView has no
+                // meaningful one until it has been laid out. Waiting
+                // for a scroll event meant a map that was opened and
+                // then simply looked at never reported anything, so
+                // the layers switched on over it did nothing.
+                addOnFirstLayoutListener { _, _, _, _, _ ->
+                    runCatching {
+                        boundingBox.asWindowOrNull()?.let { inView = it }
+                        onViewport(
+                            mapCenter.latitude, mapCenter.longitude, zoomLevelDouble
+                        )
+                    }
+                }
                 // Debounced so a fling triggers one rebuild, not fifty.
                 addMapListener(
                     DelayedMapListener(
                         object : MapListener {
                             override fun onScroll(event: ScrollEvent?): Boolean {
-                                inView = boundingBox.asWindow()
+                                boundingBox.asWindowOrNull()?.let { inView = it }
                                 lastCamera.value = Triple(
                                     mapCenter.latitude, mapCenter.longitude, zoomLevelDouble
                                 )
@@ -1706,7 +1723,7 @@ private fun GlobeMap(
                             }
 
                             override fun onZoom(event: ZoomEvent?): Boolean {
-                                inView = boundingBox.asWindow()
+                                boundingBox.asWindowOrNull()?.let { inView = it }
                                 lastCamera.value = Triple(
                                     mapCenter.latitude, mapCenter.longitude, zoomLevelDouble
                                 )
@@ -1724,21 +1741,35 @@ private fun GlobeMap(
             // the window is unknown and everything would be planned. Fill
             // it in and let the recomposition that causes do the work.
             if (inView == null) {
-                inView = map.boundingBox.asWindow()
-                // And say where that is.
+                // Only once it is a real box.
                 //
-                // The viewport was only reported from the scroll and
-                // zoom listeners, so until the map had been panned the
-                // app did not know where it was looking — and the
-                // layers that query around the view gave up silently
-                // when asked. Opening the map and switching one on did
-                // nothing at all until you happened to drag.
-                onViewport(
-                    map.mapCenter.latitude,
-                    map.mapCenter.longitude,
-                    map.zoomLevelDouble
-                )
-            } else if (plan !== rendered.value) {
+                // This used to take whatever osmdroid said on the
+                // first pass, which is before the MapView has been
+                // laid out: a zero-height view reports north equal to
+                // south, the planner culled every marker against it,
+                // and nothing re-read the window until a scroll or
+                // zoom event. Open the map, turn a layer on, do not
+                // drag: nothing, for ever. Left null until it is
+                // valid, which the planner reads as "do not cull".
+                map.boundingBox.asWindowOrNull()?.let { window ->
+                    inView = window
+                    // And say where that is. The viewport used to be
+                    // reported only from the listeners, so until the
+                    // map had been panned the app did not know where
+                    // it was looking and the layers that query around
+                    // the view gave up silently when asked.
+                    onViewport(
+                        map.mapCenter.latitude,
+                        map.mapCenter.longitude,
+                        map.zoomLevelDouble
+                    )
+                }
+            }
+            // Not an `else`: the pass that fills the window in must
+            // still draw what it already has, and the pass that finds
+            // no window yet must draw the uncollected plan rather than
+            // leave the map blank.
+            if (plan !== rendered.value) {
                 val density = map.resources.displayMetrics.density
                 val wanted = HashSet<String>(plan.size * 2)
                 plan.forEach { pm ->
@@ -2337,6 +2368,17 @@ private fun SettingsField(
     )
 }
 
-/** osmdroid's view-layer box as the plain value the planner reads. */
-private fun BoundingBox.asWindow(): MapWindow =
-    MapWindow(latNorth, latSouth, lonWest, lonEast)
+/**
+ * The same, but null when the box is not a real view of anything.
+ *
+ * osmdroid answers `boundingBox` from the MapView's current size, and
+ * before the view has been laid out that size is zero — so it returns
+ * a box whose north edge equals its south edge, or one made of NaN.
+ * Handed to the planner, that culls every marker on Earth, and since
+ * the window was then only refreshed by a scroll or zoom event the map
+ * stayed empty until the person happened to drag it. A null means "no
+ * window yet", which the planner reads as "do not cull", so the worst
+ * case is a few too many markers for one frame instead of none at all.
+ */
+private fun BoundingBox.asWindowOrNull(): MapWindow? =
+    MapWindow.of(latNorth, latSouth, lonWest, lonEast)

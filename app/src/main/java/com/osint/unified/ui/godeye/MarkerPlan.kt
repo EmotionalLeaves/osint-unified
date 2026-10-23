@@ -41,6 +41,34 @@ internal data class MapWindow(
         return if (west < east) lon in west..east else lon >= west || lon <= east
     }
 
+    companion object {
+        /**
+         * A window, or null when the numbers are not a view of
+         * anything.
+         *
+         * A MapView has no meaningful bounding box until it has been
+         * laid out: before that it answers from a zero-sized viewport
+         * and reports a north edge equal to its south edge, or NaN.
+         * Culled against that, every marker on Earth is off screen —
+         * and because the window was only refreshed by a scroll or
+         * zoom event, a map that was opened and then merely looked at
+         * stayed empty for ever, with every layer switched on and
+         * nothing to show for it.
+         *
+         * Null is the honest answer there, and the planner reads it
+         * as "do not cull": a few too many markers for one frame is a
+         * cost, none at all is a broken screen.
+         */
+        fun of(north: Double, south: Double, west: Double, east: Double): MapWindow? {
+            if (north.isNaN() || south.isNaN() || west.isNaN() || east.isNaN()) return null
+            if (north <= south) return null
+            // west == east is osmdroid's way of saying "the whole
+            // world", which is a real view. Anything else narrower
+            // than a thousandth of a degree is a view of nothing.
+            if (west != east && kotlin.math.abs(east - west) < 0.001) return null
+            return MapWindow(north, south, west, east)
+        }
+    }
 }
 
 /**

@@ -9,6 +9,8 @@ import com.osint.unified.ui.godeye.markerBucket
 import com.osint.unified.ui.godeye.withoutAge
 import com.osint.unified.ui.godeye.planMarkers
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -182,5 +184,60 @@ class MarkerPlanTest {
         val older = young.copy(title = "Buoy 41001 · 41m ago")
         assertEquals(young.identity, older.identity)
         assertEquals(markerBucket(young), markerBucket(older))
+    }
+
+    // ---- The window a map reports before it has been laid out ----
+    //
+    // Every layer switched on and nothing on the map: that was this.
+    // osmdroid answers `boundingBox` from the MapView's current size,
+    // and before layout the size is zero, so it reports a north edge
+    // equal to its south edge. The planner culled every marker on
+    // Earth against it, and nothing re-read the window until a scroll
+    // or zoom event — so a map that was opened and merely looked at
+    // stayed empty.
+
+    @Test
+    fun aBoxWithNoHeightIsNotAWindow() {
+        assertNull(MapWindow.of(north = 0.0, south = 0.0, west = -180.0, east = 180.0))
+        assertNull(MapWindow.of(north = -10.0, south = 10.0, west = -180.0, east = 180.0))
+    }
+
+    @Test
+    fun aBoxOfNaNIsNotAWindow() {
+        assertNull(MapWindow.of(Double.NaN, 0.0, -1.0, 1.0))
+        assertNull(MapWindow.of(1.0, 0.0, Double.NaN, 1.0))
+    }
+
+    @Test
+    fun aSliverOfLongitudeIsNotAWindow() {
+        assertNull(MapWindow.of(north = 1.0, south = -1.0, west = 10.0, east = 10.0001))
+    }
+
+    @Test
+    fun theWholeWorldIsAWindow() {
+        // osmdroid reports the fully zoomed-out map with west == east,
+        // which the contains() test already treats as everything.
+        val w = MapWindow.of(north = 85.0, south = -85.0, west = 0.0, east = 0.0)
+        assertNotNull(w)
+        assertTrue(w!!.contains(51.5, -0.1))
+        assertTrue(w.contains(-33.9, 151.2))
+    }
+
+    @Test
+    fun anOrdinaryViewIsAWindow() {
+        val w = MapWindow.of(north = 52.0, south = 51.0, west = -1.0, east = 1.0)
+        assertNotNull(w)
+        assertTrue(w!!.contains(51.5, -0.1))
+    }
+
+    @Test
+    fun noWindowMeansNoCulling() {
+        // Null is what the map hands the planner until it knows what it
+        // can see, and the planner must read it as "show everything"
+        // rather than "show nothing".
+        val layers = MapLayers(
+            cameras = listOf(GeoBlip(51.5, -0.1, "London"), GeoBlip(-33.9, 151.2, "Sydney"))
+        )
+        assertEquals(2, planMarkers(layers, null).size)
     }
 }
