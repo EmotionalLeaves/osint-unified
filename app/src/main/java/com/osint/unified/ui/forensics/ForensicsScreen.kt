@@ -26,6 +26,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -43,12 +44,33 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ForensicsScreen(exifReader: ExifReader, onBack: () -> Unit) {
+fun ForensicsScreen(
+    exifReader: ExifReader,
+    /** An image shared into the app from somewhere else, read on arrival. */
+    sharedImage: android.net.Uri? = null,
+    onBack: () -> Unit
+) {
     var input by remember { mutableStateOf("") }
     var output by remember { mutableStateOf("") }
     var imageUrl by remember { mutableStateOf("") }
     var exifBusy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+
+    suspend fun readPhoto(uri: android.net.Uri) {
+        exifBusy = true
+        output = runCatching { exifReader.fromUri(uri) }
+            .getOrElse { "Could not read that image: ${it.message}" }
+        exifBusy = false
+    }
+
+    // A photograph on the phone, read here rather than uploaded somewhere
+    // to be read. The picker needs no storage permission: the system hands
+    // back one image and nothing else.
+    val picker = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.GetContent()
+    ) { uri -> if (uri != null) scope.launch { readPhoto(uri) } }
+
+    LaunchedEffect(sharedImage) { sharedImage?.let { readPhoto(it) } }
 
     Column(modifier = Modifier.fillMaxSize().background(Intel.Base)) {
         TopAppBar(
@@ -170,6 +192,21 @@ fun ForensicsScreen(exifReader: ExifReader, onBack: () -> Unit) {
                 placeholder = { Text("https://…/photo.jpg") },
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
             )
+            Button(
+                onClick = { picker.launch("image/*") },
+                enabled = !exifBusy,
+                modifier = Modifier.padding(top = 8.dp)
+            ) {
+                Text(if (exifBusy) "Reading…" else "Pick a photo on this phone")
+            }
+            Text(
+                "Read here, on the phone. Nothing is uploaded, and the hash " +
+                    "below is of the file as it sits on disk.",
+                style = MaterialTheme.typography.labelSmall,
+                color = Intel.TextLow,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+
             Button(
                 onClick = {
                     scope.launch {

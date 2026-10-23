@@ -56,7 +56,11 @@ class OsintApplication : Application() {
         Http.init(this)
         // Applied before anything can make a request, so the first poll of
         // the first feed is already going the way it is supposed to.
-        if (settings.proxyEnabled) Http.useProxy(settings.proxyHost, settings.proxyPort)
+        if (settings.proxyEnabled) {
+            Http.useProxy(settings.proxyHost, settings.proxyPort)
+            com.osint.unified.ui.common.PrivateBrowserHost
+                .useProxy(settings.proxyHost, settings.proxyPort)
+        }
         configureMapTileCache()
         // Idempotent and cheap: with no watched targets the worker returns
         // immediately, so there is nothing to turn on or off.

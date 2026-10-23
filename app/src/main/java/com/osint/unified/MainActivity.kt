@@ -94,10 +94,60 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
     private val openWatchAt = mutableLongStateOf(0L)
     private val openWatchId = mutableLongStateOf(-1L)
 
+    /**
+     * Something shared in from another app, waiting to be dealt with.
+     *
+     * Text becomes a search; an image goes to forensics. Both are bumped
+     * with a timestamp rather than set as a flag, so sharing the same
+     * thing twice is still two events.
+     */
+    private val sharedAt = mutableLongStateOf(0L)
+    private val sharedText = androidx.compose.runtime.mutableStateOf<String?>(null)
+    private val sharedImage = androidx.compose.runtime.mutableStateOf<android.net.Uri?>(null)
+
     private fun consume(intent: Intent?) {
-        if (intent?.action != WatchWorker.ACTION_OPEN_WATCH) return
-        openWatchId.longValue = intent.getLongExtra(WatchWorker.EXTRA_WATCH_ID, -1L)
-        openWatchAt.longValue = System.currentTimeMillis()
+        if (intent == null) return
+        if (intent.action == WatchWorker.ACTION_OPEN_WATCH) {
+            openWatchId.longValue = intent.getLongExtra(WatchWorker.EXTRA_WATCH_ID, -1L)
+            openWatchAt.longValue = System.currentTimeMillis()
+            return
+        }
+
+        // An investigation should start where you found the thing, not
+        // after a round trip through the clipboard.
+        val text = when (intent.action) {
+            Intent.ACTION_SEND -> intent.getStringExtra(Intent.EXTRA_TEXT)
+            Intent.ACTION_PROCESS_TEXT ->
+                intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)?.toString()
+            else -> null
+        }?.trim()?.takeIf { it.isNotBlank() }
+
+        val image = if (intent.action == Intent.ACTION_SEND &&
+            intent.type?.startsWith("image/") == true
+        ) {
+            @Suppress("DEPRECATION")
+            intent.getParcelableExtra<android.net.Uri>(Intent.EXTRA_STREAM)
+        } else {
+            null
+        }
+
+        if (text == null && image == null) return
+        sharedText.value = text
+        sharedImage.value = image
+        sharedAt.longValue = System.currentTimeMillis()
+    }
+
+    /**
+     * The one interesting thing in a shared message.
+     *
+     * Share sheets hand over a sentence with a link in it far more often
+     * than a bare identifier — "look at this https://example.com/u/jdoe"
+     * — and classifying the sentence gets nowhere. A URL in the text is
+     * what was meant; failing that, the text itself.
+     */
+    private fun targetIn(raw: String): String {
+        Regex("""https?://\S+""").find(raw)?.value?.let { return it.trimEnd('.', ',', ')') }
+        return raw.lines().firstOrNull { it.isNotBlank() }?.trim()?.take(300) ?: raw
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -166,6 +216,21 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                         }
                     }
 
+                    var handledShare by rememberSaveable { mutableLongStateOf(0L) }
+                    val shareSignal = sharedAt.longValue
+                    LaunchedEffect(shareSignal) {
+                        if (shareSignal <= handledShare) return@LaunchedEffect
+                        handledShare = shareSignal
+                        val text = sharedText.value
+                        when {
+                            sharedImage.value != null -> screen = "forensics"
+                            text != null -> {
+                                godEyeViewModel.onQueryChange(targetIn(text))
+                                godEyeViewModel.onSearch()
+                            }
+                        }
+                    }
+
                     var handledWatch by rememberSaveable { mutableLongStateOf(0L) }
                     val watchSignal = openWatchAt.longValue
                     LaunchedEffect(watchSignal) {
@@ -206,6 +271,20 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                     LaunchedEffect(Unit) {
                         (application as OsintApplication).watchRepository.observeUnseen()
                             .collect { rows -> unseenWatches = rows.sumOf { it.unseen } }
+                    }
+
+                    // A page in the isolated browser can become a case
+                    // without leaving it: the browser asks here, because it
+                    // is drawn above the navigation and has no other way to.
+                    val investigateFromBrowser by com.osint.unified.ui.common
+                        .InAppNavigation.investigateTarget.collectAsStateWithLifecycle()
+                    var handledBrowserNav by rememberSaveable { mutableLongStateOf(0L) }
+                    LaunchedEffect(investigateFromBrowser) {
+                        val request = investigateFromBrowser ?: return@LaunchedEffect
+                        if (request.second <= handledBrowserNav) return@LaunchedEffect
+                        handledBrowserNav = request.second
+                        godEyeViewModel.onQueryChange(request.first)
+                        godEyeViewModel.onSearch()
                     }
 
                     // Anything the app found opens here rather than in the
@@ -255,6 +334,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                         )
                         "forensics" -> ForensicsScreen(
                             (application as OsintApplication).exifReader,
+                            sharedImage = sharedImage.value,
                             onBack = { screen = "more" }
                         )
                         "diagnostics" -> {

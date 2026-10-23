@@ -138,6 +138,11 @@ dependencies {
     implementation("androidx.exifinterface:exifinterface:1.3.7")
     implementation("org.osmdroid:osmdroid-android:6.1.20")
     implementation("androidx.browser:browser:1.8.0")
+    // So the in-app browser can be put through the same proxy as
+    // everything else. A WebView has its own networking and ignores the
+    // platform's proxy selector, which would have made the one screen
+    // that loads a target's own pages the one that went direct.
+    implementation("androidx.webkit:webkit:1.11.0")
     implementation("androidx.work:work-runtime-ktx:2.9.0")
 
     // The case database is encrypted at rest. An investigation holds

@@ -41,6 +41,7 @@ import com.osint.unified.data.AppSettings
 import com.osint.unified.data.SigningIdentity
 import com.osint.unified.data.db.AppDatabase
 import com.osint.unified.network.Http
+import com.osint.unified.ui.common.PrivateBrowserHost
 import com.osint.unified.ui.theme.Intel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -214,7 +215,13 @@ private fun PrivacyControls(settings: AppSettings, lockAvailable: Boolean) {
         settings.proxyEnabled = proxyOn
         settings.proxyHost = host
         if (parsed in 1..65535) settings.proxyPort = parsed
-        if (proxyOn) Http.useProxy(host, settings.proxyPort) else Http.useProxy(null, 0)
+        if (proxyOn) {
+            Http.useProxy(host, settings.proxyPort)
+            PrivateBrowserHost.useProxy(host, settings.proxyPort)
+        } else {
+            Http.useProxy(null, 0)
+            PrivateBrowserHost.useProxy(null, 0)
+        }
     }
 
     Column(
@@ -284,7 +291,8 @@ private fun PrivacyControls(settings: AppSettings, lockAvailable: Boolean) {
             }
             Text(
                 "Covers everything the app requests itself, including map " +
-                    "tiles. It does not cover the bundled scanning binaries — " +
+                    "tiles and the pages the isolated browser loads. It does " +
+                    "not cover the bundled scanning binaries — " +
                     "those are separate programs with their own networking, and " +
                     "they will still go out directly. Leave active recon off if " +
                     "that matters.",

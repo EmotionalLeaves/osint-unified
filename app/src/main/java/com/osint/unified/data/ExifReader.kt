@@ -1,6 +1,7 @@
 package com.osint.unified.data
 
 import android.content.Context
+import android.net.Uri
 import androidx.exifinterface.media.ExifInterface
 import com.osint.unified.network.Http
 import kotlinx.coroutines.Dispatchers
@@ -9,6 +10,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
 import java.io.IOException
+import java.security.MessageDigest
 
 /**
  * Downloads an image and extracts its EXIF metadata (GPS, camera, times).
@@ -29,6 +31,74 @@ class ExifReader(
         /** Larger than any photograph worth reading EXIF from, and small
          *  enough that an endless response cannot exhaust memory. */
         const val MAX_IMAGE_BYTES = 25L * 1024 * 1024
+    }
+
+    /**
+     * The same reading, for a photograph already on the phone.
+     *
+     * Reading EXIF used to require a URL, so examining a picture meant
+     * uploading it somewhere first — leaving the app and handing the
+     * photograph to a third party to find out whether it had GPS in it,
+     * which is a strange thing for a tool like this to ask of anyone.
+     * Nothing here touches the network.
+     */
+    suspend fun fromUri(uri: Uri): String = withContext(Dispatchers.IO) {
+        val resolver = appContext.contentResolver
+        val size = runCatching {
+            resolver.openAssetFileDescriptor(uri, "r")?.use { it.length }
+        }.getOrNull() ?: -1L
+        val digest = MessageDigest.getInstance("SHA-256")
+        var bytes = 0L
+        resolver.openInputStream(uri)?.use { input ->
+            val buffer = ByteArray(64 * 1024)
+            while (true) {
+                val n = input.read(buffer)
+                if (n < 0) break
+                bytes += n
+                digest.update(buffer, 0, n)
+            }
+        } ?: throw java.io.FileNotFoundException("that image could not be opened")
+
+        val exif = resolver.openInputStream(uri)?.use { ExifInterface(it) }
+            ?: throw java.io.FileNotFoundException("that image could not be read")
+
+        buildString {
+            append(describe(exif))
+            append("\nBytes: ")
+            append(if (size > 0) size else bytes)
+            append("\nSHA-256: ")
+            append(digest.digest().joinToString("") { "%02x".format(it) })
+            append("\n\nRead on this phone. The picture was not uploaded anywhere.")
+        }
+    }
+
+    /** The tags worth reading, in the order they are worth reading them. */
+    private fun describe(exif: ExifInterface): String {
+        val sb = StringBuilder()
+        val latLong = FloatArray(2)
+        if (exif.getLatLong(latLong)) {
+            sb.append("GPS: ${latLong[0]}, ${latLong[1]}\n")
+            sb.append("Coordinates: ${latLong[0]},${latLong[1]}\n")
+        } else {
+            sb.append("GPS: (none)\n")
+        }
+        mapOf(
+            "Make" to ExifInterface.TAG_MAKE,
+            "Model" to ExifInterface.TAG_MODEL,
+            "Date" to ExifInterface.TAG_DATETIME,
+            "DateOriginal" to ExifInterface.TAG_DATETIME_ORIGINAL,
+            "Software" to ExifInterface.TAG_SOFTWARE,
+            "Lens" to ExifInterface.TAG_LENS_MODEL,
+            "Artist" to ExifInterface.TAG_ARTIST,
+            "Copyright" to ExifInterface.TAG_COPYRIGHT,
+            "Orientation" to ExifInterface.TAG_ORIENTATION
+        ).forEach { (label, tag) ->
+            exif.getAttribute(tag)?.takeIf { it.isNotBlank() }?.let { sb.append("$label: $it\n") }
+        }
+        val w = exif.getAttributeInt(ExifInterface.TAG_IMAGE_WIDTH, 0)
+        val h = exif.getAttributeInt(ExifInterface.TAG_IMAGE_LENGTH, 0)
+        if (w > 0 && h > 0) sb.append("Dimensions: ${w}x$h\n")
+        return sb.toString().ifBlank { "No EXIF metadata found." }
     }
 
     suspend fun fromUrl(url: String): String = withContext(Dispatchers.IO) {
