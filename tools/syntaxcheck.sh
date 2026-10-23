@@ -128,5 +128,8 @@ echo
 # does not import it. Invisible to the classpath-less compile, which
 # writes every unresolved name after a dot off as the missing SDK.
 python3 "$ROOT/tools/modifier-imports.py" || exit 1
+
+echo
+python3 "$ROOT/tools/java-keywords.py" || exit 1
 echo
 python3 "$ROOT/tools/novel-calls.py" || true

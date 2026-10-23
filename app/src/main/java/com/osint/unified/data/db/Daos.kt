@@ -155,14 +155,17 @@ interface CaseDao {
     @Query("SELECT * FROM cases WHERE id = :id")
     suspend fun byId(id: Long): Case?
 
+    // Not `case`. Room generates Java, Java reserves that word, and the
+    // only sign of it is "illegal start of expression" pointing at a
+    // generated file nobody has on disk.
     @Insert
-    suspend fun insert(case: Case): Long
+    suspend fun insert(row: Case): Long
 
     @Update
-    suspend fun update(case: Case)
+    suspend fun update(row: Case)
 
     @Query("UPDATE cases SET summary = :summary, updatedAt = :at WHERE id = :id")
-    suspend fun setSummary(id: Long, summary: String, at: Long = System.currentTimeMillis())
+    suspend fun setSummary(id: Long, summary: String, at: Long)
 
     @Query("DELETE FROM cases WHERE id = :id")
     suspend fun delete(id: Long)
@@ -174,10 +177,10 @@ interface CaseDao {
     suspend fun targets(caseId: Long): List<Investigation>
 
     @Query("UPDATE investigations SET caseId = :caseId, updatedAt = :at WHERE id = :id")
-    suspend fun fileUnder(id: Long, caseId: Long?, at: Long = System.currentTimeMillis())
+    suspend fun fileUnder(id: Long, caseId: Long?, at: Long)
 
     @Query("UPDATE investigations SET tags = :tags, updatedAt = :at WHERE id = :id")
-    suspend fun setTags(id: Long, tags: String, at: Long = System.currentTimeMillis())
+    suspend fun setTags(id: Long, tags: String, at: Long)
 
     /** How many targets each case holds, for the list. */
     @Query(

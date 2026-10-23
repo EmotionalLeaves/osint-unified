@@ -140,7 +140,8 @@ class InvestigationRepository(
         )
     }
 
-    suspend fun setCaseSummary(id: Long, summary: String) = caseDao.setSummary(id, summary)
+    suspend fun setCaseSummary(id: Long, summary: String) =
+        caseDao.setSummary(id, summary, System.currentTimeMillis())
 
     /**
      * Files a target under a case, or takes it out of one.
@@ -149,10 +150,14 @@ class InvestigationRepository(
      * over the collection, not a container of it.
      */
     suspend fun fileUnder(investigationId: Long, caseId: Long?) =
-        caseDao.fileUnder(investigationId, caseId)
+        caseDao.fileUnder(investigationId, caseId, System.currentTimeMillis())
 
     suspend fun setTags(investigationId: Long, tags: String) =
-        caseDao.setTags(investigationId, CaseLinks.join(CaseLinks.split(tags)))
+        caseDao.setTags(
+            investigationId,
+            CaseLinks.join(CaseLinks.split(tags)),
+            System.currentTimeMillis()
+        )
 
     /**
      * Deletes the folder, not the work.
@@ -162,7 +167,8 @@ class InvestigationRepository(
      * target is simply unfiled first.
      */
     suspend fun deleteCase(id: Long) {
-        caseDao.targets(id).forEach { caseDao.fileUnder(it.id, null) }
+        val now = System.currentTimeMillis()
+        caseDao.targets(id).forEach { caseDao.fileUnder(it.id, null, now) }
         caseDao.delete(id)
     }
 
