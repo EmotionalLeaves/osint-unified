@@ -7,6 +7,7 @@ import android.graphics.Typeface
 import android.graphics.pdf.PdfDocument
 import com.osint.unified.data.db.Result as ResultRow
 import com.osint.unified.domain.EntityExtractor
+import com.osint.unified.domain.CaseLinks
 import com.osint.unified.domain.Corroboration
 import com.osint.unified.domain.Findings
 import com.osint.unified.domain.IntelSummary
@@ -18,6 +19,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -67,9 +69,248 @@ class InvestigationExporter(private val appContext: Context) {
             ExportFormat.CSV -> file.writeText(toCsv(results))
             ExportFormat.TEXT ->
                 file.writeText(toDossier(observable, results, notes, dismissals))
-            ExportFormat.PDF -> writePdf(file, observable, results, notes, dismissals)
+            ExportFormat.PDF ->
+                writePdf(file, toDossier(observable, results, notes, dismissals))
         }
         file
+    }
+
+    /**
+     * One target of a case, with everything needed to report on it.
+     */
+    data class CaseTarget(
+        val name: String,
+        val type: String,
+        val observable: Observable,
+        val results: List<ResultRow>,
+        val notes: String = "",
+        val tags: List<String> = emptyList(),
+        val dismissals: Map<Pair<String, String>, String> = emptyMap()
+    )
+
+    /**
+     * A case, rather than a target.
+     *
+     * Exporting target by target hands the reader the one piece of
+     * analysis the app can do and they cannot: which identifier turns up
+     * under more than one of them. That goes at the top, before any
+     * dossier, because it is the only reason the targets are in the same
+     * file.
+     */
+    suspend fun exportCase(
+        caseName: String,
+        summary: String,
+        targets: List<CaseTarget>,
+        format: ExportFormat
+    ): File = withContext(Dispatchers.IO) {
+        val dir = File(appContext.cacheDir, "exports").apply { mkdirs() }
+        purgeOldExports(dir)
+        val file = File(dir, "osint-case-${stamp.format(Date())}.${format.ext}")
+        when (format) {
+            ExportFormat.CSV -> file.writeText(toCaseCsv(targets))
+            ExportFormat.JSON -> file.writeText(toCaseJson(caseName, summary, targets))
+            ExportFormat.TEXT -> file.writeText(toCaseReport(caseName, summary, targets))
+            ExportFormat.PDF -> writePdf(file, toCaseReport(caseName, summary, targets))
+        }
+        file
+    }
+
+    private fun entitiesOf(t: CaseTarget): List<Corroboration.Entity> = Corroboration.merge(
+        t.results,
+        t.observable.raw,
+        seedIsPlace = t.observable is Observable.Coordinate,
+        dismissed = t.dismissals
+    )
+
+    private fun toCaseReport(
+        caseName: String,
+        summary: String,
+        targets: List<CaseTarget>
+    ): String = buildString {
+        val byTarget = targets.associate { it.observable.raw to entitiesOf(it) }
+        val links = CaseLinks.find(byTarget)
+
+        append("OSINT CASE REPORT\n")
+        append("=================\n")
+        append("Case      : ").append(caseName).append('\n')
+        append("Targets   : ").append(targets.size).append('\n')
+        append("Generated : ").append(java.time.Instant.now()).append('\n')
+        append("App build : ").append(com.osint.unified.BuildConfig.VERSION_NAME).append('\n')
+
+        if (summary.isNotBlank()) {
+            append("\nWHAT THE INVESTIGATOR CONCLUDED\n")
+            append("-------------------------------\n")
+            append(summary.trim()).append('\n')
+        }
+
+        append("\nWHAT HOLDS THIS CASE TOGETHER\n")
+        append("-----------------------------\n")
+        append(CaseLinks.summary(links, targets.size)).append('\n')
+        if (links.isEmpty()) {
+            append(
+                "\nNothing was found under more than one target. That is a " +
+                    "result, not a gap: these targets may simply not be " +
+                    "connected by anything either of them published.\n"
+            )
+        } else {
+            append(
+                "\nContent delivery hosts, role mailboxes and anything ruled " +
+                    "out have been excluded — nearly every site on Earth sits " +
+                    "behind the same few CDNs, and counting those would bury " +
+                    "the real connection under twenty false ones.\n\n"
+            )
+            links.take(60).forEach { link ->
+                append("  ${link.grade}  ${link.kind}  ${link.value}")
+                if (link.isTarget) append("   ← itself a target of this case")
+                append('\n')
+                append("        shared by: ").append(link.targets.joinToString(", "))
+                append('\n')
+                append("        asserted by: ").append(link.sourceNames.joinToString(", "))
+                if (link.independent > 1) append(" (${link.independent} independent)")
+                append('\n')
+            }
+        }
+
+        val allTags = CaseLinks.tagsOf(targets.map { it.tags.joinToString(",") })
+        if (allTags.isNotEmpty()) {
+            append("\nTAGS\n----\n")
+            append(allTags.joinToString(", ") { "${it.first} (${it.second})" }).append('\n')
+        }
+
+        targets.forEach { t ->
+            val entities = byTarget[t.observable.raw].orEmpty()
+            append("\n\n")
+            append("TARGET: ").append(t.observable.raw).append('\n')
+            append("-".repeat(8 + t.observable.raw.length)).append('\n')
+            append(t.type).append(" · ")
+            append(Corroboration.assessment(entities, t.results)).append('\n')
+            if (t.tags.isNotEmpty()) {
+                append("tags: ").append(t.tags.joinToString(", ")).append('\n')
+            }
+            if (t.notes.isNotBlank()) {
+                append("\nNotes\n").append(t.notes.trim()).append('\n')
+            }
+            val leads = entities.filter { it.caveat == null }
+            if (leads.isEmpty()) {
+                append("\nNothing corroborated for this target.\n")
+            } else {
+                leads.groupBy { it.kind }.forEach { (kind, group) ->
+                    append("\n  ").append(kind).append('\n')
+                    group.take(20).forEach { e ->
+                        append("    ${e.grade}  ${e.value}")
+                        if (e.independent > 1) append("  (${e.independent} independent)")
+                        append('\n')
+                    }
+                }
+            }
+            val struck = entities.filter { it.dismissed }
+            if (struck.isNotEmpty()) {
+                append("\n  Ruled out by the investigator\n")
+                struck.forEach { e ->
+                    append("    ${e.value}")
+                    if (e.dismissalReason.isNotBlank()) append(" — ${e.dismissalReason}")
+                    append('\n')
+                }
+            }
+        }
+
+        append("\n\nWHAT THIS REPORT IS NOT\n")
+        append("-----------------------\n")
+        append(
+            "A summary. Each target's full dossier — every source queried, " +
+                "every raw answer, every date — exports separately and is " +
+                "where the evidence lives. This says what the targets have " +
+                "in common and what was concluded about each; it is not a " +
+                "substitute for reading them.\n"
+        )
+    }
+
+    private fun toCaseJson(
+        caseName: String,
+        summary: String,
+        targets: List<CaseTarget>
+    ): String {
+        val byTarget = targets.associate { it.observable.raw to entitiesOf(it) }
+        val links = CaseLinks.find(byTarget)
+        val doc = buildJsonObject {
+            put("case", caseName)
+            if (summary.isNotBlank()) put("summary", summary)
+            put("generatedAt", java.time.Instant.now().toString())
+            put("appBuild", com.osint.unified.BuildConfig.VERSION_NAME)
+            putJsonArray("links") {
+                links.forEach { link ->
+                    addJsonObject {
+                        put("kind", link.kind)
+                        put("value", link.value)
+                        put("grade", link.grade)
+                        put("isTarget", link.isTarget)
+                        putJsonArray("targets") { link.targets.forEach { add(it) } }
+                        putJsonArray("sources") { link.sourceNames.forEach { add(it) } }
+                    }
+                }
+            }
+            putJsonArray("targets") {
+                targets.forEach { t ->
+                    addJsonObject {
+                        put("observable", t.observable.raw)
+                        put("type", t.type)
+                        if (t.notes.isNotBlank()) put("notes", t.notes)
+                        putJsonArray("tags") { t.tags.forEach { add(it) } }
+                        put("sourcesQueried", t.results.size)
+                        putJsonArray("findings") {
+                            byTarget[t.observable.raw].orEmpty()
+                                .filter { it.caveat == null }
+                                .take(60)
+                                .forEach { e ->
+                                    addJsonObject {
+                                        put("kind", e.kind)
+                                        put("value", e.value)
+                                        put("grade", e.grade)
+                                        put("independentSources", e.independent)
+                                    }
+                                }
+                        }
+                        putJsonArray("ruledOut") {
+                            byTarget[t.observable.raw].orEmpty()
+                                .filter { it.dismissed }
+                                .forEach { e ->
+                                    addJsonObject {
+                                        put("kind", e.kind)
+                                        put("value", e.value)
+                                        if (e.dismissalReason.isNotBlank()) {
+                                            put("reason", e.dismissalReason)
+                                        }
+                                    }
+                                }
+                        }
+                    }
+                }
+            }
+        }
+        return prettyJson.encodeToString(JsonElement.serializer(), doc)
+    }
+
+    /** Every target's results in one sheet, with a column saying whose. */
+    private fun toCaseCsv(targets: List<CaseTarget>): String {
+        val sb = StringBuilder(
+            "target,tool,toolId,status,verdict,input,startedAt,finishedAt,sha256,bytes,output\n"
+        )
+        targets.forEach { t ->
+            t.results.forEach { r ->
+                sb.append(csvCell(t.observable.raw)).append(',')
+                sb.append(csvCell(r.toolName)).append(',')
+                sb.append(csvCell(r.toolId)).append(',')
+                sb.append(csvCell(r.status)).append(',')
+                sb.append(csvCell(verdict(r))).append(',')
+                sb.append(csvCell(r.input)).append(',')
+                sb.append(csvCell(iso(r.startedAt))).append(',')
+                sb.append(csvCell(r.finishedAt?.let { iso(it) }.orEmpty())).append(',')
+                sb.append(csvCell(r.outputSha256.ifBlank { sha256(r.rawOutput) })).append(',')
+                sb.append(r.outputBytes).append(',')
+                sb.append(csvCell(r.rawOutput)).append('\n')
+            }
+        }
+        return sb.toString()
     }
 
     /** Reports older than a day are not worth the exposure of keeping. */
@@ -81,14 +322,8 @@ class InvestigationExporter(private val appContext: Context) {
     }
 
     /** Renders the dossier text into a paginated A4 PDF. */
-    private fun writePdf(
-        file: File,
-        observable: Observable,
-        results: List<ResultRow>,
-        notes: String,
-        dismissals: Map<Pair<String, String>, String>
-    ) {
-        val text = toDossier(observable, results, notes, dismissals)
+    /** Any report as a PDF. The text is built by whoever calls this. */
+    private fun writePdf(file: File, text: String) {
         val document = PdfDocument()
         val paint = Paint().apply {
             textSize = 10f

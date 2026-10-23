@@ -1,9 +1,12 @@
 package com.osint.unified.data
 
 import com.osint.unified.data.db.AppDatabase
+import com.osint.unified.data.db.Case
+import com.osint.unified.data.db.CaseCount
 import com.osint.unified.data.db.Dismissal
 import com.osint.unified.data.db.Investigation
 import com.osint.unified.data.db.Result as ResultRow
+import com.osint.unified.domain.CaseLinks
 import com.osint.unified.domain.Findings
 import com.osint.unified.domain.Observable
 import com.osint.unified.domain.Tool
@@ -26,6 +29,7 @@ class InvestigationRepository(
     private val investigationDao = db.investigationDao()
     private val resultDao = db.resultDao()
     private val dismissalDao = db.dismissalDao()
+    private val caseDao = db.caseDao()
 
     suspend fun createInvestigation(
         observable: Observable,
@@ -105,6 +109,61 @@ class InvestigationRepository(
         } else {
             dismissalDao.remove(investigationId, kind, key)
         }
+    }
+
+    suspend fun resultsFor(investigationId: Long): List<ResultRow> =
+        resultDao.forInvestigation(investigationId)
+
+    // ---- Cases: several targets held together as one enquiry ----
+
+    fun observeCases(): Flow<List<Case>> = caseDao.observeAll()
+
+    fun observeCaseCounts(): Flow<List<CaseCount>> = caseDao.observeCounts()
+
+    fun observeTargets(caseId: Long): Flow<List<Investigation>> =
+        caseDao.observeTargets(caseId)
+
+    suspend fun targetsOf(caseId: Long): List<Investigation> = caseDao.targets(caseId)
+
+    suspend fun caseById(id: Long): Case? = caseDao.byId(id)
+
+    suspend fun createCase(name: String): Long =
+        caseDao.insert(Case(name = name.trim().ifBlank { "Untitled case" }))
+
+    suspend fun renameCase(id: Long, name: String) {
+        val existing = caseDao.byId(id) ?: return
+        caseDao.update(
+            existing.copy(
+                name = name.trim().ifBlank { existing.name },
+                updatedAt = System.currentTimeMillis()
+            )
+        )
+    }
+
+    suspend fun setCaseSummary(id: Long, summary: String) = caseDao.setSummary(id, summary)
+
+    /**
+     * Files a target under a case, or takes it out of one.
+     *
+     * The target keeps everything it has either way: a case is a folder
+     * over the collection, not a container of it.
+     */
+    suspend fun fileUnder(investigationId: Long, caseId: Long?) =
+        caseDao.fileUnder(investigationId, caseId)
+
+    suspend fun setTags(investigationId: Long, tags: String) =
+        caseDao.setTags(investigationId, CaseLinks.join(CaseLinks.split(tags)))
+
+    /**
+     * Deletes the folder, not the work.
+     *
+     * Throwing away an evening's collection along with the case it was
+     * filed in is not what anybody means by deleting a case, so every
+     * target is simply unfiled first.
+     */
+    suspend fun deleteCase(id: Long) {
+        caseDao.targets(id).forEach { caseDao.fileUnder(it.id, null) }
+        caseDao.delete(id)
     }
 
     /** One case, for a screen that has only its id. */

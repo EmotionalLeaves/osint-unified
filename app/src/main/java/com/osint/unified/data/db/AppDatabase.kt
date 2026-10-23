@@ -11,9 +11,9 @@ import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 @Database(
     entities = [
         Investigation::class, Result::class, Watch::class,
-        WatchEvent::class, Dismissal::class
+        WatchEvent::class, Dismissal::class, Case::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -22,12 +22,13 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun watchDao(): WatchDao
     abstract fun watchEventDao(): WatchEventDao
     abstract fun dismissalDao(): DismissalDao
+    abstract fun caseDao(): CaseDao
 
     companion object {
         /** The same number as the `version` in the @Database annotation
          *  above, which cannot reference this one. The pre-flight check
          *  refuses a commit where the two disagree. */
-        const val SCHEMA_VERSION = 6
+        const val SCHEMA_VERSION = 7
 
         @Volatile private var INSTANCE: AppDatabase? = null
 
@@ -69,6 +70,37 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `investigations` ADD COLUMN `parentId` INTEGER")
                 db.execSQL("ALTER TABLE `investigations` ADD COLUMN `viaPivot` TEXT")
+            }
+        }
+
+        /**
+         * Several targets held together as one enquiry.
+         *
+         * Targets keep their results when a case is deleted — the
+         * folder goes, the collection does not — so the foreign key
+         * nulls rather than cascades.
+         */
+        private val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `cases` (
+                        `id` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                        `name` TEXT NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        `updatedAt` INTEGER NOT NULL,
+                        `summary` TEXT NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("ALTER TABLE `investigations` ADD COLUMN `caseId` INTEGER")
+                db.execSQL(
+                    "ALTER TABLE `investigations` ADD COLUMN `tags` TEXT NOT NULL DEFAULT ''"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_investigations_caseId` " +
+                        "ON `investigations` (`caseId`)"
+                )
             }
         }
 
@@ -237,7 +269,7 @@ abstract class AppDatabase : RoomDatabase() {
                     app, AppDatabase::class.java, DatabaseEncryption.ENCRYPTED_NAME
                 )
                     .openHelperFactory(SupportOpenHelperFactory(passphrase))
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                     .build()
                 // Opened and read from here on purpose: a key, a library
                 // or a migration problem has to surface now, while the
@@ -285,6 +317,6 @@ abstract class AppDatabase : RoomDatabase() {
 
         private fun plain(app: Context): AppDatabase = Room.databaseBuilder(
             app, AppDatabase::class.java, DatabaseEncryption.PLAIN_NAME
-        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6).build()
+        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7).build()
     }
 }

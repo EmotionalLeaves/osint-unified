@@ -56,6 +56,9 @@ interface ResultDao {
     @Query("DELETE FROM results WHERE investigationId = :investigationId")
     suspend fun deleteForInvestigation(investigationId: Long)
 
+    @Query("SELECT * FROM results WHERE investigationId = :investigationId ORDER BY startedAt DESC")
+    suspend fun forInvestigation(investigationId: Long): List<Result>
+
     /** Nothing will ever finish a run the process died in the middle of. */
     @Query("UPDATE results SET status = 'interrupted' WHERE status = 'running'")
     suspend fun markRunningAsInterrupted()
@@ -143,3 +146,45 @@ interface DismissalDao {
     )
     suspend fun remove(investigationId: Long, kind: String, value: String)
 }
+
+@Dao
+interface CaseDao {
+    @Query("SELECT * FROM cases ORDER BY updatedAt DESC")
+    fun observeAll(): Flow<List<Case>>
+
+    @Query("SELECT * FROM cases WHERE id = :id")
+    suspend fun byId(id: Long): Case?
+
+    @Insert
+    suspend fun insert(case: Case): Long
+
+    @Update
+    suspend fun update(case: Case)
+
+    @Query("UPDATE cases SET summary = :summary, updatedAt = :at WHERE id = :id")
+    suspend fun setSummary(id: Long, summary: String, at: Long = System.currentTimeMillis())
+
+    @Query("DELETE FROM cases WHERE id = :id")
+    suspend fun delete(id: Long)
+
+    @Query("SELECT * FROM investigations WHERE caseId = :caseId ORDER BY createdAt")
+    fun observeTargets(caseId: Long): Flow<List<Investigation>>
+
+    @Query("SELECT * FROM investigations WHERE caseId = :caseId ORDER BY createdAt")
+    suspend fun targets(caseId: Long): List<Investigation>
+
+    @Query("UPDATE investigations SET caseId = :caseId, updatedAt = :at WHERE id = :id")
+    suspend fun fileUnder(id: Long, caseId: Long?, at: Long = System.currentTimeMillis())
+
+    @Query("UPDATE investigations SET tags = :tags, updatedAt = :at WHERE id = :id")
+    suspend fun setTags(id: Long, tags: String, at: Long = System.currentTimeMillis())
+
+    /** How many targets each case holds, for the list. */
+    @Query(
+        "SELECT caseId AS caseId, COUNT(*) AS targets FROM investigations " +
+            "WHERE caseId IS NOT NULL GROUP BY caseId"
+    )
+    fun observeCounts(): Flow<List<CaseCount>>
+}
+
+data class CaseCount(val caseId: Long, val targets: Int)

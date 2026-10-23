@@ -6,9 +6,31 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 
 /**
- * A saved investigation / case. Groups observables and their tool results.
+ * A case: several targets investigated as one enquiry.
+ *
+ * Until this existed, every target was its own island. A handle leading
+ * to an address leading to a host was held together by [Investigation.parentId],
+ * but two people you believe are working together, reached separately,
+ * had nothing recording that belief — so the app could never say the one
+ * thing that actually makes a case: these two targets share an address.
  */
-@Entity(tableName = "investigations")
+@Entity(tableName = "cases")
+data class Case(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis(),
+    /** What the investigator concluded about the case as a whole. */
+    val summary: String = ""
+)
+
+/**
+ * One target within a case, and its tool results.
+ */
+@Entity(
+    tableName = "investigations",
+    indices = [Index(value = ["caseId"])]
+)
 data class Investigation(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
@@ -27,7 +49,24 @@ data class Investigation(
      */
     val parentId: Long? = null,
     /** The identifier in the parent's results that led here. */
-    val viaPivot: String? = null
+    val viaPivot: String? = null,
+    /**
+     * The case this target belongs to, if it has been filed in one.
+     *
+     * Null is the ordinary state: a target searched once and never
+     * filed. Nulled rather than deleted when a case is deleted, because
+     * throwing away an evening's collection along with the folder it was
+     * in is not what anybody means by deleting a case.
+     */
+    val caseId: Long? = null,
+    /**
+     * The investigator's own labels, comma-separated and lowercased.
+     *
+     * Free text rather than a fixed vocabulary: the words that matter in
+     * an enquiry are the enquiry's own, and a list someone else wrote
+     * would be wrong for every case but theirs.
+     */
+    val tags: String = ""
 )
 
 /**

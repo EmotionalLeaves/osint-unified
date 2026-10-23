@@ -33,6 +33,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -71,6 +72,19 @@ fun HistoryScreen(
     val results by viewModel.results.collectAsStateWithLifecycle()
     val selectedId by viewModel.selectedId.collectAsStateWithLifecycle()
     val selected by viewModel.selected.collectAsStateWithLifecycle()
+    val cases by viewModel.cases.collectAsStateWithLifecycle()
+    val caseCounts by viewModel.caseCounts.collectAsStateWithLifecycle()
+    val openCaseId by viewModel.openCaseId.collectAsStateWithLifecycle()
+    val openCase by viewModel.openCase.collectAsStateWithLifecycle()
+    val caseTargets by viewModel.caseTargets.collectAsStateWithLifecycle()
+    val caseLinks by viewModel.caseLinks.collectAsStateWithLifecycle()
+    // Two things live on this screen: the targets searched, and the cases
+    // they have been filed into. The list of targets is the older and
+    // more used of the two, so it opens first.
+    var tab by rememberSaveable { mutableStateOf("targets") }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var caseBusy by remember { mutableStateOf(false) }
 
     Scaffold(
         containerColor = Intel.Base,
@@ -78,14 +92,24 @@ fun HistoryScreen(
             TopAppBar(
                 title = {
                     Text(
-                        if (selectedId == null) "CASES" else "CASE",
+                        when {
+                            selectedId != null -> "TARGET"
+                            openCaseId != null -> "CASE"
+                            else -> "CASES"
+                        },
                         style = MaterialTheme.typography.titleSmall,
                         color = Intel.TextHi
                     )
                 },
                 navigationIcon = {
                     IconButton(
-                        onClick = { if (selectedId == null) onBack() else viewModel.select(null) }
+                        onClick = {
+                            when {
+                                selectedId != null -> viewModel.select(null)
+                                openCaseId != null -> viewModel.openCase(null)
+                                else -> onBack()
+                            }
+                        }
                     ) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
@@ -97,7 +121,71 @@ fun HistoryScreen(
         }
     ) { pad ->
         Column(Modifier.padding(pad).fillMaxSize()) {
+            val case = openCase
+            if (selectedId == null && openCaseId != null && case != null) {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize().padding(12.dp)
+                ) {
+                    item {
+                        CaseDetail(
+                            case = case,
+                            targets = caseTargets,
+                            links = caseLinks,
+                            onOpenTarget = { viewModel.select(it) },
+                            onUnfile = { viewModel.fileUnder(it, null) },
+                            onSummary = { viewModel.setCaseSummary(case.id, it) },
+                            onRename = { viewModel.renameCase(case.id, it) },
+                            onDelete = { viewModel.deleteCase(case.id) },
+                            exporting = caseBusy,
+                            onExport = { format ->
+                                caseBusy = true
+                                scope.launch {
+                                    val file = viewModel.exportCase(format)
+                                    caseBusy = false
+                                    if (file != null) share(context, file, format)
+                                }
+                            }
+                        )
+                    }
+                }
+                return@Column
+            }
             if (selectedId == null) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf("targets" to "TARGETS", "cases" to "CASES").forEach { (key, label) ->
+                        Text(
+                            label,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (tab == key) Intel.CyanBright else Intel.TextLow,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(if (tab == key) Intel.Elevated else Intel.Surface)
+                                .border(
+                                    1.dp,
+                                    if (tab == key) Intel.Cyan else Intel.Hairline,
+                                    RoundedCornerShape(6.dp)
+                                )
+                                .clickable { tab = key }
+                                .padding(horizontal = 14.dp, vertical = 7.dp)
+                        )
+                    }
+                }
+            }
+            if (selectedId == null && tab == "cases") {
+                LazyColumn(modifier = Modifier.fillMaxSize().padding(12.dp)) {
+                    item {
+                        CaseList(
+                            cases = cases,
+                            counts = caseCounts,
+                            onOpen = { viewModel.openCase(it) },
+                            onNew = { viewModel.newCase(it) }
+                        )
+                    }
+                }
+            } else if (selectedId == null) {
                 if (investigations.isEmpty()) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text(
@@ -114,6 +202,9 @@ fun HistoryScreen(
                         items(investigations, key = { it.id }) { investigation ->
                             InvestigationRow(
                                 investigation = investigation,
+                                caseName = investigation.caseId?.let { id ->
+                                    cases.firstOrNull { it.id == id }?.name
+                                },
                                 onClick = { viewModel.select(investigation.id) },
                                 onDelete = { viewModel.delete(investigation.id) }
                             )
@@ -129,6 +220,7 @@ fun HistoryScreen(
                         CaseHeader(
                             investigation = selected,
                             resultCount = results.size,
+                            cases = cases,
                             viewModel = viewModel,
                             onReopen = onReopen
                         )
@@ -159,6 +251,7 @@ fun HistoryScreen(
 private fun CaseHeader(
     investigation: Investigation?,
     resultCount: Int,
+    cases: List<com.osint.unified.data.db.Case>,
     viewModel: HistoryViewModel,
     onReopen: (String) -> Unit
 ) {
@@ -206,6 +299,16 @@ private fun CaseHeader(
                 style = MaterialTheme.typography.bodySmall,
                 color = Intel.TextMid,
                 modifier = Modifier.padding(top = 2.dp)
+            )
+        }
+
+        if (investigation != null) {
+            FilingControls(
+                investigation = investigation,
+                cases = cases,
+                onFile = { viewModel.fileUnder(investigation.id, it) },
+                onNewCase = { viewModel.newCase(it, withInvestigation = investigation.id) },
+                onTags = { viewModel.setTags(investigation.id, it) }
             )
         }
 
@@ -271,6 +374,7 @@ private val dateFormat = SimpleDateFormat("MMM d, HH:mm", Locale.getDefault())
 @Composable
 private fun InvestigationRow(
     investigation: Investigation,
+    caseName: String?,
     onClick: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -302,6 +406,21 @@ private fun InvestigationRow(
                 style = MaterialTheme.typography.labelSmall,
                 color = Intel.TextLow
             )
+            // Which case it is filed under, and what it was labelled.
+            // Without these the list is a pile of seeds again however
+            // much work went into organising them.
+            val labels = com.osint.unified.domain.CaseLinks.split(investigation.tags)
+            if (caseName != null || labels.isNotEmpty()) {
+                Text(
+                    listOfNotNull(
+                        caseName?.let { "in $it" },
+                        labels.takeIf { it.isNotEmpty() }?.joinToString(", ")
+                    ).joinToString("  ·  "),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Intel.Cyan,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+            }
             if (investigation.notes.isNotBlank()) {
                 Text(
                     investigation.notes.lineSequence().first().take(80),
