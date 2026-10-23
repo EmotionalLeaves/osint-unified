@@ -22,6 +22,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -68,6 +70,11 @@ fun GlobeView(
     val context = LocalContext.current
     val rings = remember { Coastlines.rings(context) }
     val borders = remember { Coastlines.borders(context) }
+    val places = remember { Places.all(context) }
+    // One Paint, reused. Laying out a label is cheap; allocating the
+    // thing that lays it out, three hundred times a frame, is not.
+    val ink = remember { labelInk() }
+    val halo = remember { labelHalo() }
 
     // Decoded once, off the main thread, and kept for the life of the
     // process: twenty megabytes of Earth is not something to re-read
@@ -306,7 +313,24 @@ fun GlobeView(
             drawLines(borders, cx, cy, radius, lat0, lon0, BORDER_OVER_OUTLINE)
             drawTerminator(terminator, cx, cy, radius, lat0, lon0)
         }
+        // Names only when the camera has settled. Text is the most
+        // expensive thing on this canvas and the least useful while
+        // the planet is moving under a thumb.
+        if (!moving && places.isNotEmpty()) {
+            drawPlaces(
+                places.take(Places.countFor(zoom)),
+                cx, cy, radius, lat0, lon0, ink, halo
+            )
+        }
         drawPoints(points, cx, cy, radius, lat0, lon0, sun)
+        // Labels on the markers too, once there are few enough that
+        // labelling them is reading rather than overprinting.
+        if (!moving) {
+            val named = points.filter { it.clickable && !it.title.isNullOrBlank() }
+            if (named.size <= MAX_MARKER_LABELS) {
+                drawMarkerLabels(named, cx, cy, radius, lat0, lon0, ink, halo)
+            }
+        }
         drawLimb(cx, cy, radius, textured)
     }
 }
@@ -656,6 +680,109 @@ private fun DrawScope.drawPoints(
     }
 }
 
+/**
+ * Place names on the sphere.
+ *
+ * Drawn with the platform's own text, not Compose's: these are short
+ * single lines and a hundred of them a frame, and the layout machinery
+ * that makes paragraphs work is overhead paid for nothing here.
+ *
+ * Each name gets a dark outline. White text over a photograph of the
+ * Earth is invisible over Greenland and over the Sahara, which is most
+ * of where the names are.
+ */
+private fun DrawScope.drawPlaces(
+    places: List<Places.Place>,
+    cx: Float, cy: Float, r: Float,
+    lat0: Double, lon0: Double,
+    ink: android.graphics.Paint,
+    halo: android.graphics.Paint
+) {
+    // Sized here rather than when the Paint was made: a text size in
+    // raw pixels is a different size on every phone, and the only
+    // place the density is known is inside the draw.
+    sizeLabels(ink, halo, density)
+    drawIntoCanvas { canvas ->
+        val native = canvas.nativeCanvas
+        places.forEach { place ->
+            val p = Orthographic.project(place.lat, place.lon, lat0, lon0, r, cx, cy)
+            if (!p.visible) return@forEach
+            // Nothing within a few pixels of the limb: a label there
+            // is half off the edge of the planet and reads as a smear.
+            val dx = p.x - cx
+            val dy = p.y - cy
+            if (dx * dx + dy * dy > (r * 0.94f) * (r * 0.94f)) return@forEach
+            native.drawCircle(p.x, p.y, (if (place.capital) 2.2f else 1.6f) * density, halo)
+            native.drawCircle(p.x, p.y, (if (place.capital) 1.4f else 1.0f) * density, ink)
+            val x = p.x + 4f * density
+            val y = p.y + 3.5f * density
+            native.drawText(place.name, x, y, halo)
+            native.drawText(place.name, x, y, ink)
+        }
+    }
+}
+
+/** The same, for the things the feeds found. */
+private fun DrawScope.drawMarkerLabels(
+    points: List<GlobePoint>,
+    cx: Float, cy: Float, r: Float,
+    lat0: Double, lon0: Double,
+    ink: android.graphics.Paint,
+    halo: android.graphics.Paint
+) {
+    sizeLabels(ink, halo, density)
+    drawIntoCanvas { canvas ->
+        val native = canvas.nativeCanvas
+        points.forEach { point ->
+            val p = Orthographic.project(point.lat, point.lon, lat0, lon0, r, cx, cy)
+            if (!p.visible) return@forEach
+            val dx = p.x - cx
+            val dy = p.y - cy
+            if (dx * dx + dy * dy > (r * 0.94f) * (r * 0.94f)) return@forEach
+            // The first segment only. A label is a glance; the rest of
+            // it is in the inspector, which is one tap away.
+            val text = point.title.orEmpty().substringBefore(" \u00b7 ").take(28)
+            if (text.isBlank()) return@forEach
+            val x = p.x + 6f * density
+            val y = p.y - 5f * density
+            native.drawText(text, x, y, halo)
+            native.drawText(text, x, y, ink)
+        }
+    }
+}
+
+/** The one place the screen density is known is inside a draw. */
+private fun sizeLabels(
+    ink: android.graphics.Paint,
+    halo: android.graphics.Paint,
+    density: Float
+) {
+    val size = 10.5f * density
+    if (ink.textSize != size) {
+        ink.textSize = size
+        halo.textSize = size
+        halo.strokeWidth = 2.6f * density
+    }
+}
+
+private fun labelInk() = android.graphics.Paint().apply {
+    isAntiAlias = true
+    color = android.graphics.Color.WHITE
+    style = android.graphics.Paint.Style.FILL
+    typeface = android.graphics.Typeface.create(
+        android.graphics.Typeface.DEFAULT, android.graphics.Typeface.NORMAL
+    )
+}
+
+private fun labelHalo() = android.graphics.Paint().apply {
+    isAntiAlias = true
+    color = android.graphics.Color.argb(205, 2, 6, 10)
+    style = android.graphics.Paint.Style.STROKE
+    typeface = android.graphics.Typeface.create(
+        android.graphics.Typeface.DEFAULT, android.graphics.Typeface.NORMAL
+    )
+}
+
 private val OCEAN = Color(0xFF0B1A2A)
 private val OCEAN_LIT = Color(0xFF14304C)
 private val OCEAN_DARK = Color(0xFF050C14)
@@ -685,6 +812,10 @@ private const val SETTLE_MS = 140L
 private const val MAX_RENDER_PX = 1400
 
 private const val STAR_COUNT = 220
+
+/** Above this, labelling every marker is overprinting rather than
+ *  reading, and the inspector is one tap away. */
+private const val MAX_MARKER_LABELS = 30
 
 /** How much closer a double tap takes you. */
 private const val DOUBLE_TAP_ZOOM = 2.2f

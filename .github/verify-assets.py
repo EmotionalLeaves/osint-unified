@@ -98,6 +98,7 @@ CHECKS = {
     "borders.json": (json_count, 50, True),
     "country-centroids.json": (json_count, 150, True),
     "ports.json": (json_count, 1_000, True),
+    "places.json": (json_count, 200, True),
     # An image, so "entries" is bytes. A JPEG that arrived as an error
     # page is a few kilobytes; a real Blue Marble downscale is hundreds.
     "earth-day.jpg": (jpeg_bytes, 200_000, True),

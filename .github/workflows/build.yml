@@ -305,6 +305,59 @@ jobs:
           PY
           test -s "$A/ports.json" || echo "::warning title=assets::ports.json is missing; the ports layer will be empty"
 
+          # Names, so the globe can be read rather than only looked at.
+          # Blue Marble is a photograph: beautiful, and silent about
+          # which continent you have turned to. A few hundred cities,
+          # biggest first, is the difference between a picture of the
+          # Earth and a map of it.
+          curl -sSL https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_populated_places_simple.geojson -o /tmp/ne_places.geojson || true
+          python3 - <<'PY'
+          import json, os
+          A = "app/src/main/assets"
+          try:
+              with open('/tmp/ne_places.geojson', encoding='utf-8') as f:
+                  data = json.load(f)
+          except Exception as e:
+              print("WARNING: no place names:", e)
+              raise SystemExit(0)
+          rows = []
+          for feat in data.get("features", []):
+              geom = feat.get("geometry") or {}
+              if geom.get("type") != "Point":
+                  continue
+              coords = geom.get("coordinates") or []
+              if len(coords) < 2:
+                  continue
+              props = feat.get("properties", {})
+              name = (props.get("name") or props.get("nameascii") or "").strip()
+              if not name:
+                  continue
+              try:
+                  pop = int(props.get("pop_max") or 0)
+              except (TypeError, ValueError):
+                  pop = 0
+              # A capital outranks a bigger city that is not one: on a
+              # globe showing twelve names, the twelve that orient a
+              # person are capitals.
+              capital = 1 if str(props.get("adm0cap") or props.get("featurecla", "")).startswith(
+                  ("1", "Admin-0 capital")
+              ) else 0
+              rows.append({
+                  "n": name,
+                  "lat": round(coords[1], 3),
+                  "lon": round(coords[0], 3),
+                  "p": pop,
+                  "c": capital,
+              })
+          rows.sort(key=lambda r: (-r["c"], -r["p"]))
+          rows = rows[:1200]
+          with open(f"{A}/places.json", "w", encoding="utf-8") as f:
+              json.dump(rows, f, separators=(",", ":"), ensure_ascii=False)
+          print("bundled places.json", len(rows), "places",
+                os.path.getsize(f"{A}/places.json"), "bytes")
+          PY
+          test -s "$A/places.json" || echo "::warning title=globe::places.json is missing; the globe will show no names"
+
           # Raw infrastructure datasets -> compact JSON bundled in the APK.
           curl -sSL https://davidmegginson.github.io/ourairports-data/airports.csv -o /tmp/airports.csv || true
           curl -sSL https://raw.githubusercontent.com/wri/global-power-plant-database/master/output_database/global_power_plant_database.csv -o /tmp/powerplants.csv || true
