@@ -1,0 +1,173 @@
+# What is still wrong, in the order it will be fixed
+
+Ranked by three things together: how much it costs the person using
+the app, how much of the app it touches, and how long ago it was
+asked for. An old unmet request outranks a new nice-to-have.
+
+Sources: the user's own reports, the God's Eye UX audit, and six
+code reviews filed beside this (r6–r12).
+
+---
+
+## 0. Standing frame
+
+"I want this to be a tool, not a bookmark bar." Everything below is
+weighed against that. A tool that returns a list of places to look is
+not a source and must not be counted, graded or presented as one.
+
+---
+
+## A. Oldest open reports
+
+- **A1. Overpass-backed layers still file failures as absences.**
+  Asked for on 22 Oct ("infrastructure scan, overpass and military
+  sites have never worked"). The layers were fixed; the TOOLS were
+  not. `militarySites` and `osmRecon` treat a 200-with-non-JSON — the
+  normal shape of an Overpass timeout — as an empty result and state
+  "No military-tagged sites within 25 km." `cctvNear`'s OSM fallback
+  does the same. r6 #2, #3.
+- **A2. "0 military-tagged sites" is classified as a finding** and
+  the Overpass head line "No mapped features within 500 m" matches no
+  absence pattern. r6 #7, r6 below-the-cut.
+- **A3. OSM Notes sign-in wall** (task #44). No notes URL exists in
+  the code; the links are to `openstreetmap.org/node/<id>` and plain
+  map views, both public. Needs either the exact marker from the user
+  or a sweep of every OSM URL the app can emit. Do the sweep.
+- **A4. directoryRun's 20-byte "returned data" test**, and
+  `SecAgent.NOT_SET` silently joining the "No data from" list. r6 #9.
+
+## B. The bookmark-bar problem
+
+- **B1. Link-list tools must stop counting as sources.** framework,
+  toolrun, dorks, websearch, reverseimage are graded F and classified
+  ABSENT, which keeps them out of the findings — but they are still
+  dispatched by `autoRun`, still fill the runningTools progress bar,
+  and still occupy slots in "N of M sources". Move them out of the
+  source list into a "places to look" section of their own.
+- **B2. Count what actually runs, per observable type**, and publish
+  the number in the app. If a username search runs eleven tools and
+  four of them are link lists, the person should be able to see that.
+- **B3. More sources that fetch.** People landed seven. Do the same
+  audit for username, email, phone, image and coordinate.
+
+## C. The globe audit, remaining items
+
+- **C1. G2 — vectors re-projected every frame.** With the sphere on
+  the GPU this is the last per-frame trigonometry on the main thread.
+  Level-of-detail by zoom, decimated once off-thread, not a cache
+  keyed on a camera that changes every frame.
+- **C2. G4 — one Canvas repainted wholesale.** Bake the static layers
+  into a cached layer keyed on the camera; redraw only markers.
+- **C3. G5 — pollers rebuild the whole point set.** Diff per layer.
+- **C4. L1 — 34 flat pills with a search box to find a pill.** One
+  Layers button, a grouped sheet, 3–5 pinned quick chips.
+- **C5. L2 — presets.** Aviation, Maritime, Disaster, Conflict,
+  Infrastructure, Space weather.
+- **C6. L3 — layers as data**, one registry, not 34 booleans in three
+  files.
+- **C7. C1 — zero-config first run.** Raw backendUrl / tar1090Url /
+  aisUrl / overlayUrl / token fields on a fresh install. Public
+  defaults, everything else behind Advanced, and a dead layer should
+  say what it needs inline.
+- **C8. I1 — search as the spine**, not the globe.
+- **C9. A2 — a blip tap feeds a case** rather than opening a URL.
+- **C10. A1 — one map engine.** Deferred deliberately: it is a
+  rewrite of the whole map surface with no device here, and the seam
+  it removes is now a seam you cross once. Revisit after C1–C3.
+
+## D. Correctness still open, by review
+
+### r6 — OsintApis / Executors
+siteFiles DONE · Overpass absences (A1) · cctvNear (A1) · reverseDns
+still uses dohTxt · GDELT DONE · Hudson Rock vendor prose is the
+first line and a clean result reads as a HIT · webcrawl DONE ·
+directoryRun (A4) · UA DONE · **cctvNear rebuilds CctvDataSource per
+call and defeats both caches — the largest avoidable data cost found**
+· Cert Spotter pagination counted as complete · DMARC DONE ·
+wikiNearby unvalidated input · startsWith("http") DONE ·
+CancellationException swallowed in four places · the 40-hit cap means
+sdn-alt.csv is never searched · six headers promising more than
+follows · Twitch/Telegram raw handle interpolation · isDomain matches
+an IPv4 in dorks · siteFiles serial · ripeRouting serial · classify
+has no HIT case for unsanctions.
+
+### r7 — data layer
+Key commit DONE · WAL/SHM DONE · sha256 DONE · dismissals DONE ·
+Timeline snapshots DONE · IntelSummary LOCATION DONE · IDENTIFIERS
+DONE · **recordSnapshot runs regex + SHA-256 over a whole page on the
+main thread and swallows the failure** · **caseLinks re-runs the whole
+case analysis on Main on every write to the investigations table** ·
+**CHECK NOW runs the watch sweep on Main** · shared SimpleDateFormat
+and one-second filenames · export failure is silent · running rows
+DONE · a migration failure is reported as an encryption failure ·
+cases has no FK and deleteCase is not transactional.
+
+### r8 — godeye
+Bitmap per frame DONE · AreaReport DONE · landscape handoff DONE ·
+long-press zoom DONE · radiation DONE · on-demand re-query DONE ·
+visibleLayers on dispose DONE · ALL LAYERS off DONE · **WorldBrief
+sorts every layer in composition to take six** · searchJobs DONE ·
+pointerInput DONE · markerIcon allocates a Path per draw ·
+per-frame allocation in drawStars/drawMarkers · thinBy recomputes a
+regex identity per comparison · header vs pill disagree about
+aircraft · the HUD ticker drops the FEED DOWN mark · lastSuccess is
+written and never read.
+
+### r9 — DeepApis / UsernameChecker
+socialSweep DONE · githubActivity DONE · **seven bare runCatching
+blocks still leaving a false absence: OTX, network data, host intel,
+subdomain sweep, CVE, PGP, photos** · **ipReputation reads a
+non-answering resolver as a clean sheet** · **UsernameChecker tests
+the ruleset against the URL-ENCODED name, so every non-ASCII handle
+is NotApplicable everywhere and coverage is inflated** · the `~`
+legend claims a control probe most hits never got · historicalWeather
+and sunAndTerrain cannot take the date they are documented as
+checking · hostIntel's external-link substring test · osmUser averages
+bbox centres and calls it where somebody lives · get() reads every
+body unbounded · headers vs caps · secEdgar DONE · emailPermutations
+case-sensitive domain strip · the ruleset-load failure omits the
+verdict field · Mastodon P4033 URL shape · Panoramax 566 m corner ·
+unencoded CVE path · BTC counterparties DONE · hardcoded CC-MAIN
+fallback.
+
+### r10 — ui outside godeye
+App lock DONE · rotation re-run DONE · **the dossier runs six
+full-corpus regex passes during composition on every arriving result**
+· **the dossier is a verticalScroll Column, not a LazyColumn** · the
+isolated browser's in-page Back closes it · a thread leaked per
+proxy keystroke · proxy applied per keystroke and resolved on Main ·
+caseLinks (r7) · export double-tap and silent failure · **any app can
+start an investigation** DONE · FrameworkScreen filters thousands per
+keystroke · work cancelled by a tab switch · ForensicsScreen loses
+everything on rotation · GraphCanvas writes state during draw.
+
+### r11 — synthesis
+socialsweep verdict DONE · six header-first tools DONE · SecAgent
+DONE · dns family DONE · RIPEstat family DONE · credibility DONE ·
+IntelSummary LOCATION DONE · SOURCES count DONE · **emailperm's
+generated addresses enter the corroboration pool as assertions** ·
+**ptr builds a malformed query from an IPv6 or CIDR seed and reports
+a clean absence** · INFRASTRUCTURE and noiseDomains disagree, and the
+exporter calls extract() directly · ProfileSignals DONE ·
+independentCount DONE · blank output filed ABSENT · coordinate tools
+echo the seed back as a corroborated discovery.
+
+### r12 — domain
+MGRS DONE · Kepler DONE · workflow step failure swallowed ·
+ResultFormatter does not fall back on an empty parse · hexDecode DONE
+· Base64url DONE · graph DONE · Timeline DONE · checksums DONE ·
+IPv6 DONE · **ObservableExtractor turns config.yaml and Mr.Smith into
+pivot targets, and is O(n^2) with no length cap** · ForceLayout DONE
+· GraphBuilder hash DONE.
+
+## E. People, continued (task #50)
+
+Seven sources landed. Still to do: use PersonName.variants in the
+sources that search by name; a person-shaped dossier rather than the
+infrastructure-shaped one; and the same audit for the other
+observable types (B3).
+
+## F. Then
+
+Every issue known, listed and fixed. Every improvement, listed and
+fixed. Then round again.
