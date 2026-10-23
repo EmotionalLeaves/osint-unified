@@ -338,9 +338,13 @@ jobs:
                   pop = 0
               # A capital outranks a bigger city that is not one: on a
               # globe showing twelve names, the twelve that orient a
-              # person are capitals.
-              capital = 1 if str(props.get("adm0cap") or props.get("featurecla", "")).startswith(
-                  ("1", "Admin-0 capital")
+              # person are capitals. Written out rather than chained
+              # with `or`, because adm0cap is 0.0 for most places and
+              # a falsy zero silently became "ask the other field".
+              flag = props.get("adm0cap")
+              featurecla = str(props.get("featurecla") or "")
+              capital = 1 if (
+                  str(flag).startswith("1") or featurecla.startswith("Admin-0 capital")
               ) else 0
               rows.append({
                   "n": name,

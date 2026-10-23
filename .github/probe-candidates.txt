@@ -1,10 +1,3 @@
-https://ll.thespacedevs.com/2.2.0/launch/upcoming/?limit=2&mode=list
-https://ll.thespacedevs.com/2.2.0/launch/upcoming/?limit=1##"(name|net|latitude|longitude|location|status)":
-https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_ports.geojson@@1
-https://www.operations.amsa.gov.au/Public/api/vessels
-https://ais.hafen-hamburg.de/
-https://gis.vta.ee/arcgis/rest/services
-https://opendata.rdw.nl/resource/
-https://www.vesseltracker.com/
-https://retrieve.pskreporter.info/query?rronly=1&flowStartSeconds=-600&limit=5
-https://ds.data.jma.go.jp/svd/vaac/data/vaac_list.html
+https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_populated_places_simple.geojson@@1
+https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_populated_places_simple.geojson##"(name|adm0cap|featurecla|pop_max)": ?[^,}]{0,24}
+https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_populated_places_simple.geojson@@1
