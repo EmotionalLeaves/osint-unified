@@ -429,7 +429,13 @@ class GodEyeViewModel(
                 // A feed nobody is looking at is not fetched, and the loop
                 // wakes often enough to notice when that changes.
                 if (!shouldFetch(key)) {
-                    delay(POLL_IDLE_MS)
+                    // Three seconds while the app is in front, so a
+                    // layer switched on starts almost at once. A great
+                    // deal longer behind, where thirty loops waking
+                    // every three seconds all night is a flat battery
+                    // for no possible benefit — nothing can be
+                    // switched on from there.
+                    delay(if (foreground) POLL_IDLE_MS else BACKGROUND_IDLE_MS)
                     continue
                 }
                 val attempt = runCatching { fetch() }
@@ -1305,6 +1311,9 @@ class GodEyeViewModel(
         /** How often a sleeping feed checks whether its layer came back
          *  on. Short enough to feel immediate, long enough to cost nothing. */
         const val POLL_IDLE_MS = 3_000L
+
+        /** The same wait, for an app nobody is looking at. */
+        const val BACKGROUND_IDLE_MS = 60_000L
 
         /** The longest a feed waits after a failure before trying
          *  again, whatever its own interval is. */

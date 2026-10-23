@@ -69,9 +69,17 @@ class WorldWarningsDataSource(
             store?.write(key, fetched)
             return fetched
         }
-        // Yesterday's warnings are wrong in detail and right about where
-        // the weather is; a blank layer is wrong about everything.
-        return store?.readStale(key)
+        // Yesterday's warnings are wrong in detail and right about
+        // where the weather is; a blank layer is wrong about
+        // everything. But only up to a point: a fetch that fails and
+        // falls back here is recorded by the caller as a success, with
+        // the pill green and the time stamped as just now, so the
+        // older the copy the larger the lie. Past the limit the
+        // failure is allowed to be a failure and the layer says it is
+        // not reporting.
+        val age = store?.ageMillis(key) ?: return null
+        if (age > STALE_LIMIT_MS) return null
+        return store.readStale(key)
     }
 
     /**
@@ -217,6 +225,12 @@ class WorldWarningsDataSource(
     }
 
     private companion object {
+        /** The oldest cached copy still worth showing as though it
+         *  were current. Individual warnings carry their own expiry
+         *  and are dropped once past it, so this is a bound on the
+         *  silence rather than on the warnings themselves. */
+        const val STALE_LIMIT_MS = 6 * 3600_000L
+
         const val WARNINGS_URL = "https://severeweather.wmo.int/json/wmo_all.json"
         const val MEMBERS_URL = "https://severeweather.wmo.int/json/wmo_member.json"
         const val WARNINGS_KEY = "wmo-severe-weather"

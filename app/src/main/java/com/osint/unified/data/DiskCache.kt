@@ -35,6 +35,22 @@ class DiskCache(private val context: Context) {
         return runCatching { f.readText() }.getOrNull()
     }
 
+    /**
+     * How old the cached copy is, or null if there is not one.
+     *
+     * [readStale] hands back whatever is on disk with no indication of
+     * its age, which is right for a last resort and wrong for a caller
+     * that then reports success. This lets one decide how old is too
+     * old.
+     */
+    fun ageMillis(name: String): Long? {
+        val f = fileFor(name)
+        if (!f.exists()) return null
+        val stamp = f.lastModified()
+        if (stamp <= 0L) return null
+        return (System.currentTimeMillis() - stamp).coerceAtLeast(0L)
+    }
+
     fun write(name: String, body: String) {
         runCatching { fileFor(name).writeText(body) }
     }
