@@ -1761,7 +1761,19 @@ class DeepApis(
         val declination = asin(sin(obliq) * sin(eclipLong))
         var rightAsc = Math.toDegrees(atan2(cos(obliq) * sin(eclipLong), cos(eclipLong))).mod(360.0)
 
-        val gmst = (6.697374558 + 0.06570982441908 * Math.floor(n) + 1.00273790935 * hour).mod(24.0)
+        // The day number at 0h UT, which is what this term wants —
+        // not floor(n).
+        //
+        // `n` already carries the time of day, and a Julian day
+        // starts at noon, so at midnight UT it ends in .5 and
+        // flooring it lands on the wrong side of the boundary for
+        // half of every day. The azimuth came out about a degree off,
+        // with the error changing sign at noon: for London on the
+        // solstice this read 179.88° at 12:00Z where NOAA says
+        // 178.88°. A degree of shadow bearing is the width of the
+        // claim a chronolocation is making.
+        val dayNumber = n - hour / 24.0
+        val gmst = (6.697374558 + 0.06570982441908 * dayNumber + 1.00273790935 * hour).mod(24.0)
         val lmst = (gmst * 15.0 + lon).mod(360.0)
         var hourAngle = Math.toRadians((lmst - rightAsc).mod(360.0))
         if (hourAngle > Math.PI) hourAngle -= 2 * Math.PI
