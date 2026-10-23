@@ -120,18 +120,49 @@ class CaseLinksTest {
     }
 
     /**
-     * Two separate enquiries meeting is better corroboration than two
-     * tools reading the same upstream, and the grade has to show it.
+     * Agreement across targets raises credibility — when the targets
+     * were told by different people.
+     *
+     * This test used to assert the opposite of what it now does, with
+     * both targets' findings coming from crt.sh alone, on the
+     * reasoning that two separate enquiries meeting is corroboration
+     * in its own right. The enquiries were separate; the evidence was
+     * not. Both dossiers asked crt.sh, so if crt.sh is wrong about
+     * that host then both are wrong about it in the same way, which
+     * is what non-independence means. The assertion was the bug
+     * written down.
      */
     @Test
     fun agreementAcrossTargetsRaisesCredibility() {
-        val alone = CaseLinks.find(
+        fun link(aSource: String, bSource: String) = CaseLinks.find(
             mapOf(
-                "a" to listOf(entity("HOST", "s.org", reliability = Grading.Reliability.FAIRLY)),
-                "b" to listOf(entity("HOST", "s.org", reliability = Grading.Reliability.FAIRLY))
+                "a" to listOf(
+                    entity(
+                        "HOST", "s.org",
+                        sources = listOf(aSource),
+                        reliability = Grading.Reliability.FAIRLY
+                    )
+                ),
+                "b" to listOf(
+                    entity(
+                        "HOST", "s.org",
+                        sources = listOf(bSource),
+                        reliability = Grading.Reliability.FAIRLY
+                    )
+                )
             )
         ).first()
-        assertEquals(Grading.Credibility.CONFIRMED, alone.credibility)
+
+        // Different upstreams: two witnesses, and the grade says so.
+        assertEquals(
+            Grading.Credibility.CONFIRMED,
+            link("crtsh", "breaches").credibility
+        )
+        // The same upstream twice: still one witness.
+        assertTrue(link("crtsh", "crtsh").credibility != Grading.Credibility.CONFIRMED)
+        // And two tools that both read the certificate logs are the
+        // same upstream however differently they are spelled.
+        assertTrue(link("crtsh", "subfinder").credibility != Grading.Credibility.CONFIRMED)
     }
 
     @Test
