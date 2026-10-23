@@ -317,12 +317,28 @@ class InvestigationExporter(private val appContext: Context) {
      * someone else — the people being investigated among them — that is a
      * way to run code on the machine of whoever opens the report.
      */
-    private fun csv(value: String): String {
-        val safe = if (value.firstOrNull() in setOf('=', '+', '-', '@', '\t', '\r')) {
-            "'" + value
-        } else {
-            value
+    private fun csv(value: String) = csvCell(value)
+
+    companion object {
+        /**
+         * One CSV cell, quoted and defused.
+         *
+         * Every cell in these exports is text somebody else wrote, the
+         * people being investigated among them, and Excel and Sheets
+         * execute a cell that begins with =, +, - or @. Without the
+         * leading apostrophe an export is a way to run code on the machine
+         * of whoever opens it.
+         *
+         * Visible so the test can call this rather than keep a copy of it
+         * and check the copy against itself.
+         */
+        fun csvCell(value: String): String {
+            val safe = if (value.firstOrNull() in setOf('=', '+', '-', '@', '\t', '\r')) {
+                "'" + value
+            } else {
+                value
+            }
+            return "\"" + safe.replace("\"", "\"\"") + "\""
         }
-        return "\"" + safe.replace("\"", "\"\"") + "\""
     }
 }

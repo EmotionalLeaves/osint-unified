@@ -752,28 +752,12 @@ class DirectToolExecutor(
      * query, and neither should decide whether a sanctioned person is
      * found.
      */
-    private fun normaliseName(raw: String): String {
-        val decomposed = java.text.Normalizer.normalize(raw, java.text.Normalizer.Form.NFKD)
-        return decomposed
-            .replace(Regex("\\p{Mn}+"), "")
-            .lowercase()
-            .replace(Regex("[^a-z0-9 ]+"), " ")
-            .replace(Regex("\\s+"), " ")
-            .trim()
-    }
+    // The name rules live in SanctionsNames, where a test can reach the
+    // code that actually runs rather than a copy of it.
+    private fun normaliseName(raw: String) = com.osint.unified.domain.SanctionsNames.normalise(raw)
 
-    /**
-     * Whether every token of the query appears as a whole word in the name.
-     *
-     * A raw substring search made "ali" match "Australia" and buried real
-     * matches under junk, while a multi-word query only matched when the
-     * list happened to order the names the same way.
-     */
-    private fun matchesName(tokens: List<String>, candidate: String): Boolean {
-        val words = normaliseName(candidate).split(" ").filter { it.isNotBlank() }
-        if (words.isEmpty()) return false
-        return tokens.all { token -> words.any { it == token } }
-    }
+    private fun matchesName(tokens: List<String>, candidate: String) =
+        com.osint.unified.domain.SanctionsNames.matches(tokens, candidate)
 
     /**
      * Searches the UN Security Council consolidated list bundled in the APK.
@@ -781,8 +765,11 @@ class DirectToolExecutor(
      * on a network that may be watched.
      */
     private fun unSanctions(input: String): Result<String> = runCatching {
-        val needle = input.trim().lowercase()
-        if (needle.length < 3) return@runCatching "Give at least three characters to search the UN list."
+        val query = input.trim()
+        val tokens = normaliseName(query).split(" ").filter { it.isNotBlank() }
+        if (query.length < 3 || tokens.isEmpty()) {
+            return@runCatching "Give at least three characters to search the UN list."
+        }
         val xml = runCatching {
             appContext.assets.open("un-sanctions.xml").bufferedReader().use { it.readText() }
         }.getOrNull() ?: return@runCatching "The UN consolidated list is not bundled in this build."
@@ -791,17 +778,36 @@ class DirectToolExecutor(
             Regex("<$name>(.*?)</$name>", RegexOption.DOT_MATCHES_ALL)
                 .find(block)?.groupValues?.get(1)?.trim()?.takeIf { it.isNotBlank() }
 
+        fun allTags(block: String, name: String): List<String> =
+            Regex("<$name>(.*?)</$name>", RegexOption.DOT_MATCHES_ALL)
+                .findAll(block).map { it.groupValues[1].trim() }
+                .filter { it.isNotBlank() }.toList()
+
         val hits = ArrayList<String>()
         listOf("INDIVIDUAL" to "Individual", "ENTITY" to "Entity").forEach { (element, label) ->
             Regex("<$element>(.*?)</$element>", RegexOption.DOT_MATCHES_ALL)
                 .findAll(xml).forEach { m ->
                     if (hits.size >= 30) return@forEach
                     val block = m.groupValues[1]
-                    if (!block.lowercase().contains(needle)) return@forEach
                     val name = listOfNotNull(
                         tag(block, "FIRST_NAME"), tag(block, "SECOND_NAME"),
                         tag(block, "THIRD_NAME"), tag(block, "FOURTH_NAME")
                     ).joinToString(" ")
+                    // Against the names, and only the names.
+                    //
+                    // This used to be a substring search over the whole XML
+                    // block, which holds nationality, designation and a
+                    // paragraph of comments — so "ali" matched every person
+                    // from Mali and Somalia, and real matches were buried
+                    // under them. In the other direction, the four parts of
+                    // a name sit in four separate tags, so "ali hassan"
+                    // matched nobody at all. Aliases are searched too, which
+                    // is where most true matches on this list live.
+                    val candidates = listOf(name) +
+                        allTags(block, "ALIAS_NAME") +
+                        listOfNotNull(tag(block, "NAME_ORIGINAL_SCRIPT")) +
+                        allTags(block, "ENTITY_ALIAS")
+                    if (candidates.none { matchesName(tokens, it) }) return@forEach
                     hits.add(buildString {
                         append("• ${name.ifBlank { "(unnamed)" }}  [$label]")
                         tag(block, "UN_LIST_TYPE")?.let { append("\n  Regime: $it") }
@@ -814,12 +820,17 @@ class DirectToolExecutor(
                 }
         }
         if (hits.isEmpty()) {
-            "UN consolidated list: nothing matching '${input.trim()}'."
+            "UN consolidated list: no entry whose name matches '$query'.\n" +
+                "Searched the listed names and their aliases offline, against " +
+                "the copy bundled in this build. A name absent from this list " +
+                "is not a clean bill of health: it is one of many lists."
         } else {
             "UN Security Council consolidated sanctions — ${hits.size} match" +
-                (if (hits.size == 1) "" else "es") + " for '${input.trim()}':\n\n" +
+                (if (hits.size == 1) "" else "es") + " for '$query':\n\n" +
                 hits.joinToString("\n\n") +
-                "\n\nSearched offline against the list bundled in the app."
+                "\n\nSearched offline against the list bundled in the app. " +
+                "A name matching is not an identification — verify against the " +
+                "reference number before acting on it."
         }
     }
 

@@ -218,8 +218,18 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                         }
                     }
 
+                    // Each tab keeps its own saved state while another is
+                    // on screen. Without this the globe's composable left
+                    // the tree on every tab switch and took its
+                    // rememberSaveable values with it: layers you had
+                    // turned off came back on and started polling again,
+                    // and the map jumped back to the last search at zoom
+                    // nine instead of where you had left it.
+                    val tabState = androidx.compose.runtime.saveable
+                        .rememberSaveableStateHolder()
                     Column(Modifier.fillMaxSize()) {
                     androidx.compose.foundation.layout.Box(Modifier.weight(1f)) {
+                    tabState.SaveableStateProvider(screen) {
                     when (screen) {
                         "investigation" -> InvestigationScreen(
                             godEyeViewModel,
@@ -300,6 +310,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                             onBack = { screen = "godeye" }
                         )
                         else -> GodEyeViewScreen(godEyeViewModel)
+                    }
                     }
                     }
                     // Named destinations along the bottom, within reach of a

@@ -1,5 +1,6 @@
 package com.osint.unified
 
+import com.osint.unified.data.InvestigationExporter
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -11,21 +12,12 @@ import org.junit.Test
 class ExportHygieneTest {
 
     /**
-     * Mirrors the escaping in InvestigationExporter.csv.
+     * The escaping the exporter actually uses.
      *
-     * Every cell in these exports is text written by somebody else, the
-     * people being investigated among them. Excel and Sheets execute a cell
-     * beginning with =, +, - or @, so without this an export is a way to
-     * run code on the machine of whoever opens it.
+     * This test used to carry its own copy of the function and test the
+     * copy, which passes whatever production does.
      */
-    private fun csv(value: String): String {
-        val safe = if (value.firstOrNull() in setOf('=', '+', '-', '@', '\t', '\r')) {
-            "'" + value
-        } else {
-            value
-        }
-        return "\"" + safe.replace("\"", "\"\"") + "\""
-    }
+    private fun csv(value: String) = InvestigationExporter.csvCell(value)
 
     @Test
     fun formulaCellsAreNeutralised() {

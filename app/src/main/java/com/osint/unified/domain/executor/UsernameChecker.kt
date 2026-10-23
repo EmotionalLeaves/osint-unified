@@ -16,6 +16,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
+import com.osint.unified.network.Http
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
@@ -56,7 +57,18 @@ class UsernameChecker(private val appContext: Context) {
         ?: "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) " +
         "Chrome/120.0.0.0 Mobile Safari/537.36"
 
-    private val client: OkHttpClient = OkHttpClient.Builder()
+    /**
+     * Built from the shared client, not from scratch.
+     *
+     * A client of its own meant the sweep — the single heaviest thing in
+     * the app, two thousand requests in forty seconds — was the one part
+     * that ignored the per-host limit, the 429 cooldown and the proxy
+     * setting. Somebody turning the proxy on would have sent two thousand
+     * requests out of their own address while the dossier went through
+     * Tor. The timeouts here are its own, because a sweep cannot wait
+     * twenty seconds for any one of two thousand sites.
+     */
+    private val client: OkHttpClient = Http.client.newBuilder()
         .connectTimeout(6, TimeUnit.SECONDS)
         .readTimeout(6, TimeUnit.SECONDS)
         .callTimeout(9, TimeUnit.SECONDS)

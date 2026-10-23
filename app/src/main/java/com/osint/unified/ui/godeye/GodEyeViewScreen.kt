@@ -993,7 +993,21 @@ private fun GlobeMap(
     onAreaPress: (Double, Double, Double) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val appliedFocus = remember { mutableStateOf<Pair<Double, Double>?>(null) }
+    // Which focus has already been flown to. Saved, not merely
+    // remembered: on a plain remember this reset whenever the globe left
+    // the screen, so returning from another tab flew the camera back to
+    // the last search at zoom nine and threw away wherever you had
+    // scrolled to.
+    val appliedFocus = rememberSaveable(
+        saver = listSaver(
+            save = { listOf(it.value?.first, it.value?.second) },
+            restore = { saved ->
+                val lat = saved.getOrNull(0) as? Double
+                val lon = saved.getOrNull(1) as? Double
+                mutableStateOf(if (lat != null && lon != null) lat to lon else null)
+            }
+        )
+    ) { mutableStateOf<Pair<Double, Double>?>(null) }
     // Survives a rotation and a trip to the dossier, so coming back does
     // not drop you at zoom 2.5 over the Atlantic.
     val lastCamera = rememberSaveable(

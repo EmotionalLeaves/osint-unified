@@ -1,31 +1,23 @@
 package com.osint.unified
 
-import java.text.Normalizer
+import com.osint.unified.domain.SanctionsNames
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
  * Name matching for sanctions screening, which is the most consequential
- * thing this app does. Mirrors the two functions in Executors so the rules
+ * thing this app does. Exercises the production functions so the rules
  * are pinned by a test rather than by inspection.
  */
 class SanctionsMatchTest {
 
-    private fun normalise(raw: String): String =
-        Normalizer.normalize(raw, Normalizer.Form.NFKD)
-            .replace(Regex("\\p{Mn}+"), "")
-            .lowercase()
-            .replace(Regex("[^a-z0-9 ]+"), " ")
-            .replace(Regex("\\s+"), " ")
-            .trim()
+    // The production rules, not a copy of them. The copy this file used
+    // to carry passed whatever the app did, including the bugs.
+    private fun normalise(raw: String) = SanctionsNames.normalise(raw)
 
-    private fun matches(query: String, candidate: String): Boolean {
-        val tokens = normalise(query).split(" ").filter { it.length >= 2 }
-        if (tokens.isEmpty()) return false
-        val words = normalise(candidate).split(" ").filter { it.isNotBlank() }
-        return tokens.all { token -> words.any { it == token } }
-    }
+    private fun matches(query: String, candidate: String) =
+        SanctionsNames.matches(query, candidate)
 
     /** A raw substring search made "ali" match "Australia". */
     @Test
@@ -47,5 +39,30 @@ class SanctionsMatchTest {
     fun orderDoesNotMatter() {
         assertTrue(matches("Bashar Assad", "AL ASSAD, Bashar"))
         assertFalse(matches("Bashar Smith", "AL ASSAD, Bashar"))
+    }
+
+    /**
+     * The UN list search used to be a substring match over the whole XML
+     * block — nationality, designation and a paragraph of comments
+     * included — so "ali" matched every person from Mali and Somalia, and
+     * because a name is split across four tags, "ali hassan" matched
+     * nobody.
+     */
+    @Test
+    fun aNameIsMatchedAgainstNamesAndNotAgainstABiography() {
+        assertFalse(matches("ali", "Operated in Mali and Somalia"))
+        assertFalse(matches("ali", "IBRAHIM TRAORE"))
+        assertTrue(matches("ali", "ALI HASSAN"))
+        assertTrue(matches("ali hassan", "ALI HASSAN"))
+        assertTrue(matches("hassan ali", "ALI HASSAN"))
+        assertTrue(matches("aqim", "AQIM"))
+    }
+
+    /** Accents and punctuation are not a different person. */
+    @Test
+    fun accentsAndPunctuationDoNotHideAName() {
+        assertTrue(matches("traore", "TRAORÉ, Ibrahim"))
+        assertTrue(matches("al qaida", "AL-QAIDA"))
+        assertTrue(matches("muhammad", "MUḤAMMAD"))
     }
 }
