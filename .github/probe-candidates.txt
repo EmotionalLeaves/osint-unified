@@ -1,10 +1,5 @@
-https://www.operations.amsa.gov.au/STS/
-https://www.operations.amsa.gov.au/STS/api/vessels
-https://www.operations.amsa.gov.au/STS/StsApi/GetVessels
-https://aisview.dk/aisview/rest/vessels?northEast=58,14&southWest=54,7
-https://dma.dk/
-https://www.marinetraffic.com/en/ais/home
-https://services.marinetraffic.com/api/exportvessels
-https://ais.hamburg-port-authority.de/
-https://portal.emodnet-humanactivities.eu/geoviewer/
-https://meri.digitraffic.fi/api/ais/v1/locations##"(sog|cog|navStat|mmsi|heading)" : ?[^,}]{0,16}
+https://www.operations.amsa.gov.au/STS/##(api|Api|API)/[A-Za-z0-9/_?=&.-]{2,48}
+https://www.operations.amsa.gov.au/STS/##(url|href|src)[:=] ?["'][^"']{3,70}
+https://www.operations.amsa.gov.au/STS/@@3000
+https://www.operations.amsa.gov.au/STS/api/craft
+https://www.operations.amsa.gov.au/STS/api/Craft/GetAll
