@@ -16,6 +16,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
+import com.osint.unified.domain.ProfileSignals
 import com.osint.unified.network.Http
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -126,9 +127,16 @@ class UsernameChecker(private val appContext: Context) {
          *  accounts" is reported as an absence rather than a shrug. */
         const val GOOD_COVERAGE = 0.80
 
-        /** 40 + 15 = 55 s, inside the 70 s the registry allows this tool. */
-        const val SWEEP_BUDGET_MS = 40_000L
-        const val CONTROL_BUDGET_MS = 15_000L
+        /** 35 + 12 + 15 = 62 s, inside the 70 s the registry allows. */
+        const val SWEEP_BUDGET_MS = 35_000L
+        const val CONTROL_BUDGET_MS = 12_000L
+
+        /** Reading the profiles that were found, to see which agree. */
+        const val VERIFY_BUDGET_MS = 15_000L
+
+        /** How many profiles are read. Beyond this the sweep stops being
+         *  a sweep and becomes a crawl. */
+        const val VERIFY_CAP = 30
     }
 
     suspend fun check(username: String): String = withContext(Dispatchers.IO) {
@@ -184,6 +192,16 @@ class UsernameChecker(private val appContext: Context) {
         // so a sweep with full coverage and no hits — the definition of an
         // absence — was filed as "could not be reached". The inverse of
         // the bug it replaced, and just as useless.
+        // Which of the hits agree with each other.
+        //
+        // Forty sites saying a name is taken is forty facts about the
+        // name. The pages themselves usually say who owns them — the same
+        // display name, the same sentence of biography, the same link
+        // out, the same avatar — so they are read, and the ones that
+        // agree are reported as agreeing. That is the whole difference
+        // between a list of possibilities and something to act on.
+        val clusters = if (hits.isEmpty()) emptyList() else verify(hits)
+
         val reached = said.toDouble() / sites.size.coerceAtLeast(1)
         val verdict = when {
             hits.isNotEmpty() -> VERDICT_HIT
@@ -225,6 +243,26 @@ class UsernameChecker(private val appContext: Context) {
                     append("\n")
                 }
             }
+            if (clusters.isNotEmpty()) {
+                append("\nTHESE AGREE WITH EACH OTHER\n")
+                append("A name being taken somewhere is a fact about the name. ")
+                append("These profiles also carry the same details, which is a ")
+                append("fact about a person.\n")
+                clusters.take(6).forEach { cluster ->
+                    append("\n• ").append(cluster.reason.take(160)).append('\n')
+                    cluster.accounts.forEach { account ->
+                        append("    ").append(account.site).append(" — ")
+                        append(account.url).append('\n')
+                        account.signals.displayName?.let {
+                            append("      name: ").append(it.take(80)).append('\n')
+                        }
+                        account.signals.bio?.let {
+                            append("      bio: ").append(it.take(140)).append('\n')
+                        }
+                    }
+                }
+            }
+
             if (discarded > 0) {
                 append("\n")
                 append("$discarded apparent hit")
@@ -237,6 +275,44 @@ class UsernameChecker(private val appContext: Context) {
                 append("control username, not by anything on the page.")
             }
         }
+    }
+
+    /**
+     * Reads the profiles that were found and groups the ones that agree.
+     *
+     * This is the same class of request the sweep already made — the
+     * sites were just asked whether the name exists — so it adds no new
+     * exposure beyond fetching a page that was already confirmed to be
+     * there. It is capped and time-boxed, because a sweep that turns
+     * into a crawl stops finishing.
+     */
+    private suspend fun verify(
+        hits: List<Pair<SiteRule, String>>
+    ): List<ProfileSignals.Cluster> {
+        val accounts = Collections.synchronizedList(mutableListOf<ProfileSignals.Account>())
+        val gate = Semaphore(16)
+        withTimeoutOrNull(VERIFY_BUDGET_MS) {
+            coroutineScope {
+                hits.take(VERIFY_CAP).map { (site, url) ->
+                    async {
+                        gate.withPermit {
+                            val html = runCatching { fetchPage(url) }.getOrNull()
+                            if (!html.isNullOrBlank()) {
+                                val signals = ProfileSignals.read(
+                                    html, ProfileSignals.hostOf(url)
+                                )
+                                if (!signals.isEmpty) {
+                                    accounts.add(
+                                        ProfileSignals.Account(site.name, url, signals)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }.awaitAll()
+            }
+        }
+        return ProfileSignals.cluster(accounts.toList())
     }
 
     /**
@@ -328,6 +404,17 @@ class UsernameChecker(private val appContext: Context) {
         data class Found(val url: String) : SiteAnswer
         data object Absent : SiteAnswer
         data object Unreachable : SiteAnswer
+    }
+
+    /** The page itself, capped, for reading its profile metadata. */
+    private fun fetchPage(url: String): String? {
+        val request = Request.Builder()
+            .url(url)
+            .header("User-Agent", userAgent)
+            .build()
+        return client.newCall(request).execute().use { resp ->
+            if (!resp.isSuccessful) null else resp.peekBody(MAX_BODY_BYTES).string()
+        }
     }
 
     private fun checkSite(site: SiteRule, username: String): SiteAnswer {
