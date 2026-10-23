@@ -1,10 +1,8 @@
-https://www.metoc.navy.mil/jtwc/products/abpwweb.txt@@1
-https://www.metoc.navy.mil/jtwc/products/abpwweb.txt@@290
-https://www.metoc.navy.mil/jtwc/products/abpwweb.txt@@580
-https://www.metoc.navy.mil/jtwc/products/abpwweb.txt@@870
-https://www.metoc.navy.mil/jtwc/products/abpwweb.txt@@1160
-https://www.metoc.navy.mil/jtwc/products/abpwweb.txt@@1450
-https://www.metoc.navy.mil/jtwc/products/abpwweb.txt@@1740
-https://www.metoc.navy.mil/jtwc/products/abpwweb.txt@@2030
-https://www.metoc.navy.mil/jtwc/products/abpwweb.txt@@2320
-https://www.metoc.navy.mil/jtwc/products/abioweb.txt@@1
+https://api.safecast.org/measurements.json?latitude=35.65&longitude=139.84&distance=50000&captured_after=2026-10-01
+https://api.safecast.org/measurements.json?latitude=35.65&longitude=139.84&distance=50000
+https://api.safecast.org/measurements.json?latitude=35.65&longitude=139.84&distance=50000&order=captured_at+desc
+https://api.gdeltproject.org/api/v2/doc/doc?query=protest&mode=artlist&format=json&maxrecords=5
+https://api.gdeltproject.org/api/v2/geo/geo?query=protest&format=geojson
+https://celestrak.org/NORAD/elements/gp.php?GROUP=stations&FORMAT=json
+https://celestrak.org/NORAD/elements/gp.php?GROUP=stations&FORMAT=json||Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Mobile Safari/537.36
+https://tle.ivanstanojevic.me/api/tle?page-size=5
