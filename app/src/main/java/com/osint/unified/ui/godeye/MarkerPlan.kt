@@ -55,24 +55,50 @@ internal fun planMarkers(layers: MapLayers, inView: MapWindow?): List<PendingMar
     return thin(pending)
 }
 
+/** The flat map's share of [thinBy]. */
+private fun thin(pending: List<PendingMarker>): List<PendingMarker> =
+    thinBy(pending, MARKER_BUDGET, { it.kind }, { markerBucket(it) }, { it.identity })
+
 /**
- * Thinning has to be fair between layers.
+ * The same fairness, for the globe.
  *
- * The satellite catalogue alone is twelve thousand objects; taking
- * markers in the order layers happen to be added would let it eat the
- * whole budget and push aircraft, vessels and everything else off the
- * map entirely.
+ * The sphere projects every marker it is given on every frame, so the
+ * list it is handed has to be a list worth projecting. Culling to the
+ * near hemisphere happens at draw time and is one comparison per
+ * point; this is the part that cannot be done per frame.
+ *
+ * A looser budget than the flat map's, because this runs once when the
+ * layers change rather than on every pan, and because the globe can
+ * usefully show more at once — it is the view for seeing everything.
+ */
+internal fun thinGlobe(points: List<GlobePoint>, budget: Int = GLOBE_BUDGET): List<GlobePoint> =
+    thinBy(points, budget, { it.kind }, { globeBucket(it) }, { it.identity })
+
+/**
+ * Thinning that is fair between layers.
+ *
+ * The satellite catalogue alone is twelve thousand objects and the
+ * fire detections are a hundred thousand; taking markers in the order
+ * layers happen to be added would let either eat the whole budget and
+ * push aircraft, vessels and everything else off the map entirely.
  *
  * So each layer present gets an equal share, any layer using less than
  * its share hands the remainder back, and layers over their share are
- * sampled so what survives stays spread across the view instead of
- * clumping.
+ * sampled by a hash of their own identity — which gives exactly the
+ * quota, scattered across the view, and the same answer however the
+ * feed ordered its reply.
  */
-private fun thin(pending: List<PendingMarker>): List<PendingMarker> {
-    if (pending.size <= MARKER_BUDGET) return pending
-    val byKind = pending.groupBy { it.kind }
+private fun <T> thinBy(
+    items: List<T>,
+    budget: Int,
+    kindOf: (T) -> String,
+    bucketOf: (T) -> Int,
+    identityOf: (T) -> String
+): List<T> {
+    if (items.size <= budget) return items
+    val byKind = items.groupBy(kindOf)
     val quotas = HashMap<String, Int>()
-    var remaining = MARKER_BUDGET
+    var remaining = budget
     var contenders = byKind.keys.toMutableSet()
     while (contenders.isNotEmpty() && remaining > 0) {
         val share = (remaining / contenders.size).coerceAtLeast(1)
@@ -96,23 +122,15 @@ private fun thin(pending: List<PendingMarker>): List<PendingMarker> {
             markers.size <= quota -> markers
             else -> {
                 // Which markers survive has to depend on the markers,
-                // not on where they happened to land in the list.
-                // Striding over list position meant that a feed
-                // returning its items in a different order — which
-                // these do, every poll — kept a different subset each
-                // time, so stationary things blinked in and out while
-                // nothing was moving.
-                //
-                // Each marker falls in a bucket drawn from its own
-                // identity: a callsign, an MMSI, a satellite name, or
-                // its position for the things that have no name. Taking
-                // the lowest buckets gives exactly the quota, scattered
-                // across the view, and gives the same answer however
-                // the feed ordered its reply. The name breaks ties for
-                // the same reason — a sort that falls back on list
-                // position is a sort that flickers.
+                // not on where they happened to land in the list. A
+                // feed returning its items in a different order — which
+                // these do, every poll — would otherwise keep a
+                // different subset each time, so stationary things
+                // blinked in and out while nothing was moving. The name
+                // breaks ties for the same reason: a sort that falls
+                // back on list position is a sort that flickers.
                 markers
-                    .sortedWith(compareBy({ markerBucket(it) }, { it.identity }))
+                    .sortedWith(compareBy({ bucketOf(it) }, { identityOf(it) }))
                     .take(quota)
             }
         }
@@ -160,10 +178,13 @@ private const val MARKER_BUCKETS = 10_000
  * similar strings in neighbouring slots and a plain modulo would then
  * keep or drop whole runs of them together.
  */
-internal fun markerBucket(pm: PendingMarker): Int {
-    val key = pm.title?.takeIf { it.isNotBlank() }
-        ?: "${(pm.lat * 1000).toInt()}:${(pm.lon * 1000).toInt()}"
-    var h = (pm.kind.hashCode() * 31) xor key.hashCode()
+internal fun markerBucket(pm: PendingMarker): Int = bucketOf(pm.kind, pm.identity)
+
+/** The same, for a point on the globe. */
+internal fun globeBucket(point: GlobePoint): Int = bucketOf(point.kind, point.identity)
+
+private fun bucketOf(kind: String, identity: String): Int {
+    var h = (kind.hashCode() * 31) xor identity.hashCode()
     h = h xor (h ushr 16)
     h *= -0x7ee3623b
     h = h xor (h ushr 13)
@@ -173,3 +194,7 @@ internal fun markerBucket(pm: PendingMarker): Int {
 /** The most markers drawn at once. Layers may hold far more than this;
  *  what is off screen costs nothing, and what is left is thinned evenly. */
 internal const val MARKER_BUDGET = 2500
+
+/** The sphere projects everything it is handed on every frame, so this
+ *  is what can be projected in a frame and not what can be seen. */
+internal const val GLOBE_BUDGET = 8000

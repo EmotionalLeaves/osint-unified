@@ -610,8 +610,19 @@ fun GodEyeViewScreen(
                     findings = state.findings
                 )
                 if (roundEarth) {
+                    // Thinned before the sphere ever sees it. The globe
+                    // projects every point it is handed on every frame,
+                    // and the fire detections alone are now six figures
+                    // — a number that cannot be turned into trigonometry
+                    // sixty times a second. Done off the main thread and
+                    // only when the layers change, not when the camera
+                    // moves: the far hemisphere is culled at draw time
+                    // for the cost of one comparison per point.
+                    val globePoints by produceState(emptyList<GlobePoint>(), layers) {
+                        value = withContext(Dispatchers.Default) { thinGlobe(layers.points()) }
+                    }
                     GlobeView(
-                        points = remember(layers) { layers.points() },
+                        points = globePoints,
                         camera = globeCamera,
                         onCamera = { next ->
                             globeCamera = next

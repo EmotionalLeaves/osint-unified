@@ -307,7 +307,20 @@ data class GlobePoint(
     val title: String?,
     val clickable: Boolean,
     val url: String? = null
-)
+) {
+    /**
+     * What this point is, as opposed to where it is.
+     *
+     * Used to decide which points survive thinning, so that the same
+     * aircraft keeps its place in the subset as it moves rather than
+     * blinking in and out while the feed reorders itself.
+     */
+    val identity: String
+        get() = kind + "\u0000" + (
+            title?.takeIf { it.isNotBlank() }
+                ?: "${(lat * 1000).toInt()}:${(lon * 1000).toInt()}"
+            )
+}
 
 private fun globeRadius(width: Int, height: Int, zoom: Float): Float =
     min(width, height) / 2f * 0.92f * zoom

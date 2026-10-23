@@ -112,4 +112,37 @@ class MarkerPlanTest {
         val unnamedThere = planMarkers(MapLayers(cameras = listOf(GeoBlip(2.0, 2.0, ""))), null)
         assertTrue(unnamedHere.first().identity != unnamedThere.first().identity)
     }
+
+    /**
+     * The globe projects every point it is handed on every frame, so
+     * it is handed a number that can be turned into trigonometry
+     * sixty times a second. The fire detections alone are six figures.
+     */
+    @Test
+    fun theGlobeGetsAListItCanProject() {
+        val layers = MapLayers(
+            fires = blips(120_000, lat = 10.0),
+            cameras = blips(30, lat = 20.0),
+            satellites = blips(12_000, lat = 30.0)
+        )
+        val points = com.osint.unified.ui.godeye.thinGlobe(layers.points())
+        assertTrue(points.size <= com.osint.unified.ui.godeye.GLOBE_BUDGET)
+        // And the small layer is all still there: a hundred thousand
+        // fires must not push thirty cameras off the planet.
+        assertEquals(30, points.count { it.kind == "Traffic camera" })
+        assertTrue(points.count { it.kind == "Satellite" } > 1000)
+        assertTrue(points.count { it.kind == "Wildfire" } > 1000)
+    }
+
+    /** Thinning twice gives the same answer, however the feed reorders. */
+    @Test
+    fun theGlobeSubsetIsStable() {
+        val one = blips(40_000, lat = 10.0)
+        val first = com.osint.unified.ui.godeye.thinGlobe(MapLayers(fires = one).points())
+            .map { it.title }.toSet()
+        val second = com.osint.unified.ui.godeye.thinGlobe(
+            MapLayers(fires = one.reversed()).points()
+        ).map { it.title }.toSet()
+        assertEquals(first, second)
+    }
 }
