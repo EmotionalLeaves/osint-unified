@@ -1,10 +1,6 @@
-https://www.jma.go.jp/bosai/tsunami/data/list.json
-https://www.jma.go.jp/bosai/quake/data/list.json
-https://data.bmkg.go.id/DataMKG/TEWS/autogempa.json
-https://data.bmkg.go.id/DataMKG/TEWS/gempaterkini.json
-https://incois.gov.in/
-https://www.tsunami.gov/events/xml/PAAQAtom.xml@@1
-https://api.weather.gc.ca/collections?f=json##"(id|title)": ?"[^"]{0,40}
-https://www.metoffice.gov.uk/public/data/PWSCache/WarningsRSS/Region/UK
-https://api.met.no/weatherapi/metalerts/2.0/current.json##"(event|area|awareness_level)":"[^"]{0,30}
-https://www.ndbc.noaa.gov/data/latest_obs/latest_obs.txt@@1
+https://www.jma.go.jp/bosai/tsunami/data/list.json@@0
+https://www.jma.go.jp/bosai/tsunami/data/list.json@@900
+https://www.jma.go.jp/bosai/tsunami/data/list.json@@1800
+https://www.jma.go.jp/bosai/tsunami/data/list.json@@2700
+https://www.jma.go.jp/bosai/tsunami/data/list.json@@3500
+https://data.bmkg.go.id/DataMKG/TEWS/gempaterkini.json@@0
