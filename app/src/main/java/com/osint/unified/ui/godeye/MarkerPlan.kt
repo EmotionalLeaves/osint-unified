@@ -223,6 +223,16 @@ private fun bucketOf(kind: String, identity: String): Int {
  *  what is off screen costs nothing, and what is left is thinned evenly. */
 internal const val MARKER_BUDGET = 2500
 
-/** The sphere projects everything it is handed on every frame, so this
- *  is what can be projected in a frame and not what can be seen. */
-internal const val GLOBE_BUDGET = 8000
+/**
+ * The sphere projects everything it is handed on every frame, so this
+ * is what can be projected in a frame and not what can be seen.
+ *
+ * Was eight thousand, which was never a frame's worth: each point cost
+ * a projection, a day-or-night test and two draw calls, so a full
+ * globe was sixteen thousand canvas operations before a coastline had
+ * been drawn. The drawing is batched by colour now, but the
+ * projection and the night test are still per point and still on the
+ * main thread — and two and a half thousand markers on a disc a
+ * thousand pixels across is already more than anyone can tell apart.
+ */
+internal const val GLOBE_BUDGET = 2500

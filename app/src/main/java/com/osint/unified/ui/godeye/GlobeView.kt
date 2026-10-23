@@ -22,6 +22,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PointMode
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
@@ -485,12 +487,18 @@ fun GlobeView(
             // is the terminator, and a stroke on top of a soft one
             // looks like a crack.
             drawGraticule(cx, cy, radius, shownLat, shownLon, faint = true)
-            drawLines(borders, cx, cy, radius, shownLat, shownLon, BORDER_OVER_IMAGERY)
+            drawLines(
+                borders, cx, cy, radius, shownLat, shownLon,
+                BORDER_OVER_IMAGERY, stride = if (drifting) 2 else 1
+            )
         } else {
             drawOcean(cx, cy, radius)
             drawGraticule(cx, cy, radius, lat0, lon0)
             drawLand(rings, cx, cy, radius, lat0, lon0)
-            drawLines(borders, cx, cy, radius, lat0, lon0, BORDER_OVER_OUTLINE)
+            drawLines(
+                borders, cx, cy, radius, lat0, lon0,
+                BORDER_OVER_OUTLINE, stride = if (drifting) 2 else 1
+            )
             drawTerminator(terminator, cx, cy, radius, lat0, lon0)
         }
         // Names only when the camera has settled. Text is the most
@@ -502,7 +510,7 @@ fun GlobeView(
                 cx, cy, radius, shownLat, shownLon, ink, halo
             )
         }
-        drawPoints(points, cx, cy, radius, shownLat, shownLon, sun)
+        drawMarkers(points, cx, cy, radius, shownLat, shownLon, sun, halos = !drifting)
         // Labels on the markers too, once there are few enough that
         // labelling them is reading rather than overprinting.
         if (!drifting) {
@@ -730,6 +738,11 @@ private fun DrawScope.drawGraticule(
  * the thing turning.
  */
 private fun DrawScope.drawStars(width: Float, height: Float) {
+    // Batched by brightness band rather than drawn one at a time: the
+    // sky is two hundred and twenty circles that never change, and it
+    // was repainting all of them individually on every frame of every
+    // drag.
+    val bands = Array(STAR_BANDS) { ArrayList<Offset>(STAR_COUNT / STAR_BANDS + 8) }
     for (i in 0 until STAR_COUNT) {
         // One hash per star, mixed hard enough that the three values
         // taken out of it are not visibly correlated — otherwise the
@@ -742,31 +755,54 @@ private fun DrawScope.drawStars(width: Float, height: Float) {
         val mag = (h and 0xFF) / 255f
         val x = ux * (width + 240f)
         val y = uy * (height + 240f)
-        drawCircle(
+        val band = (mag * STAR_BANDS).toInt().coerceIn(0, STAR_BANDS - 1)
+        bands[band].add(Offset(x - 120f, y - 120f))
+    }
+    for (band in 0 until STAR_BANDS) {
+        val stars = bands[band]
+        if (stars.isEmpty()) continue
+        val mag = (band + 0.5f) / STAR_BANDS
+        drawPoints(
+            points = stars,
+            pointMode = PointMode.Points,
             color = Color.White.copy(alpha = 0.10f + mag * 0.45f),
-            radius = 0.6f + mag * 1.1f,
-            center = Offset(x - 120f, y - 120f)
+            strokeWidth = (0.6f + mag * 1.1f) * 2f,
+            cap = StrokeCap.Round
         )
     }
 }
 
-/** Walks 181 samples of a line, drawing only the segments on this side. */
+/** How many brightnesses the sky is drawn in. Enough that it still
+ *  looks like a sky, few enough to be a handful of draw calls. */
+private const val STAR_BANDS = 5
+
+/**
+ * Walks 181 samples of a line, drawing only the parts on this side.
+ *
+ * One path per arc rather than a drawLine per sample. The graticule is
+ * a couple of dozen of these and the terminator is another, so this
+ * was three or four thousand canvas calls a frame on its own.
+ */
 private inline fun DrawScope.strokeArcOfPoints(
     colour: Color,
     cx: Float, cy: Float, r: Float,
     lat0: Double, lon0: Double,
     place: (Int) -> Pair<Double, Double>
 ) {
+    val path = Path()
     var previous: Orthographic.Point? = null
+    var any = false
     for (step in 0..180) {
         val (lat, lon) = place(step)
         val p = Orthographic.project(lat, lon, lat0, lon0, r, cx, cy)
         val last = previous
-        if (last != null && last.visible && p.visible) {
-            drawLine(colour, Offset(last.x, last.y), Offset(p.x, p.y), strokeWidth = 1f)
+        if (p.visible) {
+            if (last != null && last.visible) path.lineTo(p.x, p.y) else path.moveTo(p.x, p.y)
+            any = true
         }
         previous = p
     }
+    if (any) drawPath(path, colour, style = Stroke(width = 1f))
 }
 
 /**
@@ -776,25 +812,44 @@ private inline fun DrawScope.strokeArcOfPoints(
  * the coastlines are — otherwise a border in Asia is drawn straight
  * across the Pacific when the globe is turned to the Americas.
  */
+/**
+ * Coastlines and borders, as one path rather than ten thousand lines.
+ *
+ * This drew each segment with its own drawLine. Natural Earth's
+ * coarsest land and border sets are together some tens of thousands of
+ * points, so a frame was tens of thousands of separate canvas calls on
+ * the main thread — which is most of why the app felt heavy, and all
+ * of it paid again sixty times a second.
+ *
+ * One Path, with a moveTo wherever the line goes round the back of the
+ * sphere and reappears, is one call. [stride] skips points while the
+ * globe is moving: at two the line is still a coastline and the work
+ * halves, and nobody has ever studied a border that is sliding.
+ */
 private fun DrawScope.drawLines(
     lines: List<DoubleArray>,
     cx: Float, cy: Float, r: Float,
     lat0: Double, lon0: Double,
-    colour: Color
+    colour: Color,
+    stride: Int = 1
 ) {
+    val path = Path()
+    val step = (stride.coerceAtLeast(1)) * 2
     lines.forEach { line ->
         var previous: Orthographic.Point? = null
         var i = 0
         while (i + 1 < line.size) {
             val p = Orthographic.project(line[i + 1], line[i], lat0, lon0, r, cx, cy)
             val last = previous
-            if (last != null && last.visible && p.visible) {
-                drawLine(colour, Offset(last.x, last.y), Offset(p.x, p.y), strokeWidth = 1f)
+            if (p.visible) {
+                if (last != null && last.visible) path.lineTo(p.x, p.y)
+                else path.moveTo(p.x, p.y)
             }
             previous = p
-            i += 2
+            i += step
         }
     }
+    drawPath(path, colour, style = Stroke(width = 1f))
 }
 
 private fun DrawScope.drawLand(
@@ -865,12 +920,33 @@ private fun DrawScope.drawTerminator(
  * desert and a blue one on the sea are not, and the ring is what
  * separates the thing being reported from the ground it is on.
  */
-private fun DrawScope.drawPoints(
+/**
+ * The markers, batched.
+ *
+ * Two drawCircle per point, and the globe is handed thousands of them:
+ * a frame was up to sixteen thousand separate canvas calls before a
+ * single border had been drawn. Compose will draw a whole list of
+ * points in one call if they share a colour and a size, and markers
+ * only have as many colours as there are layers — so the same picture
+ * comes out of a few dozen calls instead.
+ *
+ * The halo behind each one is dropped while the globe is moving. It is
+ * there so a marker stays legible against a photograph, which matters
+ * when you are reading the thing and not when it is sliding.
+ */
+private fun DrawScope.drawMarkers(
     points: List<GlobePoint>,
     cx: Float, cy: Float, r: Float,
     lat0: Double, lon0: Double,
-    sun: Pair<Double, Double>
+    sun: Pair<Double, Double>,
+    halos: Boolean
 ) {
+    if (points.isEmpty()) return
+    // Keyed on what makes two markers drawable together: the colour
+    // they end up, and the size they are drawn at.
+    val groups = HashMap<Long, MutableList<Offset>>(64)
+    val colours = HashMap<Long, Color>(64)
+    val widths = HashMap<Long, Float>(64)
     points.forEach { point ->
         val p = Orthographic.project(point.lat, point.lon, lat0, lon0, r, cx, cy)
         if (!p.visible) return@forEach
@@ -879,13 +955,32 @@ private fun DrawScope.drawPoints(
         // genuinely dark, and the old fade took markers there from
         // "quieter" to "invisible".
         val colour = Color(point.color).let { if (night) it.copy(alpha = 0.78f) else it }
-        val radius = (point.sizeDp.coerceIn(5, 16) / 2f) * density
-        drawCircle(
-            HALO,
-            radius = radius + 1.2f * density,
-            center = Offset(p.x, p.y)
+        val size = point.sizeDp.coerceIn(5, 16)
+        val key = (point.color.toLong() shl 8) or
+            (size.toLong() shl 1) or (if (night) 1L else 0L)
+        groups.getOrPut(key) { ArrayList(64) }.add(Offset(p.x, p.y))
+        colours[key] = colour
+        widths[key] = size * density
+    }
+    if (halos) {
+        groups.forEach { (key, offsets) ->
+            drawPoints(
+                points = offsets,
+                pointMode = PointMode.Points,
+                color = HALO,
+                strokeWidth = (widths[key] ?: 8f) + 2.4f * density,
+                cap = StrokeCap.Round
+            )
+        }
+    }
+    groups.forEach { (key, offsets) ->
+        drawPoints(
+            points = offsets,
+            pointMode = PointMode.Points,
+            color = colours[key] ?: Color.White,
+            strokeWidth = widths[key] ?: 8f,
+            cap = StrokeCap.Round
         )
-        drawCircle(colour, radius = radius, center = Offset(p.x, p.y))
     }
 }
 
