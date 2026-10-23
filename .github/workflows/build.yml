@@ -9,6 +9,12 @@ on:
 jobs:
   build:
     runs-on: ubuntu-24.04
+    # Mapped at job level because a step's `if` cannot see the `secrets`
+    # context at all — r177 did not fail, it never started: the workflow
+    # was rejected as invalid. It can see `env`, and job-level `env` is
+    # where a secret becomes something a condition may ask about.
+    env:
+      OSINT_KEYSTORE_B64: ${{ secrets.OSINT_KEYSTORE_B64 }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -191,9 +197,7 @@ jobs:
       # false and every build was signed with the committed key no matter
       # what secret had been set.
       - name: Use the private signing key when one is configured
-        if: ${{ secrets.OSINT_KEYSTORE_B64 != '' }}
-        env:
-          OSINT_KEYSTORE_B64: ${{ secrets.OSINT_KEYSTORE_B64 }}
+        if: ${{ env.OSINT_KEYSTORE_B64 != '' }}
         run: |
           mkdir -p keystore
           echo "$OSINT_KEYSTORE_B64" | base64 -d > keystore/ci.jks
@@ -201,7 +205,7 @@ jobs:
           echo "::notice title=signing::Signing with the configured private key."
 
       - name: Say so when the signing key is the public one
-        if: ${{ secrets.OSINT_KEYSTORE_B64 == '' }}
+        if: ${{ env.OSINT_KEYSTORE_B64 == '' }}
         run: |
           echo "::warning title=signing::No OSINT_KEYSTORE_B64 secret is set, so this build is signed with the key committed to the repository. Anyone can sign an app with the same identity, which is what the database encryption assumes cannot happen."
 

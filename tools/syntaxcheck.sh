@@ -66,6 +66,15 @@ grep -E "error: unresolved reference: @[A-Za-z]" "$WORK/full.txt" >> "$WORK/real
 # template, where Kotlin swallows the underscore into the identifier.
 grep -E "error: unresolved reference: [A-Za-z0-9]+_$" "$WORK/full.txt" >> "$WORK/real.txt" || true
 
+# A workflow condition that reads the `secrets` context. GitHub does not
+# make `secrets` available to a step's `if`, and a workflow that uses it is
+# rejected before any job starts — so the run fails with no job, no log and
+# no annotation, which is how r177 reported itself. Secrets reach a
+# condition through a job-level `env`.
+grep -nE "^\s*if:.*secrets\." .github/workflows/*.yml 2>/dev/null \
+  | sed 's/^/error: `secrets` is not available to a workflow `if` — map it through job-level env: /' \
+  >> "$WORK/real.txt" || true
+
 # The Room schema version is written twice — once in the @Database
 # annotation, which cannot reference a constant declared inside the class
 # it annotates, and once as SCHEMA_VERSION for the recovery code. If they
