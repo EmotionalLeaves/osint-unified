@@ -153,6 +153,15 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
                 "Strict-Transport-Security", "Content-Security-Policy", "X-Frame-Options",
                 "X-Content-Type-Options", "Referrer-Policy", "Permissions-Policy"
             )
+            // A server that refuses HEAD has not told us it ships no
+            // headers. 405, 403 and 501 to HEAD are all common, and
+            // the answer was "Security headers: 0/6" with six crosses
+            // under it — a confident statement that the site has no
+            // HSTS, no CSP and no X-Frame-Options.
+            if (!resp.isSuccessful && resp.code !in 300..399) {
+                return@runCatching "The server answered HTTP ${resp.code} to a HEAD " +
+                    "request, so its security headers could not be read."
+            }
             buildString {
                 append("HTTP ${resp.code} — ${resp.request.url}\n")
                 resp.header("Server")?.let { append("Server: $it\n") }
@@ -250,14 +259,30 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
         fun s(k: String) = (o[k] as? JsonPrimitive)?.contentOrNull
         val conn = o["connection"] as? JsonObject
         fun c(k: String) = (conn?.get(k) as? JsonPrimitive)?.contentOrNull
-        buildString {
-            append("IP: ${s("ip")}\n")
-            append("Location: ${s("city")}, ${s("region")}, ${s("country")}\n")
-            append("Coordinates: ${s("latitude")}, ${s("longitude")}\n")
-            append("ISP: ${c("isp")}\n")
-            append("Org: ${c("org")}\n")
-            append("ASN: ${c("asn")}\n")
+        // ipwho.is answers HTTP 200 with success:false for a reserved,
+        // bogon or malformed address, and this never read the flag —
+        // so the output was "Location: null, null, null / ISP: null /
+        // ASN: null", printed as facts and classified as a finding.
+        val ok = (o["success"] as? JsonPrimitive)?.contentOrNull?.toBooleanStrictOrNull()
+        if (ok == false) {
+            val why = (o["message"] as? JsonPrimitive)?.contentOrNull
+            return@runCatching "No geolocation record for $ip" +
+                (why?.let { " ($it)" } ?: "") + "."
         }
+        buildString {
+            append("IP: ${s("ip") ?: ip}\n")
+            // Each line only where there is something to put on it. A
+            // field the service left out is not a field whose value
+            // is the word "null".
+            val place = listOfNotNull(s("city"), s("region"), s("country"))
+            if (place.isNotEmpty()) append("Location: ${place.joinToString(", ")}\n")
+            val lat = s("latitude")
+            val lon = s("longitude")
+            if (lat != null && lon != null) append("Coordinates: $lat, $lon\n")
+            c("isp")?.let { append("ISP: $it\n") }
+            c("org")?.let { append("Org: $it\n") }
+            c("asn")?.let { append("ASN: $it\n") }
+        }.ifBlank { "No geolocation record for $ip." }
     }
 
     /** Gravatar profile lookup by email hash. */

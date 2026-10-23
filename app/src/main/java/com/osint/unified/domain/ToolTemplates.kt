@@ -148,7 +148,9 @@ object ToolTemplates {
         // ---- wallet ----
         Template("Blockchain.info", "https://blockchain.info/rawaddr/{}", "wallet", true),
         Template("Blockstream", "https://blockstream.info/api/address/{}", "wallet", true),
-        Template("Ethplorer", "https://api.ethplorer.io/getAddressInfo/{}?apiKey=freekey", "wallet", true),
+        // Was Ethplorer with its shared demo key. A key everybody
+        // shares is still a key, and this app does not use them.
+        Template("Etherscan", "https://etherscan.io/address/{}", "wallet", false),
         Template("Etherscan", "https://etherscan.io/address/{}", "wallet"),
         Template("Blockchair", "https://blockchair.com/search?q={}", "wallet"),
         Template("OXT", "https://oxt.me/address/{}", "wallet"),

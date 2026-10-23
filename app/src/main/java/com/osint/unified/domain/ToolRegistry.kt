@@ -325,9 +325,30 @@ object ToolRegistry {
      */
     private val RELIABILITY: Map<String, Grading.Reliability> = buildMap {
         // A — the record of the thing itself.
+        //
+        // Five tools came out of this group, because none of them is
+        // the record of anything:
+        //
+        //   wikidata — a wiki anyone may edit, reached through a
+        //     fuzzy search whose top hit is taken unchecked;
+        //   cve — the number it leads with is EPSS, a *prediction* of
+        //     future exploitation, and the prose comes from an
+        //     aggregator. A forecast is not a record;
+        //   aircraftreg — hexdb.io is community-maintained and
+        //     adsb.lol is a volunteer receiver network. Neither is a
+        //     civil aviation registry, and the tool prints
+        //     "Registered owner:" from them;
+        //   bgpview — a third-party aggregator, which silently falls
+        //     back to RIPEstat, so the grade did not even describe
+        //     what answered;
+        //   asnintel — the same, through hackertarget and PeeringDB.
+        //
+        // The grade is the whole point of grading: an A says this is
+        // the authoritative record and a C says somebody is reporting
+        // what they saw. Putting an editable wiki next to a
+        // certificate transparency log makes both numbers mean less.
         listOf(
-            "crtsh", "rdap", "gleif", "edgar", "sanctions", "unsanctions",
-            "aircraftreg", "wallet", "bgpview", "asnintel", "cve", "wikidata"
+            "crtsh", "rdap", "gleif", "edgar", "sanctions", "unsanctions", "wallet"
         ).forEach { put(it, Grading.Reliability.COMPLETE) }
 
         // B — an operator publishing its own data. A page is the site's
@@ -349,13 +370,20 @@ object ToolRegistry {
             "hostintel", "nuclei", "trufflehog", "opensanctions",
             "hudsonrock", "breachcat", "webcrawl", "sitefiles", "headers",
             "mailsec", "torexit", "torrelay", "subsweep", "phoneinfoga",
-            "holehe", "ghunt", "h8mail", "emailgithub", "emailperm"
+            "holehe", "ghunt", "h8mail", "emailgithub",
+            "wikidata", "cve", "aircraftreg", "bgpview", "asnintel"
         ).forEach { put(it, Grading.Reliability.FAIRLY) }
 
         // D — derived, of unclear provenance.
         listOf("typosquat", "reverseimage").forEach {
             put(it, Grading.Reliability.NOT_USUALLY)
         }
+
+        // "emailperm" reports nothing it saw. It generates candidate
+        // strings and its own output says so — "These are generated
+        // patterns, not confirmed accounts" — which is the definition
+        // of a heuristic and belongs beside the sweeps.
+        put("emailperm", Grading.Reliability.UNRELIABLE)
 
         // E — a heuristic, and it should look like one.
         listOf(

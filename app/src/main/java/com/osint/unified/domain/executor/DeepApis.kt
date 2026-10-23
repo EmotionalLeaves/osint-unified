@@ -16,7 +16,9 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import okhttp3.OkHttpClient
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
 import java.net.URLEncoder
 import java.text.SimpleDateFormat
@@ -1269,28 +1271,75 @@ class DeepApis(
         return sb.toString()
     }
 
+    /**
+     * An Ethereum address, read straight off the chain.
+     *
+     * This used Ethplorer with `apiKey=freekey`, which is a key —
+     * Ethplorer's shared demo one, rate limited across everybody who
+     * ever copied it out of a tutorial. This app's rule is no keys
+     * and no accounts, and a key everyone shares is still a key, and
+     * in practice a mostly rate-limited one.
+     *
+     * A public JSON-RPC node answers the same two questions with no
+     * key at all: the balance and how many transactions the address
+     * has sent. Token holdings are lost with Ethplorer, which is a
+     * real reduction and the honest price of not using a key. Two
+     * nodes, because one being down should not take the tool with it.
+     */
     private fun ethWallet(a: String): String {
         val sb = StringBuilder("Ethereum address — $a\n")
-        runCatching {
-            val o = json.parseToJsonElement(
-                get("https://api.ethplorer.io/getAddressInfo/$a?apiKey=freekey")
-            ).jsonObject
-            ((o["ETH"] as? JsonObject)?.dbl("balance"))?.let { sb.append("Balance: %.6f ETH\n".format(Locale.US, it)) }
-            o.int("countTxs")?.let { sb.append("Transactions: $it\n") }
-            val tokens = o["tokens"] as? JsonArray
-            if (!tokens.isNullOrEmpty()) {
-                sb.append("\nTokens held (${tokens.size}):\n")
-                tokens.take(20).forEach { t ->
-                    val ti = (t as? JsonObject)?.get("tokenInfo") as? JsonObject ?: return@forEach
-                    sb.append("• ${ti.str("name") ?: "?"} (${ti.str("symbol") ?: "?"})\n")
-                }
-            }
-            (o["contractInfo"] as? JsonObject)?.let { sb.append("\nThis address is a contract.\n") }
-        }.onFailure { sb.append("Balance lookup unavailable right now.\n") }
+        val balance = ethRpc(a, "eth_getBalance")
+        val nonce = ethRpc(a, "eth_getTransactionCount")
+        if (balance != null) {
+            // Wei to ether, in a BigDecimal, because a balance does not
+            // survive the trip through a Double.
+            val eth = java.math.BigDecimal(balance)
+                .divide(java.math.BigDecimal("1000000000000000000"))
+            sb.append("Balance: ${eth.toPlainString().take(24)} ETH\n")
+        }
+        if (nonce != null) sb.append("Transactions sent: $nonce\n")
+        if (balance == null && nonce == null) {
+            sb.append("No public node answered, so nothing is known about this address.\n")
+        }
+        sb.append("\nBalance and nonce only — reading token holdings needs a keyed ")
+        sb.append("service, and this app does not use keys.")
         sb.append("\nExplorer: https://etherscan.io/address/$a")
         sb.append("\nLabels: https://etherscan.io/address/$a#analytics")
         return sb.toString()
     }
+
+    /** One JSON-RPC call against whichever public node answers first. */
+    private fun ethRpc(address: String, method: String): java.math.BigInteger? {
+        val payload = """{"jsonrpc":"2.0","id":1,"method":"$method",""" +
+            """"params":["$address","latest"]}"""
+        ETH_NODES.forEach { node ->
+            val hex = runCatching {
+                val body = payload.toRequestBody("application/json".toMediaType())
+                val request = Request.Builder().url(node)
+                    .header("User-Agent", ua)
+                    .header("Accept", "application/json")
+                    .post(body)
+                    .build()
+                client.newCall(request).execute().use { resp ->
+                    if (!resp.isSuccessful) return@runCatching null
+                    json.parseToJsonElement(resp.body?.string().orEmpty())
+                        .jsonObject["result"]?.jsonPrimitive?.contentOrNull
+                }
+            }.getOrNull()
+            if (hex != null && hex.startsWith("0x")) {
+                runCatching { java.math.BigInteger(hex.removePrefix("0x"), 16) }
+                    .getOrNull()?.let { return it }
+            }
+        }
+        return null
+    }
+
+    /** Public Ethereum RPC endpoints — no key, no account. */
+    private val ETH_NODES = listOf(
+        "https://cloudflare-eth.com",
+        "https://eth.llamarpc.com",
+        "https://rpc.ankr.com/eth"
+    )
 
     /**
      * Generates the address patterns an organisation is likely to use for a
