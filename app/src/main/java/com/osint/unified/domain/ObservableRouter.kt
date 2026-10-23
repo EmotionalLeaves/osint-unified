@@ -243,7 +243,37 @@ class ObservableRouter {
             is Observable.ImageUrl -> listOf("exif", "reverseimage", "toolrun", "archive", "framework")
             is Observable.Wallet -> listOf("wallet", "websearch", "dorks", "toolrun", "framework")
             is Observable.Aircraft -> listOf("aircraftreg", "websearch", "dorks", "toolrun", "framework")
-            is Observable.Name -> listOf("websearch", "emailperm", "wikidata", "gleif", "edgar", "breachcat", "sanctions", "unsanctions", "fbi", "geocode", "gdelt", "dorks", "toolrun", "framework")
+            // A name is two different enquiries wearing the same
+            // shape, and this used to run one list at both of them:
+            // the company registries fired at every person and the
+            // people sources at every company, `geocode` treated a
+            // person's name as a town, and four of the fourteen
+            // returned a page of links rather than an answer.
+            is Observable.Name -> if (PersonName.looksLikeOrganisation(observable.raw)) {
+                listOf(
+                    "gleif", "edgar", "nonprofits", "sanctions",
+                    "unsanctions", "wikidata", "gdelt", "geocode",
+                    "websearch", "dorks"
+                )
+            } else {
+                listOf(
+                    // The ones that fetch and parse come first,
+                    // because the order here is the order a dossier
+                    // fills in and the first screenful is what
+                    // somebody reads.
+                    "orcid", "publications", "ghname", "bskyname",
+                    "courtrecords", "nonprofits", "authorbooks",
+                    "wikidata", "sanctions", "unsanctions",
+                    "fbi", "breachcat", "gdelt",
+                    // A free-text query can be a place as easily as a
+                    // person, and this is the one source that can tell.
+                    // Last, because for a person it answers "no places
+                    // matched", which is an absence and not a finding.
+                    "geocode",
+                    // Places to look, last, and graded as such.
+                    "websearch", "dorks"
+                )
+            }
             is Observable.Unknown -> emptyList()
         }
         return ids.mapNotNull { ToolRegistry.byId(it) }

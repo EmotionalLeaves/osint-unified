@@ -56,10 +56,12 @@ object Intel {
     val Teal = Color(0xFF2FD4C8)       // GEOINT
     val Gold = Color(0xFFF4B740)       // FININT
     val Coral = Color(0xFFFF8A6B)      // FORENSICS
+    val Rose = Color(0xFFFF77B0)       // PERSINT
 }
 
 fun categoryColor(category: ToolCategory): Color = when (category) {
     ToolCategory.SOCMINT -> Intel.Violet
+    ToolCategory.PERSINT -> Intel.Rose
     ToolCategory.NETINT -> Intel.NetCyan
     ToolCategory.GEOINT -> Intel.Teal
     ToolCategory.FININT -> Intel.Gold

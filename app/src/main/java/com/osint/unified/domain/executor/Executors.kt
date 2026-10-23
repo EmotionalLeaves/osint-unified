@@ -266,6 +266,7 @@ class DirectToolExecutor(
     private val settings: AppSettings,
     private val apis: OsintApis = OsintApis(),
     private val deep: DeepApis = DeepApis({ settings.secContactEmail }),
+    private val people: PeopleApis = PeopleApis(),
     private val client: OkHttpClient = Http.client
 ) : ToolExecutor {
 
@@ -417,6 +418,13 @@ class DirectToolExecutor(
                 "pgpkey" -> deep.pgpKey(input)
                 "commoncrawl" -> deep.commonCrawl(input)
                 "photosnear" -> deep.photosNear(input)
+                "orcid" -> people.orcid(input)
+                "publications" -> people.publications(input)
+                "ghname" -> people.codeAccounts(input)
+                "bskyname" -> people.socialByName(input)
+                "courtrecords" -> people.courtRecords(input)
+                "nonprofits" -> people.nonprofits(input)
+                "authorbooks" -> people.authorWorks(input)
                 "cctvnear" -> cctvNear(input)
                 "geocode" -> apis.geocode(input)
                 "wikinearby" -> apis.wikiNearby(input)

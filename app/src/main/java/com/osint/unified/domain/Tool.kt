@@ -1,6 +1,14 @@
 package com.osint.unified.domain
 
-enum class ToolCategory { SOCMINT, NETINT, GEOINT, FININT, FORENSICS }
+/**
+ * PERSINT is new, and it is the category this app was missing.
+ *
+ * Everything else here is about a thing — a host, a coordinate, a
+ * wallet. Sources that answer about a PERSON were scattered between
+ * SOCMINT and FININT or simply absent, which is a fair description of
+ * how well the app handled people.
+ */
+enum class ToolCategory { SOCMINT, PERSINT, NETINT, GEOINT, FININT, FORENSICS }
 
 /**
  * Where a tool runs:

@@ -271,6 +271,45 @@ object ToolRegistry {
         Tool("fbi", "FBI wanted", FININT, "name", "text", DIRECT,
             "The FBI's public wanted and seeking-information list.",
             "https://www.fbi.gov/wanted"),
+        // ---- People ----
+        //
+        // A name used to route to fourteen tools, of which four
+        // returned a list of places to look, one guessed email
+        // addresses, one geocoded the name as if it were a town, and
+        // two were company registries. These fetch and parse, and
+        // between them they answer the questions a person search is
+        // actually for: who publishes under this name, who writes
+        // code under it, who has been sued under it, who posts under
+        // it, and what is registered in it.
+        Tool("orcid", "ORCID researchers", PERSINT, "name", "text", DIRECT,
+            "Researcher records kept by the people they describe — institutions, " +
+                "published names and sometimes a public email.",
+            "https://orcid.org"),
+        Tool("publications", "Published work", PERSINT, "name", "text", DIRECT,
+            "Papers carrying this surname, and the co-authors beside them on " +
+                "the byline — which is a network, not a reading list.",
+            "https://www.crossref.org"),
+        Tool("ghname", "GitHub by real name", PERSINT, "name", "text", DIRECT,
+            "Accounts whose profile carries this name, read in full for company, " +
+                "location, site and public email.",
+            "https://github.com"),
+        Tool("bskyname", "Bluesky by name", PERSINT, "name", "text", DIRECT,
+            "Accounts under this display name. A handle that is a domain is a " +
+                "domain you can investigate.",
+            "https://bsky.app"),
+        Tool("courtrecords", "US court dockets", PERSINT, "name", "text", DIRECT,
+            "Federal dockets naming this person — court, case number, date filed — " +
+                "from the RECAP archive.",
+            "https://www.courtlistener.com"),
+        Tool("nonprofits", "US non-profits", PERSINT, "name", "text", DIRECT,
+            "Registered non-profits matching this name, with the EIN that leads " +
+                "to the filings naming their officers.",
+            "https://projects.propublica.org/nonprofits/"),
+        Tool("authorbooks", "Published books", PERSINT, "name", "text", DIRECT,
+            "Author records with birth and death years, alternate names and the " +
+                "span of a career.",
+            "https://openlibrary.org"),
+
         Tool("wallet", "Crypto wallet", FININT, "wallet", "text", DIRECT,
             "BTC or ETH address: balance, transaction count, tokens and counterparties.",
             "https://www.blockchain.com"),
@@ -392,6 +431,10 @@ object ToolRegistry {
         // own publication, and a snapshot is a copy of it with the time
         // and the digest attached.
         listOf(
+            // An ORCID record is maintained by its subject and a court
+            // docket is the court's own filing — the operator's own
+            // data, which is what B means.
+            "orcid", "courtrecords", "nonprofits", "authorbooks",
             "snapshot", "dns", "ptr", "tlscert", "wayback", "archive", "commoncrawl",
             "waybackurls", "gau", "subfinder", "github", "ghactivity",
             "keybase", "pgpkey", "gravatar", "geocode", "revgeo",
@@ -408,7 +451,12 @@ object ToolRegistry {
             "hudsonrock", "breachcat", "webcrawl", "sitefiles", "headers",
             "mailsec", "torexit", "torrelay", "subsweep", "phoneinfoga",
             "holehe", "ghunt", "h8mail", "emailgithub",
-            "wikidata", "cve", "aircraftreg", "bgpview", "asnintel"
+            "wikidata", "cve", "aircraftreg", "bgpview", "asnintel",
+            // A profile name and a display name are whatever their
+            // owner typed, and a Crossref author query is fuzzy — a
+            // third party reporting what it holds, not a record of
+            // who anybody is.
+            "ghname", "bskyname", "publications"
         ).forEach { put(it, Grading.Reliability.FAIRLY) }
 
         // D — derived, of unclear provenance.
