@@ -41,18 +41,36 @@ object WorldBrief {
     private const val TROUBLE_SEVERITY = 3
 
     /** Alert words GDACS and the NWS use, strongest first. */
-    private val RED = listOf("red", "extreme")
-    private val ORANGE = listOf("orange", "severe")
+    // Each word with whether it is also a place name. "Red" and
+    // "Orange" are counties, rivers and towns; "extreme" and "severe"
+    // are not, so only those two are trusted at the start of a label.
+    private val RED = listOf("red" to true, "extreme" to false)
+    private val ORANGE = listOf("orange" to true, "severe" to false)
 
     /** The category token TsunamiDataSource writes as "<centre> <WORD>: …". */
     internal fun categoryWord(label: String): String =
         label.substringBefore(':').trim().substringAfterLast(' ').uppercase()
 
+    /**
+     * How loud an alert is, read out of its label.
+     *
+     * The bare " red " that used to be in here matched any label with
+     * the word loose in the middle of it — the Red River, Orange
+     * County, Redcar — and promoted it over a genuine orange alert for
+     * the top of the ticker. A severity word earns its rank by being
+     * one: at the start, after a separator, or in front of the word
+     * "alert".
+     */
     private fun alertRank(label: String): Int {
         val l = label.lowercase()
+        fun says(pair: Pair<String, Boolean>): Boolean {
+            val (word, alsoAPlace) = pair
+            return l.contains("· $word") || l.contains("$word alert") ||
+                l.endsWith(" $word") || (!alsoAPlace && l.startsWith("$word "))
+        }
         return when {
-            RED.any { l.contains("· $it") || l.contains(" $it ") || l.endsWith(" $it") } -> 3
-            ORANGE.any { l.contains("· $it") || l.contains(" $it ") || l.endsWith(" $it") } -> 2
+            RED.any(::says) -> 3
+            ORANGE.any(::says) -> 2
             else -> 1
         }
     }

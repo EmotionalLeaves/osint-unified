@@ -236,18 +236,19 @@ class GodEyeViewModel(
     }
 
     /**
-     * Layers the person is actually looking at.
+     * Which layers the screen is actually showing, and therefore which
+     * feeds are worth fetching.
      *
-     * Every polling loop used to run for ever — in the background, off
-     * screen, and for layers switched off. METAR alone is twenty-four
-     * requests every ten minutes; the aircraft sweep at world zoom is
-     * hundreds of megabytes an hour. None of that is worth spending on a
-     * layer nobody has turned on.
-     *
-     * Everything starts visible so the first load is unchanged; the screen
-     * narrows it as soon as it composes.
+     * Empty until the screen says otherwise, which is the opposite of
+     * what it used to be. "Null means everything" meant the polls that
+     * start in `init` ran wide before the first composition narrowed
+     * them — one whole-planet aircraft sweep every launch — and if the
+     * app lock or the first-run terms screen was up, this screen never
+     * composed at all and every feed polled at full rate behind it.
+     * Nothing is fetched now until something on screen has asked for
+     * it.
      */
-    @Volatile private var visibleLayers: Set<String>? = null
+    @Volatile private var visibleLayers: Set<String>? = emptySet()
 
     /** False while the app is in the background, where no feed is worth
      *  fetching no matter which layers are on. */
@@ -363,6 +364,12 @@ class GodEyeViewModel(
     private var pendingPivot: String? = null
     private var resultsJob: Job? = null
     private var dismissalsJob: Job? = null
+
+    /** The two reads that follow a case being opened. Held so that
+     *  opening another one, or searching, can stop them before they
+     *  write the old case's notes over the new case's. */
+    private var attachNotesJob: Job? = null
+    private var attachLineageJob: Job? = null
 
     init {
         // Staggered start-up so launch doesn't fire every feed at once (which
@@ -801,6 +808,12 @@ class GodEyeViewModel(
         // Marks belong to the case they were made in, for the same reason.
         dismissalsJob?.cancel()
         dismissalsJob = null
+        // And the two reads started when the last case was opened,
+        // which would otherwise land in this one.
+        attachNotesJob?.cancel()
+        attachNotesJob = null
+        attachLineageJob?.cancel()
+        attachLineageJob = null
         // A coordinate search focuses the globe immediately; other types get a
         // focus once a tool returns a location (see the results collector).
         val focus = (observable as? Observable.Coordinate)?.let { it.lat to it.lon }
@@ -816,6 +829,13 @@ class GodEyeViewModel(
                 enrichmentRunning = false,
                 enriching = emptyList(),
                 breadcrumb = emptyList(),
+                // And the ids behind it. Only the labels were cleared,
+                // so until some tool happened to create the new case —
+                // which may never happen, since every tool can be
+                // filtered out — the back arrow still held the
+                // previous case's chain and opened its parent, under
+                // the new target's name.
+                breadcrumbIds = emptyList(),
                 notes = "",
                 dismissals = emptyMap(),
                 navSignal = it.navSignal + 1
@@ -1059,12 +1079,24 @@ class GodEyeViewModel(
                 _state.update { it.copy(dismissals = marked) }
             }
         }
-        viewModelScope.launch {
+        // Both of these are held and cancelled, for the same reason
+        // the notes debounce is.
+        //
+        // They were not, so neither a new search nor opening another
+        // case could stop them: open case A, start a search for B
+        // while A's notes are still being read, and A's notes land in
+        // state after B has cleared it. Type one character and the
+        // debounce persists that merged text against B's row. The
+        // lineage launch did the same to the breadcrumb, which is how
+        // the back arrow ended up opening the previous case's parent.
+        attachNotesJob?.cancel()
+        attachNotesJob = viewModelScope.launch {
             // Re-opening a case brings its notes back with it.
             val saved = runCatching { repository.notesFor(id) }.getOrNull().orEmpty()
             _state.update { it.copy(notes = saved) }
         }
-        viewModelScope.launch {
+        attachLineageJob?.cancel()
+        attachLineageJob = viewModelScope.launch {
             val chain = runCatching { repository.lineage(id) }.getOrDefault(emptyList())
             _state.update { st ->
                 st.copy(
