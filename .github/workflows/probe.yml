@@ -51,12 +51,24 @@ jobs:
             case "$U" in *'||'*) UA="${U##*||}"; U="${U%%||*}";; esac
             SKIP=1
             case "$U" in *'@@'*) SKIP="${U##*@@}"; U="${U%%@@*}";; esac
+            # URL##regex shows the lines of the body that match, rather
+            # than its first three hundred bytes. A capabilities document
+            # is a quarter of a megabyte and the layer name is somewhere
+            # in the middle of it.
+            GREP=""
+            case "$U" in *'##'*) GREP="${U##*##}"; U="${U%%##*}";; esac
             CODE=$(curl -sSL -o /tmp/body -w '%{http_code}' -m 25 \
               -H "User-Agent: $UA" \
               -H 'Accept: application/json,text/html,*/*' \
               "$U" 2>/tmp/err)
             SIZE=$(wc -c < /tmp/body 2>/dev/null || echo 0)
-            SNIP=$(tail -c +$SKIP /tmp/body | head -c 300 | tr -d '\r' | tr '\n' ' ' | sed 's/%/pct/g')
+            if [ -n "$GREP" ]; then
+              SNIP=$(grep -oE "$GREP" /tmp/body 2>/dev/null | sort -u | head -12 \
+                | tr '\n' ' ' | tr -d '\r' | head -c 500 | sed 's/%/pct/g')
+              [ -z "$SNIP" ] && SNIP="(no line matched)"
+            else
+              SNIP=$(tail -c +$SKIP /tmp/body | head -c 300 | tr -d '\r' | tr '\n' ' ' | sed 's/%/pct/g')
+            fi
             [ -z "$CODE" ] && CODE="ERR:$(head -c 60 /tmp/err | tr '\n' ' ')"
             OUT="${OUT}[$CODE ${SIZE}b] $U%0A    $SNIP%0A"
             N=$((N+1))
