@@ -24,8 +24,16 @@ object SanctionsNames {
     }
 
     /** The query's words, long enough to be worth matching on. */
+    /**
+     * The words of a query worth matching on.
+     *
+     * Three letters, not two. At two, "al x" reduced to ["al"] and
+     * matched every al-something on the list — forty of them, capped,
+     * and reported as a hit against a real person's name. A two-letter
+     * particle is not a search.
+     */
     fun tokens(query: String): List<String> =
-        normalise(query).split(" ").filter { it.length >= 2 }
+        normalise(query).split(" ").filter { it.length >= 3 }
 
     /**
      * Whether every token of the query appears as a whole word in the name.

@@ -93,6 +93,12 @@ class CloudToolExecutor(
                     if (resp.isSuccessful) Result.success(text)
                     else Result.failure(IOException("HTTP ${resp.code}: ${text.take(300)}"))
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // CancellationException extends IllegalStateException, so
+                // `catch (e: Exception)` swallowed it and handed back a
+                // failure — and the layer above, which marks a stopped
+                // tool "cancelled", never saw one.
+                throw e
             } catch (e: Exception) {
                 Result.failure(e)
             }
@@ -686,12 +692,16 @@ class DirectToolExecutor(
 
         // The primary list, and then ALT.CSV — the aliases, which is where
         // most real matches live and which was not being searched at all.
-        fun scan(asset: String, viaAlias: Boolean) {
+        var truncated = false
+        fun scan(asset: String, viaAlias: Boolean): Boolean =
             runCatching {
                 appContext.assets.open(asset).bufferedReader().useLines { lines ->
                     for (line in lines) {
                         scanned++
-                        if (hits.size >= 40) break
+                        if (hits.size >= 40) {
+                            truncated = true
+                            break
+                        }
                         val cols = splitCsv(line)
                         val name = cols.getOrNull(if (viaAlias) 3 else 1)?.trim('"') ?: continue
                         if (name == "-0-" || name.isBlank()) continue
@@ -715,14 +725,28 @@ class DirectToolExecutor(
                         hits.putIfAbsent("$entNum|$name", detail)
                     }
                 }
-            }
-        }
+            }.isSuccess
 
-        scan("sdn.csv", viaAlias = false)
-        scan("sdn-alt.csv", viaAlias = true)
+        val readMain = scan("sdn.csv", viaAlias = false)
+        val readAlt = scan("sdn-alt.csv", viaAlias = true)
 
         if (scanned == 0) {
             return@runCatching "The OFAC list could not be read from this build."
+        }
+        // An absence is only worth stating if both files were read.
+        // The aliases are where most real matches live — this code's
+        // own comment says so — and the guard was the two scans
+        // *combined* having read something, so a build missing the
+        // alias file reported a clean result having never looked at
+        // it.
+        if (!readMain || !readAlt) {
+            val missing = listOfNotNull(
+                if (!readMain) "the primary list" else null,
+                if (!readAlt) "the alias list" else null
+            ).joinToString(" and ")
+            return@runCatching "The OFAC check could not be completed: " +
+                "$missing could not be read from this build, so this says " +
+                "nothing either way about '$q'."
         }
 
         val provenance = buildString {
@@ -732,6 +756,14 @@ class DirectToolExecutor(
             append("\nThis is a name search against a snapshot, not a compliance ")
             append("determination: spelling variants, transliterations and ")
             append("entries added since the snapshot will not appear.")
+            if (truncated) {
+                // Said out loud. The scan stops at forty and used to
+                // stop silently, which made a capped list look like
+                // the whole answer — and when the primary file filled
+                // the cap the alias file was never reached at all.
+                append("\nThis list was cut off at 40 matches, so it is not ")
+                append("all of them. Narrow the name to see the rest.")
+            }
         }
 
         if (hits.isEmpty()) {

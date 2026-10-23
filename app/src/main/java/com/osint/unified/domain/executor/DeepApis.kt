@@ -1658,7 +1658,21 @@ class DeepApis(
         // provocation, and one unlucky second was costing the whole lookup.
         var last: IOException? = null
         repeat(2) { attempt ->
-            if (attempt > 0) Thread.sleep(700)
+            if (attempt > 0) {
+                // Interruptible, so STOP actually stops. A plain
+                // Thread.sleep ignores cancellation, and a cancelled
+                // lookup sat here for most of a second and then made
+                // its second request anyway.
+                if (Thread.currentThread().isInterrupted) {
+                    throw IOException("cancelled")
+                }
+                try {
+                    Thread.sleep(700)
+                } catch (e: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    throw IOException("cancelled", e)
+                }
+            }
             val request = Request.Builder().url(url)
                 .header("User-Agent", agent)
                 .header("Accept", "application/json, text/html;q=0.9, */*;q=0.8")

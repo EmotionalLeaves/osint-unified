@@ -25,7 +25,11 @@ object EntityExtractor {
     private val phone = Regex("""\+\d{1,3}[\s-]?\(?\d{2,4}\)?[\s-]?\d{3,4}[\s-]?\d{3,4}""")
     private val coord = Regex("""(-?\d{1,2}\.\d{3,8})\s*,\s*(-?\d{1,3}\.\d{3,8})""")
     private val handle = Regex("""(?:twitter\.com|x\.com|instagram\.com|github\.com|t\.me|tiktok\.com/@|facebook\.com|reddit\.com/user|linkedin\.com/in)/([A-Za-z0-9_.-]{2,30})""")
-    private val tail = Regex("""\bN[0-9]{1,5}[A-Z]{0,2}\b""")
+    // Two digits at least, like the router's own tail pattern. One was
+    // enough to make "N5" and any other N-prefixed token an aircraft
+    // registration, and a pivot the investigator then has to rule out
+    // by hand is worse than no pivot.
+    private val tail = Regex("""\bN[0-9]{2,5}[A-Z]{0,2}\b""")
 
     /**
      * Hosts that are never the target, matched by registrable domain.
@@ -88,7 +92,21 @@ object EntityExtractor {
         limitPerKind: Int = 12,
         seedIsPlace: Boolean = false
     ): List<Pivot> {
-        val text = results.filter { it.status == "success" }.joinToString("\n") { it.rawOutput }
+        // Only rows that found something.
+        //
+        // Filtering on the status alone meant "no account named X at
+        // github.com/x" was mined for identifiers like any other
+        // answer, so the dossier's IDENTIFIERS DISCOVERED list carried
+        // pivots taken out of sentences saying the thing does not
+        // exist. The corroboration pass beside it uses the stricter
+        // test, so the two lists disagreed with each other.
+        //
+        // Snapshots are left out as well: they store a hash of the
+        // page they captured, which this then extracted as a SHA-256
+        // belonging to the target.
+        val text = results
+            .filter { Findings.kindOf(it) == Findings.Kind.HIT && it.toolId != "snapshot" }
+            .joinToString("\n") { it.rawOutput }
         if (text.isBlank()) return emptyList()
         val seedLower = seed.trim().lowercase()
         val out = ArrayList<Pivot>()
