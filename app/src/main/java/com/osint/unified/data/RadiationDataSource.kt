@@ -32,8 +32,14 @@ import java.util.TimeZone
  * ignores sort order and will happily return a reading from 2013 first, so
  * without `captured_after` this layer would plot thirteen-year-old
  * measurements as current.
+ *
+ * That filter is also what makes the query slow: a probe found the plain
+ * call answering in a second and the dated one exceeding twenty-five, so
+ * on the ordinary client this layer was timing out every time and the
+ * radiation pill had been dark for as long as it has existed. It gets the
+ * longer timeout the other genuinely slow queries use.
  */
-class RadiationDataSource(private val client: OkHttpClient = Http.feedClient) {
+class RadiationDataSource(private val client: OkHttpClient = Http.slowApiClient) {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
     private val day = SimpleDateFormat("yyyy-MM-dd", Locale.US)

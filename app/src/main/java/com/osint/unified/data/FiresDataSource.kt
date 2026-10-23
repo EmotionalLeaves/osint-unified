@@ -64,8 +64,8 @@ class FiresDataSource(
     internal fun parse(csv: String): List<GeoBlip> {
         val lines = csv.lineSequence().iterator()
         if (!lines.hasNext()) return emptyList()
-        val header = lines.next().split(',').map { it.trim().lowercase() }
-        fun col(name: String) = header.indexOf(name)
+        val columns = lines.next().split(',').map { it.trim().lowercase() }
+        fun col(name: String) = columns.indexOf(name)
         val latAt = col("latitude")
         val lonAt = col("longitude")
         val confidenceAt = col("confidence")

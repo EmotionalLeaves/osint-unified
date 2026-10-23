@@ -92,7 +92,7 @@ class OsintApplication : Application() {
     val naturalEventsDataSource: NaturalEventsDataSource by lazy { NaturalEventsDataSource() }
     val overlayDataSource: OverlayDataSource by lazy { OverlayDataSource(settings) }
     val weatherDataSource: WeatherDataSource by lazy { WeatherDataSource() }
-    val firesDataSource: FiresDataSource by lazy { FiresDataSource() }
+    val firesDataSource: FiresDataSource by lazy { FiresDataSource(diskCache) }
     val satellitesDataSource: SatellitesDataSource by lazy { SatellitesDataSource(diskCache) }
     val newsDataSource: NewsDataSource by lazy { NewsDataSource() }
     val gdacsDataSource: GdacsDataSource by lazy { GdacsDataSource() }
