@@ -8,7 +8,7 @@ on:
         required: false
         default: ""
       list:
-        description: "Which bundled list to probe: feeds (probe-urls.txt) or tools (probe-tools.txt)"
+        description: "feeds, tools, or candidates"
         required: false
         default: "feeds"
 
@@ -30,6 +30,9 @@ jobs:
           LIST="$INPUT_URLS"
           FILE=.github/probe-urls.txt
           if [ "$INPUT_LIST" = "tools" ]; then FILE=.github/probe-tools.txt; fi
+          # Endpoints being considered as replacements for a dead or
+          # regional feed, kept apart from the ones the app already calls.
+          if [ "$INPUT_LIST" = "candidates" ]; then FILE=.github/probe-candidates.txt; fi
           if [ -z "$LIST" ] && [ -f "$FILE" ]; then
             LIST=$(cat "$FILE")
           fi
