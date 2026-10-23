@@ -24,7 +24,29 @@ import okhttp3.Request
  * though the airspace were somewhere else.
  * markers; the label carries the designator, class and vertical limits.
  */
-class AirspaceDataSource(private val client: OkHttpClient = Http.feedClient) {
+class AirspaceDataSource(
+    private val client: OkHttpClient = Http.feedClient,
+    private val ground: MilitaryAreasDataSource = MilitaryAreasDataSource()
+) {
+
+    /**
+     * Restricted airspace where there is a source for it, and military
+     * ground everywhere else.
+     *
+     * The FAA covers the United States and nothing else, so outside it
+     * this toggle used to light up an empty map — which reads as
+     * "nothing restricted here" rather than "never covered here".
+     * OpenStreetMap's military land is worldwide and is the ground under
+     * the airspace, which for most purposes is the more useful of the
+     * two anyway.
+     */
+    suspend fun near(lat: Double, lon: Double): List<GeoBlip> = withContext(Dispatchers.IO) {
+        val mapped = runCatching { ground.near(lat, lon) }.getOrDefault(emptyList())
+        val faa = runCatching { fetch() }.getOrDefault(emptyList())
+        val merged = mapped + faa
+        if (merged.isEmpty()) throw java.io.IOException("no airspace source answered")
+        merged
+    }
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
     private val base =

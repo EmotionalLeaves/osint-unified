@@ -401,13 +401,29 @@ class GodEyeViewModel(
         }
     }
 
-    /** Likewise the FAA airspace set, which pages through thousands of polygons. */
+    /**
+     * Restricted airspace and military ground around the view.
+     *
+     * Re-asked when the view moves, because half of it is a worldwide
+     * set queried by position rather than a fixed national inventory.
+     */
+    @Volatile private var airspaceKey: String? = null
+
     fun ensureAirspace() {
-        if (airspaceJob?.isActive == true || _state.value.airspace.isNotEmpty()) return
+        if (airspaceJob?.isActive == true) return
+        val where = focus
+        val key = where?.let {
+            "%.0f,%.0f".format(java.util.Locale.US, it.first, it.second)
+        } ?: "none"
+        if (key == airspaceKey && _state.value.airspace.isNotEmpty()) return
         airspaceJob = viewModelScope.launch {
-            val v = runCatching { airspaceDataSource.fetch() }.getOrNull()
-            _state.update {
-                if (v == null) it else it.copy(airspace = v, loaded = it.loaded + "airspace")
+            val v = runCatching {
+                if (where == null) airspaceDataSource.fetch()
+                else airspaceDataSource.near(where.first, where.second)
+            }.getOrNull()
+            if (v != null) {
+                airspaceKey = key
+                _state.update { it.copy(airspace = v, loaded = it.loaded + "airspace") }
             }
             airspaceJob = null
         }

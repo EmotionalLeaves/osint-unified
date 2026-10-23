@@ -398,16 +398,16 @@ fun GodEyeViewScreen(
                 // When a callsign filter is on, the feed size is not what is
                 // on screen, and a pill reading 11,000 over a map holding
                 // forty dots is the map disagreeing with itself.
-                LayerPill("AIR", visibleAircraft.size, Intel.NetCyan, showAircraft || god, loaded = "aircraft" in state.loaded, trouble = "aircraft" in state.feedTrouble) { showAircraft = !showAircraft }
+                LayerPill("AIR·GLOBAL", visibleAircraft.size, Intel.NetCyan, showAircraft || god, loaded = "aircraft" in state.loaded, trouble = "aircraft" in state.feedTrouble) { showAircraft = !showAircraft }
                 LayerPill("MIL", state.milAircraft.size, Color(0xFFFFD23F), showMil || god, loaded = "milAircraft" in state.loaded, trouble = "milAircraft" in state.feedTrouble) { showMil = !showMil }
                 LayerPill("SEA·BALTIC", state.vessels.size, Intel.Teal, showVessels || god, loaded = "vessels" in state.loaded, trouble = "vessels" in state.feedTrouble) { showVessels = !showVessels }
                 LayerPill("SEIS", state.quakes.size, Intel.Coral, showQuakes || god, loaded = "quakes" in state.loaded, trouble = "quakes" in state.feedTrouble) { showQuakes = !showQuakes }
                 LayerPill("EVT", state.naturalEvents.size, Intel.Amber, showEvents || god, loaded = "naturalEvents" in state.loaded, trouble = "naturalEvents" in state.feedTrouble) { showEvents = !showEvents }
                 LayerPill("WX·US", state.weather.size, Color(0xFF7FB2FF), showWeather || god, loaded = "weather" in state.loaded, trouble = "weather" in state.feedTrouble) { showWeather = !showWeather }
-                LayerPill("FIRE", state.fires.size, Color(0xFFFF5A4D), showFires || god, loaded = "fires" in state.loaded, trouble = "fires" in state.feedTrouble) { showFires = !showFires }
+                LayerPill("FIRE·GLOBAL", state.fires.size, Color(0xFFFF5A4D), showFires || god, loaded = "fires" in state.loaded, trouble = "fires" in state.feedTrouble) { showFires = !showFires }
                 LayerPill("SAT", state.satellites.size, Color(0xFFC0A8FF), showSats || god, loaded = "satellites" in state.loaded, trouble = "satellites" in state.feedTrouble) { showSats = !showSats }
                 LayerPill("HAZARD", state.gdacs.size, Color(0xFFFF8A3D), showGdacs || god, loaded = "gdacs" in state.loaded, trouble = "gdacs" in state.feedTrouble) { showGdacs = !showGdacs }
-                LayerPill("VOLC", state.volcanoes.size, Color(0xFFFF4D4D), showVolcanoes || god, loaded = "volcanoes" in state.loaded, trouble = "volcanoes" in state.feedTrouble) { showVolcanoes = !showVolcanoes }
+                LayerPill("VOLC·GLOBAL", state.volcanoes.size, Color(0xFFFF4D4D), showVolcanoes || god, loaded = "volcanoes" in state.loaded, trouble = "volcanoes" in state.feedTrouble) { showVolcanoes = !showVolcanoes }
                 LayerPill("CONFLICT", state.conflicts.size, Color(0xFFFF2E2E), showConflict || god, loaded = "conflicts" in state.loaded, trouble = "conflicts" in state.feedTrouble) { showConflict = !showConflict }
                 LayerPill("AQI", state.airQuality.size, Color(0xFFB4E66B), showAqi || god, loaded = "airQuality" in state.loaded, trouble = "airQuality" in state.feedTrouble) { showAqi = !showAqi }
                 LayerPill("STATIONS", state.stations.size, Color(0xFF9AB0C0), showStations || god, loaded = "stations" in state.loaded, trouble = "stations" in state.feedTrouble) { showStations = !showStations }
@@ -418,7 +418,7 @@ fun GodEyeViewScreen(
                 LayerPill("METAR", state.metar.size, Color(0xFF9FE8FF), showMetar || god, loaded = "metar" in state.loaded, trouble = "metar" in state.feedTrouble) { showMetar = !showMetar }
                 LayerPill("NEWS", state.news.size, Color(0xFFFF79C6), showNews || god, loaded = "news" in state.loaded, trouble = "news" in state.feedTrouble) { showNews = !showNews }
                 LayerPill(
-                    "CCTV·CA", state.cameras.size, Color(0xFFB388FF), showCameras || god,
+                    "CAMERAS", state.cameras.size, Color(0xFFB388FF), showCameras || god,
                     loadsOnDemand = true, loaded = "cameras" in state.loaded,
                     trouble = "cameras" in state.feedTrouble
                 ) {
@@ -438,7 +438,7 @@ fun GodEyeViewScreen(
                     viewModel.ensureRadiation(showRadiation)
                 }
                 LayerPill(
-                    "SUA·US", state.airspace.size, Color(0xFFFF5370), showAirspace || god,
+                    "MIL GROUND", state.airspace.size, Color(0xFFFF5370), showAirspace || god,
                     loadsOnDemand = true, loaded = "airspace" in state.loaded,
                     trouble = "airspace" in state.feedTrouble
                 ) {
@@ -450,6 +450,16 @@ fun GodEyeViewScreen(
                 }
             }
 
+            Text(
+                "A pill naming a region covers only that region — an empty " +
+                    "layer there means no coverage, not nothing happening. " +
+                    "Layers marked GLOBAL cover the whole Earth; cameras and " +
+                    "military ground are fetched around wherever you are " +
+                    "looking.",
+                style = MaterialTheme.typography.labelSmall,
+                color = Intel.TextLow,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp)
+            )
             Text(
                 "tap a marker to identify it · tap the map for options · " +
                     "long-press for everything in the area",
