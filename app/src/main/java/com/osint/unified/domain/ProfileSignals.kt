@@ -49,25 +49,86 @@ object ProfileSignals {
      * font provider. Those are the page's furniture; a link is only a
      * signal when it points somewhere the owner chose.
      */
-    private val FURNITURE = listOf(
-        "schema.org", "w3.org", "gstatic", "googleapis", "google.com",
-        "gravatar.com", "fonts.", "cdn.", "static.", "assets.",
-        "policies.", "support.", "help.", "about.", "legal.",
-        "apple.com", "play.google.com", "itunes.apple.com",
-        "facebook.com/tr", "doubleclick", "googletagmanager", "licdn.com",
-        "twimg.com", "fbcdn.net", "cdninstagram", "akamaized", "cloudfront",
-        // Platform boilerplate that two unrelated profiles share
-        // simply by being hosted on the same kind of thing. A shared
-        // link is called "the strongest tie available here", so a
-        // theme credit or a share button counted as two people being
-        // one person.
-        "wordpress.org", "wordpress.com/plugins", "wp.me",
-        "discord.gg", "discord.com/invite", "t.co",
-        "twitter.com/intent", "x.com/intent", "github.com/sponsors",
-        "creativecommons.org", "gnu.org", "mozilla.org",
-        "patreon.com/join", "buymeacoffee.com/widget",
-        "ko-fi.com/widget", "paypal.com/donate", "linktr.ee/s",
-        "youtube.com/embed", "player.vimeo.com", "archive.org/web"
+    /**
+     * Links that are the platform, not the person.
+     *
+     * Matched on the host and the path, never as a substring of the
+     * whole URL. The substring test was eating real evidence: "t.co"
+     * matched every host ending in t.com, so benwyatt.com,
+     * scottwright.com and janetstewart.com were all discarded as
+     * Twitter furniture; "about." matched janedoe.com/about.html; and
+     * "linktr.ee/s" matched every Linktree handle beginning with s —
+     * which is not furniture at all, it is exactly the personal link
+     * aggregator this is supposed to find. A shared outbound link is
+     * called "the strongest tie available here" a few lines down, and
+     * this list was quietly deleting them.
+     */
+    private val FURNITURE_HOSTS = setOf(
+        "schema.org", "w3.org", "gstatic.com", "googleapis.com", "google.com",
+        "gravatar.com", "apple.com", "doubleclick.net", "googletagmanager.com",
+        "licdn.com", "twimg.com", "fbcdn.net", "cdninstagram.com",
+        "akamaized.net", "cloudfront.net", "wordpress.org", "wp.me",
+        "discord.gg", "t.co", "creativecommons.org", "gnu.org", "mozilla.org",
+        "player.vimeo.com"
+    )
+
+    /** First labels that mark a host as infrastructure. */
+    private val FURNITURE_LABELS = setOf(
+        "fonts", "cdn", "static", "assets", "policies", "support", "help", "legal"
+    )
+
+    /** Host-and-path prefixes: the platform's own buttons and widgets. */
+    private val FURNITURE_PATHS = listOf(
+        "facebook.com/tr", "twitter.com/intent", "x.com/intent",
+        "github.com/sponsors", "wordpress.com/plugins", "discord.com/invite",
+        "patreon.com/join", "buymeacoffee.com/widget", "ko-fi.com/widget",
+        "paypal.com/donate", "youtube.com/embed", "archive.org/web"
+    )
+
+    internal fun isFurniture(url: String): Boolean {
+        val host = hostOf(url)
+        if (host.isBlank()) return false
+        if (FURNITURE_HOSTS.any { host == it || host.endsWith(".$it") }) return true
+        if (host.substringBefore('.') in FURNITURE_LABELS) return true
+        val path = runCatching { java.net.URI(url).path.orEmpty() }.getOrDefault("")
+        val both = "$host${path.trimEnd('/')}".lowercase()
+        return FURNITURE_PATHS.any { both == it || both.startsWith("$it/") }
+    }
+
+    /**
+     * Whether a host belongs to the page's own platform.
+     *
+     * `endsWith(pageHost)` has no label boundary, so on an x.com
+     * profile a link to netflix.com was dropped as the platform's own
+     * — "netflix.com".endsWith("x.com") is true — and so was
+     * notflickr.com on a flickr page.
+     */
+    internal fun samePlatform(host: String, pageHost: String): Boolean {
+        if (pageHost.isBlank()) return false
+        val p = pageHost.lowercase().removePrefix("www.")
+        return host == p || host.endsWith(".$p")
+    }
+
+    /**
+     * Text a page serves when it is not showing a profile at all.
+     *
+     * displayName falls back to <title> and bio to the description
+     * meta, so a site that publishes neither hands back its own
+     * boilerplate — and two unrelated sites both serving a bot-check
+     * page were grouped as one person under "These profiles also
+     * carry the same details, which is a fact about a person". The
+     * searchedFor guard only excluded an exact match with the handle,
+     * so it caught none of this.
+     */
+    private val BOILERPLATE = setOf(
+        "just a moment", "attention required", "access denied", "forbidden",
+        "are you a robot", "please enable javascript", "enable javascript",
+        "page not found", "not found", "404 not found", "error",
+        "redirecting", "loading", "sign in", "log in", "login", "home",
+        "untitled", "profile", "user profile", "user", "members",
+        "one moment please", "checking your browser", "security check",
+        "service unavailable", "temporarily unavailable", "coming soon",
+        "under construction", "welcome", "index of"
     )
 
     fun read(html: String, pageHost: String): Signals {
@@ -94,8 +155,8 @@ object ProfileSignals {
             .filter { link ->
                 val host = hostOf(link)
                 host.isNotBlank() &&
-                    !host.endsWith(pageHost) &&
-                    FURNITURE.none { link.contains(it, ignoreCase = true) }
+                    !samePlatform(host, pageHost) &&
+                    !isFurniture(link)
             }
             .map { normaliseLink(it) }
             .distinct()
@@ -162,17 +223,28 @@ object ProfileSignals {
         group("same link out") { it.signals.links }
         group("same avatar") { listOfNotNull(it.signals.avatar) }
         group("same biography") {
-            listOfNotNull(it.signals.bio?.let(::normaliseText)?.takeIf { b -> b.length >= 12 })
+            listOfNotNull(
+                it.signals.bio?.let(::normaliseText)
+                    ?.takeIf { b -> b.length >= 12 && !isBoilerplate(b) }
+            )
         }
         group("same display name") {
             listOfNotNull(
                 it.signals.displayName
                     ?.let(::normaliseText)
-                    ?.takeIf { n -> n.length >= 3 && (handle.isBlank() || n != handle) }
+                    ?.takeIf { n ->
+                        n.length >= 3 && !isBoilerplate(n) &&
+                            (handle.isBlank() || n != handle)
+                    }
             )
         }
         return clusters
     }
+
+    /** Already normalised by [normaliseText] when it gets here. */
+    internal fun isBoilerplate(normalised: String): Boolean =
+        normalised in BOILERPLATE ||
+            BOILERPLATE.any { normalised.startsWith("$it ") }
 
     internal fun hostOf(url: String): String = runCatching {
         java.net.URI(url).host?.lowercase()?.removePrefix("www.").orEmpty()

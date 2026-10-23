@@ -4,6 +4,7 @@ import com.osint.unified.domain.ProfileSignals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
 import org.junit.Test
 
 /**
@@ -128,6 +129,75 @@ class ProfileSignalsTest {
                 ProfileSignals.Account("Alpha", "https://alpha.test/jdoe", signals),
                 ProfileSignals.Account("Beta", "https://beta.test/jdoe", signals)
             )
+        )
+        assertEquals(1, clusters.size)
+    }
+
+    // ---- Furniture, matched on the host rather than the string ----
+
+    @Test
+    fun aPersonalSiteEndingInTComIsNotTwitterFurniture() {
+        // "t.co" was matched as a substring of the whole URL, so every
+        // host ending in t.com went with it — and a shared personal
+        // site is called the strongest tie this class has.
+        assertFalse(ProfileSignals.isFurniture("https://benwyatt.com/"))
+        assertFalse(ProfileSignals.isFurniture("https://janetstewart.com/about"))
+        assertTrue(ProfileSignals.isFurniture("https://t.co/abc123"))
+    }
+
+    @Test
+    fun anAboutPageIsNotFurniture() {
+        assertFalse(ProfileSignals.isFurniture("https://janedoe.com/about.html"))
+        // about.me is somebody's profile, not infrastructure.
+        assertFalse(ProfileSignals.isFurniture("https://about.me/janedoe"))
+    }
+
+    @Test
+    fun aLinktreeIsEvidenceNotFurniture() {
+        assertFalse(ProfileSignals.isFurniture("https://linktr.ee/sarah"))
+        assertFalse(ProfileSignals.isFurniture("https://linktr.ee/janedoe"))
+    }
+
+    @Test
+    fun platformWidgetsAreStillFurniture() {
+        assertTrue(ProfileSignals.isFurniture("https://twitter.com/intent/tweet?text=hi"))
+        assertTrue(ProfileSignals.isFurniture("https://github.com/sponsors/someone"))
+        assertTrue(ProfileSignals.isFurniture("https://cdn.example.com/app.js"))
+        assertTrue(ProfileSignals.isFurniture("https://fonts.googleapis.com/css"))
+    }
+
+    @Test
+    fun theSameSuffixIsNotTheSamePlatform() {
+        // "netflix.com".endsWith("x.com") is true, which dropped a
+        // link to Netflix from every x.com profile.
+        assertFalse(ProfileSignals.samePlatform("netflix.com", "x.com"))
+        assertFalse(ProfileSignals.samePlatform("notflickr.com", "flickr.com"))
+        assertTrue(ProfileSignals.samePlatform("x.com", "x.com"))
+        assertTrue(ProfileSignals.samePlatform("mobile.x.com", "x.com"))
+    }
+
+    // ---- A bot-check page is not a person ----
+
+    @Test
+    fun twoChallengePagesAreNotTheSamePerson() {
+        fun acct(site: String, title: String) = ProfileSignals.Account(
+            site, "https://$site/u", ProfileSignals.Signals(displayName = title)
+        )
+        val clusters = ProfileSignals.cluster(
+            listOf(acct("one.test", "Just a moment..."), acct("two.test", "Just a moment...")),
+            searchedFor = "jdoe"
+        )
+        assertTrue("grouped on boilerplate: $clusters", clusters.isEmpty())
+    }
+
+    @Test
+    fun arealSharedNameStillClusters() {
+        fun acct(site: String, title: String) = ProfileSignals.Account(
+            site, "https://$site/u", ProfileSignals.Signals(displayName = title)
+        )
+        val clusters = ProfileSignals.cluster(
+            listOf(acct("one.test", "Jane Q Doe"), acct("two.test", "Jane Q Doe")),
+            searchedFor = "jdoe"
         )
         assertEquals(1, clusters.size)
     }
