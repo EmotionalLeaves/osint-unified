@@ -85,6 +85,9 @@ object WorldBrief {
             source: List<GeoBlip>,
             severity: Int,
             note: String? = null,
+            /** The feed key, so a section can say when what it is
+             *  showing is the last thing a broken feed said. */
+            key: String? = null,
             // Last, so a trailing lambda binds here rather than to `note`.
             rank: (GeoBlip) -> Int = { alertRank(it.label) }
         ) {
@@ -102,9 +105,17 @@ object WorldBrief {
                     .thenBy { it.second })
                 .take(PER_SECTION)
                 .map { (_, _, b) -> Entry(b.label, b.lat, b.lon, b.url) }
+            // A feed that has started failing still has its last
+            // answer in the state, and this printed it with no mark on
+            // it at all — while the same layer was listed under NOT
+            // REPORTING a few lines below, whose note says "their
+            // absence from the brief above means nothing". They were
+            // not absent. Twelve thousand wildfires, six live-looking
+            // entries, and the feed down, in the same dialog.
+            val down = key != null && key in state.feedTrouble
             sections.add(
                 Section(
-                    "$title — ${source.size}",
+                    "$title — ${source.size}" + if (down) " · LAST KNOWN, FEED DOWN" else "",
                     // A section of ordinary items should not outrank a
                     // section holding a red alert, so the worst item in it
                     // lifts the whole block.
@@ -127,7 +138,7 @@ object WorldBrief {
         // magnitude 6 and carried no age, so the headline showed the same
         // war for months and stopped being read. It stays in the brief,
         // below the things that changed today.
-        blips("CONFLICT", state.conflicts, 3, rank = { 1 })
+        blips("CONFLICT", state.conflicts, 3, key = "conflicts", rank = { 1 })
         // A tsunami warning outranks everything else on the map — but only
         // the bulletin's own category word may decide that. These bulletins
         // routinely name the issuing body ("National Tsunami Warning
@@ -135,14 +146,14 @@ object WorldBrief {
         // "warning" promoted every information statement to a live warning.
         // The category is the second token, written in capitals by
         // TsunamiDataSource.
-        blips("TSUNAMI BULLETINS · PAC/CARIB", state.tsunamis, 10, rank = { b ->
+        blips("TSUNAMI BULLETINS", state.tsunamis, 10, key = "tsunamis", rank = { b ->
             when (categoryWord(b.label)) {
                 "WARNING" -> 3
                 "WATCH", "ADVISORY" -> 2
                 else -> 1
             }
         })
-        blips("TROPICAL CYCLONES · WORLD", state.cyclones, 9, rank = { b ->
+        blips("TROPICAL CYCLONES · WORLD", state.cyclones, 9, key = "cyclones", rank = { b ->
             val l = b.label.lowercase()
             when {
                 l.contains("typhoon") || l.contains("hurricane") -> 3
@@ -150,8 +161,8 @@ object WorldBrief {
                 else -> 1
             }
         })
-        blips("DISASTER ALERTS", state.gdacs, 9)
-        blips("VOLCANOES", state.volcanoes, 7)
+        blips("DISASTER ALERTS", state.gdacs, 9, key = "gdacs")
+        blips("VOLCANOES", state.volcanoes, 7, key = "volcanoes")
 
         if (state.quakes.isNotEmpty()) {
             val strong = state.quakes.filter { it.mag >= 4.5 }.sortedByDescending { it.mag }
@@ -172,15 +183,15 @@ object WorldBrief {
             )
         }
 
-        blips("INTERNET OUTAGES", state.outages, 8)
-        blips("SEVERE WEATHER · WORLD", state.worldWarnings, 7)
-        blips("SEVERE WEATHER · US", state.weather, 6)
-        blips("WILDFIRES", state.fires, 5)
-        blips("MILITARY AIRCRAFT", state.milAircraft, 5, rank = { 1 })
-        blips("AIRPORT STATUS · US", state.airportStatus, 4, rank = { b ->
+        blips("INTERNET OUTAGES", state.outages, 8, key = "outages")
+        blips("SEVERE WEATHER · WORLD", state.worldWarnings, 7, key = "worldWarnings")
+        blips("SEVERE WEATHER · US", state.weather, 6, key = "weather")
+        blips("WILDFIRES", state.fires, 5, key = "fires")
+        blips("MILITARY AIRCRAFT", state.milAircraft, 5, key = "milAircraft", rank = { 1 })
+        blips("AIRPORT STATUS · US", state.airportStatus, 4, key = "airportStatus", rank = { b ->
             if (b.label.contains("GROUND STOP") || b.label.contains("CLOSED")) 3 else 1
         })
-        blips("NEWS HOTSPOTS", state.news, 3, rank = { 1 })
+        blips("NEWS HOTSPOTS", state.news, 3, key = "news", rank = { 1 })
 
         if (state.aircraft.isNotEmpty() || state.vessels.isNotEmpty()) {
             val entries = ArrayList<Entry>()
@@ -219,7 +230,7 @@ object WorldBrief {
         // is not the world reporting nothing, and "no tropical cyclones"
         // during a West Pacific typhoon is a lie the NHC never told.
         maybeQuiet("cyclones", "tropical cyclones anywhere in the world", state.cyclones.size)
-        maybeQuiet("tsunamis", "Pacific and Caribbean tsunami bulletins", state.tsunamis.size)
+        maybeQuiet("tsunamis", "tsunami bulletins from any of the four centres", state.tsunamis.size)
         maybeQuiet("airportStatus", "US airport delays", state.airportStatus.size)
 
         if (troubled.isNotEmpty()) {
@@ -255,8 +266,15 @@ object WorldBrief {
         val top = brief.sections.firstOrNull { it.title.startsWith("NOT REPORTING").not() }
         if (top == null) {
             val down = brief.sections.firstOrNull()?.entries?.size ?: 0
-            return if (down > 0) "$down feed${if (down == 1) "" else "s"} not reporting"
-            else "nothing loaded yet"
+            if (down > 0) return "$down feed${if (down == 1) "" else "s"} not reporting"
+            // Feeds that answered and found nothing are not "nothing
+            // loaded yet" — they are the answer, and saying the
+            // opposite of it was exactly the confusion the rest of
+            // this file is built to avoid.
+            if (brief.quiet.isNotEmpty()) {
+                return "all quiet · no " + brief.quiet.joinToString(", ").take(60)
+            }
+            return "nothing loaded yet"
         }
         return top.entries.firstOrNull()?.text?.take(70) ?: top.title
     }

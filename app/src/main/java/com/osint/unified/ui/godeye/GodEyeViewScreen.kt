@@ -1513,6 +1513,19 @@ private fun GlobeMap(
     val placed = remember { HashMap<String, Marker>() }
     AndroidView(
         modifier = modifier,
+        // Detached when the composable leaves.
+        //
+        // Nothing did this, and GLOBE/MAP is a toggle that the pinch
+        // handoff flips on its own — so every trip through the
+        // boundary built a fresh MapView and abandoned the previous
+        // one with its tile-provider thread pool still draining a
+        // download queue. A few pinches leaked several.
+        onRelease = { map ->
+            runCatching {
+                map.overlays.clear()
+                map.onDetach()
+            }
+        },
         factory = { ctx ->
             // osmdroid refuses to fetch tiles without a user agent.
             Configuration.getInstance().userAgentValue = ctx.packageName
@@ -1598,7 +1611,6 @@ private fun GlobeMap(
             if (inView == null) {
                 inView = map.boundingBox.asWindow()
             } else if (plan !== rendered.value) {
-                rendered.value = plan
                 val density = map.resources.displayMetrics.density
                 val wanted = HashSet<String>(plan.size * 2)
                 plan.forEach { pm ->
@@ -1660,6 +1672,15 @@ private fun GlobeMap(
                     }
                 }
                 map.invalidate()
+                // Marked applied only now that it has been.
+                //
+                // This was set before the loop ran, and the whole
+                // block is inside a runCatching — so anything thrown
+                // part-way left the map half populated, the exception
+                // discarded, and the identity guard above satisfied,
+                // which meant that plan was never reapplied and the
+                // stale markers stayed until the layers changed again.
+                rendered.value = plan
             }
 
             // The globe handed this view the camera it was using.
