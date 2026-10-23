@@ -678,7 +678,11 @@ class DirectToolExecutor(
         if (query.length < 3) {
             return@runCatching "Give at least three characters to search the SDN list."
         }
-        val tokens = normaliseName(query).split(" ").filter { it.length >= 2 }
+        // Three letters, not two. At two, "al x" reduced to ["al"]
+        // and matched every al-something on the list — forty of them,
+        // capped, and reported as a hit against a real person's name.
+        // A two-letter particle is not a search.
+        val tokens = normaliseName(query).split(" ").filter { it.length >= 3 }
         if (tokens.isEmpty()) {
             return@runCatching "Give at least three characters to search the SDN list."
         }
@@ -746,7 +750,7 @@ class DirectToolExecutor(
             ).joinToString(" and ")
             return@runCatching "The OFAC check could not be completed: " +
                 "$missing could not be read from this build, so this says " +
-                "nothing either way about '$q'."
+                "nothing either way about '$query'."
         }
 
         val provenance = buildString {

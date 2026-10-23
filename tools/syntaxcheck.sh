@@ -150,6 +150,21 @@ if [ -n "$BADANNOT" ]; then
 fi
 
 
+# One thing this cannot catch, written down so it is not re-attempted.
+#
+# r292 died on a reference to `q` where the local was called `query`.
+# Nothing here found it, and nothing here can: a name that exists
+# nowhere in this project is exactly what an unresolved AndroidX
+# symbol looks like, and there are eleven thousand of those. Measured
+# rather than assumed — filtering to names never bound anywhere in
+# their own file still leaves 539 distinct ones, almost all of them
+# library symbols. Short names do no better: the commonest are `dp`,
+# `it` and `sp`.
+#
+# A check that fires on all of those would be ignored within a day,
+# which is the same failure as a check that never fires. That one
+# belongs to CI.
+
 TOTAL=$(grep -c 'error:' "$WORK/full.txt" || true)
 
 if [ -s "$WORK/real.txt" ]; then
