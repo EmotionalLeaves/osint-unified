@@ -950,7 +950,7 @@ class DirectToolExecutor(
         val lat = parts[0]!!
         val lon = parts[1]!!
         val cams = com.osint.unified.data.CctvDataSource(client).fetch()
-        if (cams.isEmpty()) return@runCatching "No public camera inventory reachable right now."
+        if (cams.isEmpty()) return@runCatching "Public camera inventories could not be reached right now."
         val near = cams.map { it to haversineKm(lat, lon, it.lat, it.lon) }
             .filter { it.second <= 50 }
             .sortedBy { it.second }
@@ -1152,8 +1152,23 @@ class DirectToolExecutor(
                 .build()
             client.newCall(request).execute().use { resp ->
                 val text = resp.body?.string().orEmpty()
-                if (resp.isSuccessful) Result.success(text)
-                else Result.failure(IOException("HTTP ${resp.code}: ${text.take(200)}"))
+                if (!resp.isSuccessful) {
+                    return Result.failure(IOException("HTTP ${resp.code}: ${text.take(200)}"))
+                }
+                // A sentence in front of the JSON, because the raw
+                // body's first line is "{" and the classifier reads
+                // the first line. An empty result set was therefore
+                // always a finding, and the card showed "0 nearby
+                // features" beside a verdict of "found".
+                val count = runCatching {
+                    (json.parseToJsonElement(text).jsonObject["elements"] as? JsonArray)?.size
+                }.getOrNull() ?: 0
+                val head = if (count == 0) {
+                    "No mapped features within 500 m of $lat, $lon.\n"
+                } else {
+                    "Overpass — $count features within 500 m of $lat, $lon\n"
+                }
+                Result.success(head + text)
             }
         } catch (e: Exception) {
             Result.failure(e)

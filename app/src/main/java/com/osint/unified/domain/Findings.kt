@@ -63,7 +63,17 @@ object Findings {
     private val UNREACHABLE = listOf(
         "could not be read", "is not bundled", "not bundled in this build",
         "blocked the request", "could not load any", "rate limited",
-        "rate-limited", "could not be reached", "no source answered"
+        "rate-limited", "could not be reached", "no source answered",
+        // Found by reading what the executors actually print rather
+        // than what this list assumed they print. "rate limiting" is
+        // GDELT's own wording on a 429 and is a different string from
+        // "rate limited"; "unreachable" is how certificate
+        // transparency reports both of its sources failing; the two
+        // TLS ones are a handshake that did not happen, which is not
+        // a certificate that is absent.
+        "unreachable", "rate limiting", "no tls handshake",
+        "no certificate presented", "could not be completed",
+        "did not answer", "nothing reachable", "inventory reachable"
     )
 
     /**
@@ -106,8 +116,40 @@ object Findings {
         // A sweep that says in its own words that it is not a clean sheet
         // is not reporting an absence; it is reporting partial coverage.
         if (output.contains("This is not a clean sheet", ignoreCase = true)) return false
-        return NOTHING.any { hasPhrase(head, it) }
+        if (NOTHING.any { hasPhrase(head, it) }) return true
+        return NOTHING_SHAPE.containsMatchIn(head)
     }
+
+    /**
+     * The shape of a sentence that reports an absence.
+     *
+     * The list above is a list of exact phrases, and it was always
+     * going to lose: a tool writes "No PTR record", the list holds
+     * "no record", and the result is filed as a finding. Two dozen of
+     * them were — "No DNS records found", "No urlscan.io scans for
+     * x", "No PGP key published for y", "is not a Tor exit node" —
+     * each one a source that looked, found nothing, and was counted
+     * in "N of M sources returned something".
+     *
+     * This matches the shape instead: a "no" or "not" near the start,
+     * then within a few words one of the nouns these tools actually
+     * use for the thing they were looking for. Bounded so it cannot
+     * run across a sentence, and checked against forty-five real
+     * first lines — every absence in them matches and none of the
+     * findings do.
+     */
+    private val NOTHING_SHAPE = Regex(
+        "^[^;]{0,34}?\\b(?:no|not)\\b[^;:]{0,44}?\\b(?:" +
+            "record|records|data|result|results|match|matches|matched|" +
+            "account|accounts|entry|entries|entity|entities|key|keys|" +
+            "profile|profiles|repositor\\w*|filing|filings|photo|photos|" +
+            "mention|mentions|transaction|transactions|scan|scans|activity|" +
+            "channel|channels|page|pages|site|sites|sitemap|alert|alerts|" +
+            "coverage|place|places|camera|cameras|feed|feeds|cve|cves|" +
+            "breach|breaches|aircraft|relay|relays|imagery|user|users|" +
+            "address|addresses|node|exit|exits|found" +
+            ")\\b"
+    )
 
     /** A result that carries something, as opposed to one that errored or
      *  looked and found nothing. */

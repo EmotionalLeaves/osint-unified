@@ -130,4 +130,82 @@ class FindingsTest {
             Findings.kindOf(row("success", "OFAC SDN: no sanctioned entity matching 'xyz'."))
         )
     }
+
+    /**
+     * The first lines two dozen tools actually print when they looked
+     * and found nothing.
+     *
+     * Each of these was filed as a finding, and counted in "N of M
+     * sources returned something", because the phrase list held "no
+     * record" and the tool wrote "No PTR record". Taken verbatim from
+     * the executors.
+     */
+    @Test
+    fun anAbsenceIsAnAbsenceHoweverItIsWorded() {
+        listOf(
+            "No DNS records found.",
+            "No PTR record for 1.2.3.4.",
+            "No robots.txt, security.txt or sitemap found on host.",
+            "No infostealer records found for this email.",
+            "No urlscan.io scans for example.com.",
+            "No GitHub user \"someone\".",
+            "No Wikipedia places within 10 km.",
+            "Telegram: no public channel '@someone' (or it is private).",
+            "GitHub: no account publicly lists a@b.com.",
+            "No PGP key published for a@b.com",
+            "No network data for 1.2.3.4.",
+            "IODA reports no internet outage alerts in the last 24 hours.",
+            "No registrant matched.",
+            "No geotagged imagery found here. Wider options:",
+            "No archive data for that point.",
+            "No public traffic-camera feed within 50 km of that point.",
+            "1.2.3.4 is not a Tor exit node (checked 2000 known exits).",
+            "Not a recognised BTC or ETH address: abc",
+            "No CVEs found for acme widget.",
+            "Host intel: no data returned for example.com."
+        ).forEach {
+            assertEquals(it, Findings.Kind.ABSENT, Findings.kindOf(row("success", it)))
+        }
+    }
+
+    /**
+     * And the headers real findings start with, none of which may be
+     * dragged into that net.
+     */
+    @Test
+    fun aFindingIsNotAnAbsence() {
+        listOf(
+            "Breach exposure — a@b.com",
+            "Domain: example.com",
+            "Aircraft — N12345",
+            "Wikidata — Jane Doe (Q42)",
+            "Host intel — 1.2.3.4",
+            "IP reputation — 1.2.3.4",
+            "Platform sweep — 'mike'",
+            "Certificate transparency — 42 names for example.com",
+            "Subdomain sweep — example.com",
+            "Legal entities named 'Acme' (GLEIF, 3 shown):",
+            "Keybase — proven identities for 'someone':",
+            "Typosquat sweep — example.com",
+            "Imagery near 51.50000, -0.10000",
+            "CVEs for acme widget",
+            "Likely addresses — Jane Doe at example.com",
+            "Ethereum address — 0xabc"
+        ).forEach {
+            assertEquals(it, Findings.Kind.HIT, Findings.kindOf(row("success", it)))
+        }
+    }
+
+    /** The failures that were being counted as sources that answered. */
+    @Test
+    fun theseAreFailuresNotFindings() {
+        listOf(
+            "Certificate transparency unreachable — crt.sh: timeout; Cert Spotter: 503",
+            "GDELT is rate limiting (it allows one request every five seconds). Try again shortly.",
+            "No TLS handshake with example.com.",
+            "No certificate presented by example.com."
+        ).forEach {
+            assertEquals(it, Findings.Kind.UNREACHABLE, Findings.kindOf(row("success", it)))
+        }
+    }
 }
