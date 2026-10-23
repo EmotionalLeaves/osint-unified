@@ -8,15 +8,19 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -24,8 +28,14 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.osint.unified.ui.theme.Intel
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlin.math.abs
 import kotlin.math.min
+import kotlin.math.roundToInt
 
 /**
  * The Earth as a sphere you can turn.
@@ -36,10 +46,15 @@ import kotlin.math.min
  * relation to everything else, hides the half of the planet that is
  * behind it, and turns under a thumb — which is the point.
  *
- * Everything here is drawn rather than fetched: coastlines from a
- * bundled vector file, a graticule computed on the fly, the day/night
- * line from the clock, and the same live markers the flat map plots. It
- * works with the network off and it never asks anyone for a tile.
+ * Everything here is drawn rather than fetched: a bundled Blue Marble
+ * sampled into the sphere a pixel at a time, city lights on the night
+ * side, a graticule computed on the fly, the day/night line from the
+ * clock, and the same live markers the flat map plots. It works with
+ * the network off and it never asks anyone for a tile.
+ *
+ * The imagery is optional. If the build could not fetch it the globe
+ * falls back to the coastline outlines it drew before, which is worse
+ * but is not nothing.
  */
 @Composable
 fun GlobeView(
@@ -51,6 +66,14 @@ fun GlobeView(
 ) {
     val context = LocalContext.current
     val rings = remember { Coastlines.rings(context) }
+
+    // Decoded once, off the main thread, and kept for the life of the
+    // process: twenty megabytes of Earth is not something to re-read
+    // every time somebody opens the globe.
+    val textured by produceState(initialValue = false, context) {
+        withContext(Dispatchers.IO) { EarthTexture.load(context) }
+        value = EarthTexture.ready()
+    }
 
     // Where the globe is looking, and how close. Saved, so turning the
     // phone or stepping into a dossier does not spin you back to the
@@ -84,9 +107,69 @@ fun GlobeView(
     }
     val terminator = remember(sun) { Orthographic.terminator(sun.first, sun.second) }
 
+    // True while a thumb is on the glass. The sphere is rendered at a
+    // third of its size during a drag and scaled up: a hundred
+    // thousand pixels is a frame's worth of work and a million is not,
+    // and nobody has ever noticed the difference in something that is
+    // moving.
+    var moving by remember { mutableStateOf(false) }
+    var gestures by remember { mutableIntStateOf(0) }
+    LaunchedEffect(gestures) {
+        if (gestures == 0) return@LaunchedEffect
+        moving = true
+        delay(SETTLE_MS)
+        moving = false
+    }
+
+    // What the renderer is being asked for, quantised. Without the
+    // rounding every frame of a drag is a different camera and the
+    // renderer never finishes one before being asked for the next.
+    var viewport by remember { mutableStateOf(IntSize.Zero) }
+    val diameter = remember(viewport, zoom, moving) {
+        val full = (globeRadius(viewport.width, viewport.height, zoom) * 2f).roundToInt()
+        if (moving) (full / 3).coerceAtLeast(1) else full
+    }.coerceIn(0, MAX_RENDER_PX)
+    val camera = remember(centreLat, centreLon, diameter, sun, moving) {
+        Camera(
+            lat = (centreLat / CAMERA_STEP).roundToInt() * CAMERA_STEP.toDouble(),
+            lon = (centreLon / CAMERA_STEP).roundToInt() * CAMERA_STEP.toDouble(),
+            d = diameter,
+            sunLat = sun.first,
+            sunLon = sun.second,
+            fine = !moving
+        )
+    }
+    // One array, reused. At a thousand pixels across this is four
+    // megabytes, and allocating that per frame is how a smooth thing
+    // becomes a stuttering one.
+    val scratch = remember { arrayOfNulls<IntArray>(1) }
+    val globe: ImageBitmap? by produceState<ImageBitmap?>(null, camera, textured) {
+        if (!textured || camera.d <= 8) {
+            value = null
+            return@produceState
+        }
+        value = withContext(Dispatchers.Default) {
+            val need = camera.d * camera.d
+            var buffer = scratch[0]
+            if (buffer == null || buffer.size < need) {
+                buffer = IntArray(need)
+                scratch[0] = buffer
+            }
+            EarthTexture.image(
+                buffer, camera.d, camera.lat, camera.lon,
+                camera.sunLat, camera.sunLon, camera.fine
+            )
+        }
+    }
+
     Canvas(
         modifier = modifier
             .fillMaxSize()
+            // Measured here, not read inside the draw lambda: writing
+            // state during a draw schedules the next frame, which draws,
+            // which writes, and the globe spins the CPU instead of
+            // itself.
+            .onSizeChanged { viewport = it }
             .pointerInput(Unit) {
                 detectTransformGestures { _, pan, gestureZoom, _ ->
                     val radius = globeRadius(size.width, size.height, zoom)
@@ -99,6 +182,7 @@ fun GlobeView(
                     centreLat = (centreLat + pan.y * perPixel).coerceIn(-89f, 89f)
                     spin = (pan.x * perPixel).coerceIn(-4f, 4f)
                     zoom = (zoom * gestureZoom).coerceIn(MIN_ZOOM, MAX_ZOOM)
+                    gestures++
                 }
             }
             .pointerInput(points) {
@@ -147,14 +231,50 @@ fun GlobeView(
         val lat0 = centreLat.toDouble()
         val lon0 = centreLon.toDouble()
 
-        drawOcean(cx, cy, radius)
-        drawGraticule(cx, cy, radius, lat0, lon0)
-        drawLand(rings, cx, cy, radius, lat0, lon0)
-        drawTerminator(terminator, cx, cy, radius, lat0, lon0)
+        // Behind everything, and turning with the globe rather than
+        // with the screen, so the sphere reads as an object in a place
+        // instead of a disc on a background.
+        drawStars(size.width, size.height, lon0, centreLat.toDouble())
+
+        val sphere = globe
+        if (sphere != null) {
+            drawImage(
+                image = sphere,
+                dstOffset = IntOffset(
+                    (cx - radius).roundToInt(), (cy - radius).roundToInt()
+                ),
+                dstSize = IntSize((radius * 2).roundToInt(), (radius * 2).roundToInt())
+            )
+            // No terminator line over the imagery: the shading already
+            // is the terminator, and a stroke on top of a soft one
+            // looks like a crack.
+            drawGraticule(cx, cy, radius, lat0, lon0, faint = true)
+        } else {
+            drawOcean(cx, cy, radius)
+            drawGraticule(cx, cy, radius, lat0, lon0)
+            drawLand(rings, cx, cy, radius, lat0, lon0)
+            drawTerminator(terminator, cx, cy, radius, lat0, lon0)
+        }
         drawPoints(points, cx, cy, radius, lat0, lon0, sun)
         drawLimb(cx, cy, radius)
     }
 }
+
+/**
+ * What the renderer has been asked for.
+ *
+ * A value, so an unchanged camera compares equal and no work is done;
+ * quantised, because otherwise every frame of a drag is a new camera
+ * and the renderer never finishes one before being asked for the next.
+ */
+private data class Camera(
+    val lat: Double,
+    val lon: Double,
+    val d: Int,
+    val sunLat: Double,
+    val sunLon: Double,
+    val fine: Boolean
+)
 
 /** One thing to put on the globe. */
 data class GlobePoint(
@@ -247,9 +367,12 @@ private fun DrawScope.drawLimb(cx: Float, cy: Float, r: Float) {
 }
 
 private fun DrawScope.drawGraticule(
-    cx: Float, cy: Float, r: Float, lat0: Double, lon0: Double
+    cx: Float, cy: Float, r: Float, lat0: Double, lon0: Double, faint: Boolean = false
 ) {
-    val colour = Intel.Hairline.copy(alpha = 0.7f)
+    // Over photography the grid is orientation, not decoration, and at
+    // full strength it draws more attention than the continents under
+    // it.
+    val colour = Intel.Hairline.copy(alpha = if (faint) 0.22f else 0.7f)
     // Parallels every thirty degrees, meridians every thirty.
     for (lat in -60..60 step 30) {
         strokeArcOfPoints(colour, cx, cy, r, lat0, lon0) { step ->
@@ -263,8 +386,44 @@ private fun DrawScope.drawGraticule(
     }
     // The equator, slightly brighter, because it is the one line people
     // orient by.
-    strokeArcOfPoints(Intel.Hairline, cx, cy, r, lat0, lon0) { step ->
+    strokeArcOfPoints(
+        Intel.Hairline.copy(alpha = if (faint) 0.34f else 1f), cx, cy, r, lat0, lon0
+    ) { step ->
         0.0 to (-180.0 + step * 2.0)
+    }
+}
+
+/**
+ * A sky to hang the Earth in.
+ *
+ * Deterministic rather than random: the same star is in the same place
+ * on every frame and after every rotation, because a sky that
+ * reshuffles itself sixty times a second is a snowstorm. They drift
+ * with the camera, which is what makes the globe read as an object
+ * somewhere rather than a disc on a background.
+ */
+private fun DrawScope.drawStars(width: Float, height: Float, lon0: Double, lat0: Double) {
+    val shiftX = (-lon0 * 1.6).toFloat()
+    val shiftY = (lat0 * 1.1).toFloat()
+    for (i in 0 until STAR_COUNT) {
+        // One hash per star, mixed hard enough that the three values
+        // taken out of it are not visibly correlated — otherwise the
+        // bright stars all end up in one corner.
+        var h = i * -0x61c88647
+        h = h xor (h ushr 15); h *= -0x7ee3623b
+        h = h xor (h ushr 13)
+        val ux = ((h ushr 8) and 0xFFF) / 4095f
+        val uy = ((h ushr 20) and 0xFFF) / 4095f
+        val mag = (h and 0xFF) / 255f
+        var x = (ux * (width + 240f) + shiftX) % (width + 240f)
+        if (x < 0) x += width + 240f
+        var y = (uy * (height + 240f) + shiftY) % (height + 240f)
+        if (y < 0) y += height + 240f
+        drawCircle(
+            color = Color.White.copy(alpha = 0.10f + mag * 0.45f),
+            radius = 0.6f + mag * 1.1f,
+            center = Offset(x - 120f, y - 120f)
+        )
     }
 }
 
@@ -380,3 +539,15 @@ private const val SPIN_DECAY = 0.94f
 /** Below this a flick has stopped, and the globe stops redrawing. */
 private const val SPIN_FLOOR = 0.02f
 private const val TAP_SLOP_PX = 44f
+
+/** How finely the camera is rounded before the renderer is asked again. */
+private const val CAMERA_STEP = 0.35f
+
+/** How long after the last touch before the sphere is drawn properly. */
+private const val SETTLE_MS = 140L
+
+/** The largest sphere worth rendering by hand, in pixels across. A
+ *  tablet in landscape would otherwise ask for four million pixels. */
+private const val MAX_RENDER_PX = 1400
+
+private const val STAR_COUNT = 220

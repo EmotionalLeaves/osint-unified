@@ -187,6 +187,71 @@ jobs:
             test -s "$A/$f" || echo "::warning title=globe::$f is missing; the globe falls back to drawn coastlines"
           done
 
+          # Where each country is, for the feeds that name a country and
+          # give no coordinates. Internet outages are reported per
+          # country and per region; without somewhere to put them they
+          # are a list, and a list is not what this app is.
+          curl -sSL https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_admin_0_countries.geojson -o /tmp/ne_countries.geojson || true
+          python3 - <<'PY'
+          import json, os
+          A = "app/src/main/assets"
+          try:
+              with open('/tmp/ne_countries.geojson', encoding='utf-8') as f:
+                  data = json.load(f)
+          except Exception as e:
+              print("WARNING: no country shapes:", e)
+              raise SystemExit(0)
+
+          def ring_centroid(ring):
+              # Area-weighted centroid of one ring, which for a country
+              # outline is a far better "where is it" than the mean of
+              # the vertices: that is dragged into the sea by whichever
+              # coastline happens to be drawn in most detail.
+              a = cx = cy = 0.0
+              for i in range(len(ring) - 1):
+                  x0, y0 = ring[i][0], ring[i][1]
+                  x1, y1 = ring[i + 1][0], ring[i + 1][1]
+                  cross = x0 * y1 - x1 * y0
+                  a += cross
+                  cx += (x0 + x1) * cross
+                  cy += (y0 + y1) * cross
+              if abs(a) < 1e-12:
+                  return None
+              return (cx / (3 * a), cy / (3 * a), abs(a) / 2)
+
+          out = {}
+          for feat in data.get("features", []):
+              props = feat.get("properties", {})
+              iso = props.get("ISO_A2_EH") or props.get("ISO_A2") or ""
+              name = props.get("NAME") or props.get("ADMIN") or ""
+              if not iso or iso == "-99":
+                  continue
+              geom = feat.get("geometry") or {}
+              polys = []
+              if geom.get("type") == "Polygon":
+                  polys = [geom["coordinates"]]
+              elif geom.get("type") == "MultiPolygon":
+                  polys = geom["coordinates"]
+              best = None
+              for poly in polys:
+                  if not poly:
+                      continue
+                  c = ring_centroid(poly[0])
+                  # The biggest landmass, not the first in the file and
+                  # not the average of all of them: the average of
+                  # France and French Guiana is the Atlantic.
+                  if c and (best is None or c[2] > best[2]):
+                      best = c
+              if not best:
+                  continue
+              out[iso.upper()] = [round(best[1], 3), round(best[0], 3), name]
+          with open(f"{A}/country-centroids.json", "w", encoding="utf-8") as f:
+              json.dump(out, f, separators=(",", ":"), ensure_ascii=False)
+          print("bundled country-centroids.json", len(out), "countries",
+                os.path.getsize(f"{A}/country-centroids.json"), "bytes")
+          PY
+          test -s "$A/country-centroids.json" || echo "::warning title=assets::country-centroids.json is missing; outages will have nowhere to go"
+
           # Raw infrastructure datasets -> compact JSON bundled in the APK.
           curl -sSL https://davidmegginson.github.io/ourairports-data/airports.csv -o /tmp/airports.csv || true
           curl -sSL https://raw.githubusercontent.com/wri/global-power-plant-database/master/output_database/global_power_plant_database.csv -o /tmp/powerplants.csv || true

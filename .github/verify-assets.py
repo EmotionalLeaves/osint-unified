@@ -76,7 +76,28 @@ CHECKS = {
     "osint-collection.md": (markdown_links, 200, True),
     "airports.json": (json_count, 2_000, True),
     "powerplants.json": (json_count, 10_000, True),
+    "coastlines.json": (json_count, 50, True),
+    "country-centroids.json": (json_count, 150, True),
+    # An image, so "entries" is bytes. A JPEG that arrived as an error
+    # page is a few kilobytes; a real Blue Marble downscale is hundreds.
+    "earth-day.jpg": (jpeg_bytes, 200_000, True),
+    "earth-night.jpg": (jpeg_bytes, 40_000, True),
 }
+
+
+def jpeg_bytes(name: str) -> int:
+    """Size, after checking it is actually a JPEG.
+
+    An optional asset that fails this is deleted rather than shipped,
+    and the globe falls back to drawn coastlines — which is the right
+    outcome for a texture that is secretly an HTML error page, because
+    the decoder would simply return null and the sphere would be black.
+    """
+    with open(full(name), "rb") as f:
+        head = f.read(3)
+    if head != b"\xff\xd8\xff":
+        raise ValueError("not a JPEG")
+    return os.path.getsize(full(name))
 
 
 def main() -> int:
