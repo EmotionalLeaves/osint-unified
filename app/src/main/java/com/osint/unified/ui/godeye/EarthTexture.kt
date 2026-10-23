@@ -1,5 +1,6 @@
 package com.osint.unified.ui.godeye
 
+import android.app.ActivityManager
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -31,9 +32,28 @@ object EarthTexture {
     fun load(context: Context) {
         if (attempted) return
         attempted = true
-        day = decode(context, "earth-day.jpg")
-        night = decode(context, "earth-night.jpg")
+        // The detailed mosaic is four times the pixels and therefore
+        // four times the heap — thirty-odd megabytes, which is fine on
+        // a current phone and is not fine on a cheap one. So it is only
+        // asked for where there is room, and a failure to decode it
+        // falls through to the small one rather than to nothing.
+        if (roomy(context)) day = decode(context, HI_DAY)
+        if (day == null) day = decode(context, DAY)
+        night = decode(context, NIGHT)
     }
+
+    /**
+     * Whether this device can afford the detailed mosaic.
+     *
+     * memoryClass is the heap an ordinary app is guaranteed, in
+     * megabytes. The large mosaic needs 32 MB of it and the renderer
+     * needs a few more for the frame it is building, so this asks for
+     * comfortably more than the sum rather than exactly it.
+     */
+    private fun roomy(context: Context): Boolean = runCatching {
+        val am = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        am.memoryClass >= 160
+    }.getOrDefault(false)
 
     fun day(): SphereShading.Texture? = day
 
@@ -61,6 +81,14 @@ object EarthTexture {
                 SphereShading.Texture(pixels, w, h)
             }
         }.getOrNull()
+
+    private const val DAY = "earth-day.jpg"
+
+    /** The same mosaic at twice the linear resolution. Optional: a
+     *  build that could not fetch it simply does not ship it. */
+    private const val HI_DAY = "earth-day-hi.jpg"
+
+    private const val NIGHT = "earth-night.jpg"
 
     /**
      * One rendered globe, as something Compose can draw.

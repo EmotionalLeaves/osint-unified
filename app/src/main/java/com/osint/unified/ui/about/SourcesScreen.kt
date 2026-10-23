@@ -128,9 +128,13 @@ private val coverage = listOf(
     ),
     Coverage(
         "Tsunami bulletins",
-        "the Pacific and the Caribbean",
-        "The two US centres publish openly. Other basins' warnings " +
-            "reach the map through disaster alerts instead."
+        "the Pacific rim, the Caribbean and Indonesia",
+        "Four authorities, unmerged: the two US centres, Japan's JMA — " +
+            "which issues for the whole Pacific, not only for Japan, and " +
+            "writes its place names in Japanese — and Indonesia's BMKG, " +
+            "read only for quakes it says can make a wave. Where two " +
+            "agencies have issued for the same wave you will see both, " +
+            "in each one's own words."
     ),
     Coverage("Disaster alerts", "worldwide", "GDACS, after an event is judged to affect people."),
     Coverage(
@@ -248,6 +252,8 @@ fun SourcesScreen(onBack: () -> Unit) {
         ),
         Source("NOAA NHC", "tropical cyclones", "US public domain"),
         Source("NOAA NWS / tsunami.gov", "severe weather and tsunami bulletins", "US public domain"),
+    Source("Japan Meteorological Agency", "tsunami bulletins for the Pacific", "free to use with attribution"),
+    Source("BMKG (Indonesia)", "earthquakes judged able to produce a tsunami", "open government data"),
         Source(
             "US Navy Joint Typhoon Warning Center",
             "tropical cyclones in the west Pacific, south Pacific and Indian Ocean",

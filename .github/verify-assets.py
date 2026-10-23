@@ -102,6 +102,7 @@ CHECKS = {
     # An image, so "entries" is bytes. A JPEG that arrived as an error
     # page is a few kilobytes; a real Blue Marble downscale is hundreds.
     "earth-day.jpg": (jpeg_bytes, 200_000, True),
+    "earth-day-hi.jpg": (jpeg_bytes, 700_000, True),
     "earth-night.jpg": (jpeg_bytes, 40_000, True),
 }
 

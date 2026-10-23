@@ -140,8 +140,14 @@ class GlobeHandoffTest {
      */
     @Test
     fun arrivingByPinchCountsImmediately() {
+        // The pinch hands over at exactly the boundary span, so the
+        // arming test has to be satisfied *at* it and not merely past
+        // it — this failed the first time for want of one degree.
         val boundary = GlobeHandoff.tileZoom(22.0, w)
         assertTrue(GlobeHandoff.closeEnoughToArm(boundary, w))
+        // And a hair the wrong side of it, since the real arrival zoom
+        // is whatever osmdroid rounded the handoff to.
+        assertTrue(GlobeHandoff.closeEnoughToArm(GlobeHandoff.tileZoom(23.0, w), w))
     }
 
     /** Somewhere between the two is where the arming happens. */

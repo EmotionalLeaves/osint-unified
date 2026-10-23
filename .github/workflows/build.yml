@@ -182,6 +182,11 @@ jobs:
               raise SystemExit(0)
           for src, out, size in (
               ("/tmp/earth-day-src.jpg", f"{A}/earth-day.jpg", (2048, 1024)),
+              # Twice the detail, four times the heap. Shipped as well
+              # as the small one, not instead of it: the app decodes
+              # this one only where there is room for it, so a phone
+              # with a small heap still gets a textured globe.
+              ("/tmp/earth-day-src.jpg", f"{A}/earth-day-hi.jpg", (4096, 2048)),
               ("/tmp/earth-night-src.jpg", f"{A}/earth-night.jpg", (1024, 512)),
           ):
               if not (os.path.exists(src) and os.path.getsize(src) > 100_000):
@@ -199,7 +204,7 @@ jobs:
               except Exception as e:
                   print("WARNING: could not prepare", out, e)
           PY
-          for f in earth-day.jpg earth-night.jpg; do
+          for f in earth-day.jpg earth-day-hi.jpg earth-night.jpg; do
             test -s "$A/$f" || echo "::warning title=globe::$f is missing; the globe falls back to drawn coastlines"
           done
 

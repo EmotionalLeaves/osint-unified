@@ -174,9 +174,17 @@ fun GlobeView(
     // keyed to a coarse bucket and then simply scaled to whatever the
     // live zoom asks for, which makes a pinch cost nothing at all and
     // removes a whole category of lag.
+    //
+    // Rounded up, in half-octaves. Up rather than to-nearest because a
+    // bitmap scaled down stays sharp and one scaled up does not, so the
+    // render is always at least as big as the disc it will be painted
+    // into; half-octaves rather than whole ones because the alternative
+    // is rendering four times the pixels needed at the worst point in
+    // each step, and MAX_RENDER_PX is a real ceiling.
     val bucket = remember(zoom) {
-        val steps = kotlin.math.round(kotlin.math.log2(zoom.toDouble().coerceAtLeast(0.25)))
-        Math.pow(2.0, steps).toFloat().coerceIn(0.5f, 8f)
+        val z = zoom.toDouble().coerceIn(0.25, 8.0)
+        val steps = kotlin.math.ceil(kotlin.math.log2(z) * 2.0)
+        Math.pow(2.0, steps / 2.0).toFloat().coerceIn(0.5f, 8f)
     }
     val diameter = remember(viewport, bucket, moving) {
         val full = (globeRadius(viewport.width, viewport.height, bucket) * 2f).roundToInt()

@@ -77,7 +77,7 @@ internal object GlobeHandoff {
      * "zoomed out" the moment it appeared.
      */
     fun closeEnoughToArm(tileZoom: Double, width: Int): Boolean =
-        mapSpanDegrees(tileZoom, width) < TO_MAP_SPAN
+        mapSpanDegrees(tileZoom, width) < TO_ARM_SPAN
 
     /** Far enough out that tiles are the wrong thing to be looking at. */
     fun shouldReturnToGlobe(tileZoom: Double, width: Int): Boolean =
@@ -90,6 +90,12 @@ internal object GlobeHandoff {
 
     /** Roughly a large country across the screen. */
     private const val TO_MAP_SPAN = 22.0
+
+    /** Deliberately a little wider than the handoff boundary. A pinch
+     *  that crosses into the map lands exactly on that boundary, and
+     *  "exactly on it" is not "inside it" — so arming at the same
+     *  number would leave the commonest arrival of all unarmed. */
+    private const val TO_ARM_SPAN = 30.0
 
     /** Roughly a continent and then some. The gap between this and the
      *  handoff threshold is the hysteresis that stops it flickering. */
