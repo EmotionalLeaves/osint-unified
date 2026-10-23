@@ -365,6 +365,19 @@ class GodEyeViewModel(
     private var resultsJob: Job? = null
     private var dismissalsJob: Job? = null
 
+    /**
+     * Keep a running job, and forget it once it has finished.
+     *
+     * The list is only cleared when a new search starts, so without
+     * this every job a case ever ran stayed in it for the life of the
+     * view model — a slow accumulation across a long session, for
+     * nothing: a completed job cannot be cancelled.
+     */
+    private infix fun MutableList<Job>.addAndForget(job: Job) {
+        add(job)
+        job.invokeOnCompletion { remove(job) }
+    }
+
     /** The two reads that follow a case being opened. Held so that
      *  opening another one, or searching, can stop them before they
      *  write the old case's notes over the new case's. */
@@ -903,7 +916,7 @@ class GodEyeViewModel(
         // view model's scope, outside the list STOP cancels — the button
         // set the state to "stopped" while the workflow carried on firing
         // sources at the target behind it.
-        searchJobs += viewModelScope.launch {
+        searchJobs addAndForget viewModelScope.launch {
             val investigationId = ensureInvestigation(observable)
             _state.update { it.copy(workflowRunning = true) }
             try {
@@ -929,7 +942,7 @@ class GodEyeViewModel(
         val observable = _state.value.observable ?: return
         // Also tracked: a single source run by hand is still a request in
         // flight, and STOP meant all of them.
-        searchJobs += viewModelScope.launch {
+        searchJobs addAndForget viewModelScope.launch {
             val investigationId = ensureInvestigation(observable)
             _state.update { it.copy(runningTools = it.runningTools.plusRunning(listOf(tool.id))) }
             try {
@@ -967,10 +980,10 @@ class GodEyeViewModel(
             tools.filter { dispatched.add("${it.id}|${observable.raw}") }
         }
         if (fresh.isEmpty()) {
-            if (thenEnrich) searchJobs += viewModelScope.launch { enrich(observable) }
+            if (thenEnrich) searchJobs addAndForget viewModelScope.launch { enrich(observable) }
             return
         }
-        searchJobs += viewModelScope.launch {
+        searchJobs addAndForget viewModelScope.launch {
             val investigationId = ensureInvestigation(observable)
             _state.update { it.copy(runningTools = it.runningTools.plusRunning(fresh.map { t -> t.id })) }
             val produced = coroutineScope {

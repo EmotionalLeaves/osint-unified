@@ -33,7 +33,12 @@ internal data class MapWindow(
      *  edge is numerically greater than the east. */
     fun contains(lat: Double, lon: Double): Boolean {
         if (lat > north || lat < south) return false
-        return if (west <= east) lon in west..east else lon >= west || lon <= east
+        // Equal edges mean the whole world, not an empty sliver of it.
+        // osmdroid reports a box spanning exactly 360 degrees that way
+        // when the map is zoomed right out, and the non-wrapping
+        // branch below would then cull every marker on Earth.
+        if (west == east) return true
+        return if (west < east) lon in west..east else lon >= west || lon <= east
     }
 
 }
