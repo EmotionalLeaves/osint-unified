@@ -1,10 +1,10 @@
-https://www.seismicportal.eu/fdsnws/event/1/query?format=json&limit=3
-https://www.ioc-sealevelmonitoring.org/service.php?query=stationlist&showall=all&format=json
-https://api.reliefweb.int/v1/disasters?appname=osint-unified&limit=2&profile=list
-https://api.ioda.inetintel.cc.gatech.edu/v2/outages/alerts?from=-86400
-https://firms.modaps.eosdis.nasa.gov/data/active_fire/noaa-20-viirs-c2/csv/J1_VIIRS_C2_Global_24h.csv@@1
-https://www.ssd.noaa.gov/VAAC/messages.html
-https://www.ospo.noaa.gov/products/atmosphere/vaac/messages.html
-https://api.weather.gov/products/types/FVXX
-https://emergency.copernicus.eu/mapping/activations-rapid/feed
-https://www.gdacs.org/xml/rss.xml@@1
+https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73909/world.topo.bathy.200412.3x5400x2700.jpg@@1
+https://eoimages.gsfc.nasa.gov/images/imagerecords/144000/144898/BlackMarble_2016_01deg_geo.tif@@1
+https://eoimages.gsfc.nasa.gov/images/imagerecords/55000/55167/earth_lights_lrg.jpg@@1
+https://www.ioc-sealevelmonitoring.org/service.php?query=data&code=aarh&period=0.5&format=json
+https://api.ioda.inetintel.cc.gatech.edu/v2/outages/alerts?from=1792800000&until=1792886400
+https://emergency.copernicus.eu/mapping/rss.xml
+https://emergency.copernicus.eu/mapping/activations-rapid.rss
+https://api.reliefweb.int/v1/disasters?appname=osint-unified&limit=2||Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Mobile Safari/537.36
+https://www.seismicportal.eu/fdsnws/event/1/query?format=json&limit=1##"(mag|magtype|flynn_region|time|depth|auth)":
+https://naturalearth.s3.amazonaws.com/50m_raster/NE1_50M_SR_W.zip@@1
