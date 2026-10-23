@@ -7,6 +7,7 @@ import com.osint.unified.domain.ToolCategory.FININT
 import com.osint.unified.domain.ToolCategory.FORENSICS
 import com.osint.unified.domain.ToolCategory.GEOINT
 import com.osint.unified.domain.ToolCategory.NETINT
+import com.osint.unified.domain.ToolCategory.PERSINT
 import com.osint.unified.domain.ToolCategory.SOCMINT
 
 /**

@@ -45,6 +45,58 @@ PARAM = re.compile(
 )
 
 
+ENUM = re.compile(r"\benum\s+class\s+[A-Za-z_][A-Za-z0-9_]*[^{\n]*\{")
+ENTRY = re.compile(r"^\s*(?:@\w+(?:\([^)]*\))?\s*)*([A-Z_][A-Za-z0-9_]*)")
+
+
+def enum_entries(text):
+    """Every name declared as an entry of an enum in this file.
+
+    An enum entry is a declaration the DECL pattern cannot see either:
+    there is no val, var, fun or class in front of it. Adding
+    ToolCategory.PERSINT and using it bare in another file without its
+    import compiled nowhere and the pre-flight said nothing, because
+    the name was invisible to the scan. Unlike parameters these DO go
+    into the per-file set as well, since inside the enum's own body an
+    entry really is visible bare.
+    """
+    out = set()
+    for m in ENUM.finditer(text):
+        i = m.end() - 1
+        depth = 0
+        for j in range(i, len(text)):
+            c = text[j]
+            if c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+        else:
+            continue
+        body = text[i + 1:j]
+        # Entries come first and end at the semicolon, if there is one.
+        head = body.split(";", 1)[0]
+        chunk, depth = [], 0
+        parts = []
+        for c in head:
+            if c in "([{":
+                depth += 1
+            elif c in ")]}":
+                depth -= 1
+            if c == "," and depth == 0:
+                parts.append("".join(chunk))
+                chunk = []
+            else:
+                chunk.append(c)
+        parts.append("".join(chunk))
+        for part in parts:
+            e = ENTRY.match(part)
+            if e:
+                out.add(e.group(1))
+    return out
+
+
 def parameter_names(text):
     """Every name that appears as a parameter in this file."""
     out = set()
@@ -111,10 +163,13 @@ def scan(roots):
                     continue
                 full = os.path.join(dirpath, f)
                 imported = set()
-                here = set()
+                here: set = set()
                 with open(full, encoding="utf-8", errors="replace") as fh:
                     body = fh.read()
                 params.update(parameter_names(body))
+                entries = enum_entries(body)
+                names.update(entries)
+                here.update(entries)
                 for line in body.splitlines():
                     m = IMPORTED.match(line)
                     if m:
