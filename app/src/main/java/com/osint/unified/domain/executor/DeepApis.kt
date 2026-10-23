@@ -422,23 +422,50 @@ class DeepApis(
             }
         )
 
+        // Three outcomes, not two.
+        //
+        // This collapsed "the platform answered and there is no such
+        // account" into the same bucket as "the request threw" — a
+        // 429, a 5xx, a DNS failure, a dead proxy. So a sweep run on a
+        // flaky connection printed "0 of 8 platforms have an account
+        // under this name. No account found on: …" and listed every
+        // platform it had failed to reach, as a finding, in a dossier
+        // about a real person. The username checker alongside this one
+        // has had a three-state answer for exactly this reason.
         val results = checks.map { (name, probe) ->
-            async { name to runCatching { probe() }.getOrNull() }
+            async { name to runCatching { probe() } }
         }.map { it.await() }
 
-        val hits = results.filter { !it.second.isNullOrBlank() }
-        val misses = results.filter { it.second.isNullOrBlank() }.map { it.first }
+        val answered = results.filter { it.second.isSuccess }
+        val unreachable = results.filter { it.second.isFailure }.map { it.first }
+        val hits = answered.filter { !it.second.getOrNull().isNullOrBlank() }
+        val misses = answered
+            .filter { it.second.getOrNull().isNullOrBlank() }
+            .map { it.first }
 
         buildString {
             append("Platform sweep — '$u'\n")
-            append("${hits.size} of ${results.size} platforms have an account under this name.\n")
+            if (answered.isEmpty()) {
+                append("No platform could be reached, so this says nothing either way.\n")
+                append("Not asked: ${unreachable.joinToString(", ")}")
+                return@buildString
+            }
+            append("${hits.size} of ${answered.size} platforms that answered ")
+            append("have an account under this name.\n")
             hits.forEach { (name, detail) ->
                 append("\n▸ $name\n")
-                append(detail!!.lines().joinToString("\n") { if (it.startsWith("  ")) it else "  $it" })
+                append(
+                    detail.getOrNull().orEmpty().lines()
+                        .joinToString("\n") { if (it.startsWith("  ")) it else "  $it" }
+                )
                 append("\n")
             }
             if (misses.isNotEmpty()) append("\nNo account found on: ${misses.joinToString(", ")}")
-            append("\n\nAll eight checked without a key or an account.")
+            if (unreachable.isNotEmpty()) {
+                append("\nCould not be reached, so nothing is claimed about these: ")
+                append(unreachable.joinToString(", "))
+            }
+            append("\n\nChecked without a key or an account.")
         }
     }
 
@@ -536,7 +563,16 @@ class DeepApis(
         val found = LinkedHashMap<String, MutableSet<String>>()
         fun record(host: String, src: String) {
             val h = host.trim().lowercase().removePrefix("*.").removeSuffix(".")
-            if (h.endsWith(d) && h.isNotEmpty()) found.getOrPut(h) { LinkedHashSet() }.add(src)
+            // The domain itself, or something genuinely under it.
+            //
+            // A bare endsWith made "notexample.com" a subdomain of
+            // "ample.com" — and the wildcard queries these sources are
+            // given do return neighbours, so this was not theoretical.
+            // A host attributed to the wrong owner then goes into the
+            // dossier, and into the corroboration pass as a fact about
+            // the target.
+            val belongs = h == d || h.endsWith(".$d")
+            if (belongs && h.isNotEmpty()) found.getOrPut(h) { LinkedHashSet() }.add(src)
         }
         runCatching {
             get("https://api.hackertarget.com/hostsearch/?q=$d").lineSequence().forEach {
@@ -570,7 +606,15 @@ class DeepApis(
                 }
         }
         if (found.isEmpty()) return@runCatching "Subdomain sweep: nothing found for $d."
-        val sb = StringBuilder("Subdomain sweep — $d\n${found.size} unique hosts from hackertarget + rapiddns + wayback:\n\n")
+        // Named from what actually answered. The header used to list
+        // three fixed sources whatever had run — certspotter was
+        // queried too and never credited, and a host found only by one
+        // of them was attributed to all three.
+        val answered = found.values.flatten().distinct().sorted()
+        val sb = StringBuilder(
+            "Subdomain sweep — $d\n${found.size} unique hosts from " +
+                "${answered.joinToString(" + ")}:\n\n"
+        )
         found.keys.sorted().forEach { h -> sb.append("$h  [${found[h]?.joinToString("/")}]\n") }
         sb.toString()
     }

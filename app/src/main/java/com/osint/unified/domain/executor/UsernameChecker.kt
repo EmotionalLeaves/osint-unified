@@ -116,7 +116,23 @@ class UsernameChecker(private val appContext: Context) {
         /** Whether this site could hold a name of this shape at all. */
         fun accepts(username: String): Boolean {
             val pattern = usernamePattern ?: return true
-            return runCatching { Regex(pattern).containsMatchIn(username) }.getOrDefault(true)
+            // Anchored. The rulesets' patterns are mostly written
+            // without anchors — "[A-Za-z0-9_]{3,20}" and the like —
+            // and containsMatchIn passes "j.doe-99" on the strength of
+            // the "doe" inside it, so the guard never rejected
+            // anything it was meant to.
+            //
+            // It matters in both directions. A name the site cannot
+            // hold was still asked about, which is a false positive
+            // waiting to happen; and when this does reject, the site
+            // is counted as having said no, which feeds the coverage
+            // figure behind "every site that was asked said no". Sites
+            // that were never asked were inflating it.
+            val anchored = when {
+                pattern.startsWith("^") || pattern.endsWith("$") -> pattern
+                else -> "^(?:$pattern)$"
+            }
+            return runCatching { Regex(anchored).matches(username) }.getOrDefault(true)
         }
 
         private fun fill(template: String, username: String): String = template

@@ -421,7 +421,13 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
             }
             append("Source: RIPEstat.")
         }
-    }.getOrElse { "No routing data for $ip (${it.message})." }
+        // "No routing data" is one of the phrases that mean a source
+        // looked and found nothing, so saying it here filed a dropped
+        // connection as an established absence: the dossier reported
+        // that RIPEstat had been consulted and the address is not
+        // routed. The reason in the parentheses was never read by
+        // anything. A failure has to say it could not be reached.
+    }.getOrElse { "RIPEstat could not be reached for $ip (${it.message})." }
 
     /** Hudson Rock infostealer check (keyless): is this email in stealer logs. */
     fun hudsonRock(email: String): Result<String> = runCatching {
@@ -682,7 +688,11 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
             return@runCatching if (e.message?.contains("429") == true) {
                 "GDELT is rate limiting (it allows one request every five seconds). Try again shortly."
             } else {
-                "GDELT did not answer for \"$query\"."
+                // Neither an absence nor a finding until this said
+                // which: it was in no list at all, so a failed call
+                // was filed as a hit and counted among the sources
+                // that returned something.
+                "GDELT could not be reached for \"$query\"."
             }
         }
         if (body.trimStart().startsWith("Please limit")) {
