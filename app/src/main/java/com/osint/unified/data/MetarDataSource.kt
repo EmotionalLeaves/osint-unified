@@ -14,6 +14,7 @@ import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.jsonArray
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.io.IOException
 
 /**
  * METAR airport-weather observations from the Aviation Weather Center (keyless):
@@ -31,11 +32,17 @@ class MetarDataSource(private val client: OkHttpClient = Http.feedClient) {
      */
     suspend fun fetch(): List<GeoBlip> = withContext(Dispatchers.IO) {
         val out = java.util.concurrent.ConcurrentHashMap<String, GeoBlip>()
-        coroutineScope {
+        val answered = coroutineScope {
             BOXES.map { box ->
                 async { runCatching { fetchBox(box, out) } }
-            }.forEach { it.await() }
+            }.map { it.await() }.any { it.isSuccess }
         }
+        // Two dozen boxes all failing used to return an empty list and
+        // report success, which the pill and the world brief then
+        // state as a fact: no airport weather report anywhere on
+        // Earth. That is not a thing that happens, so it must not be
+        // something this can say by accident.
+        if (!answered) throw IOException("no METAR box answered")
         out.values.toList()
     }
 
@@ -46,8 +53,12 @@ class MetarDataSource(private val client: OkHttpClient = Http.feedClient) {
             .build()
         client.newCall(request).execute().use { resp ->
             val body = resp.body?.string()
-            if (!resp.isSuccessful || body.isNullOrBlank()) return
-            val arr = runCatching { json.parseToJsonElement(body).jsonArray }.getOrNull() ?: return
+            // Thrown, not returned: the caller counts a quiet return
+            // as this box having answered.
+            if (!resp.isSuccessful) throw IOException("METAR HTTP ${resp.code}")
+            if (body.isNullOrBlank()) throw IOException("METAR box returned nothing")
+            val arr = runCatching { json.parseToJsonElement(body).jsonArray }.getOrNull()
+                ?: throw IOException("METAR box answered in an unexpected shape")
             for (el in arr) {
                 val o = el as? JsonObject ?: continue
                 fun d(k: String) = (o[k] as? JsonPrimitive)?.doubleOrNull

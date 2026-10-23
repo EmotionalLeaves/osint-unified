@@ -14,6 +14,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.io.IOException
 
 /**
  * Maritime vessel positions, from as many open feeds as there are.
@@ -97,6 +98,12 @@ class AisDataSource(
             if (urls.isEmpty()) return@withContext emptyList()
             val now = System.currentTimeMillis()
             val merged = LinkedHashMap<String, Vessel>()
+            // Whether any feed told us anything at all — freshly or
+            // from what it last said. Without this, every feed being
+            // down returned an empty list and reported success, and an
+            // empty vessel layer is read as "no ships", not as "no
+            // answer".
+            var answered = false
             for (url in urls) {
                 if (merged.size >= 20000) break
                 val last = synchronized(held) { held[url] }
@@ -110,9 +117,15 @@ class AisDataSource(
                 } else {
                     last?.vessels
                 }
+                if (vessels != null) answered = true
                 vessels?.forEach { v ->
                     merged.putIfAbsent(v.mmsi.ifBlank { "${v.lat},${v.lon}" }, v)
                 }
+            }
+            if (!answered) {
+                throw IOException(
+                    "no AIS feed answered and none had anything held from before"
+                )
             }
             merged.values.toList()
         }

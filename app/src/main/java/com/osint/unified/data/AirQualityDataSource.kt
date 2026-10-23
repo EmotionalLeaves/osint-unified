@@ -11,6 +11,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.doubleOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.io.IOException
 
 /**
  * Air-quality (European AQI) at major world cities via Open-Meteo (keyless),
@@ -215,9 +216,14 @@ class AirQualityDataSource(private val client: OkHttpClient = Http.feedClient) {
         val out = ArrayList<GeoBlip>(cities.size)
         // Open-Meteo accepts many coordinates per call but not unlimited,
         // so the list goes in batches.
+        var answered = false
         cities.chunked(60).forEach { batch ->
-            runCatching { fetchBatch(batch, out) }
+            if (runCatching { fetchBatch(batch, out) }.isSuccess) answered = true
         }
+        // Every batch failing is not "the air is unmeasured
+        // everywhere"; it is the service being down. The layer says
+        // the first of those out loud if this returns an empty list.
+        if (!answered) throw IOException("the air quality service did not answer")
         out
     }
 
@@ -230,7 +236,9 @@ class AirQualityDataSource(private val client: OkHttpClient = Http.feedClient) {
             .header("User-Agent", "OSINT-Unified/1.0 (research)").build()
         client.newCall(request).execute().use { resp ->
             val body = resp.body?.string()
-            if (!resp.isSuccessful || body.isNullOrBlank()) return
+            // Thrown, not returned: a quiet return counts as an answer.
+            if (!resp.isSuccessful) throw IOException("air quality HTTP ${resp.code}")
+            if (body.isNullOrBlank()) throw IOException("air quality returned nothing")
             val root = json.parseToJsonElement(body)
             val items = (root as? JsonArray) ?: JsonArray(listOf(root))
             items.forEachIndexed { i, el ->
