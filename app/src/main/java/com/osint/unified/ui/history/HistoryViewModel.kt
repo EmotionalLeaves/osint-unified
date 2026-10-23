@@ -66,7 +66,15 @@ class HistoryViewModel(
      */
     suspend fun export(format: ExportFormat): File? {
         val investigation = repository.byId(_selectedId.value ?: return null) ?: return null
-        val rows = results.value
+        // Read for this case, not taken from the flow.
+        //
+        // The selected id changes the instant it is set; the flow
+        // behind `results` only catches up when Room re-emits. Export
+        // in that window — which is what tapping a case and then
+        // export immediately does — and the previous case's rows,
+        // hashes and timestamps were written out under this case's
+        // name, observable and notes.
+        val rows = repository.resultsFor(investigation.id)
         if (rows.isEmpty()) return null
         return runCatching {
             exporter.export(
@@ -180,6 +188,7 @@ class HistoryViewModel(
                 summary = case.summary,
                 targets = targets.map { t ->
                     InvestigationExporter.CaseTarget(
+                        id = t.id,
                         name = t.name,
                         type = t.observableType,
                         observable = router.classify(t.seedObservable),

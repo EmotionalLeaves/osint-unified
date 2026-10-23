@@ -1285,6 +1285,20 @@ class GodEyeViewModel(
                     enrichmentRunning = false,
                     enriching = emptyList(),
                     notes = "",
+                    // And the marks, which belong to the case they
+                    // were made in.
+                    //
+                    // These were left holding the previous case's map
+                    // until the new case's flow first emitted. In that
+                    // window the corroboration pass ran with the wrong
+                    // dismissals, so findings in the case just opened
+                    // were shown struck through, their grades pulled
+                    // down to doubtful, and an export taken then wrote
+                    // them into this case's ruled-out list. A search
+                    // clears this; opening a stored case did not.
+                    dismissals = emptyMap(),
+                    breadcrumb = emptyList(),
+                    breadcrumbIds = emptyList(),
                     navSignal = it.navSignal + 1
                 )
             }

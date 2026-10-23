@@ -79,6 +79,10 @@ class InvestigationExporter(private val appContext: Context) {
      * One target of a case, with everything needed to report on it.
      */
     data class CaseTarget(
+        /** The investigation row this came from. Two investigations of
+         *  the same seed in one case are ordinary, so nothing else
+         *  here is unique. */
+        val id: Long,
         val name: String,
         val type: String,
         val observable: Observable,
@@ -127,7 +131,21 @@ class InvestigationExporter(private val appContext: Context) {
         summary: String,
         targets: List<CaseTarget>
     ): String = buildString {
-        val byTarget = targets.associate { it.observable.raw to entitiesOf(it) }
+        // Keyed on the investigation, not on what it was looking for.
+        //
+        // `associate` keeps the last value for a duplicate key, and
+        // two investigations of the same seed in one case is ordinary
+        // — nothing deduplicates on seed and a case holds whatever is
+        // filed into it. So both "TARGET: example.com" sections
+        // printed the second investigation's findings, grades and
+        // ruled-out list, and the first investigation's work was
+        // absent from a report whose heading claimed to carry it.
+        val byId = targets.associate { it.id to entitiesOf(it) }
+        // Pooled by seed for link-finding, because two investigations
+        // of one target are one target — but pooled rather than
+        // overwritten, which is what `associate` was doing.
+        val byTarget = targets.groupBy { it.observable.raw }
+            .mapValues { (_, group) -> group.flatMap { byId[it.id].orEmpty() } }
         val links = CaseLinks.find(byTarget)
 
         append("OSINT CASE REPORT\n")
@@ -178,7 +196,7 @@ class InvestigationExporter(private val appContext: Context) {
         }
 
         targets.forEach { t ->
-            val entities = byTarget[t.observable.raw].orEmpty()
+            val entities = byId[t.id].orEmpty()
             append("\n\n")
             append("TARGET: ").append(t.observable.raw).append('\n')
             append("-".repeat(8 + t.observable.raw.length)).append('\n')
@@ -230,7 +248,21 @@ class InvestigationExporter(private val appContext: Context) {
         summary: String,
         targets: List<CaseTarget>
     ): String {
-        val byTarget = targets.associate { it.observable.raw to entitiesOf(it) }
+        // Keyed on the investigation, not on what it was looking for.
+        //
+        // `associate` keeps the last value for a duplicate key, and
+        // two investigations of the same seed in one case is ordinary
+        // — nothing deduplicates on seed and a case holds whatever is
+        // filed into it. So both "TARGET: example.com" sections
+        // printed the second investigation's findings, grades and
+        // ruled-out list, and the first investigation's work was
+        // absent from a report whose heading claimed to carry it.
+        val byId = targets.associate { it.id to entitiesOf(it) }
+        // Pooled by seed for link-finding, because two investigations
+        // of one target are one target — but pooled rather than
+        // overwritten, which is what `associate` was doing.
+        val byTarget = targets.groupBy { it.observable.raw }
+            .mapValues { (_, group) -> group.flatMap { byId[it.id].orEmpty() } }
         val links = CaseLinks.find(byTarget)
         val doc = buildJsonObject {
             put("case", caseName)
@@ -258,7 +290,7 @@ class InvestigationExporter(private val appContext: Context) {
                         putJsonArray("tags") { t.tags.forEach { add(it) } }
                         put("sourcesQueried", t.results.size)
                         putJsonArray("findings") {
-                            byTarget[t.observable.raw].orEmpty()
+                            byId[t.id].orEmpty()
                                 .filter { it.caveat == null }
                                 .take(60)
                                 .forEach { e ->
@@ -271,7 +303,7 @@ class InvestigationExporter(private val appContext: Context) {
                                 }
                         }
                         putJsonArray("ruledOut") {
-                            byTarget[t.observable.raw].orEmpty()
+                            byId[t.id].orEmpty()
                                 .filter { it.dismissed }
                                 .forEach { e ->
                                     addJsonObject {
@@ -421,8 +453,18 @@ class InvestigationExporter(private val appContext: Context) {
                         ToolRegistry.byId(r.toolId)?.reliability?.let {
                             put("sourceReliability", it.code.toString())
                         }
-                        if (r.status == "error") put("error", r.errorMessage ?: "")
-                        else put("output", r.rawOutput)
+                        if (r.status == "error") {
+                            put("error", r.errorMessage ?: "")
+                        } else {
+                            // Carried on a successful row too: a
+                            // re-run that failed keeps the previous
+                            // answer and records why here, and a
+                            // consumer reading only "status" would
+                            // take this for a fresh result.
+                            r.errorMessage?.takeIf { it.isNotBlank() }
+                                ?.let { put("warning", it) }
+                            put("output", r.rawOutput)
+                        }
                     }
                 }
             }
@@ -433,17 +475,21 @@ class InvestigationExporter(private val appContext: Context) {
     private fun toCsv(results: List<ResultRow>): String {
         val sb = StringBuilder(
             "tool,tool_id,source_grade,verdict,input,started_utc,finished_utc," +
-                "sha256,output_or_error\n"
+                "sha256,warning,output_or_error\n"
         )
         results.forEach { r ->
             val payload = if (r.status == "error") (r.errorMessage ?: "") else r.rawOutput
+            // A column of its own, because a row whose refresh failed
+            // is a successful row carrying a caveat, and a spreadsheet
+            // with no space for the caveat drops it.
+            val warning = if (r.status == "error") "" else r.errorMessage.orEmpty()
             sb.append(
                 listOf(
                     r.toolName, r.toolId,
                     ToolRegistry.byId(r.toolId)?.reliability?.code?.toString().orEmpty(),
                     verdict(r), r.input,
                     iso(r.startedAt), r.finishedAt?.let { iso(it) }.orEmpty(),
-                    r.outputSha256.ifBlank { sha256(r.rawOutput) }, payload
+                    r.outputSha256.ifBlank { sha256(r.rawOutput) }, warning, payload
                 ).joinToString(",") { csv(it) }
             ).append("\n")
         }
@@ -700,6 +746,10 @@ class InvestigationExporter(private val appContext: Context) {
         append("\n")
         val grade = ToolRegistry.byId(r.toolId)?.reliability
         grade?.let { append("source     : ${it.code} — ${it.label}, ${it.why}\n") }
+        if (r.status != "error") {
+            r.errorMessage?.takeIf { it.isNotBlank() }
+                ?.let { append("warning    : $it\n") }
+        }
         // Taken when the answer arrived, from the whole of it. The old
         // hash was computed here, from the stored copy, which this
         // exporter had already truncated at 256 KB — so a fingerprint

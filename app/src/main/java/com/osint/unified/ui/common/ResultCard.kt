@@ -163,6 +163,21 @@ fun ResultCard(row: ResultRow, onPivot: ((String) -> Unit)? = null) {
                         }
                     }
                 }
+                // A refresh that failed kept the previous answer and
+                // wrote why on the row. Nothing showed it: every
+                // renderer and every export format printed
+                // errorMessage only when the status was "error", and
+                // this row's status stays "success" because the data
+                // in it is still the data that was found. So the card
+                // was a green "found" with a timestamp, and the fact
+                // that the latest attempt had failed was recorded and
+                // then dropped.
+                row.status == "success" && !row.errorMessage.isNullOrBlank() -> Text(
+                    "⚠ ${row.errorMessage}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Intel.Amber,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
                 row.status == "error" -> Text(
                     row.errorMessage ?: "Unknown error",
                     style = MaterialTheme.typography.bodySmall,
