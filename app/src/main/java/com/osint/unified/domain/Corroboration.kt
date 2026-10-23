@@ -70,7 +70,20 @@ object Corroboration {
         group("certificates", "crtsh", "subfinder", "tlscert", "subsweep")
         group("web-archives", "wayback", "waybackurls", "gau", "archive", "commoncrawl", "subsweep")
         group("username-sweep", "sherlock", "maigret", "blackbird", "socialsweep", "emailaccounts")
-        group("dns", "dns", "ptr", "subsweep")
+        // Everything that resolves through dns.google is one witness.
+        //
+        // mailsec, typosquat and emailperm all call the same DoH
+        // endpoint as dns and ptr, and none of them was in this
+        // family — so a hostname that `dns` printed from an MX record
+        // and `mailsec` printed from the same MX record counted as
+        // two independent sources, graded B1 "confirmed by other
+        // sources", on one query to one resolver answered once.
+        group("dns", "dns", "ptr", "subsweep", "mailsec", "typosquat", "emailperm")
+        // RIPEstat, likewise. bgpview falls through to RIPEstat when
+        // BGPView does not answer, and asnintel is RIPEstat first —
+        // so a prefix both of them printed was two witnesses to one
+        // upstream.
+        group("ripestat", "bgpview", "asnintel", "ripe")
         group("breach-data", "breaches", "breachcat", "hudsonrock", "h8mail")
         group("sanctions", "sanctions", "unsanctions", "opensanctions")
         group("github", "github", "ghactivity", "emailgithub")
@@ -105,7 +118,20 @@ object Corroboration {
     internal fun independentCount(sources: Collection<String>): Int {
         val claimed = HashSet<String>()
         var n = 0
-        for (id in sources) {
+        // Ordered, so the answer does not depend on the database.
+        //
+        // The iteration order was whatever order the rows came back
+        // in, and the greedy pick is order-dependent: crtsh, subsweep,
+        // wayback counted as two if crtsh came first and one if
+        // subsweep did, because subsweep belongs to four families and
+        // claims them all. The same evidence graded A1 or A2 by luck.
+        // Fewest families first is both deterministic and the pick
+        // that seats the most sources, so it is also the least
+        // pessimistic reading of the same evidence.
+        val ordered = sources.distinct().sortedWith(
+            compareBy({ familiesOf(it).size }, { it })
+        )
+        for (id in ordered) {
             val fams = familiesOf(id)
             if (fams.none { it in claimed }) {
                 claimed += fams
@@ -209,7 +235,7 @@ object Corroboration {
             // grade lower, which is the only way marking something wrong
             // can affect anything beyond the row it was marked on.
             val demoted = sources.any { familiesOf(it).any { f -> f in unreliableHere } }
-            val reliability = sources
+            val grades = sources
                 .mapNotNull { id ->
                     ToolRegistry.byId(id)?.reliability?.let {
                         if (familiesOf(id).any { f -> f in unreliableHere }) {
@@ -219,7 +245,12 @@ object Corroboration {
                         }
                     }
                 }
-                .minOrNull() ?: Grading.Reliability.UNJUDGED
+                .sorted()
+            val reliability = grades.firstOrNull() ?: Grading.Reliability.UNJUDGED
+            // The best of the ones that AGREE, which is a different
+            // number from the best witness and the one the credibility
+            // lift should depend on.
+            val corroborator = grades.getOrNull(1) ?: reliability
             val wrong = dismissed[key]
             val caveat = when {
                 wrong != null -> "you marked this wrong"
@@ -232,7 +263,11 @@ object Corroboration {
                 independent = independent,
                 reliability = reliability,
                 credibility = if (caveat != null) Grading.Credibility.DOUBTFUL
-                else Grading.credibility(reliability, agreeing = independent - 1),
+                else Grading.credibility(
+                    reliability,
+                    agreeing = independent - 1,
+                    agreeingSource = corroborator
+                ),
                 mentions = claims.sumOf { it.second },
                 caveat = caveat,
                 dismissed = wrong != null,

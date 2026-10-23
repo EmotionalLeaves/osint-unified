@@ -378,7 +378,7 @@ object ToolRegistry {
         //   bgpview — a third-party aggregator, which silently falls
         //     back to RIPEstat, so the grade did not even describe
         //     what answered;
-        //   asnintel — the same, through hackertarget and PeeringDB.
+        //   asnintel — the same, through RIPEstat and PeeringDB.
         //
         // The grade is the whole point of grading: an A says this is
         // the authoritative record and a C says somebody is reporting

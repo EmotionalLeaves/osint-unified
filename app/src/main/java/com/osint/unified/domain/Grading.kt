@@ -82,9 +82,31 @@ object Grading {
     fun credibility(
         source: Reliability,
         agreeing: Int,
-        contradicting: Int = 0
+        contradicting: Int = 0,
+        /**
+         * The best grade among the sources that agree.
+         *
+         * Corroboration used to be a count. So a host asserted by
+         * crt.sh (A) and by a username sweep's soft-404 profile URL
+         * (E) came out A1 — "confirmed by other sources" — where
+         * crt.sh alone would have been A2. A known-unreliable pattern
+         * match had promoted a certificate-transparency record from
+         * probably true to confirmed, which is the one thing a
+         * grading scheme must not let a weak source do.
+         *
+         * Defaults to [source] so a caller that has only one grade to
+         * give gets the behaviour it always had.
+         */
+        agreeingSource: Reliability = source
     ): Credibility = when {
         contradicting > agreeing -> Credibility.IMPROBABLE
+        // Agreement from sources nobody should believe is not
+        // confirmation. It is still worth something — two accounts of
+        // the same thing are better than one — so it lifts to
+        // probable rather than to confirmed.
+        agreeing >= 1 && agreeingSource > Reliability.FAIRLY ->
+            if (source <= Reliability.USUALLY) Credibility.PROBABLE
+            else Credibility.POSSIBLE
         agreeing >= 1 && source <= Reliability.FAIRLY -> Credibility.CONFIRMED
         agreeing >= 2 -> Credibility.CONFIRMED
         agreeing == 1 -> Credibility.PROBABLE

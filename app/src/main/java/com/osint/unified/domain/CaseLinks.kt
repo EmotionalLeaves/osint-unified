@@ -112,7 +112,19 @@ object CaseLinks {
                     sources = acc.sources.toList(),
                     independent = independent,
                     reliability = acc.reliability,
-                    credibility = Grading.credibility(acc.reliability, agreeing = agreeing),
+                    credibility = Grading.credibility(
+                        acc.reliability,
+                        agreeing = agreeing,
+                        // The best grade among the OTHER sources, for
+                        // the same reason as in Corroboration: a count
+                        // of agreeing sources that ignores how good
+                        // they are lets an unreliable one promote a
+                        // certificate record to "confirmed".
+                        agreeingSource = acc.sources
+                            .mapNotNull { ToolRegistry.byId(it)?.reliability }
+                            .sorted()
+                            .getOrNull(1) ?: acc.reliability
+                    ),
                     isTarget = value.trim().lowercase() in seeds
                 )
             }

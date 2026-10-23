@@ -236,4 +236,70 @@ class CorroborationTest {
         )
         assertTrue(Corroboration.assessment(entities, results).contains("1 marked wrong"))
     }
+
+    // ---- Who agrees, not just how many ----
+
+    @Test
+    fun aWeakWitnessDoesNotConfirmAStrongOne() {
+        // crt.sh (A) and a username sweep's soft-404 profile URL (E)
+        // both naming a host is not confirmation: one of them says
+        // yes to almost anything.
+        val lifted = Grading.credibility(
+            source = Grading.Reliability.COMPLETE,
+            agreeing = 1,
+            agreeingSource = Grading.Reliability.UNRELIABLE
+        )
+        assertEquals(Grading.Credibility.PROBABLE, lifted)
+        // Where crt.sh alone is also probable, so the weak source has
+        // added nothing it was not entitled to add.
+        assertEquals(
+            Grading.credibility(Grading.Reliability.COMPLETE, agreeing = 0),
+            lifted
+        )
+    }
+
+    @Test
+    fun twoGoodSourcesStillConfirm() {
+        assertEquals(
+            Grading.Credibility.CONFIRMED,
+            Grading.credibility(
+                source = Grading.Reliability.COMPLETE,
+                agreeing = 1,
+                agreeingSource = Grading.Reliability.USUALLY
+            )
+        )
+    }
+
+    // ---- The same evidence must always get the same grade ----
+
+    @Test
+    fun independenceDoesNotDependOnRowOrder() {
+        // subsweep reads certificate transparency, the Wayback index,
+        // DNS and hackertarget, so it collides with almost everything.
+        // The greedy count used to depend on which row the database
+        // happened to return first: crtsh, subsweep, wayback scored
+        // two in one order and one in the other, and the same evidence
+        // came out A1 or A2 by luck.
+        val sources = listOf("crtsh", "subsweep", "wayback")
+        val counts = listOf(
+            Corroboration.independentCount(sources),
+            Corroboration.independentCount(sources.reversed()),
+            Corroboration.independentCount(listOf("subsweep", "crtsh", "wayback")),
+            Corroboration.independentCount(listOf("wayback", "crtsh", "subsweep"))
+        )
+        assertEquals("order changed the count: $counts", 1, counts.distinct().size)
+        // And the deterministic pick is the one that seats the most.
+        assertEquals(2, counts.first())
+    }
+
+    @Test
+    fun oneResolverAnsweringTwiceIsOneWitness() {
+        // dns, mailsec, typosquat and emailperm all go to the same
+        // DoH endpoint.
+        assertEquals(1, Corroboration.independentCount(listOf("dns", "mailsec")))
+        assertEquals(1, Corroboration.independentCount(listOf("dns", "typosquat", "emailperm")))
+        // And BGPView falls through to RIPEstat, which is where
+        // asnintel starts.
+        assertEquals(1, Corroboration.independentCount(listOf("bgpview", "asnintel")))
+    }
 }
