@@ -16,20 +16,45 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 
 /**
- * Public traffic cameras with live imagery, keyless. Caltrans publishes every
- * district's CCTV inventory as JSON including each camera's coordinates and
- * the URL of its current still frame — roughly 1,500 cameras statewide.
+ * Cameras: everywhere from OpenStreetMap, and live pictures where there
+ * are any.
  *
- * Each blip carries the JPEG URL so the object inspector can open the live
- * view for that camera.
+ * This layer used to be Caltrans alone — about fifteen hundred traffic
+ * cameras, every one of them in California, which is an empty map
+ * anywhere else and most places are anywhere else. Caltrans is still
+ * here, because a live still frame is worth more than a dot, but the
+ * layer's coverage now comes from OpenStreetMap's mapped surveillance
+ * cameras, which exist worldwide and carry who operates them and which
+ * way they point.
  */
-class CctvDataSource(private val client: OkHttpClient = Http.feedClient) {
+class CctvDataSource(
+    private val client: OkHttpClient = Http.feedClient,
+    private val surveillance: SurveillanceDataSource = SurveillanceDataSource()
+) {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
     private val districts = listOf("3", "4", "5", "6", "7", "8", "10", "11", "12")
 
     @Volatile private var cache: List<GeoBlip> = emptyList()
     @Volatile private var fetchedAt = 0L
+
+    /**
+     * Cameras around where the globe is pointed, plus the Californian
+     * ones with pictures.
+     *
+     * Both, rather than one or the other: the mapped set gives coverage
+     * and provenance, the Caltrans set gives an image you can look at.
+     * Either failing leaves the other.
+     */
+    suspend fun near(lat: Double, lon: Double): List<GeoBlip> = withContext(Dispatchers.IO) {
+        val mapped = runCatching { surveillance.near(lat, lon) }.getOrDefault(emptyList())
+        val live = runCatching { fetch() }.getOrDefault(emptyList())
+        val merged = mapped + live
+        if (merged.isEmpty()) {
+            throw java.io.IOException("no camera source answered")
+        }
+        merged
+    }
 
     suspend fun fetch(): List<GeoBlip> = withContext(Dispatchers.IO) {
         // The inventory changes rarely; refresh at most every six hours.

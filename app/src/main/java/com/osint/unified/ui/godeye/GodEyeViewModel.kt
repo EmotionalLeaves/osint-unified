@@ -374,12 +374,28 @@ class GodEyeViewModel(
      * guard below saw a non-null job, returned, and the pill sat on its
      * loading marker forever with no way to retry short of restarting.
      */
+    /** Where the cameras were last asked about, so panning a street does
+     *  not re-query a volunteer-run service on every frame. */
+    @Volatile private var cameraKey: String? = null
+
     fun ensureCameras() {
-        if (camerasJob?.isActive == true || _state.value.cameras.isNotEmpty()) return
+        if (camerasJob?.isActive == true) return
+        // Mapped cameras are a worldwide set queried around wherever the
+        // globe is pointed, so unlike the old Californian list this has
+        // to be asked again when the view moves somewhere else.
+        val where = focus
+        val key = where?.let {
+            "%.1f,%.1f".format(java.util.Locale.US, it.first, it.second)
+        } ?: "none"
+        if (key == cameraKey && _state.value.cameras.isNotEmpty()) return
         camerasJob = viewModelScope.launch {
-            val v = runCatching { cctvDataSource.fetch() }.getOrNull()
-            _state.update {
-                if (v == null) it else it.copy(cameras = v, loaded = it.loaded + "cameras")
+            val v = runCatching {
+                if (where == null) cctvDataSource.fetch()
+                else cctvDataSource.near(where.first, where.second)
+            }.getOrNull()
+            if (v != null) {
+                cameraKey = key
+                _state.update { it.copy(cameras = v, loaded = it.loaded + "cameras") }
             }
             camerasJob = null
         }
