@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -46,6 +47,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
@@ -64,6 +67,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
@@ -462,6 +466,16 @@ fun GodEyeViewScreen(
                 }
             }
 
+            // Thirty-three layers is more than a person can scan, and
+            // every one added makes the rest harder to find. Typing
+            // narrows the row rather than reorganising it, because any
+            // grouping I chose would be wrong for somebody: the person
+            // looking for ships does not think of them as maritime.
+            var layerFilter by rememberSaveable { mutableStateOf("") }
+            if (state.loaded.size + state.feedTrouble.size > FILTER_WORTH_IT) {
+                LayerFilterField(layerFilter) { layerFilter = it }
+            }
+            CompositionLocalProvider(LocalLayerFilter provides layerFilter) {
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)
@@ -532,6 +546,7 @@ fun GodEyeViewScreen(
                 if (state.overlayPoints.isNotEmpty()) {
                     LayerPill("OVLY", state.overlayPoints.size, Intel.CyanBright, showOverlay || god, loaded = "overlayPoints" in state.loaded, trouble = "overlayPoints" in state.feedTrouble) { showOverlay = !showOverlay }
                 }
+            }
             }
 
             Text(
@@ -1453,6 +1468,9 @@ private fun investigableQuery(obj: Inspected): String? {
  *  map gets the rest, and it is never nothing. */
 private val PANEL_MAX_HEIGHT = 300.dp
 
+/** Below this many layers the row is scannable and a filter is clutter. */
+private const val FILTER_WORTH_IT = 12
+
 /** What the object inspector is showing: which layer the marker came from,
  *  its label, where it is, and any link that layer carries. */
 data class Inspected(
@@ -1514,6 +1532,63 @@ private fun ExamplePill(text: String, onClick: () -> Unit) {
 }
 
 @Composable
+/**
+ * What the person typed into the layer filter, if anything.
+ *
+ * A composition local rather than a parameter: there are thirty-three
+ * pills and the next one written would be the one that forgot to
+ * accept it.
+ */
+private val LocalLayerFilter = compositionLocalOf { "" }
+
+/** Narrows the pill row by name. */
+@Composable
+private fun LayerFilterField(value: String, onChange: (String) -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)
+    ) {
+        BasicTextField(
+            value = value,
+            onValueChange = onChange,
+            singleLine = true,
+            textStyle = MaterialTheme.typography.labelMedium.copy(color = Intel.TextHi),
+            cursorBrush = SolidColor(Intel.Cyan),
+            modifier = Modifier
+                .weight(1f)
+                .clip(RoundedCornerShape(50))
+                .background(Intel.Surface)
+                .border(1.dp, Intel.Hairline, RoundedCornerShape(50))
+                .padding(horizontal = 12.dp, vertical = 7.dp)
+                .semantics { contentDescription = "Filter layers by name" },
+            decorationBox = { inner ->
+                if (value.isEmpty()) {
+                    Text(
+                        "filter layers — fire, sea, global…",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Intel.TextLow
+                    )
+                }
+                inner()
+            }
+        )
+        if (value.isNotEmpty()) {
+            Text(
+                "CLEAR",
+                style = MaterialTheme.typography.labelSmall,
+                color = Intel.Cyan,
+                modifier = Modifier
+                    .padding(start = 8.dp)
+                    .minimumInteractiveComponentSize()
+                    .clip(RoundedCornerShape(50))
+                    .clickable { onChange("") }
+                    .padding(horizontal = 10.dp, vertical = 6.dp)
+            )
+        }
+    }
+}
+
+@Composable
 private fun LayerPill(
     label: String,
     count: Int,
@@ -1531,6 +1606,13 @@ private fun LayerPill(
     trouble: Boolean = false,
     onClick: () -> Unit
 ) {
+    // Filtered here rather than at the call sites. Thirty-three of
+    // those exist and a parameter on every one of them would be a
+    // parameter forgotten on the next layer added; this way a new
+    // pill is filterable the moment it is written.
+    val filter = LocalLayerFilter.current
+    if (filter.isNotBlank() && !label.contains(filter.trim(), ignoreCase = true)) return
+
     // A screen reader could not tell whether a layer was on: the pill was a
     // plain clickable with the state carried only by colour, which is also
     // invisible to roughly one man in twelve.
