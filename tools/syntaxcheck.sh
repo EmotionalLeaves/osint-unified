@@ -193,6 +193,13 @@ echo
 python3 "$ROOT/tools/modifier-imports.py" || exit 1
 
 echo
+# The same idea, for kotlinx.serialization's extension properties.
+# `element.jsonPrimitive` is an extension, so a file that uses it
+# without the import compiles nowhere — and the classpath-less run
+# writes it off with the missing SDK. r298 died on one line of it.
+python3 "$ROOT/tools/serialization-imports.py" || exit 1
+
+echo
 python3 "$ROOT/tools/java-keywords.py" || exit 1
 
 echo
