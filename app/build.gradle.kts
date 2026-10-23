@@ -81,20 +81,45 @@ android {
         }
         release {
             signingConfig = signingConfigs.getByName("shared")
-            // Off, deliberately, and this is the honest reason: nothing
-            // here can run the app. R8 rewrites reflection-dependent code
+            // Off here, on purpose. R8 rewrites reflection-dependent code
             // — Room, kotlinx.serialization, osmdroid's overlay loading —
             // and the failures it causes appear at runtime on a device,
-            // not in a build log. Shipping a shrunk build that cannot be
-            // tested is trading a few megabytes for the chance that a
-            // screen is blank for reasons nobody can see from here.
-            // Turning it on wants one person with the APK and ten minutes.
+            // not in a build log. Nothing in this project can run the app,
+            // so a shrunk build cannot be proved to work from here.
+            //
+            // It is built anyway, as `shrunk` below, and uploaded beside
+            // this one. The default download stays the build whose
+            // behaviour is known; the smaller one is there to be tried,
+            // and if it misbehaves this one is in the same run.
             isMinifyEnabled = false
             isShrinkResources = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+        }
+
+        /**
+         * The same app, shrunk.
+         *
+         * Same signing key and same applicationId, so it installs over
+         * the unshrunk build and keeps the case database — and so only
+         * one of the two can be on the phone at a time, which is what
+         * makes it a fair test rather than a curiosity.
+         *
+         * Everything R8 must not touch is in proguard-rules.pro, and
+         * every rule in it names the thing that finds that class by name
+         * at runtime. If this build assembles and then behaves, the
+         * unshrunk one can go away.
+         */
+        create("shrunk") {
+            initWith(getByName("release"))
+            matchingFallbacks += listOf("release")
+            signingConfig = signingConfigs.getByName("shared")
+            // initWith already copied release's proguardFiles; listing
+            // them again would feed R8 the same rules twice.
+            isMinifyEnabled = true
+            isShrinkResources = true
         }
     }
 

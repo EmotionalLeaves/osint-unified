@@ -311,6 +311,47 @@ jobs:
             exit 1
           fi
 
+      - name: Build the shrunk APK too
+        env:
+          OSINT_KEYSTORE_PASSWORD: ${{ secrets.OSINT_KEYSTORE_PASSWORD }}
+          OSINT_KEY_ALIAS: ${{ secrets.OSINT_KEY_ALIAS }}
+          OSINT_KEY_PASSWORD: ${{ secrets.OSINT_KEY_PASSWORD }}
+        run: |
+          # R8 and resource shrinking, in a second APK beside the first.
+          # Nothing here can run the app, so this one cannot be proved to
+          # work; it is uploaded to be tried, with the build whose
+          # behaviour is known sitting next to it in the same run.
+          #
+          # A failure here is fatal on purpose. Problems R8 finds at build
+          # time — a missing rule, an unresolvable reference — are exactly
+          # the ones that can be fixed from here, and letting them pass
+          # quietly would leave an artifact that has never once assembled.
+          set +e
+          gradle assembleShrunk --no-daemon --console=plain \
+            -PosintVersionCode=${{ github.run_number }} \
+            -PosintVersionName=r${{ github.run_number }} > shrink.log 2>&1
+          code=$?
+          if [ $code -ne 0 ]; then
+            awk '/^\* What went wrong/,/^\* Try:/' shrink.log \
+              | grep -v "^\* Try:" | head -25 | while IFS= read -r line; do
+                clean="${line//$'\r'/}"
+                [ -n "$clean" ] && echo "::error::shrink: ${clean}"
+              done
+            # R8 reports a missing keep rule as a "Missing class" line,
+            # which Gradle prints outside the "what went wrong" block.
+            grep -nE "Missing class|R8: |Warning: |Please add|is not found" shrink.log \
+              | head -10 | while IFS= read -r line; do
+                clean="${line//$'\r'/}"
+                echo "::error::shrink: ${clean}"
+              done
+            echo "----- tail of shrink log -----"
+            tail -120 shrink.log
+            exit 1
+          fi
+          BIG=$(ls app/build/outputs/apk/release/*.apk | head -1)
+          SMALL=$(ls app/build/outputs/apk/shrunk/*.apk | head -1)
+          echo "::notice title=shrunk::$(( $(wc -c < "$BIG") / 1048576 )) MB unshrunk%0A$(( $(wc -c < "$SMALL") / 1048576 )) MB shrunk"
+
       - name: Report the signing fingerprint and the APK size
         run: |
           APK=$(ls app/build/outputs/apk/release/*.apk | head -1)
@@ -327,4 +368,15 @@ jobs:
         with:
           name: osint-unified-debug
           path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+
+      # The same app with R8 and resource shrinking on. Install it over
+      # the other one — same key, same applicationId, so the cases
+      # survive — and if anything is blank or crashes, the build above
+      # is in this same run.
+      - name: Upload the shrunk APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: osint-unified-shrunk
+          path: app/build/outputs/apk/shrunk/*.apk
           if-no-files-found: error
