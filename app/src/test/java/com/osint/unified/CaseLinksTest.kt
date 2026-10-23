@@ -159,4 +159,60 @@ class CaseLinksTest {
         assertEquals("", CaseLinks.toggle("alpha", "alpha"))
         assertEquals("alpha, beta", CaseLinks.toggle("alpha", "Beta"))
     }
+
+    /**
+     * One witness is one witness, however many dossiers it turns up in.
+     *
+     * The grade used to add one for each extra target that mentioned
+     * the value, on the reasoning that two dossiers meeting are two
+     * separate enquiries. They need not be: run two domains and crt.sh
+     * alone returns a shared host under both. That came out A1,
+     * "confirmed by other sources", tinted as well-supported, with
+     * crt.sh as the only name under it — two taps from a screen that
+     * says one source is never a confirmation.
+     */
+    @Test
+    fun oneSourceUnderTwoTargetsIsStillOneSource() {
+        val links = CaseLinks.find(
+            mapOf(
+                "a.com" to listOf(entity("HOST", "shared.net", sources = listOf("crtsh"))),
+                "b.com" to listOf(entity("HOST", "shared.net", sources = listOf("crtsh")))
+            )
+        )
+        assertEquals(1, links.size)
+        assertEquals(1, links.first().independent)
+        assertTrue(
+            links.first().credibility.toString(),
+            links.first().credibility != Grading.Credibility.CONFIRMED
+        )
+    }
+
+    /** Two genuinely separate upstreams still corroborate. */
+    @Test
+    fun twoIndependentSourcesDoConfirm() {
+        val links = CaseLinks.find(
+            mapOf(
+                "a.com" to listOf(entity("HOST", "shared.net", sources = listOf("crtsh"))),
+                "b.com" to listOf(entity("HOST", "shared.net", sources = listOf("breaches")))
+            )
+        )
+        assertEquals(2, links.first().independent)
+    }
+
+    /**
+     * And two tools reading one API are one source. subsweep and
+     * hostintel both ask hackertarget; subsweep also reads the Wayback
+     * index and the certificate logs, so it is not independent of
+     * wayback or crt.sh either.
+     */
+    @Test
+    fun toolsSharingAnUpstreamAreOneWitness() {
+        assertEquals(1, Corroboration.independentCount(listOf("subsweep", "hostintel")))
+        assertEquals(1, Corroboration.independentCount(listOf("subsweep", "wayback")))
+        assertEquals(1, Corroboration.independentCount(listOf("subsweep", "crtsh")))
+        assertEquals(1, Corroboration.independentCount(listOf("sherlock", "maigret", "blackbird")))
+        // Genuinely different upstreams still count separately.
+        assertEquals(2, Corroboration.independentCount(listOf("crtsh", "breaches")))
+        assertEquals(3, Corroboration.independentCount(listOf("crtsh", "breaches", "github")))
+    }
 }

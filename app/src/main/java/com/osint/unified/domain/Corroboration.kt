@@ -63,19 +63,57 @@ object Corroboration {
      * as corroboration would manufacture confidence out of nothing, which
      * is worse than having no corroboration at all.
      */
-    private val INDEPENDENCE: Map<String, String> = buildMap {
-        listOf("crtsh", "subfinder", "tlscert").forEach { put(it, "certificates") }
-        listOf("wayback", "waybackurls", "gau", "archive", "commoncrawl")
-            .forEach { put(it, "web-archives") }
-        listOf("sherlock", "maigret", "blackbird", "socialsweep", "emailaccounts")
-            .forEach { put(it, "username-sweep") }
-        listOf("dns", "ptr", "subsweep").forEach { put(it, "dns") }
-        listOf("breaches", "breachcat", "hudsonrock", "h8mail").forEach { put(it, "breach-data") }
-        listOf("sanctions", "unsanctions", "opensanctions").forEach { put(it, "sanctions") }
-        listOf("github", "ghactivity", "emailgithub").forEach { put(it, "github") }
+    private val INDEPENDENCE: Map<String, Set<String>> = buildMap {
+        fun group(name: String, vararg ids: String) {
+            ids.forEach { merge(it, setOf(name)) { a, b -> a + b } }
+        }
+        group("certificates", "crtsh", "subfinder", "tlscert", "subsweep")
+        group("web-archives", "wayback", "waybackurls", "gau", "archive", "commoncrawl", "subsweep")
+        group("username-sweep", "sherlock", "maigret", "blackbird", "socialsweep", "emailaccounts")
+        group("dns", "dns", "ptr", "subsweep")
+        group("breach-data", "breaches", "breachcat", "hudsonrock", "h8mail")
+        group("sanctions", "sanctions", "unsanctions", "opensanctions")
+        group("github", "github", "ghactivity", "emailgithub")
+        // hackertarget answers both of these, under different paths.
+        group("hackertarget", "subsweep", "hostintel")
     }
 
-    private fun family(toolId: String): String = INDEPENDENCE[toolId] ?: toolId
+    /**
+     * Every upstream a tool reads, not just one.
+     *
+     * A tool can be several witnesses' worth of nothing. `subsweep`
+     * queries hackertarget, the Wayback index and certspotter in one
+     * call, so it is not independent of `hostintel` (hackertarget
+     * again), of `wayback` or `commoncrawl` (the same archive), or of
+     * `crtsh` (the same transparency logs) — and a one-family-per-tool
+     * model could only say one of those four. It said "dns", so a host
+     * that subsweep and hostintel both returned, from the same API,
+     * was graded "confirmed by other sources (2 independent)".
+     */
+    internal fun familiesOf(toolId: String): Set<String> =
+        INDEPENDENCE[toolId] ?: setOf(toolId)
+
+    /**
+     * How many of these could have found it without each other.
+     *
+     * Counted greedily: a source joins the tally only if nothing it
+     * reads is read by one already counted. That can undercount — a
+     * different pick might have seated more — and undercounting is the
+     * side to be wrong on here, because the number goes directly into
+     * a grade that tells somebody how much to believe.
+     */
+    internal fun independentCount(sources: Collection<String>): Int {
+        val claimed = HashSet<String>()
+        var n = 0
+        for (id in sources) {
+            val fams = familiesOf(id)
+            if (fams.none { it in claimed }) {
+                claimed += fams
+                n++
+            }
+        }
+        return n
+    }
 
     /**
      * Addresses that belong to the machinery rather than to a person.
@@ -164,17 +202,21 @@ object Corroboration {
         return assertions.map { (key, claims) ->
             val (kind, value) = key
             val sources = claims.map { it.first }.distinct()
-            val independent = sources.map { family(it) }.distinct().size
+            val independent = independentCount(sources)
             // The best source that asserted it — the grade should reflect
             // the strongest witness, not an average that a weak one drags
             // down. A source this case has caught being wrong is read one
             // grade lower, which is the only way marking something wrong
             // can affect anything beyond the row it was marked on.
-            val demoted = sources.any { family(it) in unreliableHere }
+            val demoted = sources.any { familiesOf(it).any { f -> f in unreliableHere } }
             val reliability = sources
                 .mapNotNull { id ->
                     ToolRegistry.byId(id)?.reliability?.let {
-                        if (family(id) in unreliableHere) Grading.demote(it) else it
+                        if (familiesOf(id).any { f -> f in unreliableHere }) {
+                            Grading.demote(it)
+                        } else {
+                            it
+                        }
                     }
                 }
                 .minOrNull() ?: Grading.Reliability.UNJUDGED
@@ -229,7 +271,7 @@ object Corroboration {
         val kept = HashMap<String, Int>()
         assertions.forEach { (key, claims) ->
             val bucket = if (key in dismissed) wrong else kept
-            claims.map { family(it.first) }.distinct().forEach {
+            claims.flatMap { familiesOf(it.first) }.distinct().forEach {
                 bucket[it] = (bucket[it] ?: 0) + 1
             }
         }
@@ -246,12 +288,15 @@ object Corroboration {
         val confirmed = entities.count {
             it.caveat == null && it.credibility == Grading.Credibility.CONFIRMED
         }
+        // Not "single-source": credibility 2 also arises from two
+        // independent families behind a weak source. "Uncorroborated"
+        // is what these have in common.
         val leads = entities.count { it.caveat == null && it.credibility.code in 2..3 }
         val wrong = entities.count { it.dismissed }
         val sorted = Findings.sort(results)
         val parts = ArrayList<String>()
         if (confirmed > 0) parts.add("$confirmed corroborated")
-        if (leads > 0) parts.add("$leads single-source")
+        if (leads > 0) parts.add("$leads uncorroborated")
         if (parts.isEmpty()) parts.add("nothing corroborated")
         if (wrong > 0) parts.add("$wrong marked wrong")
         return parts.joinToString(" · ") +

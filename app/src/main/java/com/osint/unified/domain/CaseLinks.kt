@@ -60,7 +60,6 @@ object CaseLinks {
         data class Acc(
             val targets: LinkedHashSet<String> = LinkedHashSet(),
             val sources: LinkedHashSet<String> = LinkedHashSet(),
-            var independent: Int = 0,
             var reliability: Grading.Reliability = Grading.Reliability.UNJUDGED
         )
 
@@ -77,7 +76,6 @@ object CaseLinks {
                 val acc = found.getOrPut(e.kind to e.value) { Acc() }
                 acc.targets.add(target)
                 acc.sources.addAll(e.sources)
-                acc.independent = maxOf(acc.independent, e.independent)
                 if (e.reliability < acc.reliability) acc.reliability = e.reliability
             }
         }
@@ -86,18 +84,33 @@ object CaseLinks {
             .filter { it.value.targets.size >= 2 }
             .map { (key, acc) ->
                 val (kind, value) = key
-                // Two targets' dossiers agreeing is corroboration in its
-                // own right, and of a better kind than two tools reading
-                // the same upstream: these are separate enquiries that
-                // happened to meet. Counted as agreement, but through the
-                // same scale as everything else rather than a special one.
-                val agreeing = acc.independent - 1 + (acc.targets.size - 1)
+                // How many witnesses there really are, recounted over
+                // every source across every target that asserted this.
+                //
+                // It used to be the largest count from any one target,
+                // plus one for each extra target that mentioned it —
+                // which assumed two targets meeting were two separate
+                // enquiries. They need not be. Run two domains through
+                // the same dossier and crt.sh alone returns one shared
+                // host under both: one witness, one family, and the
+                // link came out graded A1, "confirmed by other
+                // sources", tinted as well-supported, with crt.sh as
+                // the only name under it. The screen two taps away
+                // says "one source is never a confirmation, however
+                // good it is".
+                //
+                // Two dossiers meeting is what makes this a link at
+                // all — that is the `targets.size >= 2` filter above.
+                // It is not separately evidence that the thing is
+                // true, and the grade is about whether it is true.
+                val independent = Corroboration.independentCount(acc.sources)
+                val agreeing = independent - 1
                 Link(
                     kind = kind,
                     value = value,
                     targets = acc.targets.toList(),
                     sources = acc.sources.toList(),
-                    independent = acc.independent,
+                    independent = independent,
                     reliability = acc.reliability,
                     credibility = Grading.credibility(acc.reliability, agreeing = agreeing),
                     isTarget = value.trim().lowercase() in seeds
