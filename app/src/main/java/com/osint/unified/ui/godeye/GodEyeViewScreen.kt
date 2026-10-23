@@ -563,6 +563,21 @@ fun GodEyeViewScreen(
                     }
                 }
             }
+            }
+
+            // The layer controls are not part of the panel that folds.
+            //
+            // They were, and the panel starts folded. That was survivable
+            // while every layer was on by default and the map arrived
+            // covered in markers. Now that nothing is on until you ask,
+            // a new map is empty and the only way to put something on it
+            // was hidden behind a chevron — so the layers looked broken
+            // rather than merely off, which is exactly the impression
+            // turning them off by default was supposed to avoid.
+            //
+            // What folds away is the search box, the type chips and the
+            // examples. What does not is the row of what is on and the
+            // button that adds more.
 
             // Everything off, in one gesture. Turning thirty-three
             // switches back one at a time to get a clean map is the
@@ -766,6 +781,7 @@ fun GodEyeViewScreen(
                 }
             }
 
+            if (panelOpen) {
             Text(
                 "A pill naming a region covers only that region — an empty " +
                     "layer there means no coverage, not nothing happening. " +

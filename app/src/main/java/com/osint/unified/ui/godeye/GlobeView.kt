@@ -253,10 +253,26 @@ fun GlobeView(
         val full = (globeRadius(viewport.width, viewport.height, bucket) * 2f).roundToInt()
         if (drifting) (full / MOVING_DIVISOR).coerceAtLeast(1) else full
     }.coerceIn(0, MAX_RENDER_PX)
+    // Asked for at exactly the camera, not at a rounded one.
+    //
+    // The rounding was meant to stop the renderer being asked for a
+    // new picture it would never finish. What it actually did, once
+    // everything on the sphere was drawn at the camera the picture was
+    // taken at, was stop the globe moving at all between steps: drag
+    // slowly enough and the camera changes by less than the step for
+    // two or three frames together, nothing is re-rendered, nothing
+    // moves, and then the whole thing jumps. Smooth motion made of
+    // discrete jumps is worse than either.
+    //
+    // There is no need for it. The renderer already draws at a
+    // quarter size while anything is moving, and the lock below means
+    // at most one render is ever in flight — so asking every frame
+    // costs nothing more than asking every third one did, and every
+    // picture that arrives is of where the globe is now.
     val frame = remember(centreLat, centreLon, diameter, sun, drifting) {
         RenderRequest(
-            lat = (centreLat / CAMERA_STEP).roundToInt() * CAMERA_STEP.toDouble(),
-            lon = (centreLon / CAMERA_STEP).roundToInt() * CAMERA_STEP.toDouble(),
+            lat = centreLat.toDouble(),
+            lon = centreLon.toDouble(),
             d = diameter,
             sunLat = sun.first,
             sunLon = sun.second,
@@ -440,7 +456,7 @@ fun GlobeView(
         // Behind everything, and turning with the globe rather than
         // with the screen, so the sphere reads as an object in a place
         // instead of a disc on a background.
-        drawStars(size.width, size.height, lon0, centreLat.toDouble())
+        drawStars(size.width, size.height)
 
         // Everything on the sphere is drawn at the camera the picture
         // under it was rendered at, not at the live one.
@@ -700,14 +716,20 @@ private fun DrawScope.drawGraticule(
  * A sky to hang the Earth in.
  *
  * Deterministic rather than random: the same star is in the same place
- * on every frame and after every rotation, because a sky that
- * reshuffles itself sixty times a second is a snowstorm. They drift
- * with the camera, which is what makes the globe read as an object
- * somewhere rather than a disc on a background.
+ * on every frame, because a sky that reshuffles itself sixty times a
+ * second is a snowstorm.
+ *
+ * Fixed, too. It used to slide with the camera — a degree of longitude
+ * moved the field about a sixth as far as it moved the ground — on the
+ * theory that the parallax would make the globe read as an object
+ * somewhere rather than a disc on a background. It does the opposite:
+ * the eye reads anything moving alongside the Earth as attached to it,
+ * so the sky came along for the ride and the whole screen slid
+ * together. Stars are the one thing in view far enough away to stay
+ * put, and holding them still is what makes the Earth look like it is
+ * the thing turning.
  */
-private fun DrawScope.drawStars(width: Float, height: Float, lon0: Double, lat0: Double) {
-    val shiftX = (-lon0 * 1.6).toFloat()
-    val shiftY = (lat0 * 1.1).toFloat()
+private fun DrawScope.drawStars(width: Float, height: Float) {
     for (i in 0 until STAR_COUNT) {
         // One hash per star, mixed hard enough that the three values
         // taken out of it are not visibly correlated — otherwise the
@@ -718,10 +740,8 @@ private fun DrawScope.drawStars(width: Float, height: Float, lon0: Double, lat0:
         val ux = ((h ushr 8) and 0xFFF) / 4095f
         val uy = ((h ushr 20) and 0xFFF) / 4095f
         val mag = (h and 0xFF) / 255f
-        var x = (ux * (width + 240f) + shiftX) % (width + 240f)
-        if (x < 0) x += width + 240f
-        var y = (uy * (height + 240f) + shiftY) % (height + 240f)
-        if (y < 0) y += height + 240f
+        val x = ux * (width + 240f)
+        val y = uy * (height + 240f)
         drawCircle(
             color = Color.White.copy(alpha = 0.10f + mag * 0.45f),
             radius = 0.6f + mag * 1.1f,
@@ -989,11 +1009,6 @@ private const val SPIN_DECAY = 0.94f
 /** Below this a flick has stopped, and the globe stops redrawing. */
 private const val SPIN_FLOOR = 0.02f
 private const val TAP_SLOP_PX = 44f
-
-/** How finely the camera is rounded before the renderer is asked
- *  again. Small, because this is now the size of the step the whole
- *  globe moves in while a thumb is down. */
-private const val CAMERA_STEP = 0.12f
 
 /** How much smaller the sphere is rendered while it is moving. A
  *  quarter is sixteen times fewer pixels, which is the difference
