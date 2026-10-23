@@ -1,3 +1,14 @@
-https://webservices.volcano.si.edu/geoserver/GVP-VOTW/ows?service=WFS&version=2.0.0&request=GetFeature&typeName=GVP-VOTW:E3WebApp_Eruptions1960&outputFormat=application/json&count=3
-https://webservices.volcano.si.edu/geoserver/GVP-VOTW/ows?service=WFS&version=2.0.0&request=GetFeature&typeName=GVP-VOTW:E3WebApp_Eruptions1960&outputFormat=application/json&count=3&sortBy=StartDate+D
-https://feeds.meteoalarm.org/api/v1/warnings/feeds-germany##"(areaDesc|event|severity|onset|expires|polygon)":"?[^",]{0,60}
+https://openwaters.io/api/ais/
+https://ais.openwaters.io/v1/snapshot
+https://ais.openwaters.io/v1/vessels
+https://ais.openwaters.io/v1/geojson
+https://tie.digitraffic.fi/api/weathercam/v1/stations||OSINT-Unified/1.0
+https://www.vegvesen.no/trafikkdata/api/
+https://api.entur.io/
+https://opendata.ndw.nu/
+https://webtris.nationalhighways.co.uk/api/v1.0/areas
+https://data.bus-data.dft.gov.uk/
+https://511.org/
+https://api.met.no/weatherapi/metalerts/2.0/current.json##"(event|awareness_level|area)":"[^"]{0,40}
+https://severeweather.wmo.int/json/event_list.json
+https://severeweather.wmo.int/v2/json/event_list.json
