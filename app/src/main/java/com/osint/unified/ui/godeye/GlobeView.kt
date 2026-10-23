@@ -166,9 +166,21 @@ fun GlobeView(
     // rounding every frame of a drag is a different camera and the
     // renderer never finishes one before being asked for the next.
     var viewport by remember { mutableStateOf(IntSize.Zero) }
-    val diameter = remember(viewport, zoom, moving) {
-        val full = (globeRadius(viewport.width, viewport.height, zoom) * 2f).roundToInt()
-        if (moving) (full / 3).coerceAtLeast(1) else full
+    // Zoom is deliberately not part of this.
+    //
+    // An orthographic view of a sphere is the same picture at every
+    // scale — zooming changes how big the disc is drawn and nothing
+    // about which half of the Earth is facing you. So the render is
+    // keyed to a coarse bucket and then simply scaled to whatever the
+    // live zoom asks for, which makes a pinch cost nothing at all and
+    // removes a whole category of lag.
+    val bucket = remember(zoom) {
+        val steps = kotlin.math.round(kotlin.math.log2(zoom.toDouble().coerceAtLeast(0.25)))
+        Math.pow(2.0, steps).toFloat().coerceIn(0.5f, 8f)
+    }
+    val diameter = remember(viewport, bucket, moving) {
+        val full = (globeRadius(viewport.width, viewport.height, bucket) * 2f).roundToInt()
+        if (moving) (full / MOVING_DIVISOR).coerceAtLeast(1) else full
     }.coerceIn(0, MAX_RENDER_PX)
     val frame = remember(centreLat, centreLon, diameter, sun, moving) {
         RenderRequest(
@@ -184,7 +196,7 @@ fun GlobeView(
     // megabytes, and allocating that per frame is how a smooth thing
     // becomes a stuttering one.
     val scratch = remember { arrayOfNulls<IntArray>(1) }
-    val globe: ImageBitmap? by produceState<ImageBitmap?>(null, frame, textured) {
+    val globe: Rendered? by produceState<Rendered?>(null, frame, textured) {
         if (!textured || frame.d <= 8) {
             value = null
             return@produceState
@@ -199,7 +211,7 @@ fun GlobeView(
             EarthTexture.image(
                 buffer, frame.d, frame.lat, frame.lon,
                 frame.sunLat, frame.sunLon, frame.fine
-            )
+            )?.let { Rendered(it, frame.lat, frame.lon) }
         }
     }
 
@@ -306,10 +318,24 @@ fun GlobeView(
         // instead of a disc on a background.
         drawStars(size.width, size.height, lon0, centreLat.toDouble())
 
+        // Everything on the sphere is drawn at the camera the picture
+        // under it was rendered at, not at the live one.
+        //
+        // The imagery is produced off the main thread and arrives a
+        // frame or two late. The borders and the markers are drawn
+        // here and now, so they used to track the thumb while the
+        // photograph trailed behind — and a globe whose coastlines
+        // slide across its own continents reads as broken, where the
+        // same globe lagging as one piece just reads as heavy.
         val sphere = globe
+        val shownLat = sphere?.lat ?: lat0
+        val shownLon = sphere?.lon ?: lon0
         if (sphere != null) {
+            // Scaled to the live radius rather than re-rendered for
+            // it: the projection does not change with zoom, only the
+            // size of the disc does.
             drawImage(
-                image = sphere,
+                image = sphere.image,
                 dstOffset = IntOffset(
                     (cx - radius).roundToInt(), (cy - radius).roundToInt()
                 ),
@@ -318,8 +344,8 @@ fun GlobeView(
             // No terminator line over the imagery: the shading already
             // is the terminator, and a stroke on top of a soft one
             // looks like a crack.
-            drawGraticule(cx, cy, radius, lat0, lon0, faint = true)
-            drawLines(borders, cx, cy, radius, lat0, lon0, BORDER_OVER_IMAGERY)
+            drawGraticule(cx, cy, radius, shownLat, shownLon, faint = true)
+            drawLines(borders, cx, cy, radius, shownLat, shownLon, BORDER_OVER_IMAGERY)
         } else {
             drawOcean(cx, cy, radius)
             drawGraticule(cx, cy, radius, lat0, lon0)
@@ -333,16 +359,16 @@ fun GlobeView(
         if (!moving && places.isNotEmpty()) {
             drawPlaces(
                 places.take(Places.countFor(zoom)),
-                cx, cy, radius, lat0, lon0, ink, halo
+                cx, cy, radius, shownLat, shownLon, ink, halo
             )
         }
-        drawPoints(points, cx, cy, radius, lat0, lon0, sun)
+        drawPoints(points, cx, cy, radius, shownLat, shownLon, sun)
         // Labels on the markers too, once there are few enough that
         // labelling them is reading rather than overprinting.
         if (!moving) {
             val named = points.filter { it.clickable && !it.title.isNullOrBlank() }
             if (named.size <= MAX_MARKER_LABELS) {
-                drawMarkerLabels(named, cx, cy, radius, lat0, lon0, ink, halo)
+                drawMarkerLabels(named, cx, cy, radius, shownLat, shownLon, ink, halo)
             }
         }
         drawLimb(cx, cy, radius, textured)
@@ -356,6 +382,19 @@ fun GlobeView(
  * quantised, because otherwise every frame of a drag is a new camera
  * and the renderer never finishes one before being asked for the next.
  */
+/**
+ * A finished picture of the globe and the camera it was taken at.
+ *
+ * Kept together on purpose. The two were separate and the drawing
+ * code used whichever camera was current, which is how the borders
+ * came to slide across the continents they describe.
+ */
+private data class Rendered(
+    val image: ImageBitmap,
+    val lat: Double,
+    val lon: Double
+)
+
 private data class RenderRequest(
     val lat: Double,
     val lon: Double,
@@ -815,8 +854,15 @@ private const val SPIN_DECAY = 0.94f
 private const val SPIN_FLOOR = 0.02f
 private const val TAP_SLOP_PX = 44f
 
-/** How finely the camera is rounded before the renderer is asked again. */
-private const val CAMERA_STEP = 0.35f
+/** How finely the camera is rounded before the renderer is asked
+ *  again. Small, because this is now the size of the step the whole
+ *  globe moves in while a thumb is down. */
+private const val CAMERA_STEP = 0.12f
+
+/** How much smaller the sphere is rendered while it is moving. A
+ *  quarter is sixteen times fewer pixels, which is the difference
+ *  between arriving next frame and arriving late. */
+private const val MOVING_DIVISOR = 4
 
 /** How long after the last touch before the sphere is drawn properly. */
 private const val SETTLE_MS = 140L

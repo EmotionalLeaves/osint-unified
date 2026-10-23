@@ -233,6 +233,17 @@ fun GodEyeViewScreen(
     // moment after arriving.
     var lastMapZoom by remember { mutableDoubleStateOf(Double.NaN) }
     var arrivedOnMap by remember { mutableLongStateOf(0L) }
+    // Whether zooming out is allowed to turn the map back into a globe.
+    //
+    // It is not, until the map has actually been zoomed in close. The
+    // map opens wide — pressing MAP from a whole-Earth globe lands at
+    // about zoom 3 — and "wide" is exactly the condition that used to
+    // send you straight back, so a pan with a few pixels of zoom
+    // wobble in it bounced you to the sphere and the MAP button looked
+    // broken. Going in close is the person saying they want tiles;
+    // coming back out from there is them saying they are done with
+    // them. Arriving wide says nothing either way.
+    var armedForGlobe by remember { mutableStateOf(false) }
     var flightFilter by rememberSaveable { mutableStateOf("ALL") }
     // Filtered once per change, not twice per recomposition over 11,000
     // aircraft — the pill and the map now also read the same list.
@@ -409,6 +420,7 @@ fun GodEyeViewScreen(
                                 }
                                 arrivedOnMap = System.currentTimeMillis()
                                 lastMapZoom = Double.NaN
+                                armedForGlobe = false
                             } else if (w > 0 && zoomNow > 0.0) {
                                 globeCamera = GlobeCamera(
                                     lat = (mapCentre?.first ?: globeCamera.lat.toDouble())
@@ -808,6 +820,10 @@ fun GodEyeViewScreen(
                                 )
                                 arrivedOnMap = System.currentTimeMillis()
                                 lastMapZoom = Double.NaN
+                                // Arrived by pinching in through the
+                                // boundary, so reversing that pinch
+                                // should take the sphere back.
+                                armedForGlobe = true
                                 roundEarth = false
                             }
                         },
@@ -847,7 +863,13 @@ fun GodEyeViewScreen(
                         val zoomingOut = !lastMapZoom.isNaN() && zoom < lastMapZoom - 0.01
                         val settled = System.currentTimeMillis() - arrivedOnMap > MAP_SETTLE_MS
                         lastMapZoom = zoom
-                        if (w > 0 && zoomingOut && settled &&
+                        // Close enough that the person is clearly using
+                        // the map. From here, zooming back out means
+                        // they want the globe.
+                        if (w > 0 && GlobeHandoff.closeEnoughToArm(zoom, w)) {
+                            armedForGlobe = true
+                        }
+                        if (w > 0 && armedForGlobe && zoomingOut && settled &&
                             GlobeHandoff.shouldReturnToGlobe(zoom, w)
                         ) {
                             globeCamera = GlobeCamera(
@@ -859,6 +881,7 @@ fun GodEyeViewScreen(
                             )
                             handoff = null
                             lastMapZoom = Double.NaN
+                            armedForGlobe = false
                             roundEarth = true
                         }
                     },

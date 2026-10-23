@@ -116,4 +116,52 @@ class GlobeHandoffTest {
         assertTrue(GlobeHandoff.shouldReturnToGlobe(4.0, w))
         assertFalse(GlobeHandoff.shouldReturnToGlobe(5.0, w))
     }
+
+    /**
+     * And the rule that stops it: a map has to have been close before
+     * zooming out of it means anything.
+     *
+     * Pressing MAP from a whole-Earth globe lands around zoom 3, which
+     * is both "wide enough to be a globe" and "nowhere near close
+     * enough to count as using the map" — so the second test is what
+     * keeps the first from firing the instant the map appears.
+     */
+    @Test
+    fun arrivingWideDoesNotCountAsHavingUsedTheMap() {
+        val landing = GlobeHandoff.tileZoom(GlobeHandoff.spanDegrees(w, h, 1f), w)
+        assertTrue(GlobeHandoff.shouldReturnToGlobe(landing, w))
+        assertFalse(GlobeHandoff.closeEnoughToArm(landing, w))
+    }
+
+    /**
+     * The other arrival. A pinch that crosses the handoff boundary
+     * lands on the map already close, so reversing that same pinch
+     * has to take the sphere straight back.
+     */
+    @Test
+    fun arrivingByPinchCountsImmediately() {
+        val boundary = GlobeHandoff.tileZoom(22.0, w)
+        assertTrue(GlobeHandoff.closeEnoughToArm(boundary, w))
+    }
+
+    /** Somewhere between the two is where the arming happens. */
+    @Test
+    fun armingAndReturningDoNotOverlap() {
+        var armed = false
+        var returned = false
+        var z = 3.0
+        while (z <= 12.0) {
+            if (GlobeHandoff.closeEnoughToArm(z, w)) armed = true
+            if (GlobeHandoff.shouldReturnToGlobe(z, w)) returned = true
+            // No zoom may be both at once, or a single pinch would arm
+            // the rule and trip it in the same frame.
+            assertFalse(
+                GlobeHandoff.closeEnoughToArm(z, w) &&
+                    GlobeHandoff.shouldReturnToGlobe(z, w)
+            )
+            z += 0.1
+        }
+        assertTrue(armed)
+        assertTrue(returned)
+    }
 }

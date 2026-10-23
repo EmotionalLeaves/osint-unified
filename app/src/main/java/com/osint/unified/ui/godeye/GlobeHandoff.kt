@@ -69,6 +69,16 @@ internal object GlobeHandoff {
     fun shouldHandToMap(width: Int, height: Int, zoom: Float): Boolean =
         spanDegrees(width, height, zoom) < TO_MAP_SPAN
 
+    /**
+     * Close enough in that the map is plainly what the person wants.
+     *
+     * Reaching this is what earns the map the right to hand itself
+     * back later. Without it, a map that merely opened wide counted as
+     * "zoomed out" the moment it appeared.
+     */
+    fun closeEnoughToArm(tileZoom: Double, width: Int): Boolean =
+        mapSpanDegrees(tileZoom, width) < TO_MAP_SPAN
+
     /** Far enough out that tiles are the wrong thing to be looking at. */
     fun shouldReturnToGlobe(tileZoom: Double, width: Int): Boolean =
         mapSpanDegrees(tileZoom, width) > TO_GLOBE_SPAN
