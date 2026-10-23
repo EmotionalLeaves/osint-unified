@@ -94,9 +94,34 @@ internal object GlobeHandoff {
         return zoom.coerceIn(0.6, 8.0).toFloat()
     }
 
+    /**
+     * The span the thresholds are measured against.
+     *
+     * Across the SHORTER screen dimension, which is the one the globe
+     * fills. [spanDegrees] measures across the width, which is right
+     * for converting scale — a map of the same width at the matched
+     * tile zoom shows the same ground — but wrong as a threshold,
+     * because in landscape the width shows twice as much Earth for
+     * the same closeness. A 2340x1080 screen needed globe zoom 12.3
+     * to reach TO_MAP_SPAN and MAX_ZOOM is 8, so rotating the phone
+     * meant the handoff could never fire at all: you pinched to the
+     * stop and stayed on a hand-drawn sphere where tiles were
+     * supposed to have taken over.
+     *
+     * Measured across the short side the number means the same thing
+     * in both orientations, and the hysteresis still holds: map span
+     * scales linearly with the pixel dimension it is measured over,
+     * so converting across the width and thresholding across the
+     * short side agree at the boundary.
+     */
+    fun thresholdSpan(width: Int, height: Int, zoom: Float): Double {
+        val short = min(width, height)
+        return spanDegrees(short, short, zoom)
+    }
+
     /** Close enough that a sphere is the wrong thing to be looking at. */
     fun shouldHandToMap(width: Int, height: Int, zoom: Float): Boolean =
-        spanDegrees(width, height, zoom) < TO_MAP_SPAN
+        thresholdSpan(width, height, zoom) < TO_MAP_SPAN
 
     /**
      * Close enough in that the map is plainly what the person wants.
@@ -105,12 +130,26 @@ internal object GlobeHandoff {
      * back later. Without it, a map that merely opened wide counted as
      * "zoomed out" the moment it appeared.
      */
-    fun closeEnoughToArm(tileZoom: Double, width: Int, latitude: Double = 0.0): Boolean =
-        mapSpanDegrees(tileZoom, width, latitude) < TO_ARM_SPAN
+    fun closeEnoughToArm(
+        tileZoom: Double,
+        width: Int,
+        latitude: Double = 0.0,
+        height: Int = width
+    ): Boolean =
+        mapSpanDegrees(tileZoom, min(width, height), latitude) < TO_ARM_SPAN
 
-    /** Far enough out that tiles are the wrong thing to be looking at. */
-    fun shouldReturnToGlobe(tileZoom: Double, width: Int, latitude: Double = 0.0): Boolean =
-        mapSpanDegrees(tileZoom, width, latitude) > TO_GLOBE_SPAN
+    /** Far enough out that tiles are the wrong thing to be looking at.
+     *
+     *  [height] is last and defaults to [width] so that a caller with
+     *  only one dimension gets the old behaviour rather than a silently
+     *  reordered argument; the screen passes both. */
+    fun shouldReturnToGlobe(
+        tileZoom: Double,
+        width: Int,
+        latitude: Double = 0.0,
+        height: Int = width
+    ): Boolean =
+        mapSpanDegrees(tileZoom, min(width, height), latitude) > TO_GLOBE_SPAN
 
     /** How much of the smaller screen dimension the globe fills. */
     private const val GLOBE_FILL = 0.92

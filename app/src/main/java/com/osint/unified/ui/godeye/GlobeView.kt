@@ -477,12 +477,28 @@ fun GlobeView(
                             // long press so the area report can size
                             // itself; the globe's equivalent is how much
                             // of the Earth is on screen.
-                            // live, not the captured zoom. This block is
-                        // rebuilt only when the marker list changes
-                        // identity, so a plain read here is whatever
-                        // the zoom was at the last feed poll — and the
-                        // report's radius is computed from it.
-                        onLongPress(lat, lon, (2.0 + live.zoom).coerceAtMost(12.0))
+                            // Converted, not invented.
+                        //
+                        // This used to be `2.0 + live.zoom`, an
+                        // additive fudge on a multiplicative zoom,
+                        // and the report's radius comes straight off
+                        // it: at the top of the globe's usable range
+                        // the long press asked for 150 km where the
+                        // same view's real equivalent was 400, and in
+                        // landscape it asked for 60 km over a view
+                        // spanning three thousand. The screen already
+                        // computes the honest conversion for its own
+                        // WHAT'S HERE button; this is the same call.
+                        onLongPress(
+                            lat, lon,
+                            GlobeHandoff.tileZoom(
+                                GlobeHandoff.spanDegrees(
+                                    size.width, size.height, live.zoom
+                                ),
+                                size.width,
+                                lat
+                            )
+                        )
                         }
                     }
                 )

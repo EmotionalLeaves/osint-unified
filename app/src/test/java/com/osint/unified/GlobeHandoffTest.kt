@@ -219,4 +219,53 @@ class GlobeHandoffTest {
         assertTrue(armed)
         assertTrue(returned)
     }
+
+    /**
+     * Rotating the phone must not make the handoff unreachable.
+     *
+     * The threshold used to be measured across the screen's width.
+     * On a 2340x1080 landscape screen the width shows twice as much
+     * Earth for the same closeness, so reaching 22 degrees across it
+     * needed globe zoom 12.3 — and MAX_ZOOM is 8. You could pinch to
+     * the stop and stay on a hand-drawn sphere for ever.
+     */
+    @Test
+    fun theHandoffIsReachableInLandscape() {
+        val lw = 2340
+        val lh = 1080
+        assertTrue(
+            "landscape never reaches the map",
+            GlobeHandoff.shouldHandToMap(lw, lh, 6f)
+        )
+        assertFalse(GlobeHandoff.shouldHandToMap(lw, lh, 5f))
+        // And at the same zoom the two orientations agree about how
+        // close the person is, which is the whole reason the measure
+        // moved to the short side.
+        assertEquals(
+            GlobeHandoff.thresholdSpan(w, h, 4f),
+            GlobeHandoff.thresholdSpan(lw, lh, 4f),
+            1e-9
+        )
+    }
+
+    /** The gap between the thresholds has to survive rotation too. */
+    @Test
+    fun landscapeDoesNotFlipBackAndForth() {
+        val lw = 2340
+        val lh = 1080
+        val handover = GlobeHandoff.spanDegrees(lw, lh, 6f)
+        val tile = GlobeHandoff.tileZoom(handover, lw)
+        assertFalse(
+            "the map hands straight back",
+            GlobeHandoff.shouldReturnToGlobe(tile, lw, 0.0, lh)
+        )
+        val returning = GlobeHandoff.tileZoom(
+            GlobeHandoff.spanDegrees(lw, lh, 1.5f), lw
+        )
+        assertTrue(GlobeHandoff.shouldReturnToGlobe(returning, lw, 0.0, lh))
+        val globe = GlobeHandoff.globeZoom(
+            GlobeHandoff.mapSpanDegrees(returning, lw), lw, lh
+        )
+        assertFalse(GlobeHandoff.shouldHandToMap(lw, lh, globe))
+    }
 }

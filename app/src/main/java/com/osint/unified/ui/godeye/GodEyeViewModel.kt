@@ -219,7 +219,12 @@ class GodEyeViewModel(
 
     /** Everything the current search has in flight, so a new search can
      *  stop it rather than letting two searches write to one dossier. */
-    private val searchJobs = mutableListOf<Job>()
+    // Copy-on-write, because `invokeOnCompletion` runs on whichever
+    // thread finished the job while SEARCH and STOP iterate this list
+    // on the main thread. A plain MutableList threw
+    // ConcurrentModificationException out of the app's primary action
+    // whenever a fan-out happened to finish mid-press.
+    private val searchJobs = java.util.concurrent.CopyOnWriteArrayList<Job>()
 
     /** ensureInvestigation reads a field, suspends to insert a row, then
      *  writes the field. Two callers racing through that gap create two
@@ -253,6 +258,26 @@ class GodEyeViewModel(
     /** False while the app is in the background, where no feed is worth
      *  fetching no matter which layers are on. */
     @Volatile private var foreground: Boolean = true
+
+    /**
+     * False while the map screen itself is not in the composition.
+     *
+     * The app can be in the foreground with the globe nowhere near
+     * it: reading a dossier, browsing the directory, looking at a
+     * case. Nothing stopped the feeds in that state, so a session
+     * spent reading one investigation went on polling aircraft every
+     * twenty-five seconds for a map that was not on screen — against
+     * the promise the layer panel makes in so many words, and against
+     * the only resource this app is supposed to be careful with.
+     *
+     * Separate from [setVisibleLayers] on purpose: this must not
+     * clear what the layers last said, because the screen is coming
+     * back and an empty globe for one poll interval is worse than a
+     * slightly old one.
+     */
+    @Volatile private var onScreen: Boolean = true
+
+    fun setMapOnScreen(on: Boolean) { onScreen = on }
 
     fun setVisibleLayers(keys: Set<String>) {
         val before = visibleLayers
@@ -338,7 +363,7 @@ class GodEyeViewModel(
     }
 
     private fun shouldFetch(key: String): Boolean {
-        if (!foreground) return false
+        if (!foreground || !onScreen) return false
         val visible = visibleLayers ?: return true
         return key in visible
     }
@@ -530,7 +555,22 @@ class GodEyeViewModel(
         // when the view has moved far enough that the last answer no longer
         // covers it. Without that test every pan gesture fired a fresh
         // query on someone's mobile data.
-        if (radiationOn && movedBeyond(lat, lon, zoom)) ensureRadiation()
+        if (!movedBeyond(lat, lon, zoom)) return
+        if (radiationOn) ensureRadiation()
+        // And so do the other three.
+        //
+        // Cameras, controlled sites and airspace are all queried
+        // around wherever the view is pointed, and all three said so
+        // in their own comments — "this has to be asked again when the
+        // view moves somewhere else" — while nothing ever called them
+        // again. Turn CAMERAS on over Tokyo, pan to Paris: no markers,
+        // no request, and the pill still reading the Tokyo count. The
+        // key machinery that exists to decide whether a re-ask is
+        // needed had no caller at all.
+        val on = visibleLayers
+        if (on == null || "cameras" in on) ensureCameras()
+        if (on == null || "sites" in on) ensureSites()
+        if (on == null || "airspace" in on) ensureAirspace()
     }
 
     private var sitesJob: Job? = null
@@ -730,11 +770,33 @@ class GodEyeViewModel(
         val (lat, lon) = focus ?: (20.0 to 0.0)
         val zoom = zoomLevel
         radiationJob = viewModelScope.launch {
-            val v = runCatching { radiationDataSource.fetch(lat, lon, zoom) }.getOrNull()
-            if (v != null) {
-                radiationCentre = lat to lon
-                radiationZoomBand = zoomBand(zoom)
-                _state.update { it.copy(radiation = v, loaded = it.loaded + "radiation") }
+            // Says so when it does not work, like the other three.
+            //
+            // This was the one on-demand layer still ending in
+            // `.getOrNull()` with no else: a Safecast failure wrote no
+            // data, no `loaded` and no `feedTrouble`, so the pill
+            // showed "…" — still fetching — for the rest of the
+            // session, with the app holding the reason and saying none
+            // of it.
+            val attempt = runCatching { radiationDataSource.fetch(lat, lon, zoom) }
+            attempt.exceptionOrNull()?.let { if (it is CancellationException) throw it }
+            val v = attempt.getOrNull()
+            _state.update { st ->
+                if (v == null) {
+                    st.copy(
+                        feedTrouble = st.feedTrouble +
+                            ("radiation" to (attempt.exceptionOrNull()?.message?.take(90)
+                                ?: "no answer"))
+                    )
+                } else {
+                    radiationCentre = lat to lon
+                    radiationZoomBand = zoomBand(zoom)
+                    st.copy(
+                        radiation = v,
+                        loaded = st.loaded + "radiation",
+                        feedTrouble = st.feedTrouble - "radiation"
+                    )
+                }
             }
             radiationJob = null
         }

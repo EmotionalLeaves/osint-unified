@@ -51,6 +51,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
@@ -151,6 +152,25 @@ fun GodEyeViewScreen(
     // What a long press on the globe turned up: every loaded layer, swept
     // for a radius around that point.
     var area by remember { mutableStateOf<AreaReport.Report?>(null) }
+    // The place a report has been asked for, and the report itself.
+    //
+    // AreaReport.build does a haversine per point of every layer that
+    // is on, with no viewport cull: with fires and satellites armed
+    // that is several hundred thousand sin/cos/asin calls, and all
+    // three call sites were running it synchronously inside the
+    // gesture handler. A long press froze the screen for seconds and
+    // on a slow phone was an ANR. Every other heavy thing in this
+    // package — planMarkers, thinGlobe, the vector load — is already
+    // off the main thread; this was the one that was not.
+    var areaWanted by remember { mutableStateOf<Triple<Double, Double, Double>?>(null) }
+    LaunchedEffect(areaWanted, state) {
+        val want = areaWanted ?: return@LaunchedEffect
+        val built = withContext(Dispatchers.Default) {
+            AreaReport.build(state, want.first, want.second, want.third)
+        }
+        area = built
+        areaWanted = null
+    }
     // Where the map was last tapped, offered as a choice rather than acted on.
     var tapped by remember { mutableStateOf<Pair<Double, Double>?>(null) }
     var zoomNow by remember { mutableDoubleStateOf(2.5) }
@@ -372,6 +392,19 @@ fun GodEyeViewScreen(
         }
     }
     LaunchedEffect(visibleLayers) { viewModel.setVisibleLayers(visibleLayers) }
+
+    // Stop fetching when this screen is not the one being looked at.
+    //
+    // The app being in the foreground is not the same as the map
+    // being on screen: read a dossier for ten minutes with AIR·GLOBAL
+    // on and the aircraft sweep went on running every twenty-five
+    // seconds for a globe nobody could see. Not cleared, only paused
+    // — the screen is coming back, and the layers' last answer is
+    // better than an empty globe for a poll interval.
+    DisposableEffect(Unit) {
+        viewModel.setMapOnScreen(true)
+        onDispose { viewModel.setMapOnScreen(false) }
+    }
 
     // GOD MODE forces every layer visible.
     fun <T> vis(on: Boolean, data: List<T>): List<T> = if (on || god) data else emptyList()
@@ -960,8 +993,8 @@ fun GodEyeViewScreen(
                         },
                         onPress = { lat, lon -> tapped = lat to lon },
                         onLongPress = { lat, lon, zoom ->
-                            area = AreaReport.build(
-                                state, lat, lon, AreaReport.radiusForZoom(zoom)
+                            areaWanted = Triple(
+                                lat, lon, AreaReport.radiusForZoom(zoom)
                             )
                         }
                     )
@@ -991,11 +1024,11 @@ fun GodEyeViewScreen(
                         // Close enough that the person is clearly using
                         // the map. From here, zooming back out means
                         // they want the globe.
-                        if (w > 0 && GlobeHandoff.closeEnoughToArm(zoom, w, lat)) {
+                        if (w > 0 && GlobeHandoff.closeEnoughToArm(zoom, w, lat, h)) {
                             armedForGlobe = true
                         }
                         if (w > 0 && armedForGlobe && zoomingOut && settled &&
-                            GlobeHandoff.shouldReturnToGlobe(zoom, w, lat)
+                            GlobeHandoff.shouldReturnToGlobe(zoom, w, lat, h)
                         ) {
                             globeCamera = GlobeCamera(
                                 lat.toFloat().coerceIn(-89f, 89f),
@@ -1017,7 +1050,7 @@ fun GodEyeViewScreen(
                     // in the app was wired to its most expensive action.
                     onMapTap = { lat, lon -> tapped = lat to lon },
                     onAreaPress = { lat, lon, zoom ->
-                        area = AreaReport.build(state, lat, lon, AreaReport.radiusForZoom(zoom))
+                        areaWanted = Triple(lat, lon, AreaReport.radiusForZoom(zoom))
                     },
                     modifier = Modifier.fillMaxSize().clipToBounds()
                 )
@@ -1056,9 +1089,8 @@ fun GodEyeViewScreen(
                                 style = MaterialTheme.typography.labelMedium,
                                 color = Intel.Cyan,
                                 modifier = Modifier.clickable {
-                                    area = AreaReport.build(
-                                        state, tLat, tLon,
-                                        AreaReport.radiusForZoom(zoomNow)
+                                    areaWanted = Triple(
+                                        tLat, tLon, AreaReport.radiusForZoom(zoomNow)
                                     )
                                     tapped = null
                                 }
@@ -1100,6 +1132,15 @@ fun GodEyeViewScreen(
                                 viewModel.ensureSites()
                                 viewModel.ensureAirspace()
                                 viewModel.ensureRadiation(true)
+                            } else {
+                                // Turning it off has to disarm radiation
+                                // too. The view model keeps its own flag
+                                // for that layer, so without this every
+                                // pan went on querying Safecast for the
+                                // rest of the session for something
+                                // nobody could see — which is exactly
+                                // what clearLayers already says.
+                                viewModel.ensureRadiation(false)
                             }
                         }
                         .padding(horizontal = 10.dp, vertical = 5.dp)
