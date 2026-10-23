@@ -212,19 +212,25 @@ fun GlobeView(
             // itself.
             .onSizeChanged { viewport = it }
             .pointerInput(Unit) {
+                // Every value read in here comes from `live`, not from
+                // the parameter. These lambdas are created once and
+                // then handle gestures for the life of the screen, so
+                // a captured camera is the camera as it was when the
+                // screen opened — which made a drag snap back to the
+                // middle of the Atlantic on every frame.
                 detectTransformGestures { _, pan, gestureZoom, _ ->
-                    val radius = globeRadius(size.width, size.height, zoom)
+                    val radius = globeRadius(size.width, size.height, live.zoom)
                     // A drag turns the globe by the angle it subtends,
                     // so the point under the thumb stays under the thumb
                     // — dragging by a fixed number of degrees per pixel
                     // feels like a slider, not a sphere.
                     val perPixel = (90f / radius).coerceAtMost(1f)
                     spin = (pan.x * perPixel).coerceIn(-4f, 4f)
-                    onCamera(
+                    emit(
                         GlobeCamera(
-                            lat = (camera.lat + pan.y * perPixel).coerceIn(-89f, 89f),
-                            lon = wrapLon(camera.lon - pan.x * perPixel),
-                            zoom = (camera.zoom * gestureZoom).coerceIn(MIN_ZOOM, MAX_ZOOM)
+                            lat = (live.lat + pan.y * perPixel).coerceIn(-89f, 89f),
+                            lon = wrapLon(live.lon - pan.x * perPixel),
+                            zoom = (live.zoom * gestureZoom).coerceIn(MIN_ZOOM, MAX_ZOOM)
                         )
                     )
                     gestures++
@@ -236,23 +242,23 @@ fun GlobeView(
                     // Without it, closing in means pinching with two
                     // thumbs on a phone held in one hand.
                     onDoubleTap = { tap ->
-                        val radius = globeRadius(size.width, size.height, zoom)
+                        val radius = globeRadius(size.width, size.height, live.zoom)
                         val centre = Offset(size.width / 2f, size.height / 2f)
                         Orthographic.unproject(
-                            tap.x, tap.y, camera.lat.toDouble(), camera.lon.toDouble(),
+                            tap.x, tap.y, live.lat.toDouble(), live.lon.toDouble(),
                             radius, centre.x, centre.y
                         )?.let { (lat, lon) ->
                             spin = 0f
                             flight = GlobeCamera(
                                 lat = lat.toFloat().coerceIn(-89f, 89f),
                                 lon = lon.toFloat(),
-                                zoom = (camera.zoom * DOUBLE_TAP_ZOOM)
+                                zoom = (live.zoom * DOUBLE_TAP_ZOOM)
                                     .coerceIn(MIN_ZOOM, MAX_ZOOM)
                             )
                         }
                     },
                     onTap = { tap ->
-                        val radius = globeRadius(size.width, size.height, zoom)
+                        val radius = globeRadius(size.width, size.height, live.zoom)
                         val centre = Offset(size.width / 2f, size.height / 2f)
                         // Projected here rather than remembered from the
                         // last frame: writing the hit list during the
@@ -261,22 +267,22 @@ fun GlobeView(
                         // per tap costs nothing anybody can feel.
                         val hit = nearest(
                             points, tap, centre, radius,
-                            centreLat.toDouble(), centreLon.toDouble()
+                            live.lat.toDouble(), live.lon.toDouble()
                         )
                         if (hit != null) {
                             onInspect(hit)
                         } else {
                             Orthographic.unproject(
-                                tap.x, tap.y, centreLat.toDouble(), centreLon.toDouble(),
+                                tap.x, tap.y, live.lat.toDouble(), live.lon.toDouble(),
                                 radius, centre.x, centre.y
                             )?.let { (lat, lon) -> onPress(lat, lon) }
                         }
                     },
                     onLongPress = { tap ->
-                        val radius = globeRadius(size.width, size.height, zoom)
+                        val radius = globeRadius(size.width, size.height, live.zoom)
                         val centre = Offset(size.width / 2f, size.height / 2f)
                         Orthographic.unproject(
-                            tap.x, tap.y, centreLat.toDouble(), centreLon.toDouble(),
+                            tap.x, tap.y, live.lat.toDouble(), live.lon.toDouble(),
                             radius, centre.x, centre.y
                         )?.let { (lat, lon) ->
                             // The flat map reports a zoom level with a
