@@ -10,20 +10,30 @@ const PORT = process.env.PORT || 3000;
 const MAX_REQUESTS_PER_HOUR = Number(process.env.RATE_LIMIT || 100);
 const EXEC_MAX_BUFFER = 8 * 1024 * 1024; // 8 MB stdout cap
 
-// ---- Simple in-memory per-IP sliding-window rate limiter --------------------
+// ---- Rate limiting -----------------------------------------------------
+//
+// Applied after authorisation, not before it. Behind a platform proxy
+// every request arrives from a handful of the provider's addresses, so a
+// per-IP window counted every caller as the same caller: a stranger
+// probing the service could exhaust the quota of the one person allowed
+// to use it, without ever presenting a token. The limit now belongs to
+// the credential, which is the thing there is exactly one of.
 const hits = new Map();
-app.use((req, res, next) => {
-  const ip = req.ip || "unknown";
+
+function withinRate(key) {
   const now = Date.now();
   const windowStart = now - 3600_000;
-  const recent = (hits.get(ip) || []).filter((t) => t > windowStart);
-  if (recent.length >= MAX_REQUESTS_PER_HOUR) {
-    return res.status(429).json({ error: "Rate limit exceeded. Try again later." });
-  }
+  const recent = (hits.get(key) || []).filter((t) => t > windowStart);
+  if (recent.length >= MAX_REQUESTS_PER_HOUR) return false;
   recent.push(now);
-  hits.set(ip, recent);
-  next();
-});
+  hits.set(key, recent);
+  // The map is keyed by credential and there is one credential, but an
+  // unbounded map is still an unbounded map.
+  if (hits.size > 64) {
+    for (const [k, v] of hits) if (v.length === 0) hits.delete(k);
+  }
+  return true;
+}
 
 function runBinary(cmd, args, timeoutMs, res) {
   execFile(cmd, args, { timeout: timeoutMs, maxBuffer: EXEC_MAX_BUFFER }, (err, stdout, stderr) => {
@@ -129,6 +139,9 @@ app.get("/", (_req, res) =>
 
 app.post("/:tool", (req, res) => {
   if (!authorised(req)) return res.status(401).json({ error: "Unauthorised." });
+  if (!withinRate("token")) {
+    return res.status(429).json({ error: "Rate limit exceeded. Try again later." });
+  }
 
   const handler = handlers[req.params.tool];
   if (!handler) return res.status(404).json({ error: `Unknown tool: ${req.params.tool}` });

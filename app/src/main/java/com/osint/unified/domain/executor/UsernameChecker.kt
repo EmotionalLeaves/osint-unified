@@ -81,8 +81,26 @@ class UsernameChecker(private val appContext: Context) {
         val name: String,
         val urlTemplate: String,
         val expectedCode: Int? = null,
+        /** The code that means the account is not there. WhatsMyName and
+         *  Sherlock both publish it and neither was being read, so a site
+         *  that answers 200 with "no such user" was counted as a hit
+         *  wherever it did not also publish a missing-string. */
+        val absentCode: Int? = null,
         val presence: List<String> = emptyList(),
         val absence: List<String> = emptyList(),
+        /**
+         * A different address to ask, where the public profile page is
+         * not the thing that answers. Sherlock publishes these and they
+         * were ignored, so those sites were checked against a page that
+         * cannot say whether the account exists.
+         */
+        val probeTemplate: String? = null,
+        /**
+         * What a username on this site may look like. A site that only
+         * allows letters cannot have an account called "j.doe-99", so
+         * asking is a request that can only produce a false positive.
+         */
+        val usernamePattern: String? = null,
         val source: String = ""
     ) {
         /** A rule that only reads the status code cannot tell a profile
@@ -90,7 +108,18 @@ class UsernameChecker(private val appContext: Context) {
          *  control probe before they are believed. */
          val statusOnly: Boolean get() = presence.isEmpty() && absence.isEmpty()
 
-        fun urlFor(username: String): String = urlTemplate
+        fun urlFor(username: String): String = fill(urlTemplate, username)
+
+        /** What to request, which is not always what to show. */
+        fun probeFor(username: String): String = fill(probeTemplate ?: urlTemplate, username)
+
+        /** Whether this site could hold a name of this shape at all. */
+        fun accepts(username: String): Boolean {
+            val pattern = usernamePattern ?: return true
+            return runCatching { Regex(pattern).containsMatchIn(username) }.getOrDefault(true)
+        }
+
+        private fun fill(template: String, username: String): String = template
             .replace("{account}", username)
             .replace("{username}", username)
             .replace("{}", username)
@@ -419,10 +448,14 @@ class UsernameChecker(private val appContext: Context) {
 
     private fun checkSite(site: SiteRule, username: String): SiteAnswer {
         val url = site.urlFor(username)
-        if (!url.startsWith("http")) return SiteAnswer.Unreachable
+        val probe = site.probeFor(username)
+        if (!url.startsWith("http") || !probe.startsWith("http")) return SiteAnswer.Unreachable
+        // A name this site could not hold is not a question worth asking,
+        // and asking it can only produce a false positive.
+        if (!site.accepts(username)) return SiteAnswer.Absent
         return try {
             val request = Request.Builder()
-                .url(url)
+                .url(probe)
                 .header("User-Agent", userAgent)
                 .build()
             client.newCall(request).execute().use { resp ->
@@ -442,6 +475,10 @@ class UsernameChecker(private val appContext: Context) {
                     // A server error is the server failing, not an answer
                     // about this username.
                     resp.code >= 500 -> SiteAnswer.Unreachable
+                    // The code the ruleset says means "no such account",
+                    // which settles it before anything else is weighed.
+                    site.absentCode != null && resp.code == site.absentCode ->
+                        SiteAnswer.Absent
                     // Blocked by a bot wall. It did not look either.
                     resp.code == 401 || resp.code == 403 || resp.code == 429 ->
                         SiteAnswer.Unreachable
@@ -509,7 +546,15 @@ class UsernameChecker(private val appContext: Context) {
                     name = o.str("name") ?: return@mapNotNull null,
                     urlTemplate = uri,
                     expectedCode = (o["e_code"] as? JsonPrimitive)?.intOrNull,
+                    // WhatsMyName publishes both halves of the test: the
+                    // code and string that mean present, and the code and
+                    // string that mean missing. Only the first half was
+                    // being read, so a site answering 200 with "that user
+                    // does not exist" was a hit.
+                    absentCode = (o["m_code"] as? JsonPrimitive)?.intOrNull
+                        ?.takeIf { it != (o["e_code"] as? JsonPrimitive)?.intOrNull },
                     presence = listOfNotNull(o.str("e_string")?.takeIf { it.isNotBlank() }),
+                    absence = listOfNotNull(o.str("m_string")?.takeIf { it.isNotBlank() }),
                     source = "whatsmyname"
                 )
             }
@@ -524,15 +569,39 @@ class UsernameChecker(private val appContext: Context) {
                 val url = o.str("url") ?: return@mapNotNull null
                 // Sherlock skips sites needing a POST or a special probe.
                 if (o.str("request_method")?.equals("POST", true) == true) return@mapNotNull null
+                // Sherlock gives some sites a different address to ask
+                // than the one to show, and a pattern the username must
+                // fit. Both were ignored: the first meant those sites
+                // were checked against a page that cannot answer, the
+                // second meant asking sites about names they could not
+                // possibly hold.
+                val probe = o.str("urlProbe")
+                val pattern = o.str("regexCheck")
+                // The code meaning "absent" where it is published, rather
+                // than assuming 404.
+                val absentCode = (o["errorCode"] as? JsonPrimitive)?.intOrNull
+                    ?: (o["errorCode"] as? JsonArray)
+                        ?.firstNotNullOfOrNull { (it as? JsonPrimitive)?.intOrNull }
                 when (o.str("errorType")) {
                     "message" -> SiteRule(
                         name, url,
+                        absentCode = absentCode,
                         absence = stringsOf(o["errorMsg"]),
+                        probeTemplate = probe,
+                        usernamePattern = pattern,
                         source = "sherlock"
                     )
                     // Sherlock's status_code sites 404 when absent, so a
-                    // 200 is the positive signal.
-                    "status_code" -> SiteRule(name, url, expectedCode = 200, source = "sherlock")
+                    // 200 is the positive signal — unless the ruleset
+                    // names a different code, which it sometimes does.
+                    "status_code" -> SiteRule(
+                        name, url,
+                        expectedCode = 200,
+                        absentCode = absentCode ?: 404,
+                        probeTemplate = probe,
+                        usernamePattern = pattern,
+                        source = "sherlock"
+                    )
                     else -> null   // response_url relies on redirect comparison
                 }
             }

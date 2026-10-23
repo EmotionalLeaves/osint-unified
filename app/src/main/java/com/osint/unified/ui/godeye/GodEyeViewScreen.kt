@@ -86,9 +86,17 @@ import java.util.Locale
 
 private val EXAMPLES = listOf("example.com", "8.8.8.8", "40.7128,-74.0060", "+14155550123", "John Smith")
 
-/** Display modes for the globe: tactical filters over the satellite imagery. */
+/**
+ * Display modes: tactical filters over the imagery.
+ *
+ * GOD is not one of these and used to be. Cycling past CRT quietly
+ * turned on every layer there is — downloading eight thousand airspace
+ * polygons, a camera sweep and a radiation query — because somebody was
+ * trying tinted overlays. A colour filter and "fetch everything" are not
+ * the same kind of choice and no longer share a button.
+ */
 private enum class VisualMode(val label: String) {
-    DEFAULT("DEFAULT"), NVG("NVG"), FLIR("FLIR"), CRT("CRT"), GOD("GOD MODE")
+    DEFAULT("DEFAULT"), NVG("NVG"), FLIR("FLIR"), CRT("CRT")
 }
 
 private val SEARCH_TYPES = listOf(
@@ -124,6 +132,9 @@ fun GodEyeViewScreen(
     var showAirportStatus by rememberSaveable { mutableStateOf(true) }
     var showRadiation by rememberSaveable { mutableStateOf(false) }
     var mode by rememberSaveable { mutableStateOf(VisualMode.DEFAULT) }
+    // Everything on at once, which costs real bandwidth, so it is its own
+    // deliberate switch rather than the fifth stop on a colour cycle.
+    var god by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
     var inspected by remember { mutableStateOf<Inspected?>(null) }
     // What a long press on the globe turned up: every loaded layer, swept
@@ -173,7 +184,7 @@ fun GodEyeViewScreen(
     var showCables by rememberSaveable { mutableStateOf(false) }
     var showPower by rememberSaveable { mutableStateOf(false) }
     var showStations by rememberSaveable { mutableStateOf(false) }
-    val god = mode == VisualMode.GOD
+
     // Which feeds are worth spending someone's battery and mobile data on.
     //
     // Every one of the twenty-six polling loops ran for ever: in the
@@ -243,15 +254,6 @@ fun GodEyeViewScreen(
 
     // GOD MODE forces every layer visible.
     fun <T> vis(on: Boolean, data: List<T>): List<T> = if (on || god) data else emptyList()
-    // Three layers hold nothing until something asks for them. A mode that
-    // claims to show everything has to ask.
-    LaunchedEffect(god) {
-        if (god) {
-            viewModel.ensureCameras()
-            viewModel.ensureAirspace()
-            viewModel.ensureRadiation(true)
-        }
-    }
 
 
     Scaffold(containerColor = Intel.Base) { pad ->
@@ -654,11 +656,39 @@ fun GodEyeViewScreen(
                         .background(Color(0xCC000000))
                         .border(1.dp, Intel.Cyan, RoundedCornerShape(6.dp))
                         .clickable {
-                            mode = VisualMode.values()[(mode.ordinal + 1) % VisualMode.values().size]
+                            mode = VisualMode.entries[(mode.ordinal + 1) % VisualMode.entries.size]
                         }
                         .padding(horizontal = 10.dp, vertical = 5.dp)
                 ) {
                     Text(mode.label, style = MaterialTheme.typography.labelSmall, color = Intel.CyanBright)
+                }
+
+                // Its own control, and it says what it costs.
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter).padding(6.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(if (god) Intel.Amber else Color(0xCC000000))
+                        .border(
+                            1.dp,
+                            if (god) Intel.Amber else Intel.Hairline,
+                            RoundedCornerShape(6.dp)
+                        )
+                        .clickable {
+                            god = !god
+                            if (god) {
+                                viewModel.ensureCameras()
+                                viewModel.ensureAirspace()
+                                viewModel.ensureRadiation(true)
+                            }
+                        }
+                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                ) {
+                    Text(
+                        if (god) "ALL LAYERS ON" else "ALL LAYERS",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (god) Intel.Base else Intel.TextMid
+                    )
                 }
 
                 Surface(
@@ -1551,7 +1581,12 @@ private fun SettingsDialog(
                         "from your account."
                 )
                 SettingsField(backend, { backend = it }, "Backend URL", "https://your-api.onrender.com")
-                SettingsField(token, { token = it }, "Backend token", "the value of OSINT_BACKEND_TOKEN")
+                // A bearer token in plain text on a screen somebody may
+                // be showing to a colleague, or screenshotting.
+                SettingsField(
+                    token, { token = it }, "Backend token",
+                    "the value of OSINT_BACKEND_TOKEN", secret = true
+                )
             }
         },
         confirmButton = {
@@ -1593,12 +1628,32 @@ private fun SettingsField(
     onValueChange: (String) -> Unit,
     label: String,
     placeholder: String,
-    top: androidx.compose.ui.unit.Dp = 0.dp
+    top: androidx.compose.ui.unit.Dp = 0.dp,
+    /** A secret, shown as dots until asked for. */
+    secret: Boolean = false
 ) {
+    var revealed by remember { mutableStateOf(false) }
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
         singleLine = true,
+        visualTransformation = if (secret && !revealed) {
+            androidx.compose.ui.text.input.PasswordVisualTransformation()
+        } else {
+            androidx.compose.ui.text.input.VisualTransformation.None
+        },
+        trailingIcon = if (!secret) null else {
+            {
+                Text(
+                    if (revealed) "HIDE" else "SHOW",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Intel.Cyan,
+                    modifier = Modifier
+                        .clickable { revealed = !revealed }
+                        .padding(horizontal = 10.dp)
+                )
+            }
+        },
         label = { Text(label) },
         placeholder = { Text(placeholder, style = MaterialTheme.typography.bodySmall) },
         textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),

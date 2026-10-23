@@ -11,3 +11,11 @@ services:
     envVars:
       - key: RATE_LIMIT
         value: "100"
+      # The service refuses to start without this, by design — an open
+      # scanning endpoint on the public internet is somebody else's abuse
+      # report with your name on it. Undeclared, every deploy crash-looped
+      # until the value was typed in by hand. generateValue makes the
+      # platform mint one on first deploy; read it from the dashboard and
+      # paste it into the app under Settings → Backend token.
+      - key: OSINT_BACKEND_TOKEN
+        generateValue: true
