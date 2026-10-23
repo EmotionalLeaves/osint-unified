@@ -80,4 +80,54 @@ class FindingsTest {
             "…crt.sh returned no results for the wildcard query"
         assertFalse(Findings.saysNothing(out))
     }
+
+    /**
+     * The exact sentences the executors emit on failure.
+     *
+     * These are copied from the code rather than paraphrased, because
+     * the bug both times was a phrase that read naturally and landed
+     * in the wrong bucket. RIPEstat's failure began "No routing
+     * data", which is in the list of things that mean a source looked
+     * and found nothing — so a dropped connection was filed as an
+     * established absence and the dossier reported that the address
+     * is not routed. GDELT's was in no list at all, so a failed call
+     * counted as a source that returned something.
+     */
+    @Test
+    fun aFailureIsNeverAnAbsence() {
+        assertEquals(
+            Findings.Kind.UNREACHABLE,
+            Findings.kindOf(
+                row("success", "RIPEstat could not be reached for 1.2.3.4 (timeout).")
+            )
+        )
+        assertEquals(
+            Findings.Kind.UNREACHABLE,
+            Findings.kindOf(row("success", "GDELT could not be reached for \"acme\"."))
+        )
+        assertEquals(
+            Findings.Kind.UNREACHABLE,
+            Findings.kindOf(
+                row(
+                    "success",
+                    "The OFAC check could not be completed: the alias list " +
+                        "could not be read from this build, so this says " +
+                        "nothing either way about 'smith'."
+                )
+            )
+        )
+    }
+
+    /** And a real absence still reads as one. */
+    @Test
+    fun arealAbsenceIsStillAnAbsence() {
+        assertEquals(
+            Findings.Kind.ABSENT,
+            Findings.kindOf(row("success", "No routing data for 1.2.3.4."))
+        )
+        assertEquals(
+            Findings.Kind.ABSENT,
+            Findings.kindOf(row("success", "OFAC SDN: no sanctioned entity matching 'xyz'."))
+        )
+    }
 }

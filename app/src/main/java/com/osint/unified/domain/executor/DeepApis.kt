@@ -444,12 +444,17 @@ class DeepApis(
             .map { it.first }
 
         buildString {
-            append("Platform sweep — '$u'\n")
+            // The verdict goes on the first line, because that is the
+            // line the classifier reads. "Platform sweep — 'u'"
+            // followed by an explanation underneath would have been
+            // filed as a finding.
             if (answered.isEmpty()) {
-                append("No platform could be reached, so this says nothing either way.\n")
+                append("Platform sweep could not be reached for '$u'")
+                append(" — no platform answered, so this says nothing either way.\n")
                 append("Not asked: ${unreachable.joinToString(", ")}")
                 return@buildString
             }
+            append("Platform sweep — '$u'\n")
             append("${hits.size} of ${answered.size} platforms that answered ")
             append("have an account under this name.\n")
             hits.forEach { (name, detail) ->
