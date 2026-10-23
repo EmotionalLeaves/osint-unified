@@ -1531,7 +1531,6 @@ private fun ExamplePill(text: String, onClick: () -> Unit) {
     }
 }
 
-@Composable
 /**
  * What the person typed into the layer filter, if anything.
  *

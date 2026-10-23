@@ -51,7 +51,7 @@ trap 'rm -rf "$WORK"' EXIT
 # and the message was being filtered out with the six thousand unresolved
 # AndroidX references because it happened to mention types it could not
 # resolve.
-grep -iE "error:.*(conflicting declaration|redeclaration|expecting |unexpected token|unbalanced|unclosed|syntax error|already defined|expecting an element|expecting a top level|expecting member declaration|return. expression required|missing return statement|cannot be reassigned|variable expected|modifier .* is not applicable)" \
+grep -iE "error:.*(conflicting declaration|redeclaration|expecting |unexpected token|unbalanced|unclosed|syntax error|already defined|expecting an element|expecting a top level|expecting member declaration|return. expression required|missing return statement|cannot be reassigned|variable expected|modifier .* is not applicable|annotation is not applicable)" \
   "$WORK/full.txt" > "$WORK/real.txt" || true
 
 # ${'$'}{...} — a literal dollar followed by a brace. This is what a string
@@ -111,6 +111,24 @@ grep -nE "^import androidx\.compose\.(foundation\.layout|ui)\.(weight|align|alig
 # never written. Unlike the AndroidX noise, this one is genuinely broken,
 # and CI was the only thing catching it.
 python3 "$ROOT/tools/unresolved-locals.py" "$WORK/full.txt" >> "$WORK/real.txt" || true
+
+# An annotation separated from what it annotates by a doc comment.
+#
+# Kotlin allows it and then applies the annotation to whatever follows
+# the comment, which is how a @Composable that belonged to a function
+# ended up on the property declared above it — and the compiler's
+# complaint is about applicability, so it needs the real classpath and
+# does not appear here. Nothing legitimate writes an annotation, then a
+# KDoc, then the declaration.
+BADANNOT=$(awk '
+  /^[[:space:]]*@[A-Za-z]/ && !/\(/ { ann = FILENAME ":" FNR; next }
+  ann && /^[[:space:]]*\/\*\*/ { print ann " annotation separated from its declaration by a doc comment"; ann = ""; next }
+  { ann = "" }
+' $(find app/src/main/java app/src/test/java -name '*.kt') 2>/dev/null)
+if [ -n "$BADANNOT" ]; then
+  printf '%s\n' "$BADANNOT" >> "$WORK/real.txt"
+fi
+
 
 TOTAL=$(grep -c 'error:' "$WORK/full.txt" || true)
 

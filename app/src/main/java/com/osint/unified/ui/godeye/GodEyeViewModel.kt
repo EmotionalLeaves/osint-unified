@@ -294,7 +294,7 @@ class GodEyeViewModel(
         // spiked memory/CPU). Each poll is exception-guarded so one bad fetch
         // can't kill its loop, and updates stay atomic per field.
         poll(0, 15_000, "aircraft", { aircraftDataSource.fetch(focus, wideView) }) { s, v -> s.copy(aircraft = v) }
-        poll(100, 30_000, "vessels", { aisDataSource.fetch() }) { s, v -> s.copy(vessels = v) }
+        poll(100, 30_000, "vessels", { aisDataSource.fetch(focus) }) { s, v -> s.copy(vessels = v) }
         poll(200, 15_000, "satellites", { satellitesDataSource.fetch() }) { s, v -> s.copy(satellites = v) }
         poll(375, 300_000, "quakes", { earthquakeDataSource.fetch() }) { s, v -> s.copy(quakes = v) }
         poll(625, 600_000, "naturalEvents", { naturalEventsDataSource.fetch() }) { s, v -> s.copy(naturalEvents = v) }

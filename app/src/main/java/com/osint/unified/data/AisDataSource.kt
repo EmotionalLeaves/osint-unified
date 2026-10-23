@@ -30,6 +30,18 @@ import okhttp3.Request
  * and `speed`. So the reader takes the last coordinate of whatever
  * geometry it is given — the end of a track is where the ship is now —
  * and looks for each field under every name anyone uses for it.
+ *
+ * They also do not agree on size, and that matters more than it
+ * sounds. The Norwegian feed is four and a half megabytes of JSON, and
+ * this layer polls every thirty seconds — which on somebody's phone,
+ * on mobile data, is most of a gigabyte an hour for a feed covering
+ * one coastline. So two things govern how often a feed is actually
+ * asked: how big its last answer was, and whether the view is
+ * anywhere near the water it covers.
+ *
+ * Neither is configured. The size is measured, and the region is
+ * learned from the vessels themselves, so a feed somebody pastes in
+ * tomorrow is throttled correctly without anybody describing it.
  */
 class AisDataSource(
     private val settings: AppSettings,
@@ -37,24 +49,108 @@ class AisDataSource(
 ) {
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
-    suspend fun fetch(): List<Vessel> = withContext(Dispatchers.IO) {
-        val urls = settings.aisUrl.split(',', '\n').map { it.trim() }.filter { it.isNotBlank() }
-        if (urls.isEmpty()) return@withContext emptyList()
-        val merged = LinkedHashMap<String, Vessel>()
-        for (url in urls) {
-            if (merged.size >= 20000) break
-            runCatching { fetchOne(url) }.getOrNull()?.forEach { v ->
-                merged.putIfAbsent(v.mmsi.ifBlank { "${v.lat},${v.lon}" }, v)
-            }
+    /** What one feed last gave, how big it was, and where it covers. */
+    private data class Held(
+        val vessels: List<Vessel>,
+        val bytes: Int,
+        val at: Long,
+        val north: Double,
+        val south: Double,
+        val west: Double,
+        val east: Double
+    ) {
+        /**
+         * How long before this feed may be asked again.
+         *
+         * A millisecond per twenty bytes, floored at half a minute and
+         * capped at five. It works out at roughly ten megabytes an
+         * hour per feed whatever its size, which is the point: a small
+         * feed is asked as often as ships move, a five-megabyte one
+         * every four minutes, and neither quietly spends somebody's
+         * month on a coastline they are not looking at.
+         */
+        val interval: Long get() = (bytes / 20L).coerceIn(30_000L, 300_000L)
+
+        /** True when the camera is somewhere this feed knows about. */
+        fun covers(lat: Double, lon: Double, marginDegrees: Double): Boolean {
+            if (vessels.isEmpty()) return true
+            return lat >= south - marginDegrees && lat <= north + marginDegrees &&
+                lon >= west - marginDegrees && lon <= east + marginDegrees
         }
-        merged.values.toList()
     }
+
+    private val held = HashMap<String, Held>()
+
+    /**
+     * Every vessel the open feeds know about.
+     *
+     * [focus] is where the globe is looking, when it is looking
+     * anywhere in particular. A regional feed whose water is nowhere
+     * near it is not asked again — its last answer is still returned,
+     * so turning back is instant, but no bytes are spent on a sea
+     * nobody is looking at.
+     */
+    suspend fun fetch(focus: Pair<Double, Double>? = null): List<Vessel> =
+        withContext(Dispatchers.IO) {
+            val urls = settings.aisUrl.split(',', '\n').map { it.trim() }
+                .filter { it.isNotBlank() }
+            if (urls.isEmpty()) return@withContext emptyList()
+            val now = System.currentTimeMillis()
+            val merged = LinkedHashMap<String, Vessel>()
+            for (url in urls) {
+                if (merged.size >= 20000) break
+                val last = synchronized(held) { held[url] }
+                val due = last == null || now - last.at >= last.interval
+                val near = last == null || focus == null ||
+                    last.covers(focus.first, focus.second, OFF_SCREEN_MARGIN)
+                val vessels = if (due && near) {
+                    runCatching { fetchOne(url) }.getOrNull()?.also { fresh ->
+                        synchronized(held) { held[url] = describe(fresh, now) }
+                    } ?: last?.vessels
+                } else {
+                    last?.vessels
+                }
+                vessels?.forEach { v ->
+                    merged.putIfAbsent(v.mmsi.ifBlank { "${v.lat},${v.lon}" }, v)
+                }
+            }
+            merged.values.toList()
+        }
+
+    /**
+     * What a feed turned out to be: its size and the box it covers.
+     *
+     * Learned rather than configured, so a feed somebody pastes in
+     * tomorrow is throttled and skipped correctly without anybody
+     * having to describe it.
+     */
+    private fun describe(vessels: List<Vessel>, now: Long): Held {
+        if (vessels.isEmpty()) return Held(vessels, 0, now, 90.0, -90.0, -180.0, 180.0)
+        var north = -90.0
+        var south = 90.0
+        var west = 180.0
+        var east = -180.0
+        vessels.forEach {
+            if (it.lat > north) north = it.lat
+            if (it.lat < south) south = it.lat
+            if (it.lon < west) west = it.lon
+            if (it.lon > east) east = it.lon
+        }
+        return Held(vessels, lastBytes, now, north, south, west, east)
+    }
+
+    @Volatile private var lastBytes: Int = 0
 
     private fun fetchOne(url: String): List<Vessel> {
         val request = Request.Builder().url(url).header("User-Agent", "OSINT-Unified/1.0").build()
         return client.newCall(request).execute().use { resp ->
             val body = resp.body?.string()
             if (!resp.isSuccessful || body.isNullOrBlank()) return emptyList()
+            // Measured after decompression, which is the honest number
+            // for "how heavy is this feed" even though the wire sees
+            // roughly a seventh of it: the ratio is the server's
+            // business and the order of magnitude is what matters.
+            lastBytes = body.length
             val root = json.parseToJsonElement(body)
             val features = (root as? JsonObject)?.get("features")?.jsonArray
             if (features != null) {
@@ -119,6 +215,13 @@ class AisDataSource(
         if (lat !in -90.0..90.0 || lon !in -180.0..180.0) return null
         if (lat == 0.0 && lon == 0.0) return null
         return lat to lon
+    }
+
+    private companion object {
+        /** How far outside a feed's own water the camera may be before
+         *  that feed stops being asked. Generous, because a feed's box
+         *  is the box of the ships that happened to be reporting. */
+        const val OFF_SCREEN_MARGIN = 12.0
     }
 
     @Serializable
