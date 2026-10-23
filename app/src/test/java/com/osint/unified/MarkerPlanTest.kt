@@ -1,0 +1,115 @@
+package com.osint.unified
+
+import com.osint.unified.ui.godeye.GeoBlip
+import com.osint.unified.ui.godeye.MapLayers
+import com.osint.unified.ui.godeye.MapWindow
+import com.osint.unified.ui.godeye.MARKER_BUDGET
+import com.osint.unified.ui.godeye.planMarkers
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/**
+ * Which markers belong on the flat map.
+ *
+ * This used to run inside the map view's update block, on the main
+ * thread, on every recomposition — including every keystroke in the
+ * search box. Pulled out, it can finally be checked.
+ */
+class MarkerPlanTest {
+
+    private fun blips(n: Int, lat: Double = 0.0, lon: Double = 0.0) =
+        (1..n).map { GeoBlip(lat, lon + it * 0.0001, "blip $it") }
+
+    @Test
+    fun pointsOutsideTheViewAreNotPlanned() {
+        val layers = MapLayers(
+            cameras = listOf(GeoBlip(51.5, -0.1, "London"), GeoBlip(-33.9, 151.2, "Sydney"))
+        )
+        val plan = planMarkers(layers, MapWindow(north = 60.0, south = 40.0, west = -10.0, east = 10.0))
+        assertEquals(listOf("London"), plan.map { it.title })
+    }
+
+    /** A map scrolled past the antimeridian has west numerically east of east. */
+    @Test
+    fun aViewAcrossTheAntimeridianKeepsWhatIsInsideIt() {
+        val layers = MapLayers(
+            cameras = listOf(
+                GeoBlip(0.0, 179.0, "west of the line"),
+                GeoBlip(0.0, -179.0, "east of the line"),
+                GeoBlip(0.0, 0.0, "nowhere near it")
+            )
+        )
+        val plan = planMarkers(layers, MapWindow(north = 10.0, south = -10.0, west = 170.0, east = -170.0))
+        assertEquals(
+            setOf("west of the line", "east of the line"),
+            plan.map { it.title }.toSet()
+        )
+    }
+
+    @Test
+    fun impossibleCoordinatesAreDropped() {
+        val layers = MapLayers(
+            cameras = listOf(
+                GeoBlip(Double.NaN, 0.0, "nan"),
+                GeoBlip(95.0, 0.0, "off the pole"),
+                GeoBlip(0.0, 200.0, "off the edge"),
+                GeoBlip(1.0, 1.0, "real")
+            )
+        )
+        assertEquals(listOf("real"), planMarkers(layers, null).map { it.title })
+    }
+
+    /**
+     * The satellite catalogue alone is twelve thousand objects. Taking
+     * markers in the order the layers happen to be added would let it
+     * eat the whole budget and push everything else off the map.
+     */
+    @Test
+    fun oneHugeLayerCannotCrowdOutASmallOne() {
+        val layers = MapLayers(
+            satellites = blips(12_000, lat = 10.0),
+            cameras = blips(20, lat = 20.0)
+        )
+        val plan = planMarkers(layers, null)
+        assertTrue(plan.size <= MARKER_BUDGET)
+        assertEquals(20, plan.count { it.kind == "Traffic camera" })
+        assertTrue(plan.count { it.kind == "Satellite" } > 2000)
+    }
+
+    /**
+     * Feeds return their items in a different order every poll. If what
+     * survives thinning depended on list position, stationary things
+     * would blink in and out while nothing was moving.
+     */
+    @Test
+    fun thinningKeepsTheSameMarkersWhenTheFeedReordersItself() {
+        val one = blips(8000, lat = 10.0)
+        val first = planMarkers(MapLayers(satellites = one), null).map { it.title }.toSet()
+        val second = planMarkers(MapLayers(satellites = one.reversed()), null).map { it.title }.toSet()
+        assertEquals(first, second)
+    }
+
+    /** Under budget, nothing is thinned at all. */
+    @Test
+    fun asmallWorldIsDrawnWhole() {
+        val plan = planMarkers(MapLayers(cameras = blips(40)), null)
+        assertEquals(40, plan.size)
+    }
+
+    /**
+     * A named thing keeps its identity when it moves, so its marker is
+     * moved rather than destroyed and rebuilt; an unnamed reading has
+     * only its place.
+     */
+    @Test
+    fun identityFollowsTheThingNotThePlace() {
+        val before = planMarkers(MapLayers(aircraft = emptyList(), cameras = listOf(GeoBlip(1.0, 1.0, "GHOST52"))), null)
+        val after = planMarkers(MapLayers(cameras = listOf(GeoBlip(2.0, 2.0, "GHOST52"))), null)
+        assertEquals(before.first().identity, after.first().identity)
+
+        val unnamedHere = planMarkers(MapLayers(cameras = listOf(GeoBlip(1.0, 1.0, ""))), null)
+        val unnamedThere = planMarkers(MapLayers(cameras = listOf(GeoBlip(2.0, 2.0, ""))), null)
+        assertTrue(unnamedHere.first().identity != unnamedThere.first().identity)
+    }
+}

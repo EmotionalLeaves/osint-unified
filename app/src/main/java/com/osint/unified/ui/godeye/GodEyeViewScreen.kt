@@ -50,10 +50,13 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -1077,10 +1080,36 @@ private fun GlobeMap(
     // The visible area, updated as the map is panned or zoomed. Markers are
     // culled to it so a layer can hold tens of thousands of points without
     // the map trying to draw them all.
-    var viewport by remember { mutableStateOf<BoundingBox?>(null) }
+    //
+    // Held as plain numbers rather than osmdroid's BoundingBox because
+    // the work that reads it now runs off the main thread, and because a
+    // data class compares equal to itself: panning out and back no longer
+    // counts as a change.
+    var inView by remember { mutableStateOf<MapWindow?>(null) }
     // Cache marker dot drawables by colour+size so a rebuild of hundreds of
     // markers doesn't allocate a fresh icon each time.
     val dotCache = remember { HashMap<Long, Drawable>() }
+
+    // Which markers belong on screen, worked out away from the main
+    // thread and only when the layers or the view actually change.
+    //
+    // This used to happen inside the AndroidView's update block, which
+    // Compose runs on *every* recomposition — so typing a single
+    // character into the search box walked seventy thousand points,
+    // grouped them, thinned them, destroyed every Marker on the map and
+    // built them all again, on the thread drawing the keyboard. The
+    // result was a map that stuttered whenever anything at all changed,
+    // for no new information.
+    val plan by produceState(initialValue = emptyList<PendingMarker>(), layers, inView) {
+        value = withContext(Dispatchers.Default) { planMarkers(layers, inView) }
+    }
+    // The plan currently on the map, by identity. Same instance means
+    // nothing to do — the common case, and now free.
+    val rendered = remember { mutableStateOf<List<PendingMarker>?>(null) }
+    // Markers already on the map, keyed by what they represent rather
+    // than by position, so an aircraft that moved is moved rather than
+    // destroyed and rebuilt.
+    val placed = remember { HashMap<String, Marker>() }
     AndroidView(
         modifier = modifier,
         factory = { ctx ->
@@ -1139,7 +1168,7 @@ private fun GlobeMap(
                     DelayedMapListener(
                         object : MapListener {
                             override fun onScroll(event: ScrollEvent?): Boolean {
-                                viewport = boundingBox
+                                inView = boundingBox.asWindow()
                                 lastCamera.value = Triple(
                                     mapCenter.latitude, mapCenter.longitude, zoomLevelDouble
                                 )
@@ -1148,7 +1177,7 @@ private fun GlobeMap(
                             }
 
                             override fun onZoom(event: ZoomEvent?): Boolean {
-                                viewport = boundingBox
+                                inView = boundingBox.asWindow()
                                 lastCamera.value = Triple(
                                     mapCenter.latitude, mapCenter.longitude, zoomLevelDouble
                                 )
@@ -1162,106 +1191,42 @@ private fun GlobeMap(
             }
         },
         update = { map -> runCatching {
-            // Rebuild only the markers; keep the tap-events overlay in place.
-            map.overlays.removeAll { it is Marker }
-            val density = map.resources.displayMetrics.density
-            val box = viewport ?: map.boundingBox
-            // Collected first, then culled to the viewport and thinned to a
-            // budget, so a layer holding tens of thousands of points costs
-            // only what is actually on screen.
-            val pending = ArrayList<PendingMarker>(2048)
-            fun add(
-                kind: String,
-                lat: Double,
-                lon: Double,
-                color: Int,
-                sizeDp: Int,
-                title: String?,
-                clickable: Boolean,
-                url: String? = null
-            ) {
-                if (lat !in -90.0..90.0 || lon !in -180.0..180.0 || lat.isNaN() || lon.isNaN()) return
-                if (box != null && !inBox(box, lat, lon)) return
-                pending.add(PendingMarker(kind, lat, lon, color, sizeDp, title, clickable, url))
-            }
-            fun flush() {
-                // Thinning has to be fair between layers. The satellite
-                // catalogue alone is twelve thousand objects; taking markers
-                // in the order layers happen to be added would let it eat the
-                // whole budget and push aircraft, vessels and everything else
-                // off the map entirely.
-                //
-                // So each layer present gets an equal share, any layer using
-                // less than its share hands the remainder back, and layers
-                // over their share are sampled with a stride so what survives
-                // stays spread across the view instead of clumping.
-                val keep = if (pending.size <= MARKER_BUDGET) pending else {
-                    val byKind = pending.groupBy { it.kind }
-                    val quotas = HashMap<String, Int>()
-                    var remaining = MARKER_BUDGET
-                    var contenders = byKind.keys.toMutableSet()
-                    while (contenders.isNotEmpty() && remaining > 0) {
-                        val share = (remaining / contenders.size).coerceAtLeast(1)
-                        val satisfied = contenders.filter { (byKind[it]?.size ?: 0) <= share }
-                        if (satisfied.isEmpty()) {
-                            contenders.forEach { quotas[it] = share }
-                            remaining -= share * contenders.size
-                            break
-                        }
-                        satisfied.forEach { kind ->
-                            val n = byKind[kind]?.size ?: 0
-                            quotas[kind] = n
-                            remaining -= n
-                        }
-                        contenders = (contenders - satisfied.toSet()).toMutableSet()
+            // The first pass happens before any scroll or zoom event, so
+            // the window is unknown and everything would be planned. Fill
+            // it in and let the recomposition that causes do the work.
+            if (inView == null) {
+                inView = map.boundingBox.asWindow()
+            } else if (plan !== rendered.value) {
+                rendered.value = plan
+                val density = map.resources.displayMetrics.density
+                val wanted = HashSet<String>(plan.size * 2)
+                plan.forEach { pm ->
+                    var key = pm.identity
+                    // Two unnamed readings can round to the same place.
+                    // Without this the second would overwrite the first
+                    // and the map would be one marker short for ever.
+                    if (!wanted.add(key)) {
+                        var n = 2
+                        while (!wanted.add("$key#$n")) n++
+                        key = "$key#$n"
                     }
-                    byKind.flatMap { (kind, markers) ->
-                        val quota = quotas[kind] ?: 0
-                        when {
-                            quota <= 0 -> emptyList()
-                            markers.size <= quota -> markers
-                            else -> {
-                                // Which markers survive has to depend on
-                                // the markers, not on where they happened
-                                // to land in the list. Striding over list
-                                // position meant that a feed returning its
-                                // items in a different order — which these
-                                // do, every poll — kept a different subset
-                                // each time, so stationary things blinked
-                                // in and out while nothing was moving.
-                                //
-                                // Each marker falls in a bucket drawn from
-                                // its own identity: a callsign, an MMSI, a
-                                // satellite name, or its position for the
-                                // things that have no name. The same
-                                // marker lands in the same bucket on every
-                                // refresh, so the subset is stable and
-                                // still scattered across the view.
-                                val threshold =
-                                    (quota.toLong() * MARKER_BUCKETS / markers.size).toInt()
-                                val inside = markers.filter { markerBucket(it) < threshold }
-                                // The hash is not perfectly even, so the
-                                // count is brought to the quota rather than
-                                // left to overshoot the budget or waste it.
-                                if (inside.size >= quota) inside.take(quota)
-                                else inside + markers
-                                    .filter { markerBucket(it) >= threshold }
-                                    .sortedBy { markerBucket(it) }
-                                    .take(quota - inside.size)
-                            }
-                        }
-                    }
-                }
-                keep.forEach { pm ->
                     val px = (pm.sizeDp * density).toInt()
                     val shape = shapeFor(pm.kind)
-                    val key = (pm.color.toLong() shl 16) xor
+                    val iconKey = (pm.color.toLong() shl 16) xor
                         (px.toLong() shl 4) xor shape.ordinal.toLong()
-                    val icon = dotCache.getOrPut(key) { markerIcon(shape, pm.color, px) }
-                    val m = Marker(map)
+                    val icon = dotCache.getOrPut(iconKey) { markerIcon(shape, pm.color, px) }
+                    // Reused rather than rebuilt. An aircraft that moved
+                    // is the same aircraft; destroying its Marker and
+                    // allocating another for a new latitude is most of
+                    // what made a refresh expensive.
+                    val m = placed.getOrPut(key) {
+                        Marker(map).also {
+                            it.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                            map.overlays.add(it)
+                        }
+                    }
                     m.position = GeoPoint(pm.lat, pm.lon)
-                    m.icon = icon
-                    m.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                    if (m.icon !== icon) m.icon = icon
                     m.title = pm.title
                     // Layers marked non-clickable are fields of readings —
                     // an aurora cell, an AQI blob. Opening an inspector on
@@ -1280,25 +1245,29 @@ private fun GlobeMap(
                             )
                             true
                         }
+                    } else {
+                        // A reused marker keeps the listener it was given
+                        // last time, so a cell that is now part of a
+                        // non-clickable layer would still open a dialog.
+                        m.setOnMarkerClickListener { _, _ -> false }
                     }
-                    map.overlays.add(m)
                 }
+                if (placed.size > wanted.size) {
+                    val gone = placed.keys.filterNot { it in wanted }
+                    gone.forEach { key ->
+                        placed.remove(key)?.let { map.overlays.remove(it) }
+                    }
+                }
+                map.invalidate()
             }
-            // One table, in MapLayers, read by the globe and by this
-            // map alike. Two copies of it would drift apart the first
-            // time a layer was added to one of them.
-            layers.points().forEach { p ->
-                add(p.kind, p.lat, p.lon, p.color, p.sizeDp, p.title, p.clickable, p.url)
-            }
-            flush()
 
             // Fly to a newly-focused location (coordinate search or first geo finding).
             if (focus != null && focus != appliedFocus.value) {
                 map.controller.animateTo(GeoPoint(focus.first, focus.second))
                 map.controller.setZoom(9.0)
                 appliedFocus.value = focus
+                map.invalidate()
             }
-            map.invalidate()
         } }
     )
 }
@@ -1327,49 +1296,9 @@ private fun investigableQuery(obj: Inspected): String? {
     }
 }
 
-/** The most markers drawn at once. Layers may hold far more than this;
- *  what is off screen costs nothing, and what is left is thinned evenly. */
 /** The most of the screen the control panel may take, open or not. The
  *  map gets the rest, and it is never nothing. */
 private val PANEL_MAX_HEIGHT = 300.dp
-
-private const val MARKER_BUDGET = 2500
-
-/** How finely the thinning hash divides the markers of one layer. */
-private const val MARKER_BUCKETS = 10_000
-
-/**
- * A number between 0 and [MARKER_BUCKETS] that belongs to the marker
- * rather than to its place in a list.
- *
- * Named things hash on the name — a callsign, an MMSI, a satellite — so
- * the same object lands in the same bucket however the feed orders its
- * reply. Unnamed ones hash on position, rounded to about a hundred metres
- * so a reading that wobbles in the last decimal does not jump buckets.
- * The shift mixes the high bits down, because String.hashCode leaves
- * similar strings in neighbouring slots and a plain modulo would then
- * keep or drop whole runs of them together.
- */
-private fun markerBucket(pm: PendingMarker): Int {
-    val key = pm.title?.takeIf { it.isNotBlank() }
-        ?: "${(pm.lat * 1000).toInt()}:${(pm.lon * 1000).toInt()}"
-    var h = (pm.kind.hashCode() * 31) xor key.hashCode()
-    h = h xor (h ushr 16)
-    h *= -0x7ee3623b
-    h = h xor (h ushr 13)
-    return ((h.toLong() and 0xFFFFFFFFL) % MARKER_BUCKETS).toInt()
-}
-
-private data class PendingMarker(
-    val kind: String,
-    val lat: Double,
-    val lon: Double,
-    val color: Int,
-    val sizeDp: Int,
-    val title: String?,
-    val clickable: Boolean,
-    val url: String? = null
-)
 
 /** What the object inspector is showing: which layer the marker came from,
  *  its label, where it is, and any link that layer carries. */
@@ -1380,15 +1309,6 @@ data class Inspected(
     val lon: Double,
     val url: String? = null
 )
-
-/** Viewport test that tolerates a map scrolled past the antimeridian, where
- *  the west edge is numerically greater than the east. */
-private fun inBox(box: BoundingBox, lat: Double, lon: Double): Boolean {
-    if (lat > box.latNorth || lat < box.latSouth) return false
-    val west = box.lonWest
-    val east = box.lonEast
-    return if (west <= east) lon in west..east else lon >= west || lon <= east
-}
 
 /** Filters aircraft by callsign pattern: cargo carriers, military-style
  *  callsigns, or civil passenger traffic. */
@@ -1672,3 +1592,7 @@ private fun SettingsField(
         modifier = Modifier.fillMaxWidth().padding(top = top)
     )
 }
+
+/** osmdroid's view-layer box as the plain value the planner reads. */
+private fun BoundingBox.asWindow(): MapWindow =
+    MapWindow(latNorth, latSouth, lonWest, lonEast)
