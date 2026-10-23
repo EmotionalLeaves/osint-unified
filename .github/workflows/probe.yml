@@ -45,7 +45,10 @@ jobs:
           N=0
           GROUP=1
           while read -r U; do
-            U=$(echo "$U" | xargs)
+            # Trimmed with sed, not xargs: xargs parses shell quoting,
+            # so a regex containing a double quote came through with the
+            # quotes eaten and matched nothing.
+            U=$(printf '%s' "$U" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
             [ -z "$U" ] && continue
             UA='OSINT-Unified/1.0 (+https://github.com/EmotionalLeaves/osint-unified)'
             case "$U" in *'||'*) UA="${U##*||}"; U="${U%%||*}";; esac
