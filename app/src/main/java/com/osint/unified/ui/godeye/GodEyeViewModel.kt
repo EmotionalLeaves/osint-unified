@@ -254,7 +254,82 @@ class GodEyeViewModel(
     @Volatile private var foreground: Boolean = true
 
     fun setVisibleLayers(keys: Set<String>) {
+        val before = visibleLayers
         visibleLayers = keys
+        if (before == null) return
+        val gone = before - keys
+        if (gone.isEmpty()) return
+        // A layer that is no longer being fetched must stop being
+        // quoted.
+        //
+        // Switching a layer off only stopped the polling; everything
+        // it had last said stayed in the state and went on being read
+        // by the header counts, the world brief and the area report —
+        // none of which filter by what is switched on. Turn cyclones
+        // off with three storms in the water and a week later the
+        // brief still names them, at the top of the list, as current.
+        // The mirror case is worse: a layer that had loaded and found
+        // nothing keeps its place in `loaded`, which is what licenses
+        // the brief to print "reported nothing anywhere" — an
+        // all-clear for a feed nobody has contacted since.
+        _state.update { st -> clear(st, gone) }
+    }
+
+    /**
+     * Forget everything these layers said.
+     *
+     * Written out one key at a time rather than reflected over,
+     * because a layer added later with no line here would silently
+     * keep the old behaviour, and the old behaviour is the bug.
+     */
+    private fun clear(st: GodEyeUiState, gone: Set<String>): GodEyeUiState {
+        var s = st
+        for (key in gone) {
+            s = when (key) {
+                "aircraft" -> s.copy(aircraft = emptyList())
+                "vessels" -> s.copy(vessels = emptyList())
+                "quakes" -> s.copy(quakes = emptyList())
+                "naturalEvents" -> s.copy(naturalEvents = emptyList())
+                "overlayPoints" -> s.copy(overlayPoints = emptyList())
+                "weather" -> s.copy(weather = emptyList())
+                "fires" -> s.copy(fires = emptyList())
+                "satellites" -> s.copy(satellites = emptyList())
+                "news" -> s.copy(news = emptyList())
+                "gdacs" -> s.copy(gdacs = emptyList())
+                "volcanoes" -> s.copy(volcanoes = emptyList())
+                "worldWarnings" -> s.copy(worldWarnings = emptyList())
+                "seaLevel" -> s.copy(seaLevel = emptyList())
+                "outages" -> s.copy(outages = emptyList())
+                "ports" -> s.copy(ports = emptyList())
+                "launches" -> s.copy(launches = emptyList())
+                "sites" -> s.copy(sites = emptyList())
+                "aurora" -> s.copy(aurora = emptyList())
+                "buoys" -> s.copy(buoys = emptyList())
+                "metar" -> s.copy(metar = emptyList())
+                "milAircraft" -> s.copy(milAircraft = emptyList())
+                "airQuality" -> s.copy(airQuality = emptyList())
+                "stations" -> s.copy(stations = emptyList())
+                "conflicts" -> s.copy(conflicts = emptyList())
+                "airports" -> s.copy(airports = emptyList())
+                "powerPlants" -> s.copy(powerPlants = emptyList())
+                "cameras" -> s.copy(cameras = emptyList())
+                "airspace" -> s.copy(airspace = emptyList())
+                "cables" -> s.copy(cables = emptyList())
+                "cyclones" -> s.copy(cyclones = emptyList())
+                "tsunamis" -> s.copy(tsunamis = emptyList())
+                "radiation" -> s.copy(radiation = emptyList())
+                "airportStatus" -> s.copy(airportStatus = emptyList())
+                "spaceWeather" -> s.copy(spaceWeather = null)
+                else -> s
+            }
+        }
+        // And the bookkeeping, or the brief still believes these
+        // answered.
+        return s.copy(
+            loaded = s.loaded - gone,
+            feedTrouble = s.feedTrouble - gone,
+            lastSuccess = s.lastSuccess - gone
+        )
     }
 
     fun setForeground(value: Boolean) {
@@ -375,7 +450,16 @@ class GodEyeViewModel(
                         )
                     }
                 }
-                delay(intervalMs)
+                // A failure does not earn the full interval.
+                //
+                // Cables and ports are on a twenty-four hour timer and
+                // stations on six. Switching one of those on while the
+                // phone happens to be between networks marked it "not
+                // reporting" and then left it that way until tomorrow
+                // — and toggling the layer did not help, because the
+                // loop is parked in this delay rather than in the idle
+                // path that notices.
+                delay(if (result == null) minOf(intervalMs, RETRY_MS) else intervalMs)
             }
         }
     }
@@ -1189,6 +1273,10 @@ class GodEyeViewModel(
         /** How often a sleeping feed checks whether its layer came back
          *  on. Short enough to feel immediate, long enough to cost nothing. */
         const val POLL_IDLE_MS = 3_000L
+
+        /** The longest a feed waits after a failure before trying
+         *  again, whatever its own interval is. */
+        const val RETRY_MS = 2 * 60_000L
 
         /** Per discovered identifier, in the second pass. Enough for a real
          *  profile of it; few enough that eleven of them stay affordable. */

@@ -4,6 +4,9 @@ import com.osint.unified.ui.godeye.GeoBlip
 import com.osint.unified.ui.godeye.MapLayers
 import com.osint.unified.ui.godeye.MapWindow
 import com.osint.unified.ui.godeye.MARKER_BUDGET
+import com.osint.unified.ui.godeye.PendingMarker
+import com.osint.unified.ui.godeye.markerBucket
+import com.osint.unified.ui.godeye.withoutAge
 import com.osint.unified.ui.godeye.planMarkers
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -144,5 +147,40 @@ class MarkerPlanTest {
             MapLayers(fires = one.reversed()).points()
         ).map { it.title }.toSet()
         assertEquals(first, second)
+    }
+
+    /**
+     * A marker is the same marker a minute later.
+     *
+     * Most of these labels end with how old the reading is, and the
+     * identity was the whole label — so at every minute boundary the
+     * map destroyed and rebuilt a Marker it had gone to trouble to
+     * reuse, and the thinning hash moved, which made stationary
+     * markers blink in and out of any layer over its quota.
+     */
+    @Test
+    fun theAgeOnTheEndIsNotPartOfWhatSomethingIs() {
+        assertEquals("Buoy 41001", withoutAge("Buoy 41001 · 40m ago"))
+        assertEquals(
+            withoutAge("Buoy 41001 · 40m ago"),
+            withoutAge("Buoy 41001 · 41m ago")
+        )
+        assertEquals("Falcon 9", withoutAge("Falcon 9 · in 3h"))
+        assertEquals("Station X", withoutAge("Station X · undated"))
+        // A middle dot that is part of the label itself stays.
+        assertEquals("Tokyo · M6.1", withoutAge("Tokyo · M6.1 · 2h ago"))
+        assertEquals("Plain label", withoutAge("Plain label"))
+    }
+
+    /** And the consequence: the same reading keeps its bucket. */
+    @Test
+    fun aMarkerKeepsItsPlaceInTheThinningAsItAges() {
+        val young = PendingMarker(
+            kind = "buoy", lat = 10.0, lon = 20.0, color = 0, sizeDp = 8,
+            title = "Buoy 41001 · 40m ago", clickable = true, url = null
+        )
+        val older = young.copy(title = "Buoy 41001 · 41m ago")
+        assertEquals(young.identity, older.identity)
+        assertEquals(markerBucket(young), markerBucket(older))
     }
 }

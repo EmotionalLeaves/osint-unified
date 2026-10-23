@@ -80,6 +80,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.osint.unified.BuildConfig
 import com.osint.unified.ui.theme.Intel
+import kotlin.math.roundToInt
 import org.osmdroid.config.Configuration
 import org.osmdroid.events.DelayedMapListener
 import org.osmdroid.events.MapEventsReceiver
@@ -180,6 +181,11 @@ fun GodEyeViewScreen(
         state.quakes, state.weather, state.fires,
         state.milAircraft, state.airportStatus, state.news,
         state.spaceWeather, state.loaded,
+        // Without this the brief never grows its NOT REPORTING
+        // section: a feed failing changes only this map, so every
+        // other key compared equal and the cached brief — including
+        // its all-clear lines — was handed back unchanged.
+        state.feedTrouble,
         // The traffic line reads these three, so leaving them out of the key
         // let the brief quote counts the header beside it had moved past.
         state.aircraft, state.vessels, state.satellites
@@ -215,6 +221,44 @@ fun GodEyeViewScreen(
         )
     ) { mutableStateOf(GlobeCamera(20f, 0f, 1f)) }
     var globeSize by remember { mutableStateOf(0 to 0) }
+
+    // The globe tells the app where it is looking, the same way the
+    // map does.
+    //
+    // It never did, and the globe is the default view — so for anyone
+    // who had not been to the flat map and back, the viewport was
+    // simply unknown. Aircraft fetched the whole planet however far in
+    // the globe was turned, which is the sweep the bounding box was
+    // added to avoid. Turning on the sites layer did nothing at all,
+    // silently, because it begins `val where = focus ?: return`.
+    // Radiation fell back to a point in the Atlantic off West Africa
+    // and showed the count as though it described the view. And a tap
+    // always reported an area of 2000 km radius because the zoom it
+    // read was still at its initial value.
+    //
+    // Reported on a coarse grid with a pause after it, because this
+    // fires on every frame of a drag and one of the things downstream
+    // of it is a network query.
+    if (roundEarth) {
+        val (vw, vh) = globeSize
+        LaunchedEffect(
+            vw, vh,
+            (globeCamera.lat / VIEWPORT_STEP).roundToInt(),
+            (globeCamera.lon / VIEWPORT_STEP).roundToInt(),
+            (globeCamera.zoom * 4f).roundToInt()
+        ) {
+            if (vw > 0) {
+                kotlinx.coroutines.delay(VIEWPORT_SETTLE_MS)
+                val lat = globeCamera.lat.toDouble()
+                val lon = globeCamera.lon.toDouble()
+                val z = GlobeHandoff.tileZoom(
+                    GlobeHandoff.spanDegrees(vw, vh, globeCamera.zoom), vw, lat
+                )
+                zoomNow = z
+                viewModel.onViewportChanged(lat, lon, z)
+            }
+        }
+    }
     // Where the map should jump to when the globe hands over, and the
     // other way about. Not the search focus: that is a different kind
     // of move and the map already has one.
@@ -332,7 +376,13 @@ fun GodEyeViewScreen(
             if (showCameras || god) add("cameras")
             if (showAirspace || god) add("airspace")
             if (showRadiation || god) add("radiation")
-            add("spaceWeather")
+            // Space weather rides with the aurora layer, which is what
+            // it is for. It used to be added unconditionally, which
+            // meant the layer count was never zero — so the "+ ADD
+            // LAYERS" label was unreachable, CLEAR was always offered,
+            // and the line saying nothing is being fetched could never
+            // appear and would have been untrue if it had.
+            if (showAurora || god) add("spaceWeather")
         }
     }
     LaunchedEffect(visibleLayers) { viewModel.setVisibleLayers(visibleLayers) }
@@ -542,6 +592,10 @@ fun GodEyeViewScreen(
                 showPower = false
                 showQuakes = false
                 showRadiation = false
+                // Not just hidden: the view model keeps its own flag
+                // and goes on querying Safecast on every pan without
+                // this, for a layer nobody can see.
+                viewModel.ensureRadiation(false)
                 showSats = false
                 showSeaLevel = false
                 showSites = false
@@ -1662,6 +1716,14 @@ private val PANEL_MAX_HEIGHT = 300.dp
  *  enough for osmdroid to report the camera it opened with. */
 private const val MAP_SETTLE_MS = 1_500L
 
+/** How far the globe has to turn, in degrees, before it is worth
+ *  telling the rest of the app about. */
+private const val VIEWPORT_STEP = 2f
+
+/** And how long it has to stay there. A drag emits sixty cameras a
+ *  second and a viewport report can start a network query. */
+private const val VIEWPORT_SETTLE_MS = 500L
+
 /** What the object inspector is showing: which layer the marker came from,
  *  its label, where it is, and any link that layer carries. */
 data class Inspected(
@@ -1933,8 +1995,17 @@ private fun LayerPill(
         val shown = when {
             trouble && count > 0 -> "$count!"
             trouble -> "!"
+            // Nothing is being fetched for a layer that is switched
+            // off, so it has no count to report and no fetch in
+            // flight. This has to come first: opening the picker on a
+            // fresh install showed all thirty-three pills on the
+            // loading marker, as though thirty-three requests were
+            // pending, because "has not loaded" and "is loading" were
+            // the same test. It also beat the count test, so an
+            // on-demand layer that was switched off went on showing
+            // the number it found last time.
+            !on -> if (loadsOnDemand) "tap" else ""
             count > 0 -> "$count"
-            loadsOnDemand && !on -> "tap"
             // A fetch that has answered with nothing says "0"; only one
             // still in flight says "…". These used to be the same, so a
             // layer whose fetch failed sat on the loading marker for ever.
@@ -1942,7 +2013,7 @@ private fun LayerPill(
             else -> "0"
         }
         Text(
-            "$shownLabel $shown",
+            if (shown.isEmpty()) shownLabel else "$shownLabel $shown",
             style = MaterialTheme.typography.labelSmall,
             color = when {
                 trouble -> Intel.Danger

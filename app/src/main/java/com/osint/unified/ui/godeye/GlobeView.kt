@@ -39,6 +39,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlin.math.abs
+import kotlin.math.floor
 import kotlin.math.min
 import kotlin.math.roundToInt
 
@@ -564,8 +565,11 @@ data class GlobePoint(
      */
     val identity: String
         get() = kind + "\u0000" + (
-            title?.takeIf { it.isNotBlank() }
-                ?: "${(lat * 1000).toInt()}:${(lon * 1000).toInt()}"
+            // Without the age on the end, or the point becomes a
+            // different point at every minute boundary and the
+            // thinning it feeds reshuffles under a still globe.
+            title?.let(::withoutAge)?.takeIf { it.isNotBlank() }
+                ?: "${floor(lat * 1000).toInt()}:${floor(lon * 1000).toInt()}"
             )
 }
 

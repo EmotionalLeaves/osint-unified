@@ -1,5 +1,7 @@
 package com.osint.unified.ui.godeye
 
+import kotlin.math.floor
+
 /**
  * Deciding which markers belong on the map, with nothing Android in it.
  *
@@ -158,10 +160,31 @@ internal data class PendingMarker(
      */
     val identity: String
         get() = kind + "\u0000" + (
-            title?.takeIf { it.isNotBlank() }
-                ?: "${(lat * 1000).toInt()}:${(lon * 1000).toInt()}"
+            title?.let(::withoutAge)?.takeIf { it.isNotBlank() }
+                ?: "${floor(lat * 1000).toInt()}:${floor(lon * 1000).toInt()}"
             )
 }
+
+/**
+ * A label with its age taken off the end.
+ *
+ * Most feeds here finish a label with how old the reading is — "· 40m
+ * ago", "· in 3h" — and the identity was the whole label. So at the
+ * minute boundary every one of those markers became, as far as this
+ * code could tell, a different marker: the map destroyed and rebuilt
+ * the Marker it had been careful to reuse, and the thinning hash
+ * moved, so in any layer over its quota the surviving subset changed
+ * and stationary markers blinked in and out once a minute. Both are
+ * the exact behaviour the comments here promise to avoid.
+ *
+ * What a thing is does not change when it gets a minute older.
+ */
+internal fun withoutAge(label: String): String =
+    label.replace(AGE_SUFFIX, "").trim()
+
+private val AGE_SUFFIX = Regex(
+    """\s*·\s*(?:in\s+\d+[smhd]|\d+[smhd]\s+ago|undated)\s*$"""
+)
 
 /** How finely the thinning hash divides the markers of one layer. */
 private const val MARKER_BUCKETS = 10_000
