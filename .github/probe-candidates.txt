@@ -1,7 +1,10 @@
-https://aisview.dk/
-https://aiscatcher.org/
-https://aiscatcher.org/api/vessels
-https://ais.boatbeacon.com/
-https://www.vesselfinder.com/
-https://api.vtexplorer.com/vessels?userkey=demo
-https://meri.digitraffic.fi/api/ais/v1/locations||OSINT-Unified/1.0 (+https://github.com/EmotionalLeaves/osint-unified)
+https://www.seismicportal.eu/fdsnws/event/1/query?format=json&limit=3
+https://www.ioc-sealevelmonitoring.org/service.php?query=stationlist&showall=all&format=json
+https://api.reliefweb.int/v1/disasters?appname=osint-unified&limit=2&profile=list
+https://api.ioda.inetintel.cc.gatech.edu/v2/outages/alerts?from=-86400
+https://firms.modaps.eosdis.nasa.gov/data/active_fire/noaa-20-viirs-c2/csv/J1_VIIRS_C2_Global_24h.csv@@1
+https://www.ssd.noaa.gov/VAAC/messages.html
+https://www.ospo.noaa.gov/products/atmosphere/vaac/messages.html
+https://api.weather.gov/products/types/FVXX
+https://emergency.copernicus.eu/mapping/activations-rapid/feed
+https://www.gdacs.org/xml/rss.xml@@1
