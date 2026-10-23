@@ -257,6 +257,43 @@ jobs:
           PY
           test -s "$A/country-centroids.json" || echo "::warning title=assets::country-centroids.json is missing; outages will have nowhere to go"
 
+          # Every port in the world. A map that tracks ships and does
+          # not know where they can tie up is half a maritime picture,
+          # and the answer is static, small and public.
+          curl -sSL https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_ports.geojson -o /tmp/ne_ports.geojson || true
+          python3 - <<'PY'
+          import json, os
+          A = "app/src/main/assets"
+          try:
+              with open('/tmp/ne_ports.geojson', encoding='utf-8') as f:
+                  data = json.load(f)
+          except Exception as e:
+              print("WARNING: no ports:", e)
+              raise SystemExit(0)
+          out = []
+          for feat in data.get("features", []):
+              geom = feat.get("geometry") or {}
+              if geom.get("type") != "Point":
+                  continue
+              coords = geom.get("coordinates") or []
+              if len(coords) < 2:
+                  continue
+              props = feat.get("properties", {})
+              name = (props.get("name") or "").strip()
+              if not name:
+                  continue
+              row = {"lat": round(coords[1], 4), "lon": round(coords[0], 4), "n": name}
+              site = (props.get("website") or "").strip()
+              if site:
+                  row["w"] = site
+              out.append(row)
+          with open(f"{A}/ports.json", "w", encoding="utf-8") as f:
+              json.dump(out, f, separators=(",", ":"), ensure_ascii=False)
+          print("bundled ports.json", len(out), "ports",
+                os.path.getsize(f"{A}/ports.json"), "bytes")
+          PY
+          test -s "$A/ports.json" || echo "::warning title=assets::ports.json is missing; the ports layer will be empty"
+
           # Raw infrastructure datasets -> compact JSON bundled in the APK.
           curl -sSL https://davidmegginson.github.io/ourairports-data/airports.csv -o /tmp/airports.csv || true
           curl -sSL https://raw.githubusercontent.com/wri/global-power-plant-database/master/output_database/global_power_plant_database.csv -o /tmp/powerplants.csv || true

@@ -134,6 +134,8 @@ object AreaReport {
         blips("World weather warning", state.worldWarnings)
         blips("Internet outage", state.outages)
         blips("Tide gauge", state.seaLevel)
+        blips("Launch", state.launches)
+        blips("Port", state.ports)
         sweep("Earthquake", state.quakes, { it.lat }, { it.lon }, { it.label }, { it.url })
         blips("Volcano", state.volcanoes)
         blips("Wildfire", state.fires)

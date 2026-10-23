@@ -125,6 +125,25 @@ object Freshness {
         }
     }
 
+    /**
+     * "in 3h", "in 12d" — the other direction, for things scheduled.
+     *
+     * Most of this app reports what has happened, so [ago] returns
+     * null for a future timestamp rather than inventing a negative
+     * age. A launch window is the exception: it has not happened yet
+     * and that is the whole point of it.
+     */
+    fun until(millis: Long?): String? {
+        if (millis == null) return null
+        val minutes = (millis - System.currentTimeMillis()) / 60_000L
+        return when {
+            minutes < 0 -> null
+            minutes < 60 -> "in ${minutes}m"
+            minutes < 48 * 60 -> "in ${minutes / 60}h"
+            else -> "in ${minutes / 1440}d"
+        }
+    }
+
     /** "undated" rather than nothing, so a missing timestamp is visible in
      *  the label instead of looking like a fresh item. */
     fun agoOrUndated(millis: Long?): String = ago(millis) ?: "undated"

@@ -20,7 +20,8 @@ class BundledPointsDataSource(
     private val appContext: Context,
     private val assetName: String,
     private val label: (JsonObject) -> String,
-    private val limit: Int = 60000
+    private val limit: Int = 60000,
+    private val link: (JsonObject) -> String? = { null }
 ) {
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
     @Volatile private var cache: List<GeoBlip>? = null
@@ -33,7 +34,7 @@ class BundledPointsDataSource(
                 val o = el as? JsonObject ?: return@mapNotNull null
                 val lat = (o["lat"] as? JsonPrimitive)?.doubleOrNull ?: return@mapNotNull null
                 val lon = (o["lon"] as? JsonPrimitive)?.doubleOrNull ?: return@mapNotNull null
-                GeoBlip(lat, lon, label(o))
+                GeoBlip(lat, lon, label(o), link(o))
             }.take(limit)
         } catch (e: Exception) {
             emptyList()
@@ -50,6 +51,23 @@ class BundledPointsDataSource(
             val name = str(o, "n")
             if (code.isNotBlank()) "$code · $name" else name.ifBlank { "airport" }
         })
+
+        /**
+         * Every port in the world.
+         *
+         * A map that tracks ships and does not know where they can
+         * tie up is half a maritime picture: a vessel slowing on
+         * approach to somewhere means nothing until the somewhere has
+         * a name. Static, so it works with the network off.
+         */
+        fun ports(context: Context) = BundledPointsDataSource(
+            context,
+            "ports.json",
+            { o -> str(o, "n").ifBlank { "port" } },
+            link = { o -> str(o, "w").takeIf { it.isNotBlank() }?.let { site ->
+                if (site.startsWith("http")) site else "https://$site"
+            } }
+        )
 
         fun powerPlants(context: Context) = BundledPointsDataSource(context, "powerplants.json", { o ->
             val mw = str(o, "mw")

@@ -30,6 +30,7 @@ import com.osint.unified.data.NewsDataSource
 import com.osint.unified.data.OverlayDataSource
 import com.osint.unified.data.SatellitesDataSource
 import com.osint.unified.data.VolcanoDataSource
+import com.osint.unified.data.LaunchDataSource
 import com.osint.unified.data.OutageDataSource
 import com.osint.unified.data.SeaLevelDataSource
 import com.osint.unified.data.WorldWarningsDataSource
@@ -107,6 +108,14 @@ class OsintApplication : Application() {
 
     /** Countries whose connectivity has fallen over. */
     val outageDataSource: OutageDataSource by lazy { OutageDataSource(this) }
+
+    /** Every port in the world, bundled, so it works with the network off. */
+    val portDataSource: BundledPointsDataSource by lazy {
+        BundledPointsDataSource.ports(this)
+    }
+
+    /** What is going to space in the next three weeks, and from where. */
+    val launchDataSource: LaunchDataSource by lazy { LaunchDataSource(diskCache) }
 
     /** Every official severe-weather warning on Earth, not only the US ones. */
     val worldWarningsDataSource: WorldWarningsDataSource by lazy {

@@ -132,8 +132,8 @@ fun GlobeView(
         val full = (globeRadius(viewport.width, viewport.height, zoom) * 2f).roundToInt()
         if (moving) (full / 3).coerceAtLeast(1) else full
     }.coerceIn(0, MAX_RENDER_PX)
-    val camera = remember(centreLat, centreLon, diameter, sun, moving) {
-        Camera(
+    val frame = remember(centreLat, centreLon, diameter, sun, moving) {
+        RenderRequest(
             lat = (centreLat / CAMERA_STEP).roundToInt() * CAMERA_STEP.toDouble(),
             lon = (centreLon / CAMERA_STEP).roundToInt() * CAMERA_STEP.toDouble(),
             d = diameter,
@@ -146,21 +146,21 @@ fun GlobeView(
     // megabytes, and allocating that per frame is how a smooth thing
     // becomes a stuttering one.
     val scratch = remember { arrayOfNulls<IntArray>(1) }
-    val globe: ImageBitmap? by produceState<ImageBitmap?>(null, camera, textured) {
-        if (!textured || camera.d <= 8) {
+    val globe: ImageBitmap? by produceState<ImageBitmap?>(null, frame, textured) {
+        if (!textured || frame.d <= 8) {
             value = null
             return@produceState
         }
         value = withContext(Dispatchers.Default) {
-            val need = camera.d * camera.d
+            val need = frame.d * frame.d
             var buffer = scratch[0]
             if (buffer == null || buffer.size < need) {
                 buffer = IntArray(need)
                 scratch[0] = buffer
             }
             EarthTexture.image(
-                buffer, camera.d, camera.lat, camera.lon,
-                camera.sunLat, camera.sunLon, camera.fine
+                buffer, frame.d, frame.lat, frame.lon,
+                frame.sunLat, frame.sunLon, frame.fine
             )
         }
     }
@@ -277,7 +277,7 @@ fun GlobeView(
  * quantised, because otherwise every frame of a drag is a new camera
  * and the renderer never finishes one before being asked for the next.
  */
-private data class Camera(
+private data class RenderRequest(
     val lat: Double,
     val lon: Double,
     val d: Int,

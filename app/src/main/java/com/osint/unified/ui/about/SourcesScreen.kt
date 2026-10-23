@@ -156,7 +156,23 @@ private val coverage = listOf(
     Coverage("Airfield weather", "worldwide", "METARs around the view, wherever an airfield reports."),
     Coverage("Ocean buoys", "mostly US waters", "NOAA's own network, plus partners."),
     Coverage("Seismic stations", "worldwide", "The IRIS/EarthScope inventory."),
-    Coverage("Airports, power plants, cable landings", "worldwide", "Bundled with the app, so they work offline."),
+    Coverage(
+        "Airports, ports, power plants, cable landings",
+        "worldwide",
+        "Bundled with the app, so they work offline. A vessel slowing " +
+            "on approach to somewhere means nothing until the " +
+            "somewhere has a name."
+    ),
+    Coverage(
+        "Launches",
+        "worldwide",
+        "Rockets leave from about thirty places and the schedule is " +
+            "public. A launch closes airspace and sea lanes and puts " +
+            "ships in particular places, which is why an unusual " +
+            "amount of activity around a pad is sometimes just a " +
+            "launch. Only the next three weeks: further out is a plan " +
+            "rather than an event."
+    ),
     Coverage(
         "Cameras",
         "worldwide, with live stills in California",
@@ -240,6 +256,11 @@ fun SourcesScreen(onBack: () -> Unit) {
         Source("Open-Meteo", "weather, air quality, elevation", "CC BY 4.0"),
         Source("Safecast", "radiation readings", "CC0"),
         Source("OurAirports", "airport positions", "public domain"),
+        Source(
+            "The Space Devs (Launch Library 2)",
+            "upcoming orbital launches and the pads they leave from",
+            "free, no key, used within its rate limits"
+        ),
         Source("WRI Global Power Plant Database", "power stations", "CC BY 4.0"),
         Source("Celestrak", "orbital elements", "free reuse"),
         Source(
@@ -260,8 +281,13 @@ fun SourcesScreen(onBack: () -> Unit) {
         Source("Caltrans", "traffic cameras with live stills, California", "US public domain"),
         Source(
             "Natural Earth",
-            "the globe's coastlines",
+            "the globe's coastlines, world ports, country positions",
             "public domain"
+        ),
+        Source(
+            "NASA Visible Earth (Blue Marble, Earth at Night)",
+            "the imagery the globe is drawn from",
+            "public domain, attribution appreciated"
         ),
         Source(
             "Overpass API (OpenStreetMap)",
