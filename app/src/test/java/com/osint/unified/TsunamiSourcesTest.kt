@@ -104,6 +104,83 @@ class TsunamiSourcesTest {
         assertTrue(out[0].label.contains("M7.1"))
     }
 
+    /**
+     * The one that was drawing month-old bulletins as current.
+     *
+     * When a warning centre puts the message in the Atom header
+     * instead of an <entry>, the only timestamp in the document is the
+     * feed's own, which the centres bump on every refresh. The guard
+     * meant to drop that case looked for a missing timestamp and so
+     * never fired: the bulletin was shown as live and labelled with
+     * how long ago the *feed* had been touched.
+     */
+    @Test
+    fun aBulletinWithNoEntryIsDroppedRatherThanDatedByTheFeed() {
+        val body = """
+            <feed xmlns:georss="http://www.georss.org/georss">
+              <title>Tsunami Information Statement Number 1</title>
+              <updated>${justNow()}</updated>
+              <georss:point>19.5 -155.5</georss:point>
+            </feed>
+        """.trimIndent()
+        assertTrue(source.atom(body, "PTWC").isEmpty())
+    }
+
+    @Test
+    fun aRealEntryStillComesThrough() {
+        val body = """
+            <feed xmlns:georss="http://www.georss.org/georss">
+              <title>Feed title</title><updated>${justNow()}</updated>
+              <entry>
+                <title>Tsunami Advisory</title>
+                <updated>${justNow()}</updated>
+                <georss:point>19.5 -155.5</georss:point>
+              </entry>
+            </feed>
+        """.trimIndent()
+        val out = source.atom(body, "PTWC")
+        assertEquals(1, out.size)
+        assertEquals(19.5, out[0].lat, 1e-9)
+        assertTrue(out[0].label.startsWith("PTWC"))
+    }
+
+    /**
+     * An attribute on the tag must not make every entry invisible.
+     *
+     * It would not merely lose them: with no entries matched the
+     * parser falls into the whole-document path, where one marker is
+     * built from the first coordinate in the file and the feed's own
+     * title — so a dozen bulletins would silently become one wrong
+     * one, and now, one none.
+     */
+    @Test
+    fun anAttributeOnTheEntryTagDoesNotHideIt() {
+        val body = """
+            <feed xmlns:georss="http://www.georss.org/georss">
+              <entry xml:base="https://example.invalid/">
+                <title>Tsunami Warning</title>
+                <updated>${justNow()}</updated>
+                <georss:point>-33.0 -71.6</georss:point>
+              </entry>
+            </feed>
+        """.trimIndent()
+        assertEquals(1, source.atom(body, "NTWC").size)
+    }
+
+    /** An entry older than the window is history, not a warning. */
+    @Test
+    fun anOldEntryIsNotCurrent() {
+        val old = DateTimeFormatter.ISO_OFFSET_DATE_TIME
+            .format(Instant.now().minusSeconds(10L * 24 * 3600).atOffset(ZoneOffset.UTC))
+        val body = """
+            <feed xmlns:georss="http://www.georss.org/georss">
+              <entry><title>Tsunami Warning</title><updated>$old</updated>
+                <georss:point>-33.0 -71.6</georss:point></entry>
+            </feed>
+        """.trimIndent()
+        assertTrue(source.atom(body, "NTWC").isEmpty())
+    }
+
     /** An agency that says nothing about potential has not said no. */
     @Test
     fun anAbsentVerdictIsNotAnAllClear() {

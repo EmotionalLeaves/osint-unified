@@ -120,16 +120,12 @@ class TsunamiDataSource(private val client: OkHttpClient = Http.feedClient) {
         found
     }
 
-    private fun one(url: String, centre: String): List<GeoBlip> = run {
-        val request = Request.Builder()
-            .url(url)
-            .header("User-Agent", "OSINT-Unified/1.0 (research)")
-            .build()
-        client.newCall(request).execute().use { resp ->
-            val body = resp.body?.string()
-            if (!resp.isSuccessful) throw IOException("$centre HTTP ${resp.code}")
-            if (body.isNullOrBlank()) throw IOException("$centre returned an empty body")
+    private fun one(url: String, centre: String): List<GeoBlip> =
+        atom(get(url, centre), centre)
 
+    /** Split from the fetch so the parsing can be tested on its own —
+     *  it is where this source has gone wrong before. */
+    internal fun atom(body: String, centre: String): List<GeoBlip> {
             // Some bulletins carry no entries and put the whole message in
             // the feed header, which still has a title and a point. The
             // intent on that path has always been to drop the bulletin
@@ -155,7 +151,7 @@ class TsunamiDataSource(private val client: OkHttpClient = Http.feedClient) {
             val wholeFeed = entries.isEmpty()
             val blocks = if (wholeFeed) emptyList() else entries
 
-            blocks.mapNotNull { block ->
+        return blocks.mapNotNull { block ->
                 val (lat, lon) = coordsOf(block) ?: return@mapNotNull null
                 val title = tag(block, "title")?.let(::clean) ?: "tsunami bulletin"
                 val updated = Freshness.parse(tag(block, "updated")?.let(::clean))
@@ -173,7 +169,6 @@ class TsunamiDataSource(private val client: OkHttpClient = Http.feedClient) {
                     Freshness.ago(updated)?.let { append(" · $it") }
                 }
                 GeoBlip(lat, lon, label, tag(block, "link")?.let(::clean) ?: "https://www.tsunami.gov/")
-            }
         }
     }
 
