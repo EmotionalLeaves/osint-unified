@@ -149,7 +149,10 @@ class WorldBriefTest {
     /** With nothing happening and feeds down, it says that plainly. */
     @Test
     fun anOutageIsTheHeadlineOnlyWhenThereIsNothingElse() {
-        val state = GodEyeUiState(feedTrouble = mapOf("aircraft" to "timeout"))
+        // A key the brief actually reports on; "aircraft" is not one of
+        // them, which is what made the first version of this test assert
+        // against an empty brief.
+        val state = GodEyeUiState(feedTrouble = mapOf("milAircraft" to "timeout"))
         val headline = WorldBrief.headline(WorldBrief.build(state))
         assertTrue("headline was \"$headline\"", headline.contains("not reporting"))
     }
