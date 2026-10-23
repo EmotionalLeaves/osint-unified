@@ -1,7 +1,8 @@
-https://feeds.meteoalarm.org/feeds/meteoalarm-legacy-atom-united-kingdom##<cap:polygon>[^<]{0,80}
-https://feeds.meteoalarm.org/feeds/meteoalarm-legacy-atom-united-kingdom##<cap:areaDesc>[^<]{0,60}
-https://feeds.meteoalarm.org/feeds/meteoalarm-legacy-atom-united-kingdom##<cap:(geocode|valueName|value)>[^<]{0,50}
-https://feeds.meteoalarm.org/feeds/meteoalarm-legacy-atom-united-kingdom##<(title|cap:event|cap:severity|cap:urgency)>[^<]{0,60}
-https://severeweather.wmo.int/##(json|data|api)/[A-Za-z0-9_./-]{3,50}
-https://severeweather.wmo.int/##(getJSON|fetch|ajax|url:)[^,;)]{0,70}
-https://api.met.no/weatherapi/metalerts/2.0/current.json##"(event|area|awareness_level|title)":"[^"]{0,40}
+https://severeweather.wmo.int/json/wmo_all.json
+https://severeweather.wmo.int/json/wmo_all.json@@2000
+https://severeweather.wmo.int/json/nowarning.json
+https://severeweather.wmo.int/json/cap-status.json
+https://severeweather.wmo.int/json/warningArea-multiviewport.geo.json
+https://severeweather.wmo.int/json/wmo_member.json
+https://severeweather.wmo.int/json/wmo_all.json##"(country|capUrl|event|severity|area|identifier|url|lat|lon|coordinates)":
+https://severeweather.wmo.int/json/nmhs.json
