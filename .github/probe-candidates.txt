@@ -1,10 +1,10 @@
-https://meri.digitraffic.fi/api/ais/v1/locations@@1
-https://meri.digitraffic.fi/api/ais/v1/vessels@@1
-https://www.operations.amsa.gov.au/
-https://ais.openseamap.org/
-https://geo.rijkswaterstaat.nl/services/ogc/gdr/ais/wfs?request=GetCapabilities
-https://web.ais.dk/aisdata/
-https://data.sjofartsverket.se/
-https://aiscatcher.org/api/stations
-https://www.shipfinder.com/
-https://api.ais.barentswatch.no/v1/latest/combined
+https://www.operations.amsa.gov.au/STS/
+https://www.operations.amsa.gov.au/STS/api/vessels
+https://www.operations.amsa.gov.au/STS/StsApi/GetVessels
+https://aisview.dk/aisview/rest/vessels?northEast=58,14&southWest=54,7
+https://dma.dk/
+https://www.marinetraffic.com/en/ais/home
+https://services.marinetraffic.com/api/exportvessels
+https://ais.hamburg-port-authority.de/
+https://portal.emodnet-humanactivities.eu/geoviewer/
+https://meri.digitraffic.fi/api/ais/v1/locations##"(sog|cog|navStat|mmsi|heading)" : ?[^,}]{0,16}

@@ -141,8 +141,64 @@ class AisDataSource(
 
     @Volatile private var lastBytes: Int = 0
 
+    /**
+     * Names for the Finnish feed, which does not carry them.
+     *
+     * Digitraffic splits AIS in two: positions on one endpoint and the
+     * vessel register on another, joined by MMSI. Without the second
+     * every ship in the Baltic is a nine-digit number, which is a
+     * worse answer than the Norwegian feed gives for free.
+     *
+     * Refreshed rarely. A ship's name is not news.
+     */
+    private val names = HashMap<String, String>()
+    @Volatile private var namesAt = 0L
+
+    private fun namesFor(url: String): Map<String, String> {
+        if (!url.contains("digitraffic.fi") || !url.contains("/locations")) return emptyMap()
+        val now = System.currentTimeMillis()
+        synchronized(names) {
+            if (names.isNotEmpty() && now - namesAt < NAMES_TTL_MS) return HashMap(names)
+        }
+        val register = url.replace("/locations", "/vessels")
+        val parsed = runCatching {
+            val request = Request.Builder().url(register)
+                .header("User-Agent", "OSINT-Unified/1.0")
+                .header("Digitraffic-User", DIGITRAFFIC_USER)
+                .build()
+            client.newCall(request).execute().use { resp ->
+                val body = resp.body?.string()
+                if (!resp.isSuccessful || body.isNullOrBlank()) return@runCatching emptyMap()
+                json.parseToJsonElement(body).jsonArray.mapNotNull { element ->
+                    val o = element as? JsonObject ?: return@mapNotNull null
+                    val mmsi = (o["mmsi"] as? JsonPrimitive)?.contentOrNull
+                        ?: return@mapNotNull null
+                    val name = (o["name"] as? JsonPrimitive)?.contentOrNull?.trim()
+                        ?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                    mmsi to name
+                }.toMap()
+            }
+        }.getOrDefault(emptyMap())
+        if (parsed.isNotEmpty()) {
+            synchronized(names) {
+                names.clear()
+                names.putAll(parsed)
+                namesAt = now
+            }
+        }
+        return parsed
+    }
+
     private fun fetchOne(url: String): List<Vessel> {
-        val request = Request.Builder().url(url).header("User-Agent", "OSINT-Unified/1.0").build()
+        val register = namesFor(url)
+        val request = Request.Builder()
+            .url(url)
+            .header("User-Agent", "OSINT-Unified/1.0")
+            // Digitraffic refuses a request that does not say who is
+            // making it, and says so with a 406 that mentions gzip —
+            // which sends you looking in the wrong place entirely.
+            .header("Digitraffic-User", DIGITRAFFIC_USER)
+            .build()
         return client.newCall(request).execute().use { resp ->
             val body = resp.body?.string()
             if (!resp.isSuccessful || body.isNullOrBlank()) return emptyList()
@@ -168,7 +224,8 @@ class AisDataSource(
                     Vessel(
                         mmsi = mmsi,
                         name = p("name", "ship_name", "shipname", "vesselName")
-                            ?.contentOrNull?.trim().orEmpty(),
+                            ?.contentOrNull?.trim()?.takeIf { it.isNotBlank() }
+                            ?: register[mmsi].orEmpty(),
                         lat = lat, lon = lon,
                         course = p("cog", "course", "courseOverGround")?.doubleOrNull ?: 0.0,
                         speed = p("sog", "speed", "speedOverGround")?.doubleOrNull ?: 0.0
@@ -222,6 +279,13 @@ class AisDataSource(
          *  that feed stops being asked. Generous, because a feed's box
          *  is the box of the ships that happened to be reporting. */
         const val OFF_SCREEN_MARGIN = 12.0
+
+        /** Digitraffic asks every caller to identify itself, and
+         *  refuses the ones that do not. */
+        const val DIGITRAFFIC_USER = "EmotionalLeaves/osint-unified"
+
+        /** A ship's name is not news. */
+        const val NAMES_TTL_MS = 6 * 3600_000L
     }
 
     @Serializable
