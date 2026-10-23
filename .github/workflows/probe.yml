@@ -63,6 +63,7 @@ jobs:
             CODE=$(curl -sSL -o /tmp/body -w '%{http_code}' -m 25 \
               -H "User-Agent: $UA" \
               -H 'Accept: application/json,text/html,*/*' \
+              -H 'Digitraffic-User: EmotionalLeaves/osint-unified' --compressed \
               "$U" 2>/tmp/err)
             SIZE=$(wc -c < /tmp/body 2>/dev/null || echo 0)
             if [ -n "$GREP" ]; then

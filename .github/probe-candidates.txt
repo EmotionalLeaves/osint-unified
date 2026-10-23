@@ -1,4 +1,10 @@
-https://kystdatahuset.no/ws/swagger/v1/swagger.json##"/ws/api/ais/[A-Za-z0-9/{}_-]{0,60}
-https://kystdatahuset.no/ws/swagger/v1/swagger.json@@1
 https://meri.digitraffic.fi/api/ais/v1/locations@@1
-https://kystdatahuset.no/ws/api/ais/realtime/geojson?bbox=4,58,12,62@@1
+https://meri.digitraffic.fi/api/ais/v1/vessels@@1
+https://www.operations.amsa.gov.au/
+https://ais.openseamap.org/
+https://geo.rijkswaterstaat.nl/services/ogc/gdr/ais/wfs?request=GetCapabilities
+https://web.ais.dk/aisdata/
+https://data.sjofartsverket.se/
+https://aiscatcher.org/api/stations
+https://www.shipfinder.com/
+https://api.ais.barentswatch.no/v1/latest/combined
