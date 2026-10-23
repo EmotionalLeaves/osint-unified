@@ -124,4 +124,9 @@ echo
 # classpath-less compile, which writes it off as missing-SDK noise.
 python3 "$ROOT/tools/object-members.py" || exit 1
 echo
+# A Compose modifier that is an extension function, used in a file that
+# does not import it. Invisible to the classpath-less compile, which
+# writes every unresolved name after a dot off as the missing SDK.
+python3 "$ROOT/tools/modifier-imports.py" || exit 1
+echo
 python3 "$ROOT/tools/novel-calls.py" || true
