@@ -44,11 +44,32 @@ object IntelSummary {
             if (!n.isNullOrBlank() && n != "0") facts += Fact(label, n)
         }
 
-        // Key single facts pulled from whichever tool reported them.
-        fun grab(label: String, regex: Regex) {
-            ok.firstNotNullOfOrNull { regex.find(it.rawOutput)?.groupValues?.getOrNull(1)?.trim() }
+        // Facts are read out of what a tool said about the target, and
+        // not out of what a tool quoted from somewhere else.
+        //
+        // These patterns used to be matched against every successful
+        // row. Several tools store fetched page text verbatim — a page
+        // snapshot, a crawl, a web search, a news query — so any page
+        // that happened to contain the right phrase was promoted
+        // straight into this summary as though a tool had established
+        // it. Snapshot a news article about an OFAC designation while
+        // looking at an unrelated person and the dossier's own summary
+        // block prints SANCTIONED for them.
+        //
+        // The exporter already takes this seriously: it prefixes every
+        // line of a source's output with a bar so that "nothing a
+        // source wrote can be mistaken for part of this report". This
+        // was reading the same text and printing it unprefixed, in the
+        // report's own voice, at the top.
+        val structured = ok.filterNot { it.toolId in QUOTES_OTHERS }
+
+        fun grab(label: String, regex: Regex, from: List<ResultRow> = structured) {
+            from.firstNotNullOfOrNull { regex.find(it.rawOutput)?.groupValues?.getOrNull(1)?.trim() }
                 ?.takeIf { it.isNotBlank() }?.let { facts += Fact(label, it) }
         }
+
+        /** For the handful where a false positive is an accusation. */
+        fun only(toolId: String): List<ResultRow> = ok.filter { it.toolId == toolId }
         grab("ASN", Regex("""ASN:\s*(AS[\w ]+)"""))
         grab("ISP", Regex("""ISP:\s*(.+)"""))
         grab("OPEN PORTS", Regex("""Open ports:\s*(.+)"""))
@@ -57,17 +78,32 @@ object IntelSummary {
         grab("SPOOFING RISK", Regex("""Spoofing risk:\s*(\w+)"""))
         grab("REGISTERED", Regex("""Registration:\s*([\d-]+)"""))
         grab("PTR", Regex("""PTR:\s*(.+)"""))
-        if (ok.any { it.rawOutput.contains("IS a Tor exit node") }) facts += Fact("TOR EXIT", "yes")
-        ok.firstNotNullOfOrNull { Regex("""Covers (\d+) hostnames""").find(it.rawOutput)?.groupValues?.get(1) }
-            ?.let { facts += Fact("CERT COVERS", it) }
-        ok.firstNotNullOfOrNull { Regex("""Vulnerabilities:\s*(.+)""").find(it.rawOutput)?.groupValues?.get(1) }
-            ?.let { facts += Fact("CVES", it.split(",").size.toString()) }
+        if (structured.any { it.rawOutput.contains("IS a Tor exit node") }) {
+            facts += Fact("TOR EXIT", "yes")
+        }
+        structured.firstNotNullOfOrNull {
+            Regex("""Covers (\d+) hostnames""").find(it.rawOutput)?.groupValues?.get(1)
+        }?.let { facts += Fact("CERT COVERS", it) }
+        structured.firstNotNullOfOrNull {
+            Regex("""Vulnerabilities:\s*(.+)""").find(it.rawOutput)?.groupValues?.get(1)
+        }?.let { facts += Fact("CVES", it.split(",").size.toString()) }
 
         // ---- Headline findings from the deep keyless sources ----
         grab("BREACHED IN", Regex("""Found in (\d+) public breaches"""))
         grab("BREACH RISK", Regex("""Risk label:\s*(\w+)"""))
-        grab("SANCTIONED", Regex("""Specially Designated Nationals\s*—\s*(\d+) match"""))
-        grab("FBI LIST", Regex("""seeking information\s*—\s*'[^']*'\s*\((\d+) match"""))
+        // These two name a person as a sanctions target or a subject
+        // of an FBI notice. Nothing but the tool that actually
+        // searched those lists may put them here.
+        grab(
+            "SANCTIONED",
+            Regex("""Specially Designated Nationals\s*—\s*(\d+) match"""),
+            only("sanctions")
+        )
+        grab(
+            "FBI LIST",
+            Regex("""seeking information\s*—\s*'[^']*'\s*\((\d+) match"""),
+            only("fbi")
+        )
         grab("LEI", Regex("""LEI:\s*(\S+)"""))
         grab("CIK", Regex("""\(CIK (\d+)\)"""))
         grab("AIRCRAFT OWNER", Regex("""Registered owner:\s*(.+)"""))
@@ -102,6 +138,21 @@ object IntelSummary {
         facts += Fact("SOURCES", "${ok.size}/${results.size}")
         return facts
     }
+
+    /**
+     * Tools whose output is somebody else's words rather than their
+     * own finding.
+     *
+     * A page snapshot, a crawl, a search, a news query: what is stored
+     * is text fetched from elsewhere, and anyone who can get a phrase
+     * onto a page the investigator looks at can get it into this list
+     * otherwise. Their content still appears in the dossier — quoted,
+     * attributed and bar-prefixed, which is the whole difference.
+     */
+    private val QUOTES_OTHERS = setOf(
+        "snapshot", "webcrawl", "websearch", "gdelt", "wayback",
+        "commoncrawl", "dorks", "framework", "toolrun", "reverseimage"
+    )
 
     private fun parseCount(
         ok: List<ResultRow>, toolId: String, regex: Regex, label: String, into: MutableList<Fact>

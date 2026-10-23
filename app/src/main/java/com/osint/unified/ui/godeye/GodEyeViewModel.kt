@@ -901,10 +901,9 @@ class GodEyeViewModel(
      * they will touch.
      */
     private fun autoRun() {
-        val redundant = setOf("maigret", "blackbird")
         val tools = _state.value.suggestedTools.filter {
             it.executionMode != ExecutionMode.CLOUD &&
-                it.id !in redundant &&
+                it.id !in REDUNDANT_SWEEPS &&
                 (!it.touchesTarget || settings.activeReconEnabled)
         }
         runToolsInParallel(tools, thenEnrich = settings.followUpEnabled)
@@ -1075,8 +1074,30 @@ class GodEyeViewModel(
                 val observable = router.classify(pivot.value)
                 // take() first, then mark dispatched — otherwise tools trimmed
                 // off the end get recorded as run when they never were.
+                // The same two filters the first pass uses, and for the
+                // same reasons. This pass had neither.
+                //
+                // Without the active-recon gate the follow-up walked
+                // straight through the switch the first-run screen
+                // promises: a discovered host pivot ran tlscert, which
+                // opens a connection to the target's own server from
+                // the investigator's address, and a discovered email
+                // pivot ran the full on-device username sweep —
+                // thousands of requests at sixty-four at a time, to
+                // every site in the ruleset, unannounced. A person who
+                // left that switch off had been told that would not
+                // happen.
+                //
+                // And without the redundancy filter a handle pivot ran
+                // the same sweep three times over, because sherlock,
+                // maigret and blackbird all resolve to one checker —
+                // three times the traffic to every one of those sites,
+                // and three identical rows that the corroboration pass
+                // then counted as three sources agreeing.
                 val tools = runnable(router.suggestTools(observable))
                     .filter { it.executionMode == ExecutionMode.DIRECT }
+                    .filter { it.id !in REDUNDANT_SWEEPS }
+                    .filter { !it.touchesTarget || settings.activeReconEnabled }
                     .take(TOOLS_PER_PIVOT)
                     .filter { dispatched.add("${it.id}|${pivot.value}") }
                 if (tools.isEmpty()) continue
@@ -1349,6 +1370,11 @@ class GodEyeViewModel(
     private companion object {
         /** How often a sleeping feed checks whether its layer came back
          *  on. Short enough to feel immediate, long enough to cost nothing. */
+        /** Tool ids that all resolve to the same username sweep, so
+         *  running more than one of them is the same several thousand
+         *  requests over again for the same answer. */
+        val REDUNDANT_SWEEPS = setOf("maigret", "blackbird")
+
         const val POLL_IDLE_MS = 3_000L
 
         /** The same wait, for an app nobody is looking at. */
