@@ -250,11 +250,14 @@ jobs:
             -PosintVersionName=r${{ github.run_number }} > assemble.log 2>&1
           code=$?
           if [ $code -ne 0 ]; then
-            grep -nE "^(e: |FAILURE|.*Execution failed|Caused by|> )" assemble.log \
-              | head -30 | while IFS= read -r line; do
-                clean="${line//$'\r'/}"
-                echo "::error::${clean}"
-              done
+            # The end of a Gradle log is where the reason is. Matching on
+            # "> " caught every task line instead and filled the thirty
+            # annotations with "UP-TO-DATE" — which is how r170 reported a
+            # failure without mentioning it.
+            grep -vE "^> Task |^$" assemble.log | tail -30 | while IFS= read -r line; do
+              clean="${line//$'\r'/}"
+              echo "::error::${clean}"
+            done
             echo "----- tail of assemble log -----"
             tail -120 assemble.log
             exit 1
