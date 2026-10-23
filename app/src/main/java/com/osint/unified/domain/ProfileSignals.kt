@@ -55,7 +55,19 @@ object ProfileSignals {
         "policies.", "support.", "help.", "about.", "legal.",
         "apple.com", "play.google.com", "itunes.apple.com",
         "facebook.com/tr", "doubleclick", "googletagmanager", "licdn.com",
-        "twimg.com", "fbcdn.net", "cdninstagram", "akamaized", "cloudfront"
+        "twimg.com", "fbcdn.net", "cdninstagram", "akamaized", "cloudfront",
+        // Platform boilerplate that two unrelated profiles share
+        // simply by being hosted on the same kind of thing. A shared
+        // link is called "the strongest tie available here", so a
+        // theme credit or a share button counted as two people being
+        // one person.
+        "wordpress.org", "wordpress.com/plugins", "wp.me",
+        "discord.gg", "discord.com/invite", "t.co",
+        "twitter.com/intent", "x.com/intent", "github.com/sponsors",
+        "creativecommons.org", "gnu.org", "mozilla.org",
+        "patreon.com/join", "buymeacoffee.com/widget",
+        "ko-fi.com/widget", "paypal.com/donate", "linktr.ee/s",
+        "youtube.com/embed", "player.vimeo.com", "archive.org/web"
     )
 
     fun read(html: String, pageHost: String): Signals {
@@ -114,7 +126,18 @@ object ProfileSignals {
      * the weakest, because a display name is just the username again on
      * many sites.
      */
-    fun cluster(accounts: List<Account>): List<Cluster> {
+    fun cluster(accounts: List<Account>, searchedFor: String = ""): List<Cluster> {
+        // The name that was searched for is not evidence about a
+        // person.
+        //
+        // On a large share of sites the profile title *is* the bare
+        // username, and displayName falls back to <title>, so forty
+        // unrelated accounts that share nothing but the handle you
+        // typed were grouped together and presented under "These
+        // profiles also carry the same details, which is a fact about
+        // a person". It is a fact about the name, which the heading
+        // two lines above says explicitly and then contradicts.
+        val handle = normaliseText(searchedFor)
         val clusters = ArrayList<Cluster>()
         val seen = HashSet<String>()
 
@@ -143,7 +166,9 @@ object ProfileSignals {
         }
         group("same display name") {
             listOfNotNull(
-                it.signals.displayName?.let(::normaliseText)?.takeIf { n -> n.length >= 3 }
+                it.signals.displayName
+                    ?.let(::normaliseText)
+                    ?.takeIf { n -> n.length >= 3 && (handle.isBlank() || n != handle) }
             )
         }
         return clusters

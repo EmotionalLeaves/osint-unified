@@ -198,6 +198,7 @@ class UsernameChecker(private val appContext: Context) {
         val semaphore = Semaphore(64)
         val answeredNo = java.util.concurrent.atomic.AtomicInteger(0)
         val couldNotAsk = java.util.concurrent.atomic.AtomicInteger(0)
+        val notApplicable = java.util.concurrent.atomic.AtomicInteger(0)
 
         // The outer per-tool cap is 70 s. Sweep plus control probes has to
         // finish inside that, or the whole result is thrown away and
@@ -211,6 +212,7 @@ class UsernameChecker(private val appContext: Context) {
                                 is SiteAnswer.Found -> found.add(site to answer.url)
                                 SiteAnswer.Absent -> answeredNo.incrementAndGet()
                                 SiteAnswer.Unreachable -> couldNotAsk.incrementAndGet()
+                                SiteAnswer.NotApplicable -> notApplicable.incrementAndGet()
                             }
                         }
                     }
@@ -222,7 +224,12 @@ class UsernameChecker(private val appContext: Context) {
         val raw = found.sortedBy { it.first.name.lowercase() }
         val said = answeredNo.get() + found.size
         val refused = couldNotAsk.get()
-        val notReached = (sites.size - said - refused).coerceAtLeast(0)
+        // Sites that could never hold this name are out of the
+        // denominator as well as the numerator: coverage is of the
+        // sites this name could have been on.
+        val inapplicable = notApplicable.get()
+        val askable = (sites.size - inapplicable).coerceAtLeast(1)
+        val notReached = (askable - said - refused).coerceAtLeast(0)
 
         // Anything matched on page content is believed; anything matched on
         // a bare 200 is not, until a control proves the site can say no.
@@ -248,7 +255,7 @@ class UsernameChecker(private val appContext: Context) {
         // between a list of possibilities and something to act on.
         val clusters = if (hits.isEmpty()) emptyList() else verify(hits)
 
-        val reached = said.toDouble() / sites.size.coerceAtLeast(1)
+        val reached = said.toDouble() / askable
         val verdict = when {
             hits.isNotEmpty() -> VERDICT_HIT
             said == 0 -> VERDICT_UNREACHABLE
@@ -268,8 +275,12 @@ class UsernameChecker(private val appContext: Context) {
                 if (notReached > 0) " · $notReached not reached" else ""
             if (hits.isEmpty()) {
                 append("No accounts found for \"$username\".\n")
-                append("Coverage: $coverage of ${sites.size} sites")
+                append("Coverage: $coverage of $askable sites")
                 append(if (completed) "." else " — stopped at the time cap.")
+                if (inapplicable > 0) {
+                    append("\n$inapplicable more could not hold a name of this shape ")
+                    append("and were not asked.")
+                }
                 if (verdict == VERDICT_ABSENT) {
                     append("\nEvery site that was asked said no.")
                 } else {
@@ -278,7 +289,7 @@ class UsernameChecker(private val appContext: Context) {
                 }
             } else {
                 append("Found ${hits.size} accounts for \"$username\".\n")
-                append("Coverage: $coverage of ${sites.size} sites")
+                append("Coverage: $coverage of $askable sites")
                 append(if (completed) ":" else " — stopped at the time cap:")
                 append("\n")
                 hits.forEach { (site, url) ->
@@ -358,7 +369,7 @@ class UsernameChecker(private val appContext: Context) {
                 }.awaitAll()
             }
         }
-        return ProfileSignals.cluster(accounts.toList())
+        return ProfileSignals.cluster(accounts.toList(), searchedFor = username)
     }
 
     /**
@@ -461,6 +472,19 @@ class UsernameChecker(private val appContext: Context) {
         data class Found(val url: String) : SiteAnswer
         data object Absent : SiteAnswer
         data object Unreachable : SiteAnswer
+
+        /**
+         * This site cannot hold a name of this shape, so it was never
+         * asked.
+         *
+         * It used to answer Absent, which is a site saying no — and
+         * "no" counts towards coverage. For a handle with a dot or a
+         * hyphen in it a large share of the rulesets reject the shape,
+         * so coverage cleared the eighty-percent bar on rejections
+         * alone and the sweep concluded "Every site that was asked
+         * said no", having asked almost none of them.
+         */
+        data object NotApplicable : SiteAnswer
     }
 
     /** The page itself, capped, for reading its profile metadata. */
@@ -480,7 +504,7 @@ class UsernameChecker(private val appContext: Context) {
         if (!url.startsWith("http") || !probe.startsWith("http")) return SiteAnswer.Unreachable
         // A name this site could not hold is not a question worth asking,
         // and asking it can only produce a false positive.
-        if (!site.accepts(username)) return SiteAnswer.Absent
+        if (!site.accepts(username)) return SiteAnswer.NotApplicable
         return try {
             val request = Request.Builder()
                 .url(probe)
