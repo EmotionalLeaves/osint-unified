@@ -213,6 +213,17 @@ fun GlobeView(
         moving = false
     }
 
+    // Moving under a thumb, or still coasting from one.
+    //
+    // The two want exactly the same treatment — a smaller render, no
+    // labels — and only the first was getting it. A flick runs for
+    // well over a second after the finger leaves, and for all of that
+    // the globe was being resampled at full size, two megapixels of
+    // trigonometry per frame, with three hundred place names laid out
+    // over the top. The most expensive moment in the app was the one
+    // immediately after the gesture that made it cheap.
+    val drifting = moving || spin != 0f
+
     // What the renderer is being asked for, quantised. Without the
     // rounding every frame of a drag is a different camera and the
     // renderer never finishes one before being asked for the next.
@@ -237,18 +248,18 @@ fun GlobeView(
         val steps = kotlin.math.ceil(kotlin.math.log2(z) * 2.0)
         Math.pow(2.0, steps / 2.0).toFloat().coerceIn(0.5f, 8f)
     }
-    val diameter = remember(viewport, bucket, moving) {
+    val diameter = remember(viewport, bucket, drifting) {
         val full = (globeRadius(viewport.width, viewport.height, bucket) * 2f).roundToInt()
-        if (moving) (full / MOVING_DIVISOR).coerceAtLeast(1) else full
+        if (drifting) (full / MOVING_DIVISOR).coerceAtLeast(1) else full
     }.coerceIn(0, MAX_RENDER_PX)
-    val frame = remember(centreLat, centreLon, diameter, sun, moving) {
+    val frame = remember(centreLat, centreLon, diameter, sun, drifting) {
         RenderRequest(
             lat = (centreLat / CAMERA_STEP).roundToInt() * CAMERA_STEP.toDouble(),
             lon = (centreLon / CAMERA_STEP).roundToInt() * CAMERA_STEP.toDouble(),
             d = diameter,
             sunLat = sun.first,
             sunLon = sun.second,
-            fine = !moving
+            fine = !drifting
         )
     }
     // One array, reused. At a thousand pixels across this is four
@@ -264,7 +275,7 @@ fun GlobeView(
     // the same buffer while the old one was still painting the rest of
     // it, and the bitmap came out of the two mixed together. Easy to
     // reach: settle on a full-size frame, then touch the screen —
-    // `moving` drops the size to a quarter and starts a small render
+    // `drifting` drops the size to a quarter and starts a small render
     // into the middle of a two-megapixel one.
     val painter = remember { Mutex() }
     val globe: Rendered? by produceState<Rendered?>(null, frame, textured) {
@@ -468,7 +479,7 @@ fun GlobeView(
         // Names only when the camera has settled. Text is the most
         // expensive thing on this canvas and the least useful while
         // the planet is moving under a thumb.
-        if (!moving && places.isNotEmpty()) {
+        if (!drifting && places.isNotEmpty()) {
             drawPlaces(
                 places.take(Places.countFor(zoom)),
                 cx, cy, radius, shownLat, shownLon, ink, halo
@@ -477,7 +488,7 @@ fun GlobeView(
         drawPoints(points, cx, cy, radius, shownLat, shownLon, sun)
         // Labels on the markers too, once there are few enough that
         // labelling them is reading rather than overprinting.
-        if (!moving) {
+        if (!drifting) {
             val named = points.filter { it.clickable && !it.title.isNullOrBlank() }
             if (named.size <= MAX_MARKER_LABELS) {
                 drawMarkerLabels(named, cx, cy, radius, shownLat, shownLon, ink, halo)
