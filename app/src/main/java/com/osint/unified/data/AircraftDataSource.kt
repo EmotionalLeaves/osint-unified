@@ -55,7 +55,7 @@ class AircraftDataSource(
     ): List<Aircraft> = withContext(Dispatchers.IO) {
         val url = settings.tar1090Url.trim()
         // Source order: a custom tar1090 feed, then keyless OpenSky (global),
-        // then keyless adsb.fi (hub sweep), and only demo data if all are down.
+        // then keyless adsb.fi (hub sweep). Nothing at all if none answer.
         if (url.isBlank()) return@withContext merged(focus, wide)
         try {
             val request = Request.Builder().url(url).build()
@@ -86,15 +86,17 @@ class AircraftDataSource(
     /**
      * Both keyless providers, merged. OpenSky is global but rate-limits
      * anonymous callers hard; the ADS-B aggregators are per-region but
-     * reliable. Using both covers far more of the sky than either, and the
-     * demo positions only appear if every real source is down.
+     * reliable. Using both covers far more of the sky than either, and
+     * if both are down the layer is empty — which is the truth, and is
+     * the whole reason the invented aircraft were taken out.
      */
     private suspend fun merged(focus: Pair<Double, Double>?, wide: Boolean): List<Aircraft> {
         val byHex = LinkedHashMap<String, Aircraft>()
         runCatching { adsbSweep(focus, wide) }.getOrNull()?.forEach { byHex[it.icao] = it }
-        // OpenSky is one request for the whole planet, so it is always worth
-        // asking even though it rate-limits anonymous callers.
-        runCatching { openSky() }.getOrNull()?.forEach { byHex.putIfAbsent(it.icao, it) }
+        // OpenSky covers the whole planet in one request, which is both
+        // why it is worth asking and why it has to be asked carefully.
+        runCatching { openSky(focus, wide) }.getOrNull()
+            ?.forEach { byHex.putIfAbsent(it.icao, it) }
         return byHex.values.toList()
     }
 
@@ -192,9 +194,63 @@ class AircraftDataSource(
         }
     }
 
-    private fun openSky(): List<Aircraft>? = try {
+    /**
+     * OpenSky, asked for as little as will do.
+     *
+     * The whole-planet response is one and three quarter megabytes, and
+     * the layer refreshes every fifteen seconds. Asked for unthinkingly
+     * that is four hundred megabytes an hour of someone's mobile data,
+     * and it burns an anonymous caller's daily allowance inside half an
+     * hour — after which the layer is empty for the rest of the day.
+     *
+     * So it is asked two different ways. Zoomed in there is a bounding
+     * box around what is on screen, which is a percent or two of the
+     * planet and costs a quarter as much against the allowance. Zoomed
+     * out there is no honest way to narrow it, so the whole planet is
+     * fetched — but at most once every few minutes, with the last answer
+     * standing in between. Aircraft move perceptibly in five minutes;
+     * they do not move so far that a globe showing the whole Earth is
+     * wrong about where the traffic is.
+     */
+    private fun openSky(focus: Pair<Double, Double>?, wide: Boolean): List<Aircraft>? {
+        val box = if (!wide && focus != null) boxAround(focus) else null
+        if (box == null) {
+            val held = world
+            if (held != null && System.currentTimeMillis() - held.first < WORLD_TTL_MS) {
+                return held.second
+            }
+        }
+        val fetched = openSkyRequest(box)
+        if (box == null && fetched != null) world = System.currentTimeMillis() to fetched
+        return fetched
+    }
+
+    /**
+     * A window around the viewport centre, generous on purpose.
+     *
+     * [wide] is the only thing this layer is told about zoom, so the box
+     * cannot be the viewport exactly. Erring large means aircraft are
+     * already loaded when the map is panned a little rather than popping
+     * in afterwards, and a box this size is still a fiftieth of the
+     * planet.
+     */
+    private fun boxAround(focus: Pair<Double, Double>): String {
+        val (lat, lon) = focus
+        val laMin = (lat - BOX_LAT).coerceAtLeast(-90.0)
+        val laMax = (lat + BOX_LAT).coerceAtMost(90.0)
+        // No wrapping at the date line: OpenSky rejects a box whose west
+        // edge is east of its east edge, and a request that spans it is
+        // better served by clamping than by two requests.
+        val loMin = (lon - BOX_LON).coerceAtLeast(-180.0)
+        val loMax = (lon + BOX_LON).coerceAtMost(180.0)
+        return "?lamin=$laMin&lomin=$loMin&lamax=$laMax&lomax=$loMax"
+    }
+
+    @Volatile private var world: Pair<Long, List<Aircraft>>? = null
+
+    private fun openSkyRequest(box: String?): List<Aircraft>? = try {
         val request = Request.Builder()
-            .url("https://opensky-network.org/api/states/all")
+            .url("https://opensky-network.org/api/states/all${box.orEmpty()}")
             .header("User-Agent", "OSINT-Unified/1.0")
             .build()
         client.newCall(request).execute().use { resp ->
@@ -230,6 +286,13 @@ class AircraftDataSource(
     }
 
     private companion object {
+        /** How long a whole-planet answer stands in for the next one. */
+        const val WORLD_TTL_MS = 5 * 60_000L
+
+        /** Half-height and half-width of the zoomed-in request, degrees. */
+        const val BOX_LAT = 12.0
+        const val BOX_LON = 18.0
+
         val PROVIDERS = listOf(
             "https://api.adsb.lol/v2/lat/",
             "https://opendata.adsb.fi/api/v2/lat/"

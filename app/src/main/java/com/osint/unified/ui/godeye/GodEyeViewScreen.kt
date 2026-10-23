@@ -679,6 +679,22 @@ fun GodEyeViewScreen(
                 layerPills()
             }
 
+            // Nothing on means nothing fetched — the feeds are gated on
+            // the layers, deliberately, because a phone on mobile data
+            // should not be downloading vessel positions for a map
+            // nobody asked to see. But an empty globe with an empty row
+            // of pills under it looks like an app that is broken rather
+            // than one that is idle, so it says which it is.
+            if (visibleLayers.isEmpty()) {
+                Text(
+                    "No layers on, so nothing is being fetched and no " +
+                        "data is being used. Add a layer to start.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Intel.TextLow,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                )
+            }
+
             if (picking) {
                 LayerPicker(
                     filter = layerFilter,

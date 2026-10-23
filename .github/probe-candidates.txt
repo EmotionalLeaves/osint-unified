@@ -1,10 +1,4 @@
-https://api.reliefweb.int/v1/disasters?appname=osint-unified&limit=5&profile=full##"(name|type|status|country)":"?[^",]{0,40}
-https://opensky-network.org/api/states/all@@1
-https://geofon.gfz.de/fdsnws/event/1/query?format=json&limit=20
-https://rapidmapping.emergency.copernicus.eu/backend/api/activations/?format=json@@1
-https://volcano.si.edu/news/WeeklyVolcanoRSS.xml@@1
-https://www.ssd.noaa.gov/VAAC/messages.html@@1
-https://api.unhcr.org/population/v1/population/?limit=3
-https://environment.data.gov.uk/flood-monitoring/id/floods?_limit=3
-https://data.blitzortung.org/Data/Protected/Strokes/
-https://www.ngdc.noaa.gov/hazel/hazard-service/api/v1/tsunamis/events?minYear=2026
+https://api.reliefweb.int/v1/disasters?appname=osint-unified&limit=5&profile=list
+https://geofon.gfz.de/fdsnws/event/1/query?format=text&limit=10
+https://opensky-network.org/api/states/all?lamin=45&lomin=0&lamax=55&lomax=15
+https://www.gdacs.org/gdacsapi/api/events/geteventlist/MAP?fromDate=2026-10-01
