@@ -59,6 +59,17 @@ object Http {
     private const val UA = "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 " +
         "(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
 
+    /**
+     * The same string, for a caller that sets the header itself.
+     *
+     * The interceptor below only fills the header in when nobody else
+     * has, so a data source that builds its own request has to be
+     * able to ask for the default rather than invent one — which is
+     * how two executor classes came to announce themselves as an
+     * OSINT tool to every host they touched.
+     */
+    val defaultUserAgent: String get() = UA
+
     /** At once, to any one host. Enough to be quick, few enough that no
      *  free service sees this app as a burst of traffic. */
     private const val MAX_PER_HOST = 4

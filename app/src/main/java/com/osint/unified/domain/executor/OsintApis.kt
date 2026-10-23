@@ -22,7 +22,49 @@ import java.security.MessageDigest
 class OsintApis(private val client: OkHttpClient = Http.client) {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
-    private val ua = "OSINT-Unified/1.0 (research)"
+    /**
+     * What this app calls itself, which is deliberately not itself.
+     *
+     * The network layer sets a plain mobile-browser agent on every
+     * request for a reason it states at length: several of these calls go to
+     * hosts the TARGET controls — reading their security.txt,
+     * fetching their certificate, crawling their page — and a user
+     * agent announcing an OSINT tool writes "somebody is
+     * investigating you" into their access log. This class overrode
+     * that for every request it made, which is the policy exactly
+     * inverted.
+     *
+     * [RESEARCH_UA] remains for the services whose terms ask to be
+     * told who is calling; SEC EDGAR builds its own, from the
+     * investigator's address, in SecAgent.
+     */
+    private val ua = com.osint.unified.network.Http.defaultUserAgent
+
+    /**
+     * For a service whose terms ask to be told who is calling.
+     *
+     * OpenStreetMap's Nominatim and Overpass both require an agent
+     * that identifies the application, so for those the honest
+     * string is also the compliant one — and none of them is a host
+     * the target controls, which is the only reason the browser
+     * string exists.
+     */
+    private val researchUa = "OSINT-Unified/1.0 " +
+        "(+https://github.com/EmotionalLeaves/osint-unified)"
+
+    /** Hosts that ask to be told, by their own usage policy. */
+    private fun agentFor(url: String, fallback: String): String {
+        val host = runCatching {
+            url.substringAfter("://").substringBefore('/').substringBefore(':').lowercase()
+        }.getOrDefault("")
+        val asks = host.endsWith("openstreetmap.org") ||
+            host.endsWith("overpass-api.de") ||
+            host.endsWith("openstreetmap.fr") ||
+            host.endsWith("kartaview.org") ||
+            host.endsWith("panoramax.xyz") ||
+            host.endsWith("openstreetcam.org")
+        return if (asks) researchUa else fallback
+    }
 
     /**
      * Certificate-transparency subdomain discovery.
@@ -103,10 +145,25 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
      * having resolved none.
      */
     private fun dohOrNull(name: String, type: String): List<String>? = runCatching {
-        json.parseToJsonElement(getBody("https://dns.google/resolve?name=$name&type=$type"))
-            .jsonObject["Answer"]?.jsonArray?.mapNotNull {
-                ((it as? JsonObject)?.get("data") as? JsonPrimitive)?.contentOrNull?.trim('"')
-            } ?: emptyList()
+        val o = json.parseToJsonElement(
+            "https://dns.google/resolve?name=${URLEncoder.encode(name, "UTF-8")}&type=$type"
+                .let { getBody(it) }
+        ).jsonObject
+        // The resolver's own status, which was not being read.
+        //
+        // dns.google answers HTTP 200 for SERVFAIL (2) and REFUSED
+        // (5) with no Answer array — exactly what a blocklist returns
+        // to a public resolver it is rate limiting. Treated as an
+        // empty answer, that is "not listed" from a question nobody
+        // answered. 0 is NOERROR and 3 is NXDOMAIN, and NXDOMAIN
+        // genuinely is "no such name", which is an answer.
+        val status = (o["Status"] as? JsonPrimitive)?.content?.toIntOrNull()
+        if (status != null && status != 0 && status != 3) {
+            throw IOException("resolver status $status")
+        }
+        o["Answer"]?.jsonArray?.mapNotNull {
+            ((it as? JsonObject)?.get("data") as? JsonPrimitive)?.contentOrNull?.trim('"')
+        } ?: emptyList()
     }.getOrNull()
 
     /** The same, for callers that genuinely do not care which it was. */
@@ -135,7 +192,15 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
             append("MX: ${mx.joinToString(", ").ifBlank { "(none — domain may not receive mail)" }}\n")
             append("SPF: ${spf.firstOrNull() ?: "(missing)"}\n")
             append("DMARC: ${dmarc.firstOrNull() ?: "(missing)"}\n")
-            val policy = Regex("p=(\\w+)").find(dmarc.firstOrNull().orEmpty())?.groupValues?.get(1)
+            // Anchored to a tag boundary.
+            //
+            // A bare `p=` matched inside `sp=`, which is the policy
+            // for SUBDOMAINS. "v=DMARC1; sp=reject; p=none" was read
+            // as p=reject and the domain reported LOW risk when its
+            // actual policy is none — the one answer this tool exists
+            // to get right, inverted.
+            val policy = Regex("(?:^|;)\\s*p\\s*=\\s*(\\w+)", RegexOption.IGNORE_CASE)
+                .find(dmarc.firstOrNull().orEmpty())?.groupValues?.get(1)?.lowercase()
             append("Spoofing risk: ${when {
                 spf.isEmpty() && dmarc.isEmpty() -> "HIGH (no SPF or DMARC)"
                 dmarc.isEmpty() || policy == "none" -> "MEDIUM (no enforced DMARC)"
@@ -146,7 +211,7 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
 
     /** HTTP security headers + server banner for a domain/URL. */
     fun securityHeaders(input: String): Result<String> = runCatching {
-        val url = if (input.startsWith("http")) input else "https://$input"
+        val url = withScheme(input)
         val request = Request.Builder().url(url).header("User-Agent", ua).head().build()
         client.newCall(request).execute().use { resp ->
             val checks = listOf(
@@ -214,18 +279,32 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
     fun siteFiles(input: String): Result<String> = runCatching {
         val host = hostOf(input)
         val out = StringBuilder()
-        listOf("robots.txt", ".well-known/security.txt", "security.txt", "sitemap.xml").forEach { path ->
-            runCatching {
-                val body = getBody("https://$host/$path")
-                if (body.isNotBlank() && !body.take(200).contains("<html", true)) {
-                    out.append("--- /$path ---\n")
-                    out.append(body.lineSequence().filter { it.isNotBlank() }.take(25).joinToString("\n"))
-                    out.append("\n\n")
-                }
+        // A 404 is the site saying it does not publish that file; a
+        // DNS failure, a timeout or a 500 is the site saying nothing.
+        // All four fetches were wrapped in a bare runCatching, so on
+        // a captive-portal Wi-Fi — or against a host that is simply
+        // down — the dossier recorded that the site publishes no
+        // security.txt, having never reached it.
+        var answered = 0
+        listOf("robots.txt", ".well-known/security.txt", "sitemap.xml").forEach { path ->
+            val attempt = runCatching { getBody("https://$host/$path") }
+            val code = httpCodeOf(attempt.exceptionOrNull())
+            // 404 and 410 are answers. Anything else that threw is not.
+            if (attempt.isSuccess || code == 404 || code == 410) answered++
+            val body = attempt.getOrNull() ?: return@forEach
+            if (body.isNotBlank() && !body.take(200).contains("<html", true)) {
+                out.append("--- /$path ---\n")
+                out.append(body.lineSequence().filter { it.isNotBlank() }.take(25).joinToString("\n"))
+                out.append("\n\n")
             }
         }
-        if (out.isBlank()) "No robots.txt, security.txt or sitemap found on $host."
-        else out.toString().trim()
+        when {
+            out.isNotBlank() -> out.toString().trim()
+            answered == 0 ->
+                "No reply from $host for robots.txt, security.txt or sitemap, " +
+                    "so nothing is known about what it publishes."
+            else -> "No robots.txt, security.txt or sitemap found on $host."
+        }
     }
 
     /** Is this IP a Tor exit node? (official bulk exit list, keyless) */
@@ -240,17 +319,25 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
     /** DNS-over-HTTPS record lookup (Google DoH). */
     fun dns(domain: String): Result<String> = runCatching {
         val sb = StringBuilder()
+        // Through the helper, which keeps "the resolver said no
+        // records" apart from "the resolver did not answer". This
+        // loop had its own copy that swallowed both into
+        // emptyList(), so on a network where DoH is blocked — which
+        // is most filtered corporate and some mobile ones — a domain
+        // with full A, MX and NS came back "No DNS records found."
+        var asked = 0
         listOf("A", "AAAA", "MX", "NS", "TXT").forEach { type ->
-            val answers = runCatching {
-                json.parseToJsonElement(getBody("https://dns.google/resolve?name=$domain&type=$type"))
-                    .jsonObject["Answer"]?.jsonArray
-            }.getOrNull()
-            val values = answers?.mapNotNull {
-                ((it as? JsonObject)?.get("data") as? JsonPrimitive)?.contentOrNull
-            } ?: emptyList()
+            val values = dohOrNull(domain, type) ?: return@forEach
+            asked++
             if (values.isNotEmpty()) sb.append("$type: ${values.joinToString(", ")}\n")
         }
-        if (sb.isBlank()) "No DNS records found." else sb.toString()
+        when {
+            asked == 0 ->
+                "The DNS resolver could not be reached for $domain, so nothing " +
+                    "is known about its records."
+            sb.isBlank() -> "No DNS records found for $domain."
+            else -> sb.toString()
+        }
     }
 
     /** IP geolocation + ASN/ISP (ipwho.is). */
@@ -338,7 +425,7 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
 
     /** The single most recent archived snapshot via the availability API. */
     private fun waybackLatest(input: String): String {
-        val target = if (input.startsWith("http")) input else "https://$input"
+        val target = withScheme(input)
         val o = json.parseToJsonElement(
             getBody("https://archive.org/wayback/available?url=" + URLEncoder.encode(target, "UTF-8"))
         ).jsonObject
@@ -683,7 +770,7 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
 
     /** Photon-style crawl: fetch a page and extract emails, links and JS files. */
     fun webcrawl(input: String): Result<String> = runCatching {
-        val url = if (input.startsWith("http")) input else "https://$input"
+        val url = withScheme(input)
         val html = getBody(url)
         val emails = Regex("""[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}""")
             .findAll(html).map { it.value }.distinct().take(30).toList()
@@ -691,11 +778,41 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
             .findAll(html).map { it.groupValues[1] }.filter { it.startsWith("http") }.distinct().take(40).toList()
         val scripts = Regex("""src=["']([^"']+\.js[^"']*)["']""")
             .findAll(html).map { it.groupValues[1] }.distinct().take(20).toList()
+        if (emails.isEmpty() && links.isEmpty() && scripts.isEmpty()) {
+            // "Crawled: https://…" is a statement about what this app
+            // did, not about the target, and the classifier read it as
+            // a finding — so a page with nothing on it counted among
+            // the sources that returned something, under two empty
+            // headed sections.
+            return@runCatching "No emails, links or scripts found on $url."
+        }
         buildString {
             append("Crawled: $url\n")
-            append("\nEmails (${emails.size}):\n").append(emails.joinToString("\n"))
-            append("\n\nLinks (${links.size}):\n").append(links.joinToString("\n"))
+            if (emails.isNotEmpty()) {
+                append("\nEmails (${emails.size}):\n").append(emails.joinToString("\n"))
+            }
+            if (links.isNotEmpty()) {
+                append("\n\nLinks (${links.size}")
+                if (links.size >= 40) append(", the first 40 found")
+                append("):\n").append(links.joinToString("\n"))
+            }
             if (scripts.isNotEmpty()) append("\n\nJS files (${scripts.size}):\n").append(scripts.joinToString("\n"))
+        }
+    }
+
+    /**
+     * A URL with a scheme on the front, when the input had none.
+     *
+     * `startsWith("http")` is not a scheme test: httpbin.org,
+     * httptoolkit.com and https.dev all begin with those letters and
+     * were handed to OkHttp without a scheme, which throws.
+     */
+    private fun withScheme(input: String): String {
+        val v = input.trim()
+        return if (v.startsWith("http://", true) || v.startsWith("https://", true)) {
+            v
+        } else {
+            "https://$v"
         }
     }
 
@@ -769,9 +886,23 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
         if (body.trimStart().startsWith("Please limit")) {
             return@runCatching "GDELT is rate limiting (one request per five seconds). Try again shortly."
         }
-        val articles = runCatching {
+        // A body that will not parse is not an empty result.
+        //
+        // GDELT answers 200 with plain text for several errors besides
+        // the rate limit special-cased above — a query it cannot
+        // parse, an unsupported operator, maintenance. The parse threw
+        // inside runCatching, `articles` came out null, and the line
+        // below asserted that nothing in the world's news had
+        // mentioned the target in three days.
+        val parsed = runCatching {
             json.parseToJsonElement(body).jsonObject["articles"] as? JsonArray
-        }.getOrNull()
+        }
+        if (parsed.isFailure) {
+            return@runCatching "GDELT could not be read for \"$query\" — it answered " +
+                "with something that is not its usual result: " +
+                body.trim().take(120).replace('\n', ' ')
+        }
+        val articles = parsed.getOrNull()
         if (articles.isNullOrEmpty()) {
             return@runCatching "No news coverage for \"$query\" in the last three days."
         }
@@ -789,7 +920,14 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
             }
         }
         buildString {
-            append("News coverage for \"$query\" — ${articles.size} articles, last 3 days\n")
+            // "at least", when the request's own cap is what the
+            // count reflects. maxrecords=75 is the ceiling, and
+            // reporting it as a total told the reader there were
+            // exactly seventy-five.
+            val more = if (articles.size >= 75) "at least " else ""
+            append("News coverage for \"$query\" — $more${articles.size} articles")
+            if (articles.size > 50) append(" (50 listed)")
+            append(", last 3 days\n")
             if (byCountry.isNotEmpty()) {
                 append("\nReporting countries: ")
                 append(
@@ -817,10 +955,26 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
         }
     }
 
+    /**
+     * The HTTP status behind a failed [getBody], when there was one.
+     *
+     * getBody reports a non-2xx as IOException("HTTP nnn"); a socket
+     * error has no code. The difference is "the site answered" and
+     * "the site did not", which is the difference between an absence
+     * and a shrug.
+     */
+    private fun httpCodeOf(e: Throwable?): Int? = (e as? IOException)?.message
+        ?.takeIf { it.startsWith("HTTP ") }?.removePrefix("HTTP ")?.trim()?.toIntOrNull()
+
     private val ipRegex = Regex("""^(?:\d{1,3}\.){3}\d{1,3}$""")
 
     private fun resolveA(domain: String): String? = runCatching {
-        json.parseToJsonElement(getBody("https://dns.google/resolve?name=$domain&type=A"))
+        json.parseToJsonElement(
+            getBody(
+                "https://dns.google/resolve?type=A&name=" +
+                    URLEncoder.encode(domain, "UTF-8")
+            )
+        )
             .jsonObject["Answer"]?.jsonArray
             ?.firstNotNullOfOrNull { el ->
                 val o = el as? JsonObject
@@ -831,7 +985,8 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
     }.getOrNull()
 
     private fun getBody(url: String, patient: Boolean = false): String {
-        val request = Request.Builder().url(url).header("User-Agent", ua).build()
+        val request = Request.Builder().url(url)
+            .header("User-Agent", agentFor(url, ua)).build()
         val c = if (patient) com.osint.unified.network.Http.slowApiClient else client
         c.newCall(request).execute().use { resp ->
             val body = resp.body?.string().orEmpty()

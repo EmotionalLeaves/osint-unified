@@ -21,6 +21,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
+import kotlin.coroutines.cancellation.CancellationException
 import java.net.URLEncoder
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -49,7 +50,49 @@ class DeepApis(
 ) {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
-    private val ua = "OSINT-Unified/1.0 (research)"
+    /**
+     * What this app calls itself, which is deliberately not itself.
+     *
+     * The network layer sets a plain mobile-browser agent on every
+     * request for a reason it states at length: several of these calls go to
+     * hosts the TARGET controls — reading their security.txt,
+     * fetching their certificate, crawling their page — and a user
+     * agent announcing an OSINT tool writes "somebody is
+     * investigating you" into their access log. This class overrode
+     * that for every request it made, which is the policy exactly
+     * inverted.
+     *
+     * [RESEARCH_UA] remains for the services whose terms ask to be
+     * told who is calling; SEC EDGAR builds its own, from the
+     * investigator's address, in SecAgent.
+     */
+    private val ua = com.osint.unified.network.Http.defaultUserAgent
+
+    /**
+     * For a service whose terms ask to be told who is calling.
+     *
+     * OpenStreetMap's Nominatim and Overpass both require an agent
+     * that identifies the application, so for those the honest
+     * string is also the compliant one — and none of them is a host
+     * the target controls, which is the only reason the browser
+     * string exists.
+     */
+    private val researchUa = "OSINT-Unified/1.0 " +
+        "(+https://github.com/EmotionalLeaves/osint-unified)"
+
+    /** Hosts that ask to be told, by their own usage policy. */
+    private fun agentFor(url: String, fallback: String): String {
+        val host = runCatching {
+            url.substringAfter("://").substringBefore('/').substringBefore(':').lowercase()
+        }.getOrDefault("")
+        val asks = host.endsWith("openstreetmap.org") ||
+            host.endsWith("overpass-api.de") ||
+            host.endsWith("openstreetmap.fr") ||
+            host.endsWith("kartaview.org") ||
+            host.endsWith("panoramax.xyz") ||
+            host.endsWith("openstreetcam.org")
+        return if (asks) researchUa else fallback
+    }
     private val browserUa =
         "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
 
@@ -151,9 +194,21 @@ class DeepApis(
         val names = LinkedHashSet<String>()
         val repos = LinkedHashMap<String, Int>()
         val hours = IntArray(24)
-        val events = runCatching {
+        // Kept apart from an empty array.
+        //
+        // Unauthenticated GitHub is sixty requests an hour and this
+        // class makes several per dossier, so a 403 is routine; a 404
+        // means no such user; a dropped connection means nothing at
+        // all. All three used to arrive here as `null` and come out
+        // the far end as "No public activity in the last 90 days",
+        // which is a statement about a person's year made from a
+        // request that was refused.
+        val attempt = runCatching {
             json.parseToJsonElement(get("https://api.github.com/users/$u/events/public?per_page=100")).jsonArray
-        }.getOrNull()
+        }
+        attempt.exceptionOrNull()?.let { if (it is CancellationException) throw it }
+        val reached = attempt.isSuccess
+        val events = attempt.getOrNull()
         events?.forEach { el ->
             val e = el as? JsonObject ?: return@forEach
             ((e["repo"] as? JsonObject)?.str("name"))?.let { repos[it] = (repos[it] ?: 0) + 1 }
@@ -186,7 +241,35 @@ class DeepApis(
                 }
             }
         }
-        if (emails.isEmpty() && repos.isEmpty()) sb.append("No public activity in the last 90 days.\n")
+        if (emails.isEmpty() && repos.isEmpty()) {
+            // Verdict first, because the classifier reads the first
+            // non-blank line and the header above it is not one.
+            val why = if (reached) {
+                "No public activity for $username in GitHub's last 300 events."
+            } else {
+                val code = httpCode(attempt.exceptionOrNull() ?: IOException(""))
+                when (code) {
+                    404 -> "No GitHub account under the name $username."
+                    403, 429 ->
+                        "GitHub could not be reached for $username — rate limited " +
+                            "(the public API allows sixty requests an hour)."
+                    else -> "GitHub could not be reached for $username."
+                }
+            }
+            return@runCatching buildString {
+                append(why).append('\n')
+                // What the event feed can and cannot tell you, said
+                // once rather than implied: it is capped at 300
+                // events or ninety days, whichever comes first, so a
+                // quiet feed is not the same as a quiet year.
+                if (reached) {
+                    append("The public event feed holds at most 300 events or ")
+                    append("ninety days, so this is not a statement about the ")
+                    append("whole account.\n")
+                }
+                append("\nhttps://github.com/${seg(username)}")
+            }
+        }
         sb.append("\nhttps://github.com/${seg(username)}")
         sb.toString()
     }
@@ -458,8 +541,29 @@ class DeepApis(
         // platform it had failed to reach, as a finding, in a dossier
         // about a real person. The username checker alongside this one
         // has had a three-state answer for exactly this reason.
+        // A platform's own "no such user" is an answer.
+        //
+        // get() throws on every non-2xx, and four of these endpoints
+        // report an unknown handle with a status rather than an empty
+        // body: Bluesky 400, Mastodon 404, Docker Hub 404, Bitbucket
+        // 404. So the three-state split above, which exists to stop a
+        // failure being reported as an absence, was doing the inverse
+        // for half the list — those four could never produce an
+        // absence at all, the denominator on the second line was
+        // permanently wrong, and a handle that genuinely exists
+        // nowhere came back as four platforms "could not be reached".
+        //
+        // Only the statuses a platform uses to mean "not here" count.
+        // A 403, a 429 and anything 5xx stay failures, which is what
+        // they are.
         val results = checks.map { (name, probe) ->
-            async { name to runCatching { probe() } }
+            async {
+                name to runCatching { probe() }.recoverCatching { e ->
+                    val code = httpCode(e)
+                    if (code != null && code in (SAYS_NO[name] ?: SAYS_NO_DEFAULT)) null
+                    else throw e
+                }
+            }
         }.map { it.await() }
 
         val answered = results.filter { it.second.isSuccess }
@@ -470,10 +574,27 @@ class DeepApis(
             .map { it.first }
 
         buildString {
-            // The verdict goes on the first line, because that is the
-            // line the classifier reads. "Platform sweep — 'u'"
-            // followed by an explanation underneath would have been
-            // filed as a finding.
+            // The verdict is a field, not a sentence.
+            //
+            // Executors.classify routes socialsweep into the branch
+            // that reads `sweep-verdict=`, and its comment says every
+            // sweep states its verdict that way — which was true of
+            // the username sweeps and never true here. Without the
+            // field the classifier fell through to reading the prose,
+            // and the prose begins "Platform sweep — 'u'", so a sweep
+            // that found nothing anywhere was filed as a finding and
+            // could then vouch for other tools as a member of the
+            // username-sweep independence family.
+            val verdict = when {
+                answered.isEmpty() -> UsernameChecker.VERDICT_UNREACHABLE
+                hits.isNotEmpty() -> UsernameChecker.VERDICT_HIT
+                // Some of the list answered and said no, and the rest
+                // was never asked: that is neither an absence nor a
+                // failure, and the field has a word for it.
+                unreachable.isEmpty() -> UsernameChecker.VERDICT_ABSENT
+                else -> UsernameChecker.VERDICT_PARTIAL
+            }
+            append(UsernameChecker.VERDICT_FIELD).append(verdict).append('\n')
             if (answered.isEmpty()) {
                 append("Platform sweep could not be reached for '$u'")
                 append(" — no platform answered, so this says nothing either way.\n")
@@ -1015,20 +1136,45 @@ class DeepApis(
             agent
         )
         val sb = StringBuilder("SEC EDGAR — '$name'\n")
-        val ciks = Regex("""CIK=(\d{10})""").findAll(xml).map { it.groupValues[1] }.distinct().toList()
-        val names = Regex("""<conformed-name>([^<]+)</conformed-name>""").findAll(xml)
-            .map { it.groupValues[1] }.toList()
-        Regex("""<city>([^<]+)</city>.*?<state>([^<]+)</state>""", RegexOption.DOT_MATCHES_ALL)
-            .find(xml)?.let { sb.append("Business address: ${it.groupValues[1]}, ${it.groupValues[2]}\n") }
-        Regex("""<phone>([^<]+)</phone>""").find(xml)?.let { sb.append("Phone: ${it.groupValues[1]}\n") }
-        Regex("""<state-of-incorporation>([^<]+)<""").find(xml)?.let { sb.append("Incorporated in: ${it.groupValues[1]}\n") }
-        Regex("""<assigned-sic-desc>([^<]+)<""").find(xml)?.let { sb.append("Industry: ${it.groupValues[1]}\n") }
-        if (names.isNotEmpty()) {
-            sb.append("\nCompanies:\n")
-            names.take(20).forEachIndexed { i, n ->
+        // Each registrant read out of its own entry.
+        //
+        // The two patterns used to be run independently over the whole
+        // document and then zipped by index — with .distinct() applied
+        // to one of them and not the other. Any feed where the two
+        // sequences did not line up one-for-one printed a company
+        // under another company's CIK and linked to the wrong
+        // registrant's filings, silently and confidently.
+        val entries = Regex("""<entry>(.*?)</entry>""", RegexOption.DOT_MATCHES_ALL)
+            .findAll(xml).map { it.groupValues[1] }.toList()
+        val registrants = entries.mapNotNull { entry ->
+            val n = Regex("""<conformed-name>([^<]+)</conformed-name>""")
+                .find(entry)?.groupValues?.get(1)?.trim() ?: return@mapNotNull null
+            n to Regex("""CIK=(\d{10})""").find(entry)?.groupValues?.get(1)
+        }
+        // A single match is one company's record, so its address is
+        // that company's. A list of twenty is not, and labelling the
+        // first entry's city as "the" business address was attaching
+        // one registrant's details to all of them.
+        if (entries.size <= 1) {
+            Regex("""<city>([^<]+)</city>.*?<state>([^<]+)</state>""", RegexOption.DOT_MATCHES_ALL)
+                .find(xml)?.let { sb.append("Business address: ${it.groupValues[1]}, ${it.groupValues[2]}\n") }
+            Regex("""<phone>([^<]+)</phone>""").find(xml)?.let { sb.append("Phone: ${it.groupValues[1]}\n") }
+            Regex("""<state-of-incorporation>([^<]+)<""").find(xml)?.let { sb.append("Incorporated in: ${it.groupValues[1]}\n") }
+            Regex("""<assigned-sic-desc>([^<]+)<""").find(xml)?.let { sb.append("Industry: ${it.groupValues[1]}\n") }
+        }
+        val ciks = registrants.mapNotNull { it.second }
+        val names = registrants.map { it.first }
+        if (registrants.isNotEmpty()) {
+            sb.append("\nCompanies")
+            if (registrants.size >= 20) sb.append(" (the search returns at most 20)")
+            sb.append(":\n")
+            registrants.take(20).forEach { (n, cik) ->
                 sb.append("• $n")
-                ciks.getOrNull(i)?.let { sb.append(" (CIK $it)\n  https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=$it&type=&dateb=&owner=include&count=40\n") }
-                    ?: sb.append("\n")
+                if (cik != null) {
+                    sb.append(" (CIK $cik)\n  https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=$cik&type=&dateb=&owner=include&count=40\n")
+                } else {
+                    sb.append("\n")
+                }
             }
         }
         val filings = Regex("""<filing-type>([^<]+)</filing-type>.*?<filing-date>([^<]+)</filing-date>""", RegexOption.DOT_MATCHES_ALL)
@@ -1037,9 +1183,18 @@ class DeepApis(
             sb.append("\nRecent filings:\n")
             filings.forEach { sb.append("• ${it.groupValues[1]} — ${it.groupValues[2]}\n") }
         }
-        if (ciks.isEmpty() && names.isEmpty()) sb.append("No registrant matched.\n")
         // efts.sec.gov is the JSON backend and refuses a browser; the page
         // a person can actually open is EDGAR's own full-text search.
+        if (ciks.isEmpty() && names.isEmpty()) {
+            // In front of the header: Findings.NOTHING has held
+            // "no registrant matched" all along and it was dead
+            // config, because only the first non-blank line is read
+            // and the first line was "SEC EDGAR — 'Jane Doe'".
+            return@runCatching buildString {
+                append("No registrant matched '$name' in SEC EDGAR.\n")
+                append("\nFull-text search: https://www.sec.gov/edgar/search/#/q=$q")
+            }
+        }
         sb.append("\nFull-text search: https://www.sec.gov/edgar/search/#/q=$q")
         sb.toString()
     }
@@ -1228,7 +1383,18 @@ class DeepApis(
         }
 
         if (sb.length <= headerOnly) {
-            sb.append("\nNo geotagged imagery found here. Wider options:\n")
+            // Rewritten, not appended to.
+            //
+            // The classifier reads the first non-blank line and
+            // nothing else, so a header saying "Imagery near 51.507,
+            // -0.127" with the absence underneath was filed as a
+            // finding: a coordinate with no photographs of it
+            // anywhere appeared in the dossier as a source that
+            // returned something.
+            sb.setLength(0)
+            sb.append("No geotagged imagery found near ")
+            sb.append("%.5f, %.5f.\n".format(Locale.US, lat, lon))
+            sb.append("Wider options:\n")
             sb.append("Google Street View: https://www.google.com/maps/@$lat,$lon,17z\n")
             // Mapillary is listed last and labelled, because it is the
             // one entry here that frequently does not open: a WebGL
@@ -1253,6 +1419,8 @@ class DeepApis(
     fun aircraft(input: String): Result<String> = runCatching {
         val t = input.trim().uppercase().replace(" ", "")
         val sb = StringBuilder("Aircraft — $t\n")
+        val headerOnly = sb.length
+        var learned = false
         val hex = if (Regex("^[0-9A-F]{6}$").matches(t)) t else null
         var reg: String? = if (hex == null) t else null
         if (hex != null) {
@@ -1263,6 +1431,7 @@ class DeepApis(
                 sb.append("Type: ${o.str("Manufacturer")} ${o.str("Type")} (${o.str("ICAOTypeCode")})\n")
                 o.str("RegisteredOwners")?.let { sb.append("Registered owner: $it\n") }
                 o.str("OperatorFlagCode")?.let { sb.append("Operator code: $it\n") }
+                learned = true
             }.onFailure { sb.append("hexdb could not be reached for Mode-S $hex.\n") }
         }
         // Live position from adsb.lol (keyless, open ADS-B aggregation).
@@ -1284,8 +1453,30 @@ class DeepApis(
                 a.dbl("track")?.let { sb.append("Track: ${it.toInt()}°\n") }
                 a.str("r")?.let { sb.append("Reg: $it\n") }
                 a.str("t")?.let { sb.append("Type: $it\n") }
+                learned = true
             } else {
                 sb.append("\nNot currently transmitting ADS-B.\n")
+            }
+        }
+        if (!learned) {
+            // Neither register nor live feed told us anything, so the
+            // header is the whole of it — and a header reads as a
+            // finding. Which of the two it was is already in the
+            // buffer; this only puts a line the classifier can read
+            // in front of it.
+            val lines = sb.substring(headerOnly).trim()
+            val reachable = !lines.contains("could not be reached")
+            return@runCatching buildString {
+                if (reachable) {
+                    append("No registration or live track found for $t.\n")
+                } else {
+                    append("The aircraft registers could not be reached for $t, ")
+                    append("so nothing is claimed either way.\n")
+                }
+                if (lines.isNotBlank()) append(lines).append('\n')
+                if (reg != null) {
+                    append("\nHistory: https://globe.adsb.lol/?reg=${seg(reg ?: "")}\n")
+                }
             }
         }
         if (reg != null) {
@@ -1315,20 +1506,45 @@ class DeepApis(
         o.int("n_tx")?.let { sb.append("Transactions: $it\n") }
         val txs = o["txs"] as? JsonArray
         val counterparties = LinkedHashSet<String>()
+        /** Addresses this wallet spends from, so its own change is not a payee. */
+        val own = LinkedHashSet<String>()
         if (!txs.isNullOrEmpty()) {
             sb.append("\nRecent transactions:\n")
             txs.take(10).forEach { t ->
                 val tx = t as? JsonObject ?: return@forEach
                 val time = tx.dbl("time")?.let { utc(it.toLong() * 1000) } ?: "?"
                 sb.append("• $time  ${tx.str("hash")?.take(20)}…\n")
+                // Outputs that are not this address, minus the ones
+                // this address also spends from — a wallet's own
+                // change addresses were being printed as people it
+                // had paid. Collected from the inputs of the same
+                // ten transactions, which is the cheapest evidence
+                // available that an address belongs to the same
+                // wallet.
                 (tx["out"] as? JsonArray)?.forEach { out ->
                     (out as? JsonObject)?.str("addr")?.takeIf { it != a }?.let { counterparties.add(it) }
                 }
+                (tx["inputs"] as? JsonArray)?.forEach { inp ->
+                    ((inp as? JsonObject)?.get("prev_out") as? JsonObject)
+                        .str("addr")?.let { own.add(it) }
+                }
             }
         }
-        if (counterparties.isNotEmpty()) {
-            sb.append("\nCounterparty addresses (${counterparties.size}):\n")
-            counterparties.take(20).forEach { sb.append("• $it\n") }
+        val payees = counterparties - own
+        if (payees.isNotEmpty()) {
+            sb.append("\nCounterparty addresses (${payees.size}")
+            if (payees.size > 20) sb.append(", first 20 shown")
+            sb.append("):\n")
+            payees.take(20).forEach { sb.append("• $it\n") }
+        }
+        if (o.int("n_tx") == 0 || (txs.isNullOrEmpty() && o.dbl("total_received") == 0.0)) {
+            // Same reason as the Ethereum branch: an address nobody
+            // has ever paid is an absence, and it was being reported
+            // under a header that reads as a finding.
+            return buildString {
+                append("No transactions recorded against the Bitcoin address $a.\n")
+                append("\nExplorer: https://www.blockchain.com/btc/address/$a")
+            }
         }
         sb.append("\nExplorer: https://www.blockchain.com/btc/address/$a")
         sb.append("\nGraph: https://oxt.me/address/$a")
@@ -1363,7 +1579,16 @@ class DeepApis(
         }
         if (nonce != null) sb.append("Transactions sent: $nonce\n")
         if (balance == null && nonce == null) {
-            sb.append("No public node answered, so nothing is known about this address.\n")
+            // In front of the header, not under it. The classifier
+            // reads the first non-blank line, so "Ethereum address —
+            // 0x…" followed by "no public node answered" was filed as
+            // a finding — and this tool is graded A, so a request that
+            // reached nobody was presented as a reliable one that did.
+            return buildString {
+                append("No public node answered for $a, so nothing is known ")
+                append("about this address.\n")
+                append("\nExplorer: https://etherscan.io/address/$a")
+            }
         }
         sb.append("\nBalance and nonce only — reading token holdings needs a keyed ")
         sb.append("service, and this app does not use keys.")
@@ -1883,6 +2108,24 @@ class DeepApis(
         Regex("""[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}""").findAll(s)
             .map { it.value }.distinct().toList()
 
+    /**
+     * The status behind a failure from [get], when there was one.
+     *
+     * [get] reports a non-2xx as IOException("HTTP nnn"); anything
+     * else — a socket error, a cancellation — has no code and is a
+     * transport failure, which is the distinction the callers need.
+     */
+    private fun httpCode(e: Throwable): Int? = (e as? IOException)?.message
+        ?.takeIf { it.startsWith("HTTP ") }?.removePrefix("HTTP ")?.trim()?.toIntOrNull()
+
+    /** Statuses each platform uses to mean "no such user". */
+    private val SAYS_NO_DEFAULT = setOf(404, 410)
+
+    private val SAYS_NO = mapOf(
+        // getProfile answers 400, not 404, for an actor it cannot find.
+        "Bluesky" to setOf(400, 404, 410)
+    )
+
     private fun get(url: String, agent: String = ua): String {
         // A 5xx from these services means "busy", not "no". The Wayback CDX
         // endpoint in particular sheds load with a 503 under no special
@@ -1905,7 +2148,7 @@ class DeepApis(
                 }
             }
             val request = Request.Builder().url(url)
-                .header("User-Agent", agent)
+                .header("User-Agent", agentFor(url, agent))
                 .header("Accept", "application/json, text/html;q=0.9, */*;q=0.8")
                 .build()
             client.newCall(request).execute().use { resp ->

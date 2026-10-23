@@ -18,8 +18,17 @@ package com.osint.unified.domain.executor
  */
 internal object SecAgent {
 
+    /**
+     * Opens with "could not be reached" on purpose.
+     *
+     * This string is a tool's entire output, and the classifier reads
+     * the first non-blank line: without those words a source that was
+     * never consulted — graded A, because EDGAR is — appeared in the
+     * dossier as one that answered and found nothing.
+     */
     const val NOT_SET =
-        "SEC EDGAR requires a contact email address with every request, and " +
+        "SEC EDGAR could not be reached: it requires a contact email " +
+            "address with every request, and " +
             "refuses anonymous ones. Add yours in Settings → SEC contact " +
             "email to use this source. It is sent only to sec.gov."
 
