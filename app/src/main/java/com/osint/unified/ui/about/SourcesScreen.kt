@@ -331,6 +331,17 @@ fun SourcesScreen(onBack: () -> Unit) {
                 "missions, prisons and substations around the view, queried live",
             "ODbL 1.0 — volunteer-run, rate limited"
         ),
+        Source(
+            "KartaView and Panoramax",
+            "street-level photographs near a point, with the date each " +
+                "was taken and which way the camera was pointing",
+            "CC BY-SA / etalab-2.0, no account"
+        ),
+        Source(
+            "Wikimedia Commons",
+            "geotagged photographs within 3 km of a point",
+            "per file, mostly CC BY-SA"
+        ),
         Source("US Treasury OFAC", "sanctions lists", "US public domain"),
         Source("UN Security Council", "consolidated sanctions list", "UN terms"),
         Source("Have I Been Pwned", "breach catalogue", "CC BY 4.0"),

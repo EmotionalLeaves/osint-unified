@@ -1121,7 +1121,7 @@ class DeepApis(
     }
 
     /** Photographs taken near a coordinate — Wikimedia Commons plus
-     *  street-level imagery from KartaView. */
+     *  street-level imagery from KartaView and Panoramax. */
     fun photosNear(input: String): Result<String> = runCatching {
         val (lat, lon) = parseCoord(input) ?: return@runCatching "Not a coordinate: $input"
         val sb = StringBuilder("Imagery near %.5f, %.5f\n".format(Locale.US, lat, lon))
@@ -1182,15 +1182,63 @@ class DeepApis(
             }
         }
 
+        // Panoramax: open street-level imagery, keyless, worldwide, and
+        // it hands back the JPEG itself rather than a viewer. Added
+        // because the only other street-level option this app could
+        // name was a link to a WebGL application that needs a key to
+        // query and most of a minute to paint on a phone — a source
+        // you cannot read is not a source.
+        runCatching {
+            // A degree of latitude is 111 km everywhere; a degree of
+            // longitude is that times the cosine of the latitude, so a
+            // square box in metres is not a square box in degrees.
+            val dLat = 0.0036
+            val dLon = dLat / kotlin.math.max(
+                kotlin.math.cos(Math.toRadians(lat)), 0.02
+            )
+            val bbox = "%.6f,%.6f,%.6f,%.6f".format(
+                Locale.US, lon - dLon, lat - dLat, lon + dLon, lat + dLat
+            )
+            val feats = json.parseToJsonElement(
+                get("https://api.panoramax.xyz/api/search?bbox=$bbox&limit=30")
+            ).jsonObject["features"] as? JsonArray
+            val rows = feats?.mapNotNull { it as? JsonObject }.orEmpty()
+            if (rows.isNotEmpty()) {
+                sb.append("\nPanoramax street-level — ${rows.size} photos within ")
+                sb.append("400 m, newest first:\n")
+                rows.sortedByDescending {
+                    (it["properties"] as? JsonObject).str("datetime").orEmpty()
+                }.take(20).forEach { f ->
+                    val props = f["properties"] as? JsonObject
+                    val taken = props.str("datetime")?.substringBefore('T')
+                    sb.append("• ${taken ?: "date unknown"}")
+                    Freshness.ago(Freshness.parse(taken))?.let { sb.append(" ($it)") }
+                    // The direction the camera was pointing, which is the
+                    // difference between "there is a photo of this corner"
+                    // and "there is a photo looking at this building".
+                    props.dbl("view:azimuth")
+                        ?.let { sb.append("  facing ${it.toInt()}°") }
+                    val assets = f["assets"] as? JsonObject
+                    val href = (assets?.get("sd") as? JsonObject).str("href")
+                        ?: (assets?.get("hd") as? JsonObject).str("href")
+                    href?.let { sb.append("\n  $it") }
+                    sb.append("\n")
+                }
+            }
+        }
+
         if (sb.length <= headerOnly) {
             sb.append("\nNo geotagged imagery found here. Wider options:\n")
             sb.append("Google Street View: https://www.google.com/maps/@$lat,$lon,17z\n")
-            // Said plainly, because it is slow enough on a phone to
-            // look broken: it is a WebGL viewer that downloads a scene
-            // before it shows anything, and its API needs a key, so
-            // there is nothing lighter to offer and nothing this app
-            // can fetch on its behalf.
-            sb.append("Mapillary (heavy page, slow to open on mobile): ")
+            // Mapillary is listed last and labelled, because it is the
+            // one entry here that frequently does not open: a WebGL
+            // application that downloads a scene before it paints, on a
+            // connection that is usually a phone's. Its API needs a key,
+            // so this app cannot fetch on its behalf and cannot make it
+            // any lighter — saying so is better than letting a blank
+            // screen read as "nothing is here".
+            sb.append("Mapillary — heavy WebGL page, often slow or blank on a ")
+            sb.append("phone; open it on a desktop if it will not load:\n")
             sb.append("https://www.mapillary.com/app/?lat=$lat&lng=$lon&z=17\n")
         }
         sb.toString()

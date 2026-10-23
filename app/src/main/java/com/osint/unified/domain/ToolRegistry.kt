@@ -248,7 +248,7 @@ object ToolRegistry {
             "Indexed URLs and hosts for a domain from the Common Crawl archive.",
             "https://commoncrawl.org"),
         Tool("photosnear", "Imagery nearby", GEOINT, "coordinate", "text", DIRECT,
-            "Geotagged Wikimedia Commons media and KartaView street-level photos near a point.",
+            "Geotagged Wikimedia Commons media plus KartaView and Panoramax street-level photos near a point.",
             "https://commons.wikimedia.org"),
         Tool("fbi", "FBI wanted", FININT, "name", "text", DIRECT,
             "The FBI's public wanted and seeking-information list.",

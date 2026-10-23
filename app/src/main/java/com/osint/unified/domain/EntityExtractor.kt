@@ -48,6 +48,7 @@ object EntityExtractor {
         "keybase.io", "ycombinator.com", "reddit.com", "t.me", "telegram.org",
         "nist.gov", "exploit-db.com", "osintframework.com", "openstreetmap.org",
         "openstreetcam.org", "kartaview.org", "mapillary.com", "insecam.org",
+        "panoramax.xyz", "panoramax.openstreetmap.fr",
         "earthcam.com", "crt.sh", "certspotter.com", "urlscan.io", "shodan.io",
         "hackertarget.com", "rapiddns.io", "blockchain.com", "blockchain.info",
         "etherscan.io", "ethplorer.io", "oxt.me", "jetphotos.com", "adsb.lol",
