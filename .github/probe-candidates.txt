@@ -1,5 +1,10 @@
-https://ais.openwaters.io/v1/vessels?bbox=-10,48,5,60
-https://ais.openwaters.io/v1/vessels?bbox=-180,-90,180,90
-https://ais.openwaters.io/v1/vessels?bbox=48,-10,60,5
-https://ais.openwaters.io/v1/stats
-https://ais.openwaters.io/v1/vessels?bbox=-10,48,5,60&limit=5
+https://severeweather.wmo.int/json/event.json
+https://severeweather.wmo.int/v2/json/event.json
+https://severeweather.wmo.int/data/cap.json
+https://feeds.meteoalarm.org/api/v1/warnings/feeds-europe
+https://feeds.meteoalarm.org/feeds/meteoalarm-legacy-atom-europe
+https://api.kystverket.no/ais/v1/positions
+https://historic.aisnorge.no/ais/v1/positions
+https://meri.digitraffic.fi/api/ais/v1/locations##"mmsi"
+https://www.ndbc.noaa.gov/data/latest_obs/latest_obs.txt
+https://api.weather.gc.ca/collections/hydrometric-stations/items?limit=1
