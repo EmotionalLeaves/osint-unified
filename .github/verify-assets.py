@@ -33,7 +33,10 @@ def json_count(name):
     with open(full(name), encoding="utf-8") as f:
         data = json.load(f)
     if isinstance(data, dict):
-        for key in ("sites", "breaches", "data"):
+        # "rings" is the globe's coastlines, which are an object
+        # with one key — so counting the keys called a complete file
+        # one entry and the new floor deleted it.
+        for key in ("sites", "breaches", "data", "rings"):
             if isinstance(data.get(key), (list, dict)):
                 return len(data[key])
         return len(data)
