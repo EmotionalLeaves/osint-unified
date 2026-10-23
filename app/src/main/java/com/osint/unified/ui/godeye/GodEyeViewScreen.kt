@@ -72,6 +72,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
@@ -204,6 +205,12 @@ fun GodEyeViewScreen(
     // phone has: the front door was a wall of buttons with a sliver of map
     // underneath.
     var panelOpen by rememberSaveable { mutableStateOf(false) }
+    // What is left of the screen after the panel has had its share.
+    //
+    // PANEL_MAX_HEIGHT was 300dp on every device, which is a third of
+    // one phone and three fifths of another, and at a large system
+    // font size it was less than the controls needed either way.
+    val panelMax = (LocalConfiguration.current.screenHeightDp * 0.38f).dp
     // A thing called a God's Eye View should be a globe. Mercator is the
     // right tool for looking at a street and the wrong one for looking at
     // the Earth, so the sphere is what opens, and the flat map is one tap
@@ -573,14 +580,25 @@ fun GodEyeViewScreen(
             // it was laid out at whatever height its contents came to and
             // the map took what was left — which on a small screen was
             // nothing at all.
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = PANEL_MAX_HEIGHT)
-                    .verticalScroll(rememberScrollState())
-            ) {
-            if (panelOpen) {
             // ---- Command search ----
+            //
+            // Outside the fold, because the fold starts closed.
+            //
+            // The comment forty lines below used to say "what folds
+            // away is the search box, the type chips and the
+            // examples" — and `panelOpen` defaults to false. So on a
+            // fresh install the search field did not exist on screen
+            // at all: the only way to reach the one thing this app is
+            // for was to notice an unlabelled chevron in the top bar
+            // and tap it. Reported from a second phone as "none of
+            // the search features really worked", and as the app
+            // being "basically just a list of tools", which is
+            // exactly what is left when you cannot find the search.
+            //
+            // Somebody had already hit this with the layer controls,
+            // moved those out, and wrote down why. The box that
+            // everything else exists to serve stayed behind the
+            // chevron.
             OutlinedTextField(
                 value = state.query,
                 onValueChange = viewModel::onQueryChange,
@@ -610,6 +628,19 @@ fun GodEyeViewScreen(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)
             )
 
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    // A share of the screen, not 300dp.
+                    //
+                    // A fixed ceiling is a different thing on every
+                    // phone: on a short screen, or at a large system
+                    // font size, the controls overflowed into a
+                    // scroll with nothing to say it scrolled.
+                    .heightIn(max = panelMax)
+                    .verticalScroll(rememberScrollState())
+            ) {
+            if (panelOpen) {
             // Search-type selector: AUTO detects; others force the type so a
             // query always routes to the right tools.
             FlowRow(
@@ -833,6 +864,37 @@ fun GodEyeViewScreen(
                     color = Intel.TextLow,
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
                 )
+            }
+
+            // An empty map is sometimes the right answer, and it
+            // always looks like a broken one.
+            //
+            // Markers are culled to what the map can see. Zoom in far
+            // enough and everything the layers hold is somewhere
+            // else, so the correct screen is empty — while the pills
+            // above go on reporting the layer totals, which is the
+            // app disagreeing with itself at exactly the moment it is
+            // being careful. Reported from a second phone as "zoom in
+            // and all the layers stop working", because that is what
+            // it looks like from the outside. Said plainly instead.
+            if (!roundEarth && visibleLayers.isNotEmpty() && plotted.second > 0) {
+                val (shown, total) = plotted
+                if (shown == 0) {
+                    Text(
+                        "$total on the armed layers, none of them in this view. " +
+                            "Zoom out or pan to reach them.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Intel.Amber,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                    )
+                } else if (shown < total) {
+                    Text(
+                        "Showing $shown of $total — the rest are outside this view.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Intel.TextLow,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                    )
+                }
             }
 
             if (picking) {
@@ -1616,9 +1678,13 @@ private fun GlobeMap(
     // built them all again, on the thread drawing the keyboard. The
     // result was a map that stuttered whenever anything at all changed,
     // for no new information.
-    val plan by produceState(initialValue = emptyList<PendingMarker>(), layers, inView) {
-        value = withContext(Dispatchers.Default) { planMarkers(layers, inView) }
+    val planned by produceState(initialValue = MapPlan(emptyList(), 0), layers, inView) {
+        value = withContext(Dispatchers.Default) { planFor(layers, inView) }
     }
+    val plan = planned.markers
+    // Said out loud, because an empty map is sometimes the right
+    // answer and always looks like a broken one.
+    LaunchedEffect(planned) { onPlotted(planned.markers.size, planned.total) }
     // The plan currently on the map, by identity. Same instance means
     // nothing to do — the common case, and now free.
     val rendered = remember { mutableStateOf<List<PendingMarker>?>(null) }
@@ -1890,7 +1956,6 @@ private fun investigableQuery(obj: Inspected): String? {
 
 /** The most of the screen the control panel may take, open or not. The
  *  map gets the rest, and it is never nothing. */
-private val PANEL_MAX_HEIGHT = 300.dp
 
 /** How long after arriving on the map before it may hand back. Long
  *  enough for osmdroid to report the camera it opened with. */

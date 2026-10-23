@@ -77,9 +77,37 @@ internal data class MapWindow(
  *
  * Pure, so it runs off the main thread and can be tested without a map.
  */
-internal fun planMarkers(layers: MapLayers, inView: MapWindow?): List<PendingMarker> {
+internal fun planMarkers(layers: MapLayers, inView: MapWindow?): List<PendingMarker> =
+    planMarkers(layers.points(), inView)
+
+/**
+ * What the map will draw, and how much it is leaving out.
+ *
+ * The second number is the whole point. Zoom a map in far enough and
+ * the correct answer is an empty screen — everything the layers hold
+ * is somewhere else — but the pills above it go on reporting the
+ * layer totals, so the app looks broken at exactly the moment it is
+ * being most careful. Reported on a tester's phone as "zoom in and
+ * all the layers stop working", which is what that looks like from
+ * the outside.
+ */
+internal data class MapPlan(
+    val markers: List<PendingMarker>,
+    /** Everything the armed layers hold, before the view is applied. */
+    val total: Int
+)
+
+internal fun planFor(layers: MapLayers, inView: MapWindow?): MapPlan {
+    val all = layers.points()
+    return MapPlan(planMarkers(all, inView), all.size)
+}
+
+internal fun planMarkers(
+    points: List<GlobePoint>,
+    inView: MapWindow?
+): List<PendingMarker> {
     val pending = ArrayList<PendingMarker>(2048)
-    layers.points().forEach { p ->
+    points.forEach { p ->
         if (p.lat.isNaN() || p.lon.isNaN()) return@forEach
         if (p.lat !in -90.0..90.0 || p.lon !in -180.0..180.0) return@forEach
         if (inView != null && !inView.contains(p.lat, p.lon)) return@forEach
