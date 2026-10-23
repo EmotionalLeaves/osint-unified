@@ -115,4 +115,42 @@ class WorldBriefTest {
         val notRun = WorldBrief.build(GodEyeUiState())
         assertTrue(notRun.quiet.isEmpty())
     }
+
+    /**
+     * A feed being down is not a thing that happened.
+     *
+     * The outage section outranked most of the news, and its entries are
+     * feed names, so the one-line ticker read "military aircraft" when it
+     * meant "the military aircraft feed is down" — which is indis-
+     * tinguishable from a report of military aircraft.
+     */
+    @Test
+    fun anOutageIsNeverTheHeadlineWhenSomethingIsHappening() {
+        val state = GodEyeUiState(
+            feedTrouble = mapOf(
+                "milAircraft" to "timeout",
+                "aircraft" to "timeout"
+            ),
+            quakes = listOf(
+                Quake(
+                    lat = 38.0, lon = 142.0, mag = 6.4,
+                    place = "off the coast of Honshu",
+                    atMillis = System.currentTimeMillis() - 600_000L, depthKm = 10.0
+                )
+            )
+        )
+        val headline = WorldBrief.headline(WorldBrief.build(state))
+        assertTrue(
+            "headline was \"$headline\"",
+            headline.contains("Honshu") || headline.contains("6.4")
+        )
+    }
+
+    /** With nothing happening and feeds down, it says that plainly. */
+    @Test
+    fun anOutageIsTheHeadlineOnlyWhenThereIsNothingElse() {
+        val state = GodEyeUiState(feedTrouble = mapOf("aircraft" to "timeout"))
+        val headline = WorldBrief.headline(WorldBrief.build(state))
+        assertTrue("headline was \"$headline\"", headline.contains("not reporting"))
+    }
 }

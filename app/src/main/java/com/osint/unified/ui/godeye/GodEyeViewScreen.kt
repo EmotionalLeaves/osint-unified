@@ -275,7 +275,7 @@ fun GodEyeViewScreen(
                     Text(
                         "AIR ${state.aircraft.size} · SEA ${state.vessels.size} · " +
                             "SAT ${state.satellites.size} · SEIS ${state.quakes.size}" +
-                            (state.spaceWeather?.let { " · Kp %.1f".format(Locale.US, it.kp) } ?: ""),
+                            (state.spaceWeather?.kp?.let { " · Kp %.1f".format(Locale.US, it) } ?: ""),
                         style = MaterialTheme.typography.labelSmall,
                         color = Intel.TextMid,
                         maxLines = 1,
@@ -1498,6 +1498,17 @@ private fun SettingsDialog(
                     "Several layers cover a region rather than the world, and " +
                         "the pill says which. Add your own feed to widen one."
                 )
+                // Said here rather than discovered as a silent failure.
+                // Android refuses cleartext for everything but localhost,
+                // and has no way to express "my home network" — so an
+                // http:// address on the LAN does not work, and the
+                // configuration that appeared to allow it never did.
+                FeedNote(
+                    "Addresses must be https. Android blocks plain http for " +
+                        "everything but localhost, and it has no way to make an " +
+                        "exception for a home network, so an http:// feed on " +
+                        "your LAN will fail to connect rather than fall back."
+                )
 
                 FeedHeader("SEC EDGAR  ·  your contact address")
                 FeedNote(
@@ -1508,7 +1519,7 @@ private fun SettingsDialog(
                 SettingsField(sec, { sec = it }, "Contact email for SEC", "you@example.com")
 
                 FeedHeader("AIRCRAFT  ·  add your own receiver")
-                SettingsField(tar, { tar = it }, "tar1090 feed URL", "http://host:8080/data/aircraft.json")
+                SettingsField(tar, { tar = it }, "tar1090 feed URL", "https://host:8080/data/aircraft.json")
 
                 FeedHeader("VESSELS  ·  Baltic only by default")
                 FeedNote(

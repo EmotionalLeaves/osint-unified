@@ -4,8 +4,22 @@
 
   The app previously allowed cleartext app-wide, which meant a backend URL
   typed as http:// would send target identifiers over the network in the
-  clear. The only legitimate cleartext need is a feed or backend on the
-  local network, so that is the only place it is allowed.
+  clear.
+
+  This file used to carry 10.0.0.0, 192.168.0.0 and 172.16.0.0 as though
+  they were ranges. They are not: a <domain> entry is matched against the
+  hostname label by label, from the right, so "192.168.0.0" matches only a
+  host called exactly that, and includeSubdomains extends it leftwards to
+  "x.192.168.0.0". A real address like 192.168.1.50 matched none of them,
+  so the allowance that looked like it covered a home network covered
+  nothing at all, while reading as though http:// to a local tar1090 were
+  supported.
+
+  Android's network security configuration has no way to express an
+  address range, so the entries are gone rather than left there looking
+  like protection. A feed on the local network has to be reached over
+  https, or through a name resolvable here, or by building with it added
+  below.
 -->
 <network-security-config>
     <base-config cleartextTrafficPermitted="false">
@@ -16,10 +30,5 @@
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="true">localhost</domain>
         <domain includeSubdomains="true">127.0.0.1</domain>
-        <domain includeSubdomains="true">10.0.0.0</domain>
-        <domain includeSubdomains="true">192.168.0.0</domain>
-        <domain includeSubdomains="true">172.16.0.0</domain>
-        <domain includeSubdomains="true">localdomain</domain>
-        <domain includeSubdomains="true">local</domain>
     </domain-config>
 </network-security-config>

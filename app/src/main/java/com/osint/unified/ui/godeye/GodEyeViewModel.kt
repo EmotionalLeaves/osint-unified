@@ -631,7 +631,11 @@ class GodEyeViewModel(
     fun onRunWorkflow() {
         val observable = _state.value.observable ?: return
         val workflow = Workflows.forObservable(observable) ?: return
-        viewModelScope.launch {
+        // Tracked, so STOP stops it. It was launched straight into the
+        // view model's scope, outside the list STOP cancels — the button
+        // set the state to "stopped" while the workflow carried on firing
+        // sources at the target behind it.
+        searchJobs += viewModelScope.launch {
             val investigationId = ensureInvestigation(observable)
             _state.update { it.copy(workflowRunning = true) }
             try {
@@ -655,7 +659,9 @@ class GodEyeViewModel(
 
     fun onToolClick(tool: Tool) {
         val observable = _state.value.observable ?: return
-        viewModelScope.launch {
+        // Also tracked: a single source run by hand is still a request in
+        // flight, and STOP meant all of them.
+        searchJobs += viewModelScope.launch {
             val investigationId = ensureInvestigation(observable)
             _state.update { it.copy(runningTools = it.runningTools.plusRunning(listOf(tool.id))) }
             try {

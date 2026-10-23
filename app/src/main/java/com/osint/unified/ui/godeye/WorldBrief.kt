@@ -37,6 +37,9 @@ object WorldBrief {
 
     private const val PER_SECTION = 6
 
+    /** Above the merely calm, below anything that happened. */
+    private const val TROUBLE_SEVERITY = 3
+
     /** Alert words GDACS and the NWS use, strongest first. */
     private val RED = listOf("red", "extreme")
     private val ORANGE = listOf("orange", "severe")
@@ -117,7 +120,7 @@ object WorldBrief {
             entries.add(Entry(sw.summary))
             sw.alerts.take(4).forEach { entries.add(Entry(it)) }
             // Kp 5 is a geomagnetic storm; below that it is just weather.
-            sections.add(Section("SPACE WEATHER", if (sw.kp >= 5) 9 else 2, entries))
+            sections.add(Section("SPACE WEATHER", if ((sw.kp ?: 0.0) >= 5) 9 else 2, entries))
         }
 
         // A conflict is real but it is not news: it scored above a
@@ -215,7 +218,12 @@ object WorldBrief {
             sections.add(
                 Section(
                     "NOT REPORTING — ${troubled.size}",
-                    8,
+                    // Below anything that is actually happening. At 8 it
+                    // outranked most of the news, so the amber ticker read
+                    // "military aircraft" when what it meant was "the
+                    // military aircraft feed is down" — a sentence that
+                    // looks exactly like an event.
+                    TROUBLE_SEVERITY,
                     troubled.map { Entry(it) },
                     note = "These feeds could not be reached. Their absence " +
                         "from the brief above means nothing."
@@ -226,8 +234,22 @@ object WorldBrief {
     }
 
     /** One sentence for the HUD, before anyone opens the brief. */
+    /**
+     * The one line shown on the HUD.
+     *
+     * A broken feed is not a headline. It belongs in the brief, where the
+     * list of what is not reporting is useful, but the ticker is for what
+     * is happening — and the entries under NOT REPORTING are feed names,
+     * which read as events. If nothing else has anything to say, the
+     * ticker says so in those words rather than naming a feed.
+     */
     fun headline(brief: Brief): String {
-        val top = brief.sections.firstOrNull() ?: return "nothing loaded yet"
+        val top = brief.sections.firstOrNull { it.title.startsWith("NOT REPORTING").not() }
+        if (top == null) {
+            val down = brief.sections.firstOrNull()?.entries?.size ?: 0
+            return if (down > 0) "$down feed${if (down == 1) "" else "s"} not reporting"
+            else "nothing loaded yet"
+        }
         return top.entries.firstOrNull()?.text?.take(70) ?: top.title
     }
 }

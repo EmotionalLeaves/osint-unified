@@ -112,6 +112,42 @@ def main() -> int:
                 line = text.count("\n", 0, use.start()) + 1
                 bad.append(f"{path.relative_to(ROOT)}:{line}: {name}.{member} — {name} has no such member")
 
+    # A visible companion member whose type is private to the class. Kotlin
+    # refuses "'public' property exposes its 'private-in-class' type", and
+    # it only became reachable when the companion stopped being private —
+    # which is how r179 died, one commit after r178 died making it visible.
+    for path in files:
+        text = path.read_text(errors="replace")
+        private_types = set(
+            re.findall(
+                r"\bprivate\s+(?:data\s+|sealed\s+|value\s+|inner\s+|enum\s+)*"
+                r"(?:class|interface|object)\s+([A-Z][A-Za-z0-9_]*)",
+                text,
+            )
+        )
+        if not private_types:
+            continue
+        for m in re.finditer(r"^(\s*)(?!.*\bprivate\b)companion\s+object\b", text, re.M):
+            brace = text.find("{", m.end())
+            if brace < 0:
+                continue
+            body = body_of(text, brace)
+            offset = brace + 1
+            for decl in re.finditer(
+                r"^\s*(?:@\w+\s+)*(?!.*\bprivate\b)(?:const\s+|@Volatile\s+)*"
+                r"(?:val|var|fun)\s+[A-Za-z_][A-Za-z0-9_]*\s*(?::|\()([^=\n]*)",
+                body, re.M
+            ):
+                mentioned = [t for t in private_types if re.search(r"\b%s\b" % t, decl.group(1))]
+                if not mentioned:
+                    continue
+                line = text.count("\n", 0, offset + decl.start()) + 1
+                bad.append(
+                    f"{path.relative_to(ROOT)}:{line}: a visible companion member "
+                    f"has the private type {mentioned[0]} in its signature — "
+                    f"Kotlin refuses that"
+                )
+
     if bad:
         print("Members that will not resolve where they are used:")
         for b in sorted(set(bad)):

@@ -15,14 +15,22 @@ import java.util.Locale
 
 /** Current space weather, condensed into one HUD line plus active warnings. */
 data class SpaceWeather(
-    val kp: Double = 0.0,
+    /**
+     * Null when SWPC did not answer, which is not the same as calm.
+     *
+     * It defaulted to 0.0, so an outage of the service reported the
+     * quietest possible magnetosphere with full confidence — and the only
+     * number on the HUD that matters during a storm was the one that lied
+     * when the source was down.
+     */
+    val kp: Double? = null,
     val xrayClass: String = "",
     val alerts: List<String> = emptyList()
 ) {
     /** e.g. "Kp 4.0 · X-ray C2.1 · 2 alerts" */
     val summary: String
         get() = buildString {
-            append("Kp %.1f".format(Locale.US, kp))
+            append(kp?.let { "Kp %.1f".format(Locale.US, it) } ?: "Kp unavailable")
             if (xrayClass.isNotBlank()) append(" · X-ray $xrayClass")
             if (alerts.isNotEmpty()) append(" · ${alerts.size} alert${if (alerts.size == 1) "" else "s"}")
         }
@@ -30,6 +38,7 @@ data class SpaceWeather(
     /** Geomagnetic storm level from the planetary K index. */
     val stormLevel: String
         get() = when {
+            kp == null -> "NOT REPORTING"
             // The scale stopped at G4, so the largest storm there is —
             // the one that puts aurora over the tropics and takes grids
             // down — was reported as the second largest.
@@ -51,9 +60,10 @@ class SpaceWeatherDataSource(private val client: OkHttpClient = Http.feedClient)
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
     suspend fun fetch(): SpaceWeather = withContext(Dispatchers.IO) {
-        var kp = 0.0
+        var kp: Double? = null
         var xray = ""
         val alerts = ArrayList<String>()
+        var answered = false
 
         runCatching {
             val arr = json.parseToJsonElement(
@@ -61,7 +71,8 @@ class SpaceWeatherDataSource(private val client: OkHttpClient = Http.feedClient)
             ) as? JsonArray
             // Newest sample last; the feed is an array of objects.
             (arr?.lastOrNull() as? JsonObject)?.let { o ->
-                kp = (o["Kp"] as? JsonPrimitive)?.doubleOrNull ?: 0.0
+                kp = (o["Kp"] as? JsonPrimitive)?.doubleOrNull
+                if (kp != null) answered = true
             }
         }
 
@@ -78,7 +89,10 @@ class SpaceWeatherDataSource(private val client: OkHttpClient = Http.feedClient)
             val last = arr?.lastOrNull { el ->
                 ((el as? JsonObject)?.get("energy") as? JsonPrimitive)?.contentOrNull == "0.1-0.8nm"
             } as? JsonObject
-            ((last?.get("flux") as? JsonPrimitive)?.doubleOrNull)?.let { xray = flareClass(it) }
+            ((last?.get("flux") as? JsonPrimitive)?.doubleOrNull)?.let {
+                xray = flareClass(it)
+                answered = true
+            }
         }
 
         runCatching {
@@ -92,7 +106,15 @@ class SpaceWeatherDataSource(private val client: OkHttpClient = Http.feedClient)
                 }?.trim()
                 if (!headline.isNullOrBlank() && alerts.none { it == headline }) alerts.add(headline)
             }
+            answered = true
         }
+
+        // Each part is allowed to fail on its own — losing the X-ray flux
+        // should not cost the K index. But if none of the three answered,
+        // the feed is down, and returning a tidy object of defaults told
+        // the polling loop it had succeeded and the HUD that space was
+        // quiet.
+        if (!answered) throw java.io.IOException("SWPC did not answer any of its three feeds")
 
         SpaceWeather(kp, xray, alerts.take(8))
     }

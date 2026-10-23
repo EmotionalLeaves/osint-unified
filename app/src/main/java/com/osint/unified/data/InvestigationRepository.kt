@@ -84,19 +84,29 @@ class InvestigationRepository(
         // Re-running a tool replaces its row rather than adding a second
         // one. RUN ALL used to duplicate every result, which doubled the
         // pivot counts and printed everything twice in the export.
+        //
+        // But the replacement is written at the end, not the start. Before,
+        // the "running" row went over the previous one immediately: a
+        // re-run that then failed — a source gone down, the network gone —
+        // destroyed the finding it was supposed to refresh. Evidence is not
+        // deleted to make room for an attempt to re-collect it.
         val previous = resultDao.existing(investigationId, tool.id, input)
-        val rowId = resultDao.insert(
-            ResultRow(
-                id = previous?.id ?: 0,
-                investigationId = investigationId,
-                toolId = tool.id,
-                toolName = tool.name,
-                input = input,
-                status = "running",
-                rawOutput = "",
-                startedAt = started
+        val rowId = if (previous != null && previous.status == "success") {
+            previous.id
+        } else {
+            resultDao.insert(
+                ResultRow(
+                    id = previous?.id ?: 0,
+                    investigationId = investigationId,
+                    toolId = tool.id,
+                    toolName = tool.name,
+                    input = input,
+                    status = "running",
+                    rawOutput = "",
+                    startedAt = started
+                )
             )
-        )
+        }
 
         // Hard cap per tool so one slow source can't make the dossier feel
         // hung; most finish in 1–10s, this is just a safety net.
@@ -110,20 +120,25 @@ class InvestigationRepository(
             // and the export calls it unreachable. NonCancellable because the
             // scope is already dying.
             withContext(NonCancellable) {
-                resultDao.update(
-                    ResultRow(
-                        id = rowId,
-                        investigationId = investigationId,
-                        toolId = tool.id,
-                        toolName = tool.name,
-                        input = input,
-                        status = "cancelled",
-                        rawOutput = "",
-                        errorMessage = "stopped before it finished",
-                        startedAt = started,
-                        finishedAt = System.currentTimeMillis()
+                // A stopped re-run leaves the previous finding exactly as
+                // it was. Only a row that had nothing in it becomes
+                // "cancelled".
+                if (previous == null || previous.status != "success") {
+                    resultDao.update(
+                        ResultRow(
+                            id = rowId,
+                            investigationId = investigationId,
+                            toolId = tool.id,
+                            toolName = tool.name,
+                            input = input,
+                            status = "cancelled",
+                            rawOutput = "",
+                            errorMessage = "stopped before it finished",
+                            startedAt = started,
+                            finishedAt = System.currentTimeMillis()
+                        )
                     )
-                )
+                }
             }
             throw cancelled
         }
@@ -153,18 +168,30 @@ class InvestigationRepository(
                 )
             },
             onFailure = { err ->
-                ResultRow(
-                    id = rowId,
-                    investigationId = investigationId,
-                    toolId = tool.id,
-                    toolName = tool.name,
-                    input = input,
-                    status = "error",
-                    rawOutput = "",
-                    errorMessage = err.message ?: err.javaClass.simpleName,
-                    startedAt = started,
-                    finishedAt = finished
-                )
+                // A failed re-run keeps what the successful run found, and
+                // says that the refresh failed. Overwriting a finding with
+                // an error message is losing evidence to a dropped
+                // connection.
+                if (previous != null && previous.status == "success") {
+                    previous.copy(
+                        errorMessage = "could not be refreshed " +
+                            "(${err.message ?: err.javaClass.simpleName}); " +
+                            "showing what was found before"
+                    )
+                } else {
+                    ResultRow(
+                        id = rowId,
+                        investigationId = investigationId,
+                        toolId = tool.id,
+                        toolName = tool.name,
+                        input = input,
+                        status = "error",
+                        rawOutput = "",
+                        errorMessage = err.message ?: err.javaClass.simpleName,
+                        startedAt = started,
+                        finishedAt = finished
+                    )
+                }
             }
         )
         resultDao.update(updated)

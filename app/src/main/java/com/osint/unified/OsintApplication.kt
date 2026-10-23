@@ -66,7 +66,16 @@ class OsintApplication : Application() {
         // encrypted file. None of that belongs on the thread that draws
         // the first frame, so it is started here and is usually finished
         // before anything asks for it.
-        Thread({ runCatching { database } }, "db-warmup").start()
+        Thread({
+            runCatching { database }
+            // Rows left "running" by a process death will never be
+            // finished by anything. Without this they spin in the case
+            // list for the life of the database — the function to clear
+            // them existed and was called from nowhere.
+            runCatching {
+                kotlinx.coroutines.runBlocking { repository.markInterruptedRuns() }
+            }
+        }, "db-warmup").start()
     }
 
     val database: AppDatabase by lazy { AppDatabase.get(this) }

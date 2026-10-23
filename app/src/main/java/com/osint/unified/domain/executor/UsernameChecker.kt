@@ -89,7 +89,11 @@ class UsernameChecker(private val appContext: Context) {
         // Parsing three rulesets costs several megabytes of JSON, so the
         // merged result is shared across every UsernameChecker instance
         // rather than rebuilt per use.
-        @Volatile var sharedRules: List<SiteRule>? = null
+        // Private: the companion as a whole is visible now, so that the
+        // classifier can read the verdict field, but the rule type is an
+        // implementation detail and a public property of a private type
+        // does not compile.
+        @Volatile private var sharedRules: List<SiteRule>? = null
 
         /** Control probes to run. Beyond this, hits are reported unverified
          *  rather than paying for a second sweep as large as the first. */
