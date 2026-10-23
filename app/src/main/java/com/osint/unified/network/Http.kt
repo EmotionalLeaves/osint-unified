@@ -8,6 +8,11 @@ import okhttp3.OkHttpClient
 import okhttp3.Response
 import java.io.File
 import java.io.IOException
+import java.net.InetSocketAddress
+import java.net.Proxy
+import java.net.ProxySelector
+import java.net.SocketAddress
+import java.net.URI
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
@@ -60,11 +65,61 @@ object Http {
 
     @Volatile private var feedCacheDir: File? = null
 
+    /** Where to send everything, or null for straight out of the phone. */
+    @Volatile private var relay: InetSocketAddress? = null
+
+    /** Whatever the platform had before this app interfered. */
+    private val systemSelector: ProxySelector? = runCatching { ProxySelector.getDefault() }.getOrNull()
+
     /** Called once from the application, before anything makes a request. */
     fun init(context: Context) {
         if (feedCacheDir == null) {
             feedCacheDir = File(context.cacheDir, "feed-http")
         }
+    }
+
+    /**
+     * Route everything through a local HTTP proxy — Orbot, usually — or
+     * stop doing so.
+     *
+     * Applied through a selector consulted on each connection rather than
+     * baked into the clients, so turning it on takes effect on the next
+     * request instead of the next launch. That matters: a privacy setting
+     * that silently waits for a restart is a setting that is off when its
+     * owner believes it is on.
+     *
+     * An HTTP proxy and not a SOCKS one, deliberately. Against an HTTP
+     * proxy the client sends CONNECT carrying the hostname and never
+     * resolves it; Java's SOCKS support resolves the name on the device
+     * first, which hands every target to whatever DNS the network supplied
+     * and gives away exactly what the proxy was meant to hide.
+     */
+    fun useProxy(host: String?, port: Int) {
+        relay = if (host.isNullOrBlank() || port !in 1..65535) null
+        else runCatching { InetSocketAddress(host, port) }.getOrNull()
+        // The map's tile loader is not OkHttp — osmdroid uses
+        // HttpURLConnection, which consults the JVM's default selector. A
+        // proxy that covered everything except the thing drawing the
+        // screen would be worse than none, because it would look like it
+        // was working.
+        runCatching {
+            ProxySelector.setDefault(if (relay == null) systemSelector else Relay)
+        }
+    }
+
+    /** Whether traffic is currently going through a proxy, for the UI. */
+    fun proxyDescription(): String? = relay?.let { "${it.hostString}:${it.port}" }
+
+    private object Relay : ProxySelector() {
+        override fun select(uri: URI?): MutableList<Proxy> {
+            val address = relay ?: return mutableListOf(Proxy.NO_PROXY)
+            return mutableListOf(Proxy(Proxy.Type.HTTP, address))
+        }
+
+        // A proxy that is not there should fail the request, not quietly
+        // fall back to going direct — which would be the one outcome the
+        // person turning this on was trying to avoid.
+        override fun connectFailed(uri: URI?, address: SocketAddress?, failure: IOException?) = Unit
     }
 
     /**
@@ -160,6 +215,7 @@ object Http {
     val client: OkHttpClient by lazy {
         OkHttpClient.Builder()
             .addInterceptor(Politeness)
+            .proxySelector(Relay)
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(20, TimeUnit.SECONDS)
             .callTimeout(25, TimeUnit.SECONDS)

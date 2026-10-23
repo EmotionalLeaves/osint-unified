@@ -7,7 +7,6 @@ import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
-import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -38,7 +37,7 @@ import com.osint.unified.ui.watch.WatchScreen
 import com.osint.unified.ui.theme.OsintTheme
 import com.osint.unified.work.WatchWorker
 
-class MainActivity : ComponentActivity() {
+class MainActivity : androidx.fragment.app.FragmentActivity() {
 
     /**
      * Feeds stop while the app is not on screen.
@@ -54,7 +53,15 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         super.onStop()
         godEyeViewModel.setForeground(false)
+        // Re-locked the moment it leaves the screen, which is the moment
+        // the phone is likely to change hands.
+        if ((application as OsintApplication).settings.appLockEnabled) {
+            locked.value = true
+        }
     }
+
+    /** Whether the app is showing its lock screen rather than itself. */
+    private val locked = androidx.compose.runtime.mutableStateOf(false)
 
 
     private val godEyeViewModel: GodEyeViewModel by viewModels {
@@ -104,6 +111,7 @@ class MainActivity : ComponentActivity() {
             WindowManager.LayoutParams.FLAG_SECURE,
             WindowManager.LayoutParams.FLAG_SECURE
         )
+        locked.value = (application as OsintApplication).settings.appLockEnabled
         consume(intent)
         // Rather than overriding onNewIntent, whose signature has moved
         // between versions of androidx.activity.
@@ -121,6 +129,13 @@ class MainActivity : ComponentActivity() {
             OsintTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     val settings = (application as OsintApplication).settings
+                    if (locked.value) {
+                        com.osint.unified.ui.common.AppLockScreen(this@MainActivity) {
+                            locked.value = false
+                        }
+                        return@Surface
+                    }
+
                     var accepted by rememberSaveable { mutableStateOf(settings.termsAccepted) }
                     if (!accepted) {
                         // Said once, before the app is used, rather than only
@@ -265,6 +280,9 @@ class MainActivity : ComponentActivity() {
                             onBack = { screen = "more" }
                         )
                         "more" -> MoreScreen(
+                            settings = (application as OsintApplication).settings,
+                            lockAvailable = com.osint.unified.ui.common.AppLock
+                                .available(this@MainActivity),
                             // Touching the database first, so the report is
                             // about an open database and not about one that
                             // has not been tried yet.
