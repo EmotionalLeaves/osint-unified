@@ -1,5 +1,3 @@
-https://webservices.volcano.si.edu/geoserver/GVP-VOTW/ows?service=WFS&version=2.0.0&request=GetCapabilities##<Name>GVP-VOTW:[A-Za-z0-9_]+</Name>
-https://www.meteoalarm.org/en/live/rss/europe##<(item|title|link|guid|georss:[a-z]+|cap:[a-zA-Z]+)>
-https://feeds.meteoalarm.org/api/v1/warnings/feeds-united-kingdom##"(polygon|geocode|areaDesc|event|severity|onset|expires)"
-https://api.safecast.org/measurements.json?distance=50000&latitude=35.65&longitude=139.84&order=captured_at+desc##"captured_at":"[0-9-]{10}
-https://api.adsb.lol/v2/ladd##"(hex|flight|r|t)":"[^"]{1,10}"
+https://webservices.volcano.si.edu/geoserver/GVP-VOTW/ows?service=WFS&version=2.0.0&request=GetFeature&typeName=GVP-VOTW:E3WebApp_Eruptions1960&outputFormat=application/json&count=3
+https://webservices.volcano.si.edu/geoserver/GVP-VOTW/ows?service=WFS&version=2.0.0&request=GetFeature&typeName=GVP-VOTW:E3WebApp_Eruptions1960&outputFormat=application/json&count=3&sortBy=StartDate+D
+https://feeds.meteoalarm.org/api/v1/warnings/feeds-germany##"(areaDesc|event|severity|onset|expires|polygon)":"?[^",]{0,60}
