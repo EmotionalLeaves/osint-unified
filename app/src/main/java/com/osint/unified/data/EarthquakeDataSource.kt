@@ -27,9 +27,14 @@ import java.io.IOException
  * networks and publishes a magnitude 2 in Greece within minutes of it
  * happening, which the USGS feed may never carry.
  *
- * So both, merged on time and place rather than on id — the two
+ * GFZ Potsdam's GEOFON is the third. It runs its own global network
+ * and its own solutions, and in practice it is first to publish for
+ * parts of Asia, Africa and the south Atlantic where neither of the
+ * other two has dense coverage.
+ *
+ * So all three, merged on time and place rather than on id — the
  * agencies number the same earthquake differently, and a map that
- * draws one event twice is telling you there were two.
+ * draws one event three times is telling you there were three.
  */
 class EarthquakeDataSource(private val client: OkHttpClient = Http.feedClient) {
 
@@ -38,13 +43,19 @@ class EarthquakeDataSource(private val client: OkHttpClient = Http.feedClient) {
     suspend fun fetch(): List<Quake> = withContext(Dispatchers.IO) {
         val usgs = runCatching { usgs() }
         val emsc = runCatching { emsc() }
-        if (usgs.isFailure && emsc.isFailure) {
+        val gfz = runCatching { geofon() }
+        if (usgs.isFailure && emsc.isFailure && gfz.isFailure) {
             throw IOException(
                 "No seismic agency could be reached: " +
                     (usgs.exceptionOrNull()?.message ?: "USGS failed")
             )
         }
-        merge(usgs.getOrDefault(emptyList()), emsc.getOrDefault(emptyList()))
+        // USGS first because its magnitudes and place names are the ones
+        // most people will recognise; the others fill in what it missed.
+        merge(
+            merge(usgs.getOrDefault(emptyList()), emsc.getOrDefault(emptyList())),
+            gfz.getOrDefault(emptyList())
+        )
     }
 
     /**
@@ -122,6 +133,60 @@ class EarthquakeDataSource(private val client: OkHttpClient = Http.feedClient) {
      * fed through one lenient reader, because a reader loose enough to
      * take both would also accept a depth as a magnitude.
      */
+    /**
+     * GEOFON, in the plain-text form of the FDSN standard.
+     *
+     * Its JSON is a 400 — the service supports `format=text` and
+     * `format=xml` and says so in the error, which is easy to read as
+     * "the catalogue is down" when it is nothing of the kind.
+     *
+     * The format is pipe-separated with one header line beginning `#`.
+     * Fields are positional, so a missing trailing column is normal and
+     * an unexpected one must not shift the parse: everything is read by
+     * index with bounds checked, and a row that does not yield a
+     * latitude, longitude and magnitude is skipped rather than guessed.
+     */
+    internal fun geofon(body: String = fetchGeofon()): List<Quake> {
+        val cutoff = System.currentTimeMillis() - 24 * 3600_000L
+        return body.lineSequence().mapNotNull { line ->
+            if (line.isBlank() || line.startsWith("#")) return@mapNotNull null
+            val f = line.split("|")
+            if (f.size < 11) return@mapNotNull null
+            val lat = f[2].trim().toDoubleOrNull() ?: return@mapNotNull null
+            val lon = f[3].trim().toDoubleOrNull() ?: return@mapNotNull null
+            if (lat !in -90.0..90.0 || lon !in -180.0..180.0) return@mapNotNull null
+            val mag = f[10].trim().toDoubleOrNull() ?: return@mapNotNull null
+            val at = Freshness.parse(f[1].trim())
+            if (at != null && at < cutoff) return@mapNotNull null
+            Quake(
+                lat = lat,
+                lon = lon,
+                mag = mag,
+                place = f.getOrNull(12)?.trim().orEmpty(),
+                atMillis = at,
+                depthKm = f[4].trim().toDoubleOrNull()?.let { kotlin.math.abs(it) },
+                url = f[0].trim().takeIf { it.isNotBlank() }
+                    ?.let { "https://geofon.gfz.de/eqinfo/event.php?id=$it" }
+            )
+        }.toList()
+    }
+
+    private fun fetchGeofon(): String {
+        val request = Request.Builder()
+            .url(
+                "https://geofon.gfz.de/fdsnws/event/1/query" +
+                    "?format=text&limit=800&orderby=time"
+            )
+            .header("User-Agent", "OSINT-Unified/1.0 (research)")
+            .build()
+        return client.newCall(request).execute().use { resp ->
+            val body = resp.body?.string()
+            if (!resp.isSuccessful) throw IOException("GEOFON HTTP ${resp.code}")
+            if (body.isNullOrBlank()) throw IOException("GEOFON returned nothing")
+            body
+        }
+    }
+
     private fun emsc(): List<Quake> {
         val request = Request.Builder()
             .url(

@@ -68,13 +68,14 @@ private val coverage = listOf(
     ),
     Coverage(
         "Earthquakes",
-        "worldwide, from two agencies",
+        "worldwide, from three agencies",
         "The USGS catalogue is global but it is a US agency reporting " +
             "the world, and small events far from its own networks " +
             "arrive late or never. The EMSC publishes a magnitude 2 in " +
-            "Greece within minutes. Both are read and merged by where " +
-            "and when, since the two number the same earthquake " +
-            "differently."
+            "Greece within minutes; GFZ Potsdam's GEOFON runs its own " +
+            "global network and is often first for Asia, Africa and the " +
+            "south Atlantic. All three are read and merged by where and " +
+            "when, since each numbers the same earthquake differently."
     ),
     Coverage(
         "Sea level",
@@ -251,7 +252,8 @@ fun SourcesScreen(onBack: () -> Unit) {
             "free reuse with attribution"
         ),
         Source("NOAA NHC", "tropical cyclones", "US public domain"),
-        Source("NOAA NWS / tsunami.gov", "severe weather and tsunami bulletins", "US public domain"),
+        Source("GFZ Potsdam / GEOFON", "a third global earthquake catalogue", "free for non-commercial use"),
+    Source("NOAA NWS / tsunami.gov", "severe weather and tsunami bulletins", "US public domain"),
     Source("Japan Meteorological Agency", "tsunami bulletins for the Pacific", "free to use with attribution"),
     Source("BMKG (Indonesia)", "earthquakes judged able to produce a tsunami", "open government data"),
         Source(
