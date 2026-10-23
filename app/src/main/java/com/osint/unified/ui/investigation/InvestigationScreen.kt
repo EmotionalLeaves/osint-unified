@@ -307,9 +307,17 @@ fun InvestigationScreen(
                 val mark: (Corroboration.Entity, Boolean) -> Unit = { e, wrong ->
                     viewModel.setDismissed(e.kind, e.value, wrong)
                 }
+                val chase: (String) -> Unit = { value -> viewModel.onPivot(value) }
                 leads.groupBy { it.kind }.forEach { (kind, group) ->
                     SectionHeader("$kind — ${group.size}", Intel.Cyan)
-                    group.take(20).forEach { EntityRow(it, mark) }
+                    group.take(20).forEach { entity ->
+                        EntityRow(
+                            entity,
+                            mark,
+                            onPivot = chase,
+                            chased = entity.value in alreadyChased
+                        )
+                    }
                 }
                 if (machinery.isNotEmpty()) {
                     Text(
@@ -974,7 +982,9 @@ private fun shareFile(context: Context, file: File, format: ExportFormat) {
 @Composable
 private fun EntityRow(
     entity: Corroboration.Entity,
-    onMark: (Corroboration.Entity, Boolean) -> Unit = { _, _ -> }
+    onMark: (Corroboration.Entity, Boolean) -> Unit = { _, _ -> },
+    onPivot: ((String) -> Unit)? = null,
+    chased: Boolean = false
 ) {
     val tint = when (entity.credibility.code) {
         1 -> Intel.Success
@@ -1021,6 +1031,30 @@ private fun EntityRow(
                 },
                 style = MaterialTheme.typography.labelSmall,
                 color = Intel.TextLow
+            )
+        }
+        // Reading a finding and acting on it should not be two different
+        // places. The pivot list further down the dossier has the same
+        // identifiers, but by the time you have scrolled to it you have
+        // left the sentence that made you want to chase this one.
+        if (onPivot != null && !entity.dismissed) {
+            Text(
+                if (chased) "CHASED" else "CHASE",
+                style = MaterialTheme.typography.labelSmall,
+                color = if (chased) Intel.TextLow else Intel.Cyan,
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier
+                    .padding(start = 8.dp)
+                    .minimumInteractiveComponentSize()
+                    .clip(RoundedCornerShape(4.dp))
+                    .clickable(enabled = !chased) { onPivot(entity.value) }
+                    .background(Intel.Elevated)
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                    .semantics {
+                        contentDescription = if (chased)
+                            "${entity.value} has already been investigated"
+                        else "Investigate ${entity.value}"
+                    }
             )
         }
         // The only control in the app where a person's judgement outranks
