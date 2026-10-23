@@ -1,10 +1,10 @@
-https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73909/world.topo.bathy.200412.3x5400x2700.jpg@@1
-https://eoimages.gsfc.nasa.gov/images/imagerecords/144000/144898/BlackMarble_2016_01deg_geo.tif@@1
-https://eoimages.gsfc.nasa.gov/images/imagerecords/55000/55167/earth_lights_lrg.jpg@@1
-https://www.ioc-sealevelmonitoring.org/service.php?query=data&code=aarh&period=0.5&format=json
-https://api.ioda.inetintel.cc.gatech.edu/v2/outages/alerts?from=1792800000&until=1792886400
-https://emergency.copernicus.eu/mapping/rss.xml
-https://emergency.copernicus.eu/mapping/activations-rapid.rss
-https://api.reliefweb.int/v1/disasters?appname=osint-unified&limit=2||Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Mobile Safari/537.36
-https://www.seismicportal.eu/fdsnws/event/1/query?format=json&limit=1##"(mag|magtype|flynn_region|time|depth|auth)":
-https://naturalearth.s3.amazonaws.com/50m_raster/NE1_50M_SR_W.zip@@1
+https://www.ioc-sealevelmonitoring.org/service.php?query=stationlist&showall=all&format=json@@1800
+https://api.ioda.inetintel.cc.gatech.edu/v2/outages/alerts?from=1792195200&until=1792886400&limit=5
+https://api.reliefweb.int/v2/disasters?appname=osint-unified&limit=2
+https://api.openaq.org/v3/parameters?limit=1
+https://www.seismicportal.eu/fdsnws/event/1/query?format=json&limit=400&start=2026-10-22T00:00:00##"mag": [0-9.]+
+https://live.ais.barentswatch.no/
+https://www.barentswatch.no/bwapi/openapi/
+https://kystdatahuset.no/ws/api/ais/realtime/geojson
+https://meri.digitraffic.fi/api/ais/v1/vessels@@1
+https://api.ioda.inetintel.cc.gatech.edu/v2/entities/query?entityType=country&limit=2
