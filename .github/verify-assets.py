@@ -62,6 +62,21 @@ def markdown_links(name):
 
 # name -> (how to measure it, the least it may hold, may the build go on
 # without it)
+def jpeg_bytes(name: str) -> int:
+    """Size, after checking it is actually a JPEG.
+
+    An optional asset that fails this is deleted rather than shipped,
+    and the globe falls back to drawn coastlines — which is the right
+    outcome for a texture that is secretly an HTML error page, because
+    the decoder would simply return null and the sphere would be black.
+    """
+    with open(full(name), "rb") as f:
+        head = f.read(3)
+    if head != b"\xff\xd8\xff":
+        raise ValueError("not a JPEG")
+    return os.path.getsize(full(name))
+
+
 CHECKS = {
     "sdn.csv": (csv_rows, 5_000, False),
     "sdn-alt.csv": (csv_rows, 5_000, False),
@@ -83,21 +98,6 @@ CHECKS = {
     "earth-day.jpg": (jpeg_bytes, 200_000, True),
     "earth-night.jpg": (jpeg_bytes, 40_000, True),
 }
-
-
-def jpeg_bytes(name: str) -> int:
-    """Size, after checking it is actually a JPEG.
-
-    An optional asset that fails this is deleted rather than shipped,
-    and the globe falls back to drawn coastlines — which is the right
-    outcome for a texture that is secretly an HTML error page, because
-    the decoder would simply return null and the sphere would be black.
-    """
-    with open(full(name), "rb") as f:
-        head = f.read(3)
-    if head != b"\xff\xd8\xff":
-        raise ValueError("not a JPEG")
-    return os.path.getsize(full(name))
 
 
 def main() -> int:

@@ -20,8 +20,15 @@ import java.util.Locale
  * NASA FIRMS is the actual answer: the satellites' own thermal anomaly
  * detections, every one of them, worldwide, published as a plain CSV
  * with no key. A quiet day is thirty thousand detections. It is cached,
- * because the file is two megabytes and the satellites only pass
+ * because the files are megabytes and the satellites only pass
  * overhead every few hours.
+ *
+ * Two instruments, not one. MODIS sees a kilometre across and has
+ * flown since 1999; VIIRS sees 375 metres and finds roughly three
+ * times as many fires, including small ones MODIS cannot resolve at
+ * all — a burning building, a gas flare, the start of something. A map
+ * of only the large fires is a map that says a fire began when it got
+ * big.
  */
 class FiresDataSource(
     private val cache: DiskCache? = null,
@@ -29,27 +36,36 @@ class FiresDataSource(
 ) {
 
     suspend fun fetch(): List<GeoBlip> = withContext(Dispatchers.IO) {
-        val body = load() ?: throw IOException("NASA FIRMS unavailable")
-        val rows = parse(body)
-        if (rows.isEmpty()) throw IOException("FIRMS answered with no detections, which never happens")
+        val bodies = SOURCES.mapNotNull { (key, url) -> load(key, url) }
+        if (bodies.isEmpty()) throw IOException("NASA FIRMS unavailable")
+        // Deliberately not deduplicated between instruments. The two
+        // satellites see the same fire at different resolutions and
+        // minutes apart, and the thinning that runs before anything is
+        // drawn already keeps the count sane; merging them by distance
+        // would quietly drop the small detections, which are the ones
+        // worth having.
+        val rows = bodies.flatMap { parse(it) }
+        if (rows.isEmpty()) {
+            throw IOException("FIRMS answered with no detections, which never happens")
+        }
         rows
     }
 
-    private fun load(): String? {
-        cache?.read(CACHE_KEY, CACHE_TTL_MS)?.let { return it }
+    private fun load(key: String, url: String): String? {
+        cache?.read(key, CACHE_TTL_MS)?.let { return it }
         val fetched = runCatching {
-            val request = Request.Builder().url(SOURCE).build()
+            val request = Request.Builder().url(url).build()
             client.newCall(request).execute().use { resp ->
                 if (!resp.isSuccessful) null else resp.body?.string()
             }
         }.getOrNull()
         if (!fetched.isNullOrBlank() && fetched.startsWith("latitude,")) {
-            cache?.write(CACHE_KEY, fetched)
+            cache?.write(key, fetched)
             return fetched
         }
         // A stale copy of where the world was burning three hours ago
         // beats an empty map that says it is not.
-        return cache?.readStale(CACHE_KEY)
+        return cache?.readStale(key)
     }
 
     /**
@@ -117,12 +133,16 @@ class FiresDataSource(
     }
 
     private companion object {
-        /** MODIS rather than VIIRS: a sixth of the bytes for the same
-         *  worldwide picture, which matters on a phone. */
-        const val SOURCE =
-            "https://firms.modaps.eosdis.nasa.gov/data/active_fire/" +
-                "modis-c6.1/csv/MODIS_C6_1_Global_24h.csv"
-        const val CACHE_KEY = "firms-global-24h"
+        /** Both instruments, cached separately so one being slow
+         *  does not cost the other's detections. */
+        val SOURCES = listOf(
+            "firms-modis-24h" to
+                "https://firms.modaps.eosdis.nasa.gov/data/active_fire/" +
+                "modis-c6.1/csv/MODIS_C6_1_Global_24h.csv",
+            "firms-viirs-24h" to
+                "https://firms.modaps.eosdis.nasa.gov/data/active_fire/" +
+                "noaa-20-viirs-c2/csv/J1_VIIRS_C2_Global_24h.csv"
+        )
 
         /** The satellites pass over every few hours; asking more often
          *  downloads two megabytes to learn nothing. */
@@ -131,7 +151,7 @@ class FiresDataSource(
         /** Below this MODIS is flagging sun glint and gas flares. */
         const val MIN_CONFIDENCE = 50
 
-        /** A bad fire day worldwide is well under this. */
+        /** A bad fire day worldwide is well under this, per instrument. */
         const val MAX_POINTS = 60_000
     }
 }
