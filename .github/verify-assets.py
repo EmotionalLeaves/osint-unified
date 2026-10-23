@@ -95,6 +95,7 @@ CHECKS = {
     "airports.json": (json_count, 2_000, True),
     "powerplants.json": (json_count, 10_000, True),
     "coastlines.json": (json_count, 50, True),
+    "borders.json": (json_count, 50, True),
     "country-centroids.json": (json_count, 150, True),
     "ports.json": (json_count, 1_000, True),
     # An image, so "entries" is bytes. A JPEG that arrived as an error

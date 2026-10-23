@@ -68,6 +68,7 @@ fun GlobeView(
 ) {
     val context = LocalContext.current
     val rings = remember { Coastlines.rings(context) }
+    val borders = remember { Coastlines.borders(context) }
 
     // Decoded once, off the main thread, and kept for the life of the
     // process: twenty megabytes of Earth is not something to re-read
@@ -259,10 +260,12 @@ fun GlobeView(
             // is the terminator, and a stroke on top of a soft one
             // looks like a crack.
             drawGraticule(cx, cy, radius, lat0, lon0, faint = true)
+            drawLines(borders, cx, cy, radius, lat0, lon0, BORDER_OVER_IMAGERY)
         } else {
             drawOcean(cx, cy, radius)
             drawGraticule(cx, cy, radius, lat0, lon0)
             drawLand(rings, cx, cy, radius, lat0, lon0)
+            drawLines(borders, cx, cy, radius, lat0, lon0, BORDER_OVER_OUTLINE)
             drawTerminator(terminator, cx, cy, radius, lat0, lon0)
         }
         drawPoints(points, cx, cy, radius, lat0, lon0, sun)
@@ -464,6 +467,34 @@ private inline fun DrawScope.strokeArcOfPoints(
     }
 }
 
+/**
+ * Open lines on the sphere: borders, which enclose nothing.
+ *
+ * Broken whenever a segment goes round the back, for the same reason
+ * the coastlines are — otherwise a border in Asia is drawn straight
+ * across the Pacific when the globe is turned to the Americas.
+ */
+private fun DrawScope.drawLines(
+    lines: List<DoubleArray>,
+    cx: Float, cy: Float, r: Float,
+    lat0: Double, lon0: Double,
+    colour: Color
+) {
+    lines.forEach { line ->
+        var previous: Orthographic.Point? = null
+        var i = 0
+        while (i + 1 < line.size) {
+            val p = Orthographic.project(line[i + 1], line[i], lat0, lon0, r, cx, cy)
+            val last = previous
+            if (last != null && last.visible && p.visible) {
+                drawLine(colour, Offset(last.x, last.y), Offset(p.x, p.y), strokeWidth = 1f)
+            }
+            previous = p
+            i += 2
+        }
+    }
+}
+
 private fun DrawScope.drawLand(
     rings: List<DoubleArray>,
     cx: Float, cy: Float, r: Float,
@@ -569,3 +600,10 @@ private const val SETTLE_MS = 140L
 private const val MAX_RENDER_PX = 1400
 
 private const val STAR_COUNT = 220
+
+/** Over imagery a border is a hint; the eye finds it without help and
+ *  anything stronger competes with the ground it is describing. */
+private val BORDER_OVER_IMAGERY = Color(0x66FFE9A8)
+
+/** Over the drawn fallback there is nothing else to compete with. */
+private val BORDER_OVER_OUTLINE = Color(0x99FFE9A8)

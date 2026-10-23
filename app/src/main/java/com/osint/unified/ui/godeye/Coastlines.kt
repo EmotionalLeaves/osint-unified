@@ -24,19 +24,27 @@ import kotlinx.serialization.json.jsonObject
  */
 object Coastlines {
 
-    @Volatile private var cached: List<DoubleArray>? = null
+    private val cached = HashMap<String, List<DoubleArray>>()
 
     /** Every ring, biggest first. Empty when the file is not bundled. */
-    fun rings(context: Context): List<DoubleArray> {
-        cached?.let { return it }
-        val loaded = synchronized(this) {
-            cached ?: load(context).also { cached = it }
-        }
-        return loaded
-    }
+    fun rings(context: Context): List<DoubleArray> = of(context, "coastlines.json")
 
-    private fun load(context: Context): List<DoubleArray> = runCatching {
-        val text = context.assets.open("coastlines.json").bufferedReader()
+    /**
+     * National borders, in the same packing.
+     *
+     * Photography has no borders. Blue Marble shows the Earth as it
+     * is, which tells you nothing about which country you are looking
+     * at — and on a map whose purpose is knowing where something is,
+     * that is the one line that has to be drawn.
+     */
+    fun borders(context: Context): List<DoubleArray> = of(context, "borders.json")
+
+    @Synchronized
+    private fun of(context: Context, asset: String): List<DoubleArray> =
+        cached.getOrPut(asset) { load(context, asset) }
+
+    private fun load(context: Context, asset: String): List<DoubleArray> = runCatching {
+        val text = context.assets.open(asset).bufferedReader()
             .use { it.readText() }
         val rings = Json { ignoreUnknownKeys = true }
             .parseToJsonElement(text).jsonObject["rings"]?.jsonArray ?: return emptyList()

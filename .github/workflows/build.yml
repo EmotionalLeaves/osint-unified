@@ -144,6 +144,17 @@ jobs:
           fi
           test -s "$A/coastlines.json" || echo "::warning title=globe::coastlines.json is missing; the globe will draw an empty sphere"
 
+          # Borders, because photography has none. Blue Marble shows
+          # the Earth as it is, which is beautiful and tells you
+          # nothing about which country you are looking at — and on a
+          # map whose whole purpose is knowing where something is,
+          # that is the one line that has to be drawn.
+          curl -sSL https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_admin_0_boundary_lines_land.geojson -o /tmp/ne_borders.geojson || true
+          if [ -s /tmp/ne_borders.geojson ]; then
+            python3 .github/make-coastlines.py /tmp/ne_borders.geojson "$A/borders.json" || true
+          fi
+          test -s "$A/borders.json" || echo "::warning title=globe::borders.json is missing; the globe will show no borders"
+
           # A real Earth to put on the globe.
           #
           # The sphere has been drawing coastline outlines on a gradient

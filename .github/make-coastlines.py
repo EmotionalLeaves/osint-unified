@@ -19,11 +19,21 @@ MIN_RING_POINTS = 4
 
 
 def rings(geometry):
+    """Every line this geometry is made of.
+
+    Lines as well as polygons, because the same packing is used for the
+    globe's borders, and a border is a LineString: it has two sides and
+    encloses nothing by itself.
+    """
     kind = geometry.get("type")
     if kind == "Polygon":
         return geometry.get("coordinates", [])
     if kind == "MultiPolygon":
         return [ring for poly in geometry.get("coordinates", []) for ring in poly]
+    if kind == "LineString":
+        return [geometry.get("coordinates", [])]
+    if kind == "MultiLineString":
+        return geometry.get("coordinates", [])
     return []
 
 
