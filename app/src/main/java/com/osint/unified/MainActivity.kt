@@ -364,7 +364,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                 feeds = listOf(
                                     FeedProbe("Aircraft (OpenSky/adsb.fi)") { app.aircraftDataSource.fetch().size },
                                     FeedProbe("Military ADS-B") { app.milAircraftDataSource.fetch().size },
-                                    FeedProbe("Vessels (AIS \u00b7 Baltic, Digitraffic)") { app.aisDataSource.fetch().size },
+                                    FeedProbe("Vessels (AIS \u00b7 Fintraffic + Kystverket)") { app.aisDataSource.fetch().size },
                                     FeedProbe("Earthquakes (USGS)") { app.earthquakeDataSource.fetch().size },
                                     FeedProbe("Natural events (EONET)") { app.naturalEventsDataSource.fetch().size },
                                     FeedProbe("Wildfires (NASA FIRMS)") { app.firesDataSource.fetch().size },

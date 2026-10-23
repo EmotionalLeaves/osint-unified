@@ -18,9 +18,22 @@ class AppSettings(context: Context) {
         set(value) = prefs.edit().putString(KEY_TAR1090, value.trim()).apply()
 
     // Digitraffic's open AIS: keyless and real, but Finnish waters and the
-    // Baltic only. The SEA pill says so, because a layer labelled only "SEA"
-    // reads as global coverage and the absence of a ship anywhere else then
-    // looks like information.
+    /**
+     * Every keyless live AIS feed found, merged.
+     *
+     * There is no open network publishing AIS worldwide without an
+     * account — every aggregator that carries the whole sea wants a
+     * key. What does exist is national authorities publishing their own
+     * waters, and those can be added up. Fintraffic covers the Baltic
+     * and the Norwegian Coastal Administration covers the Norwegian
+     * Sea, the North Sea and the Barents, which between them is most of
+     * northern Europe's water rather than one corner of it.
+     *
+     * The pill names the real extent, because a layer labelled only
+     * "SEA" reads as global coverage and the absence of a ship anywhere
+     * else then looks like information. Anyone who finds another open
+     * feed can paste it in and it is merged with these.
+     */
     var aisUrl: String
         get() = prefs.getString(KEY_AIS, DEFAULT_AIS).orEmpty()
         set(value) = prefs.edit().putString(KEY_AIS, value.trim()).apply()
@@ -123,7 +136,9 @@ class AppSettings(context: Context) {
         const val KEY_PROXY_HOST = "proxy_host"
         const val KEY_PROXY_PORT = "proxy_port"
         const val KEY_APP_LOCK = "app_lock_enabled"
-        const val DEFAULT_AIS = "https://meri.digitraffic.fi/api/ais/v1/locations"
+        const val DEFAULT_AIS =
+            "https://meri.digitraffic.fi/api/ais/v1/locations\n" +
+                "https://kystdatahuset.no/ws/api/ais/realtime/geojson"
 
         /** Orbot's HTTP port, which is what almost anyone turning this on
          *  is running. Its SOCKS port is 9050 and is the wrong one here. */

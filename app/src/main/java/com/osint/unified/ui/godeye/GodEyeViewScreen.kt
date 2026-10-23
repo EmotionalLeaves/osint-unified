@@ -408,7 +408,7 @@ fun GodEyeViewScreen(
                 // forty dots is the map disagreeing with itself.
                 LayerPill("AIR·GLOBAL", visibleAircraft.size, Intel.NetCyan, showAircraft || god, loaded = "aircraft" in state.loaded, trouble = "aircraft" in state.feedTrouble) { showAircraft = !showAircraft }
                 LayerPill("MIL", state.milAircraft.size, Color(0xFFFFD23F), showMil || god, loaded = "milAircraft" in state.loaded, trouble = "milAircraft" in state.feedTrouble) { showMil = !showMil }
-                LayerPill("SEA·BALTIC", state.vessels.size, Intel.Teal, showVessels || god, loaded = "vessels" in state.loaded, trouble = "vessels" in state.feedTrouble) { showVessels = !showVessels }
+                LayerPill("SEA·N.EUROPE", state.vessels.size, Intel.Teal, showVessels || god, loaded = "vessels" in state.loaded, trouble = "vessels" in state.feedTrouble) { showVessels = !showVessels }
                 LayerPill("SEIS", state.quakes.size, Intel.Coral, showQuakes || god, loaded = "quakes" in state.loaded, trouble = "quakes" in state.feedTrouble) { showQuakes = !showQuakes }
                 LayerPill("EVT", state.naturalEvents.size, Intel.Amber, showEvents || god, loaded = "naturalEvents" in state.loaded, trouble = "naturalEvents" in state.feedTrouble) { showEvents = !showEvents }
                 LayerPill("WX·US", state.weather.size, Color(0xFF7FB2FF), showWeather || god, loaded = "weather" in state.loaded, trouble = "weather" in state.feedTrouble) { showWeather = !showWeather }

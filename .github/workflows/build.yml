@@ -85,6 +85,11 @@ jobs:
       - name: Bundle OSINT datasets into assets
         run: |
           set -eux
+          # The log archive cannot be downloaded from where this project
+          # is developed, so a step that dies under `set -e` says only
+          # "exit code 1" and the line that did it is invisible. The trap
+          # turns it into an annotation, which does arrive.
+          trap 'echo "::error title=bundle::line ${LINENO}: ${BASH_COMMAND}"' ERR
           A="app/src/main/assets"
           mkdir -p "$A"
           # OSINT Framework directory (hundreds of resources, categorized).

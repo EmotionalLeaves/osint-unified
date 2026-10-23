@@ -54,13 +54,17 @@ private val coverage = listOf(
     ),
     Coverage(
         "Vessels",
-        "the Baltic only",
+        "northern Europe",
         "No open network publishes live AIS worldwide without an " +
-            "account. Every aggregator that carries the world wants a " +
-            "key; the national feeds that need no key cover their own " +
-            "waters. Fintraffic's covers the Baltic, so that is what " +
-            "this covers, and the pill says so rather than implying the " +
-            "rest of the sea is empty."
+            "account — every aggregator that carries the whole sea " +
+            "wants a key. What does exist is national authorities " +
+            "publishing their own waters, and those add up: Fintraffic " +
+            "for the Baltic and the Norwegian Coastal Administration " +
+            "for the Norwegian Sea, the North Sea and the Barents. Any " +
+            "other open feed can be pasted into settings and is merged " +
+            "with these. Everywhere else is still empty, and the pill " +
+            "says so rather than letting the absence of a ship look " +
+            "like information."
     ),
     Coverage("Earthquakes", "worldwide", "USGS, every event above the reporting threshold."),
     Coverage(
@@ -197,7 +201,16 @@ fun SourcesScreen(onBack: () -> Unit) {
             "aircraft positions worldwide, including military",
             "community feeds, ODbL-like, non-commercial"
         ),
-        Source("Digitraffic (Fintraffic)", "AIS vessel positions, Baltic", "CC BY 4.0"),
+        Source(
+            "Digitraffic (Fintraffic)",
+            "AIS vessel positions, the Baltic",
+            "CC BY 4.0"
+        ),
+        Source(
+            "Kystdatahuset (Norwegian Coastal Administration)",
+            "AIS vessel positions, the Norwegian Sea, North Sea and Barents",
+            "Norwegian open data (NLOD), no account"
+        ),
         Source("Caltrans", "traffic cameras with live stills, California", "US public domain"),
         Source(
             "Natural Earth",
