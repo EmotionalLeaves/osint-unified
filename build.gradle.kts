@@ -1,6 +1,10 @@
 plugins {
     id("com.android.application") version "8.5.2" apply false
-    id("org.jetbrains.kotlin.android") version "1.9.24" apply false
-    id("org.jetbrains.kotlin.plugin.serialization") version "1.9.24" apply false
-    id("com.google.devtools.ksp") version "1.9.24-1.0.20" apply false
+    id("org.jetbrains.kotlin.android") version "2.0.21" apply false
+    id("org.jetbrains.kotlin.plugin.serialization") version "2.0.21" apply false
+    // From Kotlin 2.0 the Compose compiler ships with Kotlin and is applied
+    // as a plugin, rather than pinned by version in composeOptions. The
+    // version must match the Kotlin one exactly.
+    id("org.jetbrains.kotlin.plugin.compose") version "2.0.21" apply false
+    id("com.google.devtools.ksp") version "2.0.21-1.0.25" apply false
 }
