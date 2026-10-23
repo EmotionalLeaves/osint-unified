@@ -68,6 +68,7 @@ import com.osint.unified.domain.Findings
 import com.osint.unified.domain.Corroboration
 import com.osint.unified.domain.IntelSummary
 import com.osint.unified.domain.Observable
+import com.osint.unified.domain.Timeline
 import com.osint.unified.domain.Tool
 import com.osint.unified.domain.ToolCategory
 import com.osint.unified.ui.common.GraphDialog
@@ -318,6 +319,77 @@ fun InvestigationScreen(
                             .clickable { showMachinery = !showMachinery }
                     )
                     if (showMachinery) machinery.forEach { EntityRow(it) }
+                }
+            }
+
+            // ---- When it happened ----
+            val timeline = remember(state.results) { Timeline.build(state.results) }
+            if (timeline.isNotEmpty()) {
+                var timelineOpen by rememberSaveable { mutableStateOf(false) }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 12.dp)
+                        .clickable { timelineOpen = !timelineOpen }
+                        .semantics { heading() }
+                ) {
+                    Text(
+                        "TIMELINE · ${timeline.size} dated events",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Intel.TextHi,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text(
+                        if (timelineOpen) "▴" else "▾",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Intel.TextLow
+                    )
+                }
+                if (!timelineOpen) {
+                    Text(
+                        "${timeline.first().date.year} to ${timeline.last().date.year} — " +
+                            "registrations, certificates, breaches and dates the " +
+                            "sources already gave, in the order they happened.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Intel.TextLow
+                    )
+                } else {
+                    Timeline.byYear(timeline).forEach { (year, events) ->
+                        Text(
+                            year.toString(),
+                            style = MaterialTheme.typography.titleSmall,
+                            color = Intel.CyanBright,
+                            fontFamily = FontFamily.Monospace,
+                            modifier = Modifier.padding(top = 10.dp, bottom = 2.dp)
+                        )
+                        events.forEach { event ->
+                            Row(
+                                verticalAlignment = Alignment.Top,
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
+                            ) {
+                                Text(
+                                    event.date.format(Timeline.FORMAT).removeSuffix(" $year"),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Intel.TextLow,
+                                    fontFamily = FontFamily.Monospace,
+                                    modifier = Modifier.width(62.dp)
+                                )
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        event.what,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = Intel.TextHi
+                                    )
+                                    Text(
+                                        "${event.reliability.code} · ${event.toolName}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Intel.TextLow
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
 

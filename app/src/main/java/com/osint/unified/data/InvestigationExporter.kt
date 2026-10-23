@@ -11,6 +11,7 @@ import com.osint.unified.domain.Corroboration
 import com.osint.unified.domain.Findings
 import com.osint.unified.domain.IntelSummary
 import com.osint.unified.domain.Observable
+import com.osint.unified.domain.Timeline
 import com.osint.unified.domain.ToolRegistry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -292,6 +293,23 @@ class InvestigationExporter(private val appContext: Context) {
             )
             machinery.take(30).forEach { e ->
                 append("  ${e.value} — ${e.caveat}\n")
+            }
+        }
+
+        // The dates the sources already gave, in the order they
+        // happened. Scattered across sixty results nobody sees them;
+        // end to end they are frequently the whole story.
+        val timeline = Timeline.build(results)
+        if (timeline.isNotEmpty()) {
+            append("\nTIMELINE\n--------\n")
+            var year = 0
+            timeline.forEach { event ->
+                if (event.date.year != year) {
+                    year = event.date.year
+                    append("\n$year\n")
+                }
+                append("  ${event.date.format(Timeline.FORMAT)}  ${event.what}\n")
+                append("      ${event.reliability.code} · ${event.toolName}\n")
             }
         }
 
