@@ -102,11 +102,27 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
      * thing twice is still two events.
      */
     private val sharedAt = mutableLongStateOf(0L)
+
+    /** Set on an intent once it has been acted on. */
+    private val consumedKey = "com.osint.unified.CONSUMED"
+
     private val sharedText = androidx.compose.runtime.mutableStateOf<String?>(null)
     private val sharedImage = androidx.compose.runtime.mutableStateOf<android.net.Uri?>(null)
 
     private fun consume(intent: Intent?) {
         if (intent == null) return
+        // Marked on the intent itself, because Android hands the
+        // launching intent back to every recreate.
+        //
+        // The signal was a fresh System.currentTimeMillis(), so a
+        // rotation produced a newer timestamp than the one
+        // rememberSaveable had restored and the share fired again:
+        // onSearch() cleared results, notes, marks and breadcrumb and
+        // sent forty requests a second time. The same intent object
+        // survives the recreate, so a flag on it is what distinguishes
+        // "shared again" from "the system handed me the same share".
+        if (intent.getBooleanExtra(consumedKey, false)) return
+        intent.putExtra(consumedKey, true)
         if (intent.action == WatchWorker.ACTION_OPEN_WATCH) {
             openWatchId.longValue = intent.getLongExtra(WatchWorker.EXTRA_WATCH_ID, -1L)
             openWatchAt.longValue = System.currentTimeMillis()
@@ -171,6 +187,25 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             OsintTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     val settings = (application as OsintApplication).settings
+
+                    // Which tab is open, and each tab's saved state, held
+                    // ABOVE the lock screen.
+                    //
+                    // The lock used to `return@Surface` over the top of
+                    // these, so the whole content subtree left the
+                    // composition and every rememberSaveable in it
+                    // unregistered its provider. Answer a phone call three
+                    // screens deep with twelve layers armed, come back,
+                    // unlock: back on the globe with every toggle at its
+                    // default. That is the exact failure the state holder
+                    // was added to prevent, reintroduced on every single
+                    // background cycle. Declared here, they survive the
+                    // lock, and SaveableStateProvider keeps each tab's
+                    // state for it.
+                    var screen by rememberSaveable { mutableStateOf("godeye") }
+                    val tabState = androidx.compose.runtime.saveable
+                        .rememberSaveableStateHolder()
+
                     if (locked.value) {
                         com.osint.unified.ui.common.AppLockScreen(this@MainActivity) {
                             locked.value = false
@@ -208,7 +243,6 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                         }
                     }
 
-                    var screen by rememberSaveable { mutableStateOf("godeye") }
                     val godState by godEyeViewModel.state.collectAsStateWithLifecycle()
 
                     // A new search (from the bar or a globe tap) opens the
@@ -235,8 +269,22 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                         when {
                             sharedImage.value != null -> screen = "forensics"
                             text != null -> {
+                                // Prepared, not fired.
+                                //
+                                // This activity is exported — it has to be,
+                                // for the launcher — and carries SEND and
+                                // PROCESS_TEXT filters, so any app on the
+                                // device can hand it a target of its
+                                // choosing. Running the fan-out on arrival
+                                // meant that app decided who this one
+                                // investigated, from this user's address,
+                                // with nothing shown first. The dossier
+                                // opens with the target classified and RUN
+                                // ALL waiting, which is one tap for the
+                                // person who meant it and nothing at all
+                                // for anyone who did not.
                                 godEyeViewModel.onQueryChange(targetIn(text))
-                                godEyeViewModel.onSearch()
+                                godEyeViewModel.onSearch(fanOut = false)
                             }
                         }
                     }
@@ -323,9 +371,8 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                     // rememberSaveable values with it: layers you had
                     // turned off came back on and started polling again,
                     // and the map jumped back to the last search at zoom
-                    // nine instead of where you had left it.
-                    val tabState = androidx.compose.runtime.saveable
-                        .rememberSaveableStateHolder()
+                    // nine instead of where you had left it. Declared
+                    // above, with `screen`, so the lock cannot take it.
                     Column(Modifier.fillMaxSize()) {
                     androidx.compose.foundation.layout.Box(Modifier.weight(1f)) {
                     tabState.SaveableStateProvider(screen) {

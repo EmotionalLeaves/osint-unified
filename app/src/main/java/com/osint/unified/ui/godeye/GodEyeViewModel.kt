@@ -944,7 +944,14 @@ class GodEyeViewModel(
         onSearch()
     }
 
-    fun onSearch() {
+    /**
+     * [fanOut] false prepares the dossier without contacting anybody.
+     *
+     * Used by the share handler: see MainActivity. The target is
+     * classified, the tool list is worked out and the screen opens,
+     * but nothing goes out until somebody presses RUN ALL.
+     */
+    fun onSearch(fanOut: Boolean = true) {
         // Tapping search with an empty box used to navigate to the dossier's
         // "enter something" placeholder, which is the app answering a
         // question nobody asked.
@@ -1009,7 +1016,7 @@ class GodEyeViewModel(
                 navSignal = it.navSignal + 1
             )
         }
-        autoRun()
+        if (fanOut) autoRun()
     }
 
     /**
