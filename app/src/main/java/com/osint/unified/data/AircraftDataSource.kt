@@ -92,68 +92,93 @@ class AircraftDataSource(
      */
     private suspend fun merged(focus: Pair<Double, Double>?, wide: Boolean): List<Aircraft> {
         val byHex = LinkedHashMap<String, Aircraft>()
-        runCatching { adsbSweep(focus, wide) }.getOrNull()?.forEach { byHex[it.icao] = it }
         // OpenSky covers the whole planet in one request, which is both
-        // why it is worth asking and why it has to be asked carefully.
-        runCatching { openSky(focus, wide) }.getOrNull()
-            ?.forEach { byHex.putIfAbsent(it.icao, it) }
+        // why it is worth asking first and why it has to be asked
+        // carefully. Zoomed in it answers for a box round the viewport;
+        // zoomed out it answers for the Earth, at most every few minutes.
+        val sky = runCatching { openSky(focus, wide) }.getOrNull()
+        sky?.forEach { byHex[it.icao] = it }
+
+        // The aggregators are asked for one circle, not for a sweep.
+        //
+        // This used to fan out across a dozen or more fixed hub points
+        // every fifteen seconds. Each answer is around half a megabyte,
+        // so the aircraft layer by itself was pulling something close to
+        // a gigabyte an hour of someone's mobile data — for a globe on
+        // which most of those hubs were not even on the lit side.
+        //
+        // Zoomed in, one circle centred on what is actually on screen is
+        // both cheaper and better aimed than the nearest six hubs.
+        // Zoomed out, there is nothing a scatter of circles can tell you
+        // that the whole-planet answer has not already, so the sweep
+        // only runs at all if that answer did not arrive.
+        val local = if (wide) {
+            if (sky.isNullOrEmpty()) runCatching { adsbSample() }.getOrNull() else null
+        } else {
+            runCatching { adsbNear(focus) }.getOrNull()
+        }
+        local?.forEach { byHex.putIfAbsent(it.icao, it) }
         return byHex.values.toList()
     }
 
     /**
-     * Keyless live aircraft from the open ADS-B aggregators, swept across
-     * the world's traffic regions and merged by ICAO hex.
+     * One circle, centred on the viewport.
      *
-     * Two bugs lived here. The parser only looked for an `ac` array, which
-     * is adsb.lol's shape — adsb.fi returns `aircraft`, so this source had
-     * never once returned a plane, and the layer was really just OpenSky's
-     * truncated 250. And eight hub points at 250 nm covered a rounding
-     * error of the planet. Both fixed: both shapes parsed, both providers
-     * queried, and enough hubs to cover where aircraft actually are.
+     * The radius is smaller than the old sweep's because it no longer
+     * has to paper over the gaps between fixed points: at the zoom
+     * where this path runs, 150 nautical miles already overfills the
+     * screen.
      */
-    private suspend fun adsbSweep(
-        focus: Pair<Double, Double>?,
-        wide: Boolean
-    ): List<Aircraft>? = coroutineScope {
-        val out = java.util.concurrent.ConcurrentHashMap<String, Aircraft>()
-        val gate = Semaphore(6)
-        hubsFor(focus, wide).mapIndexed { index, hub ->
-            async(Dispatchers.IO) {
-                gate.withPermit {
-                    // One provider per hub, alternating, so the two are both
-                    // exercised without doubling the traffic.
-                    val provider = PROVIDERS[index % PROVIDERS.size]
-                    runCatching { sweepOne(provider, hub.first, hub.second, out) }
-                }
-            }
-        }.forEach { it.await() }
-        if (out.isEmpty()) null else out.values.toList()
+    private fun adsbNear(focus: Pair<Double, Double>?): List<Aircraft>? {
+        val (lat, lon) = focus ?: return null
+        val out = LinkedHashMap<String, Aircraft>()
+        for (provider in PROVIDERS) {
+            runCatching { sweepOne(provider, lat, lon, out, NEAR_NM) }
+            // The two aggregators carry much the same traffic, so the
+            // second is a fallback for the first having failed rather
+            // than a second helping of the same data.
+            if (out.isNotEmpty()) break
+        }
+        return out.values.toList().ifEmpty { null }
     }
 
     /**
-     * Zoomed out, a spread sample of the busiest regions — enough to show
-     * the world has traffic without downloading all of it. Zoomed in, the
-     * hubs nearest what is on screen, so detail appears where it is being
-     * looked at.
+     * A handful of hub circles, as a fallback for a whole-planet answer
+     * that did not come.
+     *
+     * OpenSky rate-limits anonymous callers and does go down, and a
+     * world globe with no aircraft on it at all is worse than a world
+     * globe with the busiest half-dozen regions on it. [SAMPLE_HUBS] is
+     * small on purpose: this is a stopgap, not a sweep, and the sweep it
+     * replaced was the most expensive thing in the app.
      */
-    private fun hubsFor(focus: Pair<Double, Double>?, wide: Boolean): List<Pair<Double, Double>> {
-        if (focus == null || wide) return HUBS.filterIndexed { i, _ -> i % 6 == 0 }
-        val (lat, lon) = focus
-        return HUBS.sortedBy { (hLat, hLon) ->
-            val dLat = hLat - lat
-            val dLon = ((hLon - lon + 540) % 360) - 180
-            dLat * dLat + dLon * dLon
-        }.take(6)
+    private suspend fun adsbSample(): List<Aircraft>? = coroutineScope {
+        val out = java.util.concurrent.ConcurrentHashMap<String, Aircraft>()
+        val gate = Semaphore(3)
+        val step = (HUBS.size / SAMPLE_HUBS).coerceAtLeast(1)
+        HUBS.filterIndexed { i, _ -> i % step == 0 }.take(SAMPLE_HUBS)
+            .mapIndexed { index, hub ->
+                async(Dispatchers.IO) {
+                    gate.withPermit {
+                        // One provider per hub, alternating, so the two
+                        // are both exercised without doubling the traffic.
+                        val provider = PROVIDERS[index % PROVIDERS.size]
+                        runCatching { sweepOne(provider, hub.first, hub.second, out, SAMPLE_NM) }
+                    }
+                }
+            }.forEach { it.await() }
+        if (out.isEmpty()) null else out.values.toList()
     }
 
     private fun sweepOne(
         provider: String,
         lat: Double,
         lon: Double,
-        into: MutableMap<String, Aircraft>
+        into: MutableMap<String, Aircraft>,
+        radiusNm: Int
     ) {
         val request = Request.Builder()
-            .url("$provider$lat/lon/$lon/dist/250")
+            .url("$provider$lat/lon/$lon/dist/$radiusNm")
             .header("User-Agent", "OSINT-Unified/1.0 (research)")
             .build()
         client.newCall(request).execute().use { resp ->
@@ -292,6 +317,17 @@ class AircraftDataSource(
         /** Half-height and half-width of the zoomed-in request, degrees. */
         const val BOX_LAT = 12.0
         const val BOX_LON = 18.0
+
+        /** Radius of the single zoomed-in circle, nautical miles. At the
+         *  zoom where that path runs this already overfills the screen. */
+        const val NEAR_NM = 150
+
+        /** And of a fallback hub circle, which is covering a continent
+         *  rather than a viewport. */
+        const val SAMPLE_NM = 250
+
+        /** How many hub circles the fallback is allowed. */
+        const val SAMPLE_HUBS = 6
 
         val PROVIDERS = listOf(
             "https://api.adsb.lol/v2/lat/",
