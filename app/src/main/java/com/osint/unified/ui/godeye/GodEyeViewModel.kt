@@ -544,19 +544,80 @@ class GodEyeViewModel(
      * turns it on, because every one of these is a request to a
      * volunteer-run server.
      */
+    /**
+     * Run an on-demand layer's fetch, and say so when it does not work.
+     *
+     * All three of these used to end `runCatching { ... }.getOrNull()`
+     * followed by `if (v != null)`. So an Overpass failure — a 429
+     * from a volunteer-run server, a gateway timeout, no network —
+     * wrote nothing anywhere: no data, no `loaded`, no `feedTrouble`.
+     * The pill sat on its marker for ever and the layer simply never
+     * worked, with the app holding the reason and saying none of it.
+     *
+     * The sites layer was worse again: it opened `val where = focus ?:
+     * return`, and the view never reported where it was looking unless
+     * you had been to the flat map and panned it. On the globe, which
+     * is the default, switching the layer on did precisely nothing —
+     * no request, no error, no mark.
+     */
+    private fun onDemand(
+        key: String,
+        job: () -> Job?,
+        setJob: (Job?) -> Unit,
+        fetch: suspend () -> List<GeoBlip>,
+        apply: (GodEyeUiState, List<GeoBlip>) -> GodEyeUiState
+    ) {
+        if (job()?.isActive == true) return
+        setJob(
+            viewModelScope.launch {
+                val attempt = runCatching { fetch() }
+                attempt.exceptionOrNull()?.let { if (it is CancellationException) throw it }
+                val v = attempt.getOrNull()
+                _state.update { st ->
+                    if (v == null) {
+                        st.copy(
+                            feedTrouble = st.feedTrouble +
+                                (key to (attempt.exceptionOrNull()?.message?.take(90)
+                                    ?: "no answer"))
+                        )
+                    } else {
+                        apply(
+                            st.copy(loaded = st.loaded + key, feedTrouble = st.feedTrouble - key),
+                            v
+                        )
+                    }
+                }
+                setJob(null)
+            }
+        )
+    }
+
+    /** Recorded rather than returned from in silence. */
+    private fun needsAView(key: String) {
+        _state.update {
+            it.copy(
+                feedTrouble = it.feedTrouble +
+                    (key to "waiting for the view — move the map or globe")
+            )
+        }
+    }
+
     fun ensureSites() {
-        if (sitesJob?.isActive == true) return
-        val where = focus ?: return
+        val where = focus
+        if (where == null) {
+            needsAView("sites")
+            return
+        }
         val key = "%.1f,%.1f".format(java.util.Locale.US, where.first, where.second)
         if (key == sitesKey && _state.value.sites.isNotEmpty()) return
-        sitesJob = viewModelScope.launch {
-            val v = runCatching { sitesDataSource.near(where.first, where.second) }.getOrNull()
-            if (v != null) {
-                sitesKey = key
-                _state.update { it.copy(sites = v, loaded = it.loaded + "sites") }
-            }
-            sitesJob = null
-        }
+        sitesKey = key
+        onDemand(
+            key = "sites",
+            job = { sitesJob },
+            setJob = { sitesJob = it },
+            fetch = { sitesDataSource.near(where.first, where.second) },
+            apply = { st, v -> st.copy(sites = v) }
+        )
     }
 
     private var camerasJob: Job? = null
@@ -590,17 +651,17 @@ class GodEyeViewModel(
             "%.1f,%.1f".format(java.util.Locale.US, it.first, it.second)
         } ?: "none"
         if (key == cameraKey && _state.value.cameras.isNotEmpty()) return
-        camerasJob = viewModelScope.launch {
-            val v = runCatching {
+        cameraKey = key
+        onDemand(
+            key = "cameras",
+            job = { camerasJob },
+            setJob = { camerasJob = it },
+            fetch = {
                 if (where == null) cctvDataSource.fetch()
                 else cctvDataSource.near(where.first, where.second)
-            }.getOrNull()
-            if (v != null) {
-                cameraKey = key
-                _state.update { it.copy(cameras = v, loaded = it.loaded + "cameras") }
-            }
-            camerasJob = null
-        }
+            },
+            apply = { st, v -> st.copy(cameras = v) }
+        )
     }
 
     /**
@@ -618,17 +679,17 @@ class GodEyeViewModel(
             "%.0f,%.0f".format(java.util.Locale.US, it.first, it.second)
         } ?: "none"
         if (key == airspaceKey && _state.value.airspace.isNotEmpty()) return
-        airspaceJob = viewModelScope.launch {
-            val v = runCatching {
+        airspaceKey = key
+        onDemand(
+            key = "airspace",
+            job = { airspaceJob },
+            setJob = { airspaceJob = it },
+            fetch = {
                 if (where == null) airspaceDataSource.fetch()
                 else airspaceDataSource.near(where.first, where.second)
-            }.getOrNull()
-            if (v != null) {
-                airspaceKey = key
-                _state.update { it.copy(airspace = v, loaded = it.loaded + "airspace") }
-            }
-            airspaceJob = null
-        }
+            },
+            apply = { st, v -> st.copy(airspace = v) }
+        )
     }
 
     /**

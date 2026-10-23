@@ -1626,6 +1626,19 @@ private fun GlobeMap(
             // it in and let the recomposition that causes do the work.
             if (inView == null) {
                 inView = map.boundingBox.asWindow()
+                // And say where that is.
+                //
+                // The viewport was only reported from the scroll and
+                // zoom listeners, so until the map had been panned the
+                // app did not know where it was looking — and the
+                // layers that query around the view gave up silently
+                // when asked. Opening the map and switching one on did
+                // nothing at all until you happened to drag.
+                onViewport(
+                    map.mapCenter.latitude,
+                    map.mapCenter.longitude,
+                    map.zoomLevelDouble
+                )
             } else if (plan !== rendered.value) {
                 val density = map.resources.displayMetrics.density
                 val wanted = HashSet<String>(plan.size * 2)
