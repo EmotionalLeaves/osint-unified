@@ -109,8 +109,14 @@ class SitesDataSource(private val client: OkHttpClient = Http.feedClient) {
 
             val kind = when {
                 t("barrier") == "border_control" -> "Border crossing"
+                // OSM says what kind of mission it is in `diplomatic`
+                // when it knows — embassy, consulate, high commission
+                // — and that distinction is the useful part. Falling
+                // straight to the generic word when the tag is absent
+                // threw away the `amenity=embassy` that was right there.
                 t("amenity") == "embassy" || t("office") == "diplomatic" ->
-                    t("diplomatic")?.replaceFirstChar(Char::uppercase) ?: "Diplomatic mission"
+                    t("diplomatic")?.replace('_', ' ')?.replaceFirstChar(Char::uppercase)
+                        ?: if (t("amenity") == "embassy") "Embassy" else "Diplomatic mission"
                 t("amenity") == "prison" -> "Prison"
                 t("power") == "substation" -> "Substation"
                 else -> return@mapNotNull null
