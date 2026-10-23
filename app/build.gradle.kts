@@ -8,7 +8,13 @@ plugins {
 
 android {
     namespace = "com.osint.unified"
-    compileSdk = 34
+    // Compiled against 35, still targeting 34. Raising compileSdk makes
+    // the newer APIs and the newer lint available; raising targetSdk is
+    // a different decision, because Android 15 then forces every window
+    // edge to edge and this app's screens would start under the status
+    // bar. That is a change somebody has to look at on a phone, and
+    // nothing here can.
+    compileSdk = 35
 
     // CI passes -PosintVersionCode / -PosintVersionName so every build is a
     // distinct, installable version (same versionCode blocks updates).
