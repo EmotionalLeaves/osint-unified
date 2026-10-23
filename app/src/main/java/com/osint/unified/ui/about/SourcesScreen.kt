@@ -163,8 +163,20 @@ private val coverage = listOf(
             "the positions are computed rather than reported."
     ),
     Coverage("Aurora", "worldwide forecast", "NOAA Space Weather Prediction Center."),
-    Coverage("Air quality", "worldwide", "Open-Meteo, around the view."),
-    Coverage("Airfield weather", "worldwide", "METARs around the view, wherever an airfield reports."),
+    Coverage(
+        "Air quality",
+        "a fixed list of cities, worldwide",
+        "Open-Meteo, read for several hundred named cities rather than " +
+            "for wherever you are looking. A town that is not on the " +
+            "list has no reading here, which is not the same as clean air."
+    ),
+    Coverage(
+        "Airfield weather",
+        "worldwide",
+        "METARs, swept in two dozen boxes covering the whole Earth " +
+            "rather than following the view, so the coverage is wherever " +
+            "an airfield reports rather than wherever you are looking."
+    ),
     Coverage("Ocean buoys", "mostly US waters", "NOAA's own network, plus partners."),
     Coverage("Seismic stations", "worldwide", "The IRIS/EarthScope inventory."),
     Coverage(
