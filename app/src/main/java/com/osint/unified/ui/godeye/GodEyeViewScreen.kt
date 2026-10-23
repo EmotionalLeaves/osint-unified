@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.material3.minimumInteractiveComponentSize
@@ -40,6 +41,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
@@ -120,31 +122,38 @@ fun GodEyeViewScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var showSettings by rememberSaveable { mutableStateOf(false) }
-    var showAircraft by rememberSaveable { mutableStateOf(true) }
-    var showVessels by rememberSaveable { mutableStateOf(true) }
-    var showQuakes by rememberSaveable { mutableStateOf(true) }
-    var showEvents by rememberSaveable { mutableStateOf(true) }
-    var showOverlay by rememberSaveable { mutableStateOf(true) }
-    var showWeather by rememberSaveable { mutableStateOf(true) }
-    var showFires by rememberSaveable { mutableStateOf(true) }
-    var showSats by rememberSaveable { mutableStateOf(true) }
+    // Every layer starts off.
+    //
+    // Thirty-three feeds switched on at once is a map with everything
+    // on it, which is the same as a map with nothing on it: the thing
+    // you came to look at is under four thousand other dots. Turning
+    // one on is a decision, and a decision is what makes the answer
+    // mean something.
+    var showAircraft by rememberSaveable { mutableStateOf(false) }
+    var showVessels by rememberSaveable { mutableStateOf(false) }
+    var showQuakes by rememberSaveable { mutableStateOf(false) }
+    var showEvents by rememberSaveable { mutableStateOf(false) }
+    var showOverlay by rememberSaveable { mutableStateOf(false) }
+    var showWeather by rememberSaveable { mutableStateOf(false) }
+    var showFires by rememberSaveable { mutableStateOf(false) }
+    var showSats by rememberSaveable { mutableStateOf(false) }
     var showNews by rememberSaveable { mutableStateOf(false) }
-    var showGdacs by rememberSaveable { mutableStateOf(true) }
-    var showVolcanoes by rememberSaveable { mutableStateOf(true) }
-    var showWorldWarnings by rememberSaveable { mutableStateOf(true) }
+    var showGdacs by rememberSaveable { mutableStateOf(false) }
+    var showVolcanoes by rememberSaveable { mutableStateOf(false) }
+    var showWorldWarnings by rememberSaveable { mutableStateOf(false) }
     var showSeaLevel by rememberSaveable { mutableStateOf(false) }
     var showPorts by rememberSaveable { mutableStateOf(false) }
     var showSites by rememberSaveable { mutableStateOf(false) }
-    var showLaunches by rememberSaveable { mutableStateOf(true) }
-    var showOutages by rememberSaveable { mutableStateOf(true) }
-    var showAurora by rememberSaveable { mutableStateOf(true) }
+    var showLaunches by rememberSaveable { mutableStateOf(false) }
+    var showOutages by rememberSaveable { mutableStateOf(false) }
+    var showAurora by rememberSaveable { mutableStateOf(false) }
     var showBuoys by rememberSaveable { mutableStateOf(false) }
     var showMetar by rememberSaveable { mutableStateOf(false) }
-    var showMil by rememberSaveable { mutableStateOf(true) }
-    var showConflict by rememberSaveable { mutableStateOf(true) }
-    var showCyclones by rememberSaveable { mutableStateOf(true) }
-    var showTsunami by rememberSaveable { mutableStateOf(true) }
-    var showAirportStatus by rememberSaveable { mutableStateOf(true) }
+    var showMil by rememberSaveable { mutableStateOf(false) }
+    var showConflict by rememberSaveable { mutableStateOf(false) }
+    var showCyclones by rememberSaveable { mutableStateOf(false) }
+    var showTsunami by rememberSaveable { mutableStateOf(false) }
+    var showAirportStatus by rememberSaveable { mutableStateOf(false) }
     var showRadiation by rememberSaveable { mutableStateOf(false) }
     var mode by rememberSaveable { mutableStateOf(VisualMode.DEFAULT) }
     // Everything on at once, which costs real bandwidth, so it is its own
@@ -487,16 +496,61 @@ fun GodEyeViewScreen(
                 }
             }
 
-            // Thirty-three layers is more than a person can scan, and
-            // every one added makes the rest harder to find. Typing
-            // narrows the row rather than reorganising it, because any
-            // grouping I chose would be wrong for somebody: the person
-            // looking for ships does not think of them as maritime.
-            var layerFilter by rememberSaveable { mutableStateOf("") }
-            if (state.loaded.size + state.feedTrouble.size > FILTER_WORTH_IT) {
-                LayerFilterField(layerFilter) { layerFilter = it }
+            // Everything off, in one gesture. Turning thirty-three
+            // switches back one at a time to get a clean map is the
+            // kind of chore that makes people stop using a feature.
+            val clearLayers = {
+                showAircraft = false
+                showAirportStatus = false
+                showAirports = false
+                showAirspace = false
+                showAqi = false
+                showAurora = false
+                showBuoys = false
+                showCables = false
+                showCameras = false
+                showConflict = false
+                showCyclones = false
+                showEvents = false
+                showFires = false
+                showGdacs = false
+                showLaunches = false
+                showMetar = false
+                showMil = false
+                showNews = false
+                showOutages = false
+                showOverlay = false
+                showPorts = false
+                showPower = false
+                showQuakes = false
+                showRadiation = false
+                showSats = false
+                showSeaLevel = false
+                showSites = false
+                showStations = false
+                showTsunami = false
+                showVessels = false
+                showVolcanoes = false
+                showWeather = false
+                showWorldWarnings = false
             }
-            CompositionLocalProvider(LocalLayerFilter provides layerFilter) {
+
+            // The pill row shows what is on, and nothing else.
+            //
+            // Thirty-three of them at once is clutter whichever way they
+            // are arranged, and arranging them is the wrong fix: with
+            // every layer off to start with, the row is empty until you
+            // put something in it, and what is in it is what you asked
+            // for. The whole list lives one tap away, where a filter
+            // makes sense because that screen is a list.
+            var layerFilter by rememberSaveable { mutableStateOf("") }
+            var picking by rememberSaveable { mutableStateOf(false) }
+
+            // One block of pills, rendered in two places: here, showing
+            // only what is on, and inside the picker, showing all of
+            // them. Written once, because two copies of thirty-three
+            // switches would disagree within a week.
+            val layerPills: @Composable () -> Unit = {
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)
@@ -568,6 +622,64 @@ fun GodEyeViewScreen(
                     LayerPill("OVLY", state.overlayPoints.size, Intel.CyanBright, showOverlay || god, loaded = "overlayPoints" in state.loaded, trouble = "overlayPoints" in state.feedTrouble) { showOverlay = !showOverlay }
                 }
             }
+            }
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp)
+            ) {
+                val on = visibleLayers.size
+                Text(
+                    if (on == 0) "+ ADD LAYERS" else "+ LAYERS · $on ON",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Intel.Cyan,
+                    modifier = Modifier
+                        .minimumInteractiveComponentSize()
+                        .clip(RoundedCornerShape(50))
+                        .background(Intel.Elevated)
+                        .border(1.dp, Intel.Cyan, RoundedCornerShape(50))
+                        .clickable { picking = true }
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                        .semantics {
+                            contentDescription = "Choose which layers to show, $on on"
+                        }
+                )
+                if (on > 0) {
+                    Text(
+                        "CLEAR",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Intel.TextLow,
+                        modifier = Modifier
+                            .padding(start = 8.dp)
+                            .minimumInteractiveComponentSize()
+                            .clip(RoundedCornerShape(50))
+                            .clickable { clearLayers() }
+                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                    )
+                }
+            }
+
+            // What is on, and only that.
+            CompositionLocalProvider(
+                LocalLayerFilter provides "",
+                LocalShowAllLayers provides false
+            ) {
+                layerPills()
+            }
+
+            if (picking) {
+                LayerPicker(
+                    filter = layerFilter,
+                    onFilter = { layerFilter = it },
+                    onClose = { picking = false }
+                ) {
+                    CompositionLocalProvider(
+                        LocalLayerFilter provides layerFilter,
+                        LocalShowAllLayers provides true
+                    ) {
+                        layerPills()
+                    }
+                }
             }
 
             Text(
@@ -1508,9 +1620,6 @@ private val PANEL_MAX_HEIGHT = 300.dp
  *  enough for osmdroid to report the camera it opened with. */
 private const val MAP_SETTLE_MS = 1_500L
 
-/** Below this many layers the row is scannable and a filter is clutter. */
-private const val FILTER_WORTH_IT = 12
-
 /** What the object inspector is showing: which layer the marker came from,
  *  its label, where it is, and any link that layer carries. */
 data class Inspected(
@@ -1579,6 +1688,77 @@ private fun ExamplePill(text: String, onClick: () -> Unit) {
  * accept it.
  */
 private val LocalLayerFilter = compositionLocalOf { "" }
+
+/**
+ * Whether a pill should draw even when its layer is off.
+ *
+ * False on the map, where the row is what you have switched on. True
+ * inside the picker, where the point is to see everything there is.
+ */
+private val LocalShowAllLayers = compositionLocalOf { false }
+
+/**
+ * The whole list of layers, one tap from the map.
+ *
+ * A sheet rather than a screen: choosing a layer is something you do
+ * while looking at the map, and anything that replaces the map makes
+ * you forget what you were looking for.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun LayerPicker(
+    filter: String,
+    onFilter: (String) -> Unit,
+    onClose: () -> Unit,
+    content: @Composable () -> Unit
+) {
+    ModalBottomSheet(
+        onDismissRequest = onClose,
+        containerColor = Intel.Base,
+        dragHandle = null
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 480.dp)
+                .padding(bottom = 16.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth().padding(12.dp)
+            ) {
+                Text(
+                    "LAYERS",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = Intel.TextHi,
+                    modifier = Modifier.weight(1f).semantics { heading() }
+                )
+                Text(
+                    "DONE",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Intel.Cyan,
+                    modifier = Modifier
+                        .minimumInteractiveComponentSize()
+                        .clip(RoundedCornerShape(50))
+                        .background(Intel.Elevated)
+                        .clickable(onClick = onClose)
+                        .padding(horizontal = 14.dp, vertical = 6.dp)
+                )
+            }
+            LayerFilterField(filter, onFilter)
+            Text(
+                "Tap one to turn it on. A layer only fetches while it is " +
+                    "on, so an empty map costs nothing.",
+                style = MaterialTheme.typography.labelSmall,
+                color = Intel.TextLow,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+            )
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                content()
+            }
+        }
+    }
+}
 
 /** Narrows the pill row by name. */
 @Composable
@@ -1649,6 +1829,11 @@ private fun LayerPill(
     // those exist and a parameter on every one of them would be a
     // parameter forgotten on the next layer added; this way a new
     // pill is filterable the moment it is written.
+    // Off layers are not drawn on the map's own row — that row is
+    // what you have switched on, and before today it was every feed
+    // this app has, which is thirty-three pills of clutter above a
+    // map you cannot see.
+    if (!LocalShowAllLayers.current && !on) return
     val filter = LocalLayerFilter.current
     if (filter.isNotBlank() && !label.contains(filter.trim(), ignoreCase = true)) return
 
