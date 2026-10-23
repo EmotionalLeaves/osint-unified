@@ -32,13 +32,34 @@ class DataMeterTest {
     /**
      * The figure is for orientation, so it rounds — but it must not
      * round a megabyte down to nothing or print a float at the user.
+     *
+     * Run under a locale that uses a decimal comma, because the
+     * formatter used the device's locale and "4,2 MB" reads as four
+     * thousand two hundred to anyone not expecting it.
      */
     @Test
     fun theFigureReadsLikeSomethingAPersonWouldSay() {
+        val was = java.util.Locale.getDefault()
+        try {
+            java.util.Locale.setDefault(java.util.Locale.GERMANY)
+            assertEquals("1.8 MB", DataMeter.human(1_750_000))
+        } finally {
+            java.util.Locale.setDefault(was)
+        }
         assertEquals("512 B", DataMeter.human(512))
         assertEquals("2 kB", DataMeter.human(1_999))
         assertEquals("1.8 MB", DataMeter.human(1_750_000))
         assertEquals("2.5 GB", DataMeter.human(2_500_000_000L))
+    }
+
+    /** Resetting restarts the clock as well as the counter, or the
+     *  rate it feeds is the new byte count over the old elapsed time. */
+    @Test
+    fun resettingRestartsTheClock() {
+        val before = DataMeter.since()
+        Thread.sleep(5)
+        DataMeter.reset()
+        assertTrue(DataMeter.since() > before)
     }
 
     /** A dossier can touch hundreds of hosts; the breakdown is capped

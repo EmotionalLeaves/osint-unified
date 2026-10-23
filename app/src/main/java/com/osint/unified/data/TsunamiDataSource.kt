@@ -55,7 +55,11 @@ class TsunamiDataSource(private val client: OkHttpClient = Http.feedClient) {
         "https://www.tsunami.gov/events/xml/PHEBAtom.xml" to "PTWC"
     )
 
-    private val entryRegex = Regex("<entry>(.*?)</entry>", RegexOption.DOT_MATCHES_ALL)
+    // Attributes allowed on the tag. A feed that one day emits
+    // `<entry xml:base="...">` would otherwise match nothing, drop
+    // silently into the whole-document path below, and collapse every
+    // bulletin in the file into one marker — with no error anywhere.
+    private val entryRegex = Regex("<entry\\b[^>]*>(.*?)</entry>", RegexOption.DOT_MATCHES_ALL)
 
     // These feeds declare both namespaces and use whichever the bulletin
     // template felt like: georss:point carries "lat lon" in one element,
@@ -90,13 +94,30 @@ class TsunamiDataSource(private val client: OkHttpClient = Http.feedClient) {
             )
             (atom + others).awaitAll()
         }
-        if (answers.all { it.isFailure }) {
+        val found = answers.mapNotNull { it.getOrNull() }.flatten()
+        // An empty list here is not "no answer", it is the assertion
+        // that there is no tsunami bulletin anywhere on Earth — the
+        // world brief prints exactly that sentence from it. So it may
+        // only be made when every agency answered.
+        //
+        // "All four failed" was the old test and it stopped being
+        // enough the moment there were four: both US feeds live on one
+        // host and share one cooldown, so a single 429 from
+        // tsunami.gov silences the Pacific and the Caribbean together
+        // — and JMA and BMKG answering normally, which on a quiet day
+        // means an empty list, was enough to turn that into a
+        // confident all-clear for waters nothing had been read from.
+        //
+        // Partial data is still shown: a marker from an agency that
+        // did answer is real whatever the others did. It is only the
+        // absence that needs everyone.
+        if (found.isEmpty() && answers.any { it.isFailure }) {
             throw IOException(
-                "no tsunami centre answered: " +
+                "not every tsunami centre answered, so silence is not an all-clear: " +
                     answers.mapNotNull { it.exceptionOrNull()?.message }.joinToString("; ")
             )
         }
-        answers.mapNotNull { it.getOrNull() }.flatten()
+        found
     }
 
     private fun one(url: String, centre: String): List<GeoBlip> = run {
@@ -110,14 +131,29 @@ class TsunamiDataSource(private val client: OkHttpClient = Http.feedClient) {
             if (body.isNullOrBlank()) throw IOException("$centre returned an empty body")
 
             // Some bulletins carry no entries and put the whole message in
-            // the feed header, which still has a title and a point. On that
-            // path the only <updated> is the feed's own, which these centres
-            // refresh independently of the bulletin — so it cannot be used
-            // to decide whether the bulletin is current, and an undated
-            // bulletin is dropped rather than shown as live.
+            // the feed header, which still has a title and a point. The
+            // intent on that path has always been to drop the bulletin
+            // rather than show an undated one as live — the only
+            // <updated> in the document is the feed's own, which these
+            // centres bump on every refresh and which says nothing
+            // about when the bulletin was issued.
+            //
+            // The guard did not work. `tag` finds the first <updated>
+            // anywhere in what it is given, and on this path that is
+            // the whole document, so the feed-level stamp was always
+            // found, `updated` was never null, the drop never happened
+            // and the 48-hour test always passed. A bulletin from
+            // months ago was drawn as current and labelled "4m ago" —
+            // the feed's refresh time, presented as the wave's.
+            //
+            // So this path is read only for its coordinates and then
+            // discarded. Losing a real bulletin that a centre chose to
+            // publish header-only is the lesser harm: this layer exists
+            // to say a wave may be coming, and one that says so about
+            // last year is worse than one that says nothing.
             val entries = entryRegex.findAll(body).map { it.groupValues[1] }.toList()
             val wholeFeed = entries.isEmpty()
-            val blocks = if (wholeFeed) listOf(body) else entries
+            val blocks = if (wholeFeed) emptyList() else entries
 
             blocks.mapNotNull { block ->
                 val (lat, lon) = coordsOf(block) ?: return@mapNotNull null
@@ -125,7 +161,6 @@ class TsunamiDataSource(private val client: OkHttpClient = Http.feedClient) {
                 val updated = Freshness.parse(tag(block, "updated")?.let(::clean))
                 // These feeds keep the last bulletin up indefinitely, so an
                 // old statement would otherwise read as a live warning.
-                if (updated == null && wholeFeed) return@mapNotNull null
                 if (!Freshness.within(updated, 48)) return@mapNotNull null
                 // "Information", "Advisory", "Watch", "Warning" — the
                 // difference between these is the entire message.

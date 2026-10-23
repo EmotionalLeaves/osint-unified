@@ -1,5 +1,6 @@
 package com.osint.unified.network
 
+import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
@@ -28,7 +29,7 @@ object DataMeter {
     private val total = AtomicLong(0)
     private val calls = AtomicLong(0)
     private val byHost = ConcurrentHashMap<String, AtomicLong>()
-    private val startedAt = System.currentTimeMillis()
+    private val startedAt = AtomicLong(System.currentTimeMillis())
 
     internal fun add(host: String, bytes: Long) {
         if (bytes <= 0) return
@@ -48,7 +49,7 @@ object DataMeter {
 
     fun requests(): Long = calls.get()
 
-    fun since(): Long = startedAt
+    fun since(): Long = startedAt.get()
 
     /** The [n] hosts that have cost the most, largest first. */
     fun worst(n: Int = 6): List<Pair<String, Long>> =
@@ -61,13 +62,24 @@ object DataMeter {
         total.set(0)
         calls.set(0)
         byHost.clear()
+        // The clock restarts too. Without this the rate is the new
+        // byte count over the old elapsed time, which understates it
+        // without bound — under a heading that still says "since
+        // launch".
+        startedAt.set(System.currentTimeMillis())
     }
 
     /** "4.2 MB", "860 kB", "512 B" — two significant figures is plenty. */
+    // Locale.US, not the device's. A phone set to French or German
+    // formats this as "4,2 MB", and the decimal comma reads as a
+    // thousands separator to anyone who is not expecting it.
     fun human(bytes: Long): String = when {
-        bytes >= 1_000_000_000L -> String.format("%.1f GB", bytes / 1_000_000_000.0)
-        bytes >= 1_000_000L -> String.format("%.1f MB", bytes / 1_000_000.0)
-        bytes >= 1_000L -> String.format("%.0f kB", bytes / 1_000.0)
+        bytes >= 1_000_000_000L ->
+            String.format(Locale.US, "%.1f GB", bytes / 1_000_000_000.0)
+        bytes >= 1_000_000L ->
+            String.format(Locale.US, "%.1f MB", bytes / 1_000_000.0)
+        bytes >= 1_000L ->
+            String.format(Locale.US, "%.0f kB", bytes / 1_000.0)
         else -> "$bytes B"
     }
 

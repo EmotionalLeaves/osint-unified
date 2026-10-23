@@ -3,6 +3,7 @@ package com.osint.unified.data
 import com.osint.unified.network.Http
 import com.osint.unified.ui.godeye.Aircraft
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
@@ -19,6 +20,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.io.IOException
 
 /**
  * Provides aircraft positions for the God's Eye View.
@@ -78,6 +80,12 @@ class AircraftDataSource(
                     }
                     .ifEmpty { merged(focus, wide) }
             }
+        } catch (e: CancellationException) {
+            // Not a failure of the feed. Caught and then retried, this
+            // started a fresh whole-planet request on a coroutine that
+            // had already been told to stop — which is how leaving the
+            // screen mid-fetch cost a megabyte and a half.
+            throw e
         } catch (e: Exception) {
             merged(focus, wide)
         }
@@ -86,17 +94,28 @@ class AircraftDataSource(
     /**
      * Both keyless providers, merged. OpenSky is global but rate-limits
      * anonymous callers hard; the ADS-B aggregators are per-region but
-     * reliable. Using both covers far more of the sky than either, and
-     * if both are down the layer is empty — which is the truth, and is
-     * the whole reason the invented aircraft were taken out.
+     * reliable. Using both covers far more of the sky than either.
+     *
+     * Throws when neither answered, rather than returning nothing.
+     *
+     * An empty list from this function is not "we could not look", it
+     * is "we looked and the sky is empty" — the poll loop takes any
+     * value as an answer, marks the layer loaded, clears its trouble
+     * flag, and the pill then reads a confident zero. OpenSky spends
+     * an anonymous caller's allowance inside half an hour and both
+     * aggregators can be down at once, so this is a state the app
+     * reaches on an ordinary afternoon, and every other feed here
+     * throws rather than assert an absence it has not verified.
      */
     private suspend fun merged(focus: Pair<Double, Double>?, wide: Boolean): List<Aircraft> {
         val byHex = LinkedHashMap<String, Aircraft>()
+        var answered = false
         // OpenSky covers the whole planet in one request, which is both
         // why it is worth asking first and why it has to be asked
         // carefully. Zoomed in it answers for a box round the viewport;
         // zoomed out it answers for the Earth, at most every few minutes.
         val sky = runCatching { openSky(focus, wide) }.getOrNull()
+        if (sky != null) answered = true
         sky?.forEach { byHex[it.icao] = it }
 
         // The aggregators are asked for one circle, not for a sweep.
@@ -113,11 +132,19 @@ class AircraftDataSource(
         // that the whole-planet answer has not already, so the sweep
         // only runs at all if that answer did not arrive.
         val local = if (wide) {
-            if (sky.isNullOrEmpty()) runCatching { adsbSample() }.getOrNull() else null
+            // Only when OpenSky did not answer at all. An answer that
+            // happens to contain nothing is still an answer, and
+            // spending six more requests to disagree with it is how
+            // the sweep got expensive in the first place.
+            if (sky == null) runCatching { adsbSample() }.getOrNull() else null
         } else {
             runCatching { adsbNear(focus) }.getOrNull()
         }
+        if (local != null) answered = true
         local?.forEach { byHex.putIfAbsent(it.icao, it) }
+        if (!answered) {
+            throw IOException("no aircraft source answered")
+        }
         return byHex.values.toList()
     }
 
@@ -132,14 +159,17 @@ class AircraftDataSource(
     private fun adsbNear(focus: Pair<Double, Double>?): List<Aircraft>? {
         val (lat, lon) = focus ?: return null
         val out = LinkedHashMap<String, Aircraft>()
+        var answered = false
         for (provider in PROVIDERS) {
-            runCatching { sweepOne(provider, lat, lon, out, NEAR_NM) }
+            if (runCatching { sweepOne(provider, lat, lon, out, NEAR_NM) }.isSuccess) {
+                answered = true
+            }
             // The two aggregators carry much the same traffic, so the
             // second is a fallback for the first having failed rather
             // than a second helping of the same data.
             if (out.isNotEmpty()) break
         }
-        return out.values.toList().ifEmpty { null }
+        return if (answered) out.values.toList() else null
     }
 
     /**
@@ -166,8 +196,10 @@ class AircraftDataSource(
                         runCatching { sweepOne(provider, hub.first, hub.second, out, SAMPLE_NM) }
                     }
                 }
-            }.forEach { it.await() }
-        if (out.isEmpty()) null else out.values.toList()
+            }.map { it.await() }
+            .let { results ->
+                if (results.any { it.isSuccess }) out.values.toList() else null
+            }
     }
 
     private fun sweepOne(
@@ -183,7 +215,12 @@ class AircraftDataSource(
             .build()
         client.newCall(request).execute().use { resp ->
             val body = resp.body?.string()
-            if (!resp.isSuccessful || body.isNullOrBlank()) return
+            // Thrown rather than returned. The caller counts a quiet
+            // return as "this provider answered and the sky was clear",
+            // which is what lets the layer say there are no aircraft —
+            // and a 429 is not that.
+            if (!resp.isSuccessful) throw IOException("$provider HTTP ${resp.code}")
+            if (body.isNullOrBlank()) throw IOException("$provider returned nothing")
             val root = json.parseToJsonElement(body).jsonObject
             // adsb.lol says "ac", adsb.fi says "aircraft".
             val list = (root["ac"] ?: root["aircraft"])?.jsonArray ?: return
@@ -239,16 +276,30 @@ class AircraftDataSource(
      */
     private fun openSky(focus: Pair<Double, Double>?, wide: Boolean): List<Aircraft>? {
         val box = if (!wide && focus != null) boxAround(focus) else null
-        if (box == null) {
+        if (box != null) return openSkyRequest(box)
+        // One whole-planet fetch at a time.
+        //
+        // Reading the cache, finding it stale and then fetching is
+        // three steps, and @Volatile makes each of them visible
+        // without making the three of them one. Two callers that miss
+        // together both pull the 1.75 MB the cache exists to avoid —
+        // and they do meet: this source is a process singleton, the
+        // map polls it on a timer, and opening the diagnostics screen
+        // fires every probe at once, one of which is this with no
+        // viewport at all. The second caller waits and then takes the
+        // answer the first one just put there.
+        synchronized(worldLock) {
             val held = world
             if (held != null && System.currentTimeMillis() - held.first < WORLD_TTL_MS) {
                 return held.second
             }
+            val fetched = openSkyRequest(null)
+            if (fetched != null) world = System.currentTimeMillis() to fetched
+            return fetched
         }
-        val fetched = openSkyRequest(box)
-        if (box == null && fetched != null) world = System.currentTimeMillis() to fetched
-        return fetched
     }
+
+    private val worldLock = Any()
 
     /**
      * A window around the viewport centre, generous on purpose.
@@ -303,9 +354,17 @@ class AircraftDataSource(
                         )
                     )
                 }
-                out.ifEmpty { null }
+                // An empty list is an answer. Collapsing it to null
+                // here made "the box is over the Pacific at 3am" and
+                // "we were rate limited" the same thing to every
+                // caller above — including the cache, which then
+                // never held a valid quiet answer and re-asked for
+                // the whole planet every time.
+                out
             }
         }
+    } catch (e: CancellationException) {
+        throw e
     } catch (e: Exception) {
         null
     }

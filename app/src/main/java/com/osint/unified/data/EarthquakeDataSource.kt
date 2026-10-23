@@ -47,7 +47,10 @@ class EarthquakeDataSource(private val client: OkHttpClient = Http.feedClient) {
         if (usgs.isFailure && emsc.isFailure && gfz.isFailure) {
             throw IOException(
                 "No seismic agency could be reached: " +
-                    (usgs.exceptionOrNull()?.message ?: "USGS failed")
+                    listOf(usgs, emsc, gfz)
+                        .mapNotNull { it.exceptionOrNull()?.message }
+                        .ifEmpty { listOf("no reason given") }
+                        .joinToString("; ")
             )
         }
         // USGS first because its magnitudes and place names are the ones
@@ -80,8 +83,21 @@ class EarthquakeDataSource(private val client: OkHttpClient = Http.feedClient) {
         return out
     }
 
+    /**
+     * Two timestamps close enough to be the same earthquake.
+     *
+     * An unknown time is not a match. It used to be: a null on either
+     * side returned true, which made an undated event match *every*
+     * event in time, so the merge fell back to position and magnitude
+     * alone — a quarter of a degree and half a magnitude — and either
+     * swallowed the undated one or swallowed a real event that
+     * happened to be near it. One row with an empty time column could
+     * delete a live quake from the map with nothing anywhere to say
+     * so. Undated rows are now dropped before they get here as well;
+     * this is the second lock on the same door.
+     */
     private fun nearInTime(a: Long?, b: Long?): Boolean =
-        if (a == null || b == null) true else kotlin.math.abs(a - b) < 120_000L
+        if (a == null || b == null) false else kotlin.math.abs(a - b) < 120_000L
 
     private fun usgs(): List<Quake> {
         return try {
@@ -157,7 +173,7 @@ class EarthquakeDataSource(private val client: OkHttpClient = Http.feedClient) {
             if (lat !in -90.0..90.0 || lon !in -180.0..180.0) return@mapNotNull null
             val mag = f[10].trim().toDoubleOrNull() ?: return@mapNotNull null
             val at = Freshness.parse(f[1].trim())
-            if (at != null && at < cutoff) return@mapNotNull null
+            if (at == null || at < cutoff) return@mapNotNull null
             Quake(
                 lat = lat,
                 lon = lon,
@@ -210,8 +226,13 @@ class EarthquakeDataSource(private val client: OkHttpClient = Http.feedClient) {
                 val lon = p("lon")?.doubleOrNull ?: return@mapNotNull null
                 val at = Freshness.parse(p("time")?.contentOrNull)
                 // The same day the USGS feed covers, so the two layers
-                // describe the same window and the count means something.
-                if (at != null && at < cutoff) return@mapNotNull null
+                // describe the same window and the count means
+                // something. An unreadable timestamp fails the test
+                // rather than skipping it: this is what keeps a
+                // month-old event off a map captioned "the last day",
+                // and a filter that waves through whatever it cannot
+                // parse is not doing that job.
+                if (at == null || at < cutoff) return@mapNotNull null
                 Quake(
                     lat = lat,
                     lon = lon,
