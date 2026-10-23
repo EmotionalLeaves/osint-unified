@@ -245,19 +245,27 @@ jobs:
           # does not arrive at all. r169 failed in this step and said
           # nothing but "exit code 1".
           set +e
-          gradle assembleDebug --no-daemon --stacktrace --console=plain \
+          gradle assembleDebug --no-daemon --console=plain \
             -PosintVersionCode=${{ github.run_number }} \
             -PosintVersionName=r${{ github.run_number }} > assemble.log 2>&1
           code=$?
           if [ $code -ne 0 ]; then
-            # The end of a Gradle log is where the reason is. Matching on
-            # "> " caught every task line instead and filled the thirty
-            # annotations with "UP-TO-DATE" — which is how r170 reported a
-            # failure without mentioning it.
-            grep -vE "^> Task |^$" assemble.log | tail -30 | while IFS= read -r line; do
-              clean="${line//$'\r'/}"
-              echo "::error::${clean}"
-            done
+            # Gradle states the reason in the block between "What went
+            # wrong" and "* Try:". The tail of the log is not that block —
+            # with --stacktrace it is forty frames of Gradle's own
+            # internals, which is how r171 reported its failure.
+            awk '/^\* What went wrong/,/^\* Try:/' assemble.log \
+              | grep -v "^\* Try:" | head -25 | while IFS= read -r line; do
+                clean="${line//$'\r'/}"
+                [ -n "$clean" ] && echo "::error::${clean}"
+              done
+            # And the duplicate-class or packaging detail, which Gradle
+            # prints outside that block.
+            grep -nE "Duplicate class|More than one file|2 files found|is already present|No such property|Could not (find|resolve)" assemble.log \
+              | head -10 | while IFS= read -r line; do
+                clean="${line//$'\r'/}"
+                echo "::error::${clean}"
+              done
             echo "----- tail of assemble log -----"
             tail -120 assemble.log
             exit 1
