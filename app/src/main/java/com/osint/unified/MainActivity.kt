@@ -167,15 +167,6 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         // Rather than overriding onNewIntent, whose signature has moved
         // between versions of androidx.activity.
         addOnNewIntentListener { consume(it) }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(
-                this, android.Manifest.permission.POST_NOTIFICATIONS
-            ) != PackageManager.PERMISSION_GRANTED
-        ) {
-            runCatching {
-                notificationPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
-            }
-        }
         setContent {
             OsintTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
@@ -196,6 +187,25 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                             accepted = true
                         }
                         return@Surface
+                    }
+
+                    // Asked after the terms, not over them. The system
+                    // dialog was launched from onCreate, so it appeared on
+                    // top of the one screen in the app whose whole purpose
+                    // is being read before anything else happens.
+                    LaunchedEffect(Unit) {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                            ContextCompat.checkSelfPermission(
+                                this@MainActivity,
+                                android.Manifest.permission.POST_NOTIFICATIONS
+                            ) != PackageManager.PERMISSION_GRANTED
+                        ) {
+                            runCatching {
+                                notificationPermission.launch(
+                                    android.Manifest.permission.POST_NOTIFICATIONS
+                                )
+                            }
+                        }
                     }
 
                     var screen by rememberSaveable { mutableStateOf("godeye") }

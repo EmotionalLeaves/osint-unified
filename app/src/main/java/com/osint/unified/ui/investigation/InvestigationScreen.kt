@@ -49,6 +49,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -441,7 +444,15 @@ fun InvestigationScreen(
                         )
                         Switch(
                             checked = state.activeRecon,
-                            onCheckedChange = { viewModel.setActiveRecon(it) }
+                            onCheckedChange = { viewModel.setActiveRecon(it) },
+                            // The most consequential control in the app
+                            // announced itself to a screen reader as
+                            // "switch", with no indication of what it
+                            // switched.
+                            modifier = Modifier.semantics {
+                                contentDescription =
+                                    "Active reconnaissance: contact the target directly"
+                            }
                         )
                     }
                     Text(
@@ -484,7 +495,11 @@ fun InvestigationScreen(
                         )
                         Switch(
                             checked = state.followUp,
-                            onCheckedChange = { viewModel.setFollowUp(it) }
+                            onCheckedChange = { viewModel.setFollowUp(it) },
+                            modifier = Modifier.semantics {
+                                contentDescription =
+                                    "Follow up: investigate identifiers found in the results"
+                            }
                         )
                     }
                 }
@@ -785,7 +800,13 @@ private fun FactChip(fact: IntelSummary.Fact) {
 private fun SectionHeader(name: String, color: Color) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.padding(top = 16.dp, bottom = 6.dp)
+        // Marked as a heading, so a screen reader can jump between the
+        // sections of a dossier instead of reading sixty result cards in
+        // a row to find where the next one starts. Nothing in this app
+        // was a heading before.
+        modifier = Modifier
+            .padding(top = 16.dp, bottom = 6.dp)
+            .semantics { heading() }
     ) {
         Box(Modifier.size(7.dp).background(color, RoundedCornerShape(50)))
         Spacer(Modifier.width(8.dp))

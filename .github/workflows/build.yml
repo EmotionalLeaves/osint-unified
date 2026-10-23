@@ -249,7 +249,7 @@ jobs:
           if [ -f "$REPORT" ]; then
             grep -iE "Security|Accessibility|Warning:" "$REPORT" | head -40 \
               | while IFS= read -r line; do echo "::warning::lint: ${line}"; done
-            # An error here is fatal to assembleDebug anyway — lintVital
+            # An error here is fatal to the assembly anyway — lintVital
             # runs inside it, because debug is signed and not debuggable.
             # Failing at this step instead means the reason is annotated
             # rather than arriving as an exit code three steps later, which
@@ -280,7 +280,12 @@ jobs:
           # does not arrive at all. r169 failed in this step and said
           # nothing but "exit code 1".
           set +e
-          gradle assembleDebug --no-daemon --console=plain \
+          # Release, not debug. The debug variant drags in the Compose
+          # tooling library and the test manifest — several megabytes of
+          # things that exist to support a debugger that this build
+          # explicitly disables. Same signing key, so it installs over
+          # what is already on the phone.
+          gradle assembleRelease --no-daemon --console=plain \
             -PosintVersionCode=${{ github.run_number }} \
             -PosintVersionName=r${{ github.run_number }} > assemble.log 2>&1
           code=$?
@@ -308,7 +313,7 @@ jobs:
 
       - name: Report the signing fingerprint and the APK size
         run: |
-          APK=$(ls app/build/outputs/apk/debug/*.apk | head -1)
+          APK=$(ls app/build/outputs/apk/release/*.apk | head -1)
           SIZE=$(( $(wc -c < "$APK") / 1048576 ))
           APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner 2>/dev/null | tail -1)
           FP=$("$APKSIGNER" verify --print-certs "$APK" 2>/dev/null \
@@ -321,5 +326,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: osint-unified-debug
-          path: app/build/outputs/apk/debug/*.apk
+          path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error

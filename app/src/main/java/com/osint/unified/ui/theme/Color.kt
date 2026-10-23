@@ -13,7 +13,19 @@ object Intel {
     val Base = Color(0xFF070B0F)       // app background
     val Surface = Color(0xFF0F161D)    // panels / cards
     val Elevated = Color(0xFF16212B)   // raised rows, chips
-    val Hairline = Color(0xFF24323D)   // 1px borders / dividers
+    /**
+     * The one-pixel borders, and they have to be visible.
+     *
+     * #24323D measured 1.50:1 on the base, 1.39:1 on panels and 1.24:1
+     * on raised rows, against the 3:1 that a non-text boundary needs.
+     * Every card, chip, pill and field in this app is defined by one of
+     * these lines, so at that contrast the structure of the interface
+     * was invisible to anyone who needs contrast at all — and nearly
+     * invisible in sunlight to everyone else. This value is the darkest
+     * that clears 3:1 against the lightest surface it is drawn on
+     * (3.01 on Elevated, 3.35 on Surface, 3.64 on Base).
+     */
+    val Hairline = Color(0xFF5D6C75)
 
     val Cyan = Color(0xFF2FD4C8)       // primary signal / interactive
     val CyanBright = Color(0xFF5CE1D6)

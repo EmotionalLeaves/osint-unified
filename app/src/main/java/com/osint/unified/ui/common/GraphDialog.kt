@@ -37,7 +37,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.runtime.produceState
 import com.osint.unified.domain.ForceLayout
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.osint.unified.domain.GraphBuilder
 import com.osint.unified.ui.theme.Intel
 
@@ -94,8 +97,17 @@ private fun GraphCanvas(graph: GraphBuilder.Graph, modifier: Modifier = Modifier
     // The layout is deterministic and computed once per graph, so panning
     // and zooming never reshuffle the picture under the finger.
     var canvasSize by remember { mutableStateOf(Offset(1080f, 1600f)) }
-    val layout = remember(graph, canvasSize) {
-        ForceLayout.compute(graph, canvasSize.x, canvasSize.y)
+    // Computed off the main thread. It is a force-directed layout —
+    // three hundred iterations over every pair of nodes — so on a case
+    // with a few hundred identifiers it froze the interface for as long
+    // as it took, during composition, where nothing can interrupt it.
+    val layout by produceState(
+        initialValue = ForceLayout.Layout(emptyList(), emptyList()),
+        graph, canvasSize
+    ) {
+        value = withContext(Dispatchers.Default) {
+            ForceLayout.compute(graph, canvasSize.x, canvasSize.y)
+        }
     }
 
     val labelStyle = TextStyle(fontSize = 11.sp, color = Intel.TextHi)

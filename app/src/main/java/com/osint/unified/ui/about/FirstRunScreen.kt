@@ -68,16 +68,21 @@ fun FirstRunScreen(onAccept: () -> Unit) {
                 "Sources that merely ask a third party what it already knows " +
                     "run automatically. Sources that connect to the target — " +
                     "resolving its hosts, fetching its files, requesting " +
-                    "profile URLs — do not, until you switch them on for that " +
-                    "case. Those put your address in someone's logs."
+                    "profile URLs — do not, until you turn them on. That is " +
+                    "one switch under settings and it stays on until you turn " +
+                    "it off, not a per-case choice. Those sources put your " +
+                    "address in someone's logs."
             )
 
-            Heading("Your data stays here")
+            Heading("Where your searching goes")
             Para(
-                "Cases are stored on this device only. Nothing is uploaded, " +
-                    "there is no account, and the database is excluded from " +
-                    "cloud backup. Anyone with your unlocked phone can read " +
-                    "it, so lock your phone."
+                "Cases are stored on this device only, in an encrypted " +
+                    "database, with no account and no cloud backup. But the " +
+                    "searching itself is not private: every lookup is a " +
+                    "request to somebody else's server, and each of those " +
+                    "services sees what you asked and the address you asked " +
+                    "from. There is a proxy setting under MORE if that " +
+                    "matters, and an optional lock for the app itself."
             )
 
             Heading("What it is not")

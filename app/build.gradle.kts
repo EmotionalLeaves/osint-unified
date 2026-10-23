@@ -80,8 +80,16 @@ android {
         }
         release {
             signingConfig = signingConfigs.getByName("shared")
-            isMinifyEnabled = true
-            isShrinkResources = true
+            // Off, deliberately, and this is the honest reason: nothing
+            // here can run the app. R8 rewrites reflection-dependent code
+            // — Room, kotlinx.serialization, osmdroid's overlay loading —
+            // and the failures it causes appear at runtime on a device,
+            // not in a build log. Shipping a shrunk build that cannot be
+            // tested is trading a few megabytes for the chance that a
+            // screen is blank for reasons nobody can see from here.
+            // Turning it on wants one person with the APK and ten minutes.
+            isMinifyEnabled = false
+            isShrinkResources = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
