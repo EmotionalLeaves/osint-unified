@@ -3,6 +3,13 @@
 # produceState, `paint` inside a Canvas draw scope, `item` inside a
 # LazyListScope. The local compiler reports them unresolved for a reason
 # that does not exist in CI, so they are not evidence of anything.
+#
+# This is the irreducible cost of the technique: the check works by
+# asking "is this bare name one we declare?", and a name supplied by an
+# implicit receiver looks exactly like a bare name. Every entry here is
+# a name the check can no longer catch, so add one only after reading
+# the line it fired on and confirming the receiver really is a type the
+# SDK provides.
 add
 close
 color
@@ -14,3 +21,6 @@ settings
 size
 type
 value
+density
+header
+kind

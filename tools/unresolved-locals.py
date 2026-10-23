@@ -24,7 +24,19 @@ DECL = re.compile(
     r"(?:<[^>]*>\s*)?([A-Za-z_][A-Za-z0-9_]*)(?![A-Za-z0-9_.?])"
 )
 IMPORTED = re.compile(r"^\s*import\s+[\w.]*?\.([A-Za-z_][A-Za-z0-9_]*)(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?\s*$")
-DIAG = re.compile(r"^(?:e: )?(?:file://)?(\S+\.kt):(\d+):(\d+): error: unresolved reference: ([A-Za-z_][A-Za-z0-9_]*)")
+# Both spellings on purpose.
+#
+# Kotlin 1.9 wrote "unresolved reference: Place" and Kotlin 2.0 writes
+# "unresolved reference 'Place'." — and this pattern only knew the first
+# one, so from the day the pre-flight moved to kotlinc 2.0.21 it matched
+# nothing at all. The check reported "no problems" for every run and the
+# errors it exists to catch went to CI instead, which is the one outcome
+# it was written to prevent. A check that cannot fail is worse than no
+# check, because it is also a claim.
+DIAG = re.compile(
+    r"^(?:e: )?(?:file://)?(\S+\.kt):(\d+):(\d+): error: "
+    r"[Uu]nresolved reference(?::\s+|\s+')([A-Za-z_][A-Za-z0-9_]*)"
+)
 
 
 def scan(roots):
@@ -39,6 +51,7 @@ def scan(roots):
     """
     names = set()
     per_file = {}
+    declared_in = {}
     for root in roots:
         for dirpath, _, files in os.walk(root):
             for f in files:
@@ -46,6 +59,7 @@ def scan(roots):
                     continue
                 full = os.path.join(dirpath, f)
                 imported = set()
+                here = set()
                 with open(full, encoding="utf-8", errors="replace") as fh:
                     for line in fh:
                         m = IMPORTED.match(line)
@@ -55,13 +69,15 @@ def scan(roots):
                         m = DECL.match(line)
                         if m:
                             names.add(m.group(1))
+                            here.add(m.group(1))
                 per_file[os.path.realpath(full)] = imported
-    return names, per_file
+                declared_in[os.path.realpath(full)] = here
+    return names, per_file, declared_in
 
 
 def main():
     root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    declared, imports_by_file = scan([
+    declared, imports_by_file, declared_by_file = scan([
         os.path.join(root, "app/src/main/java"),
         os.path.join(root, "app/src/test/java"),
     ])
@@ -108,11 +124,37 @@ def main():
         # could make.
         if whole.lstrip().startswith("import "):
             continue
-        before = whole[: col - 1].rstrip()
+        # Declared in this very file, so it is a local or a property
+        # here and the compiler is complaining about something else —
+        # most often a delegated property whose delegate needs the SDK
+        # ("val emit by rememberUpdatedState(...)"), which makes every
+        # later read of the name unresolved through no fault of ours.
+        if name in declared_by_file.get(os.path.realpath(path), ()):
+            continue
         # A dotted access is unresolved because its receiver was, which is
         # the SDK's absence rather than ours. Only bare names count.
-        if before.endswith(".") or before.endswith("?") or before.endswith("::"):
+        #
+        # The column cannot be trusted to land on the name. K2 points at
+        # the enclosing expression for some diagnostics — "it.unseen"
+        # inside a lambda is reported at the brace — so when the name is
+        # not actually at the column, every occurrence of it on the line
+        # is examined instead, and the diagnostic only counts if at
+        # least one of them is bare.
+        if whole[col - 1:col - 1 + len(name)] == name:
+            positions = [col - 1]
+        else:
+            positions = [
+                m.start() for m in
+                re.finditer(r"\b" + re.escape(name) + r"\b", whole)
+            ]
+            if not positions:
+                continue
+        if all(
+            whole[:at].rstrip().endswith((".", "?", "::"))
+            for at in positions
+        ):
             continue
+        col = positions[0] + 1
         hits.append("{}:{}:{} {} — declared in this project but not visible here"
                     .format(os.path.relpath(path, root), lineno, col, name))
 

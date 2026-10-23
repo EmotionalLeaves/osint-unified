@@ -4,8 +4,14 @@ import android.content.Context
 import com.osint.unified.data.Freshness
 import okhttp3.Cache
 import okhttp3.Interceptor
+import okhttp3.MediaType
 import okhttp3.OkHttpClient
 import okhttp3.Response
+import okhttp3.ResponseBody
+import okio.Buffer
+import okio.BufferedSource
+import okio.ForwardingSource
+import okio.buffer
 import java.io.File
 import java.io.IOException
 import java.net.InetSocketAddress
@@ -253,9 +259,43 @@ object Http {
 
     /** Tight timeouts so a slow endpoint fails fast instead of hanging the
      *  dossier — results should arrive quickly or not at all. */
+    /**
+     * Counts what actually goes over the wire.
+     *
+     * A *network* interceptor on purpose. Application interceptors do
+     * not run for a response the disk cache answered, which would be
+     * right, but they also sit above the bridge that un-gzips the body
+     * — so they would count the inflated size and report two or three
+     * times the data that was really spent. Down here the bytes are
+     * the bytes.
+     */
+    private object Meter : Interceptor {
+        override fun intercept(chain: Interceptor.Chain): Response {
+            val host = chain.request().url.host
+            val response = chain.proceed(chain.request())
+            DataMeter.countCall()
+            val body = response.body ?: return response
+            val counted = object : ResponseBody() {
+                private val source: BufferedSource = object : ForwardingSource(body.source()) {
+                    override fun read(sink: Buffer, byteCount: Long): Long {
+                        val read = super.read(sink, byteCount)
+                        if (read > 0) DataMeter.add(host, read)
+                        return read
+                    }
+                }.buffer()
+
+                override fun contentType(): MediaType? = body.contentType()
+                override fun contentLength(): Long = body.contentLength()
+                override fun source(): BufferedSource = source
+            }
+            return response.newBuilder().body(counted).build()
+        }
+    }
+
     val client: OkHttpClient by lazy {
         OkHttpClient.Builder()
             .addInterceptor(Politeness)
+            .addNetworkInterceptor(Meter)
             .proxySelector(Relay)
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(20, TimeUnit.SECONDS)

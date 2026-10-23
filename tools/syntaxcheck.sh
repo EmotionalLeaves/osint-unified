@@ -68,13 +68,13 @@ grep -n "\${'\$'}{" $(find app/src/main/java app/src/test/java -name '*.kt') 2>/
 # the thousands of unresolved AndroidX symbols this one is always real: it
 # means a `return@foo` naming a scope that does not enclose it. It broke r150,
 # where a return@withContext ended up inside a coroutineScope and vice versa.
-grep -nE "error: unresolved reference: @[A-Za-z]" $(find app/src/main/java app/src/test/java -name '*.kt') 2>/dev/null \
+grep -nE "error: [Uu]nresolved reference:? '?@[A-Za-z]" $(find app/src/main/java app/src/test/java -name '*.kt') 2>/dev/null \
   | sed 's/^/error: /' >> "$WORK/real.txt" || true
-grep -E "error: unresolved reference: @[A-Za-z]" "$WORK/full.txt" >> "$WORK/real.txt" || true
+grep -E "error: [Uu]nresolved reference:? '?@[A-Za-z]" "$WORK/full.txt" >> "$WORK/real.txt" || true
 
 # A reference ending in an underscore is nearly always "$name_" in a string
 # template, where Kotlin swallows the underscore into the identifier.
-grep -E "error: unresolved reference: [A-Za-z0-9]+_$" "$WORK/full.txt" >> "$WORK/real.txt" || true
+grep -E "error: [Uu]nresolved reference:? '?[A-Za-z0-9]+_'?\\.?$" "$WORK/full.txt" >> "$WORK/real.txt" || true
 
 # A workflow condition that reads the `secrets` context. GitHub does not
 # make `secrets` available to a step's `if`, and a workflow that uses it is

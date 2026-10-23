@@ -505,7 +505,7 @@ fun GlobeView(
 private data class Vectors(
     val rings: List<DoubleArray>,
     val borders: List<DoubleArray>,
-    val places: List<Place>
+    val places: List<Places.Place>
 )
 
 private val EMPTY_VECTORS = Vectors(emptyList(), emptyList(), emptyList())

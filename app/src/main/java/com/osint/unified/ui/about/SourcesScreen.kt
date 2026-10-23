@@ -16,8 +16,14 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.osint.unified.network.DataMeter
 import com.osint.unified.ui.theme.Intel
 
 /**
@@ -398,6 +404,7 @@ fun SourcesScreen(onBack: () -> Unit) {
                     modifier = Modifier.padding(vertical = 10.dp)
                 )
             }
+            item { DataUsed() }
             item {
                 Text(
                     "WHAT EACH LAYER COVERS",
@@ -466,5 +473,71 @@ fun SourcesScreen(onBack: () -> Unit) {
                 }
             }
         }
+    }
+}
+
+/**
+ * What this session has cost in mobile data, and where it went.
+ *
+ * Not a nicety. Every layer here is a live feed on a phone, and the
+ * difference between one that costs two megabytes an hour and one that
+ * costs nine hundred is invisible in the code — the aircraft layer
+ * swept a dozen half-megabyte requests every fifteen seconds for
+ * months and nothing anywhere said so. Putting the number in front of
+ * the person paying for it is what makes that kind of mistake
+ * findable.
+ *
+ * Counted off the wire after compression, so a conditional request
+ * that comes back unchanged costs what it really costs and a response
+ * the disk cache answered costs nothing. Recomposed on a timer rather
+ * than per frame: it is a figure to glance at, not a speedometer.
+ */
+@Composable
+private fun DataUsed() {
+    var tick by remember { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(2_000L)
+            tick++
+        }
+    }
+    val used = remember(tick) { DataMeter.bytes() }
+    val calls = remember(tick) { DataMeter.requests() }
+    val worst = remember(tick) { DataMeter.worst(5) }
+    val minutes = remember(tick) {
+        ((System.currentTimeMillis() - DataMeter.since()) / 60_000L).coerceAtLeast(1L)
+    }
+
+    Column(Modifier.padding(bottom = 14.dp)) {
+        Text(
+            "NETWORK USED SINCE LAUNCH",
+            style = MaterialTheme.typography.labelSmall,
+            color = Intel.Cyan
+        )
+        Text(
+            "${DataMeter.human(used)} over $calls requests in $minutes min " +
+                "— about ${DataMeter.human(used * 60L / minutes)} an hour at this rate.",
+            style = MaterialTheme.typography.bodySmall,
+            color = Intel.TextMid,
+            modifier = Modifier.padding(top = 2.dp)
+        )
+        if (worst.isNotEmpty() && used > 0) {
+            Text(
+                "Mostly: " + worst.joinToString("  ·  ") {
+                    "${it.first} ${DataMeter.human(it.second)}"
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = Intel.TextLow,
+                modifier = Modifier.padding(top = 2.dp)
+            )
+        }
+        Text(
+            "Layers that are switched off are not fetched at all, so the " +
+                "quickest way to spend less is to turn off what you are not " +
+                "looking at. Aircraft and vessels are the expensive ones.",
+            style = MaterialTheme.typography.bodySmall,
+            color = Intel.TextLow,
+            modifier = Modifier.padding(top = 4.dp)
+        )
     }
 }
