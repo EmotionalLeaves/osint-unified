@@ -263,6 +263,20 @@ observable types (B3).
   is unusually well placed to have, and it is the difference between
   a lookup tool and something you keep running.
 
+- **G3. Public live-camera layer near a point.** Asked for on 23
+  Oct. The request as phrased — find and view "unsecured video
+  devices" via Shodan-style discovery — is declined: that is
+  watching private individuals who never published anything, which
+  is the line the whole app is built not to cross, and it is not
+  built regardless of how it is asked for. The legitimate feature
+  that answers the real need: aggregate cameras whose operators
+  chose to publish them — traffic and highway, transit and airport,
+  official city and tourism, weather and harbour, park and ski
+  streams. Keyless, intentionally-public feeds only, drawn near a
+  coordinate. Extends the Caltrans source the app already has and
+  the OSM mapped-camera positions. No device discovery, no default
+  credentials, nothing that was not meant to be seen.
+
 ## F. Then
 
 Every issue known, listed and fixed. Every improvement, listed and
