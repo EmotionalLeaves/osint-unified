@@ -387,6 +387,11 @@ class DirectToolExecutor(
             // absence or an unreachable shape — so they were filed
             // as findings and counted in "returned intel", three
             // cards whose content is that they did not run.
+            "phoneinfoga" -> when {
+                head.contains("is a valid") -> Findings.Kind.HIT
+                head.contains("is not a valid number") -> Findings.Kind.ABSENT
+                else -> null
+            }
             "ptr", "torexit", "iprep" -> when {
                 starts(
                     "A reverse lookup needs one IPv4 address",
@@ -553,23 +558,68 @@ class DirectToolExecutor(
         }
     }
 
+    /**
+     * What a number is, and every way it gets written down.
+     *
+     * The second half matters more than it looks. Nothing keyless
+     * will tell you who owns a telephone number — the services that
+     * do are all paid, all account-gated, and this app takes neither
+     * — so what is actually useful here is the thing the other
+     * sources need: the number in every form a human or a database
+     * might have stored it in. A breach dump has 4155550123, a
+     * directory has (415) 555-0123, a news story has +1 415-555-0123,
+     * and a search for one of those finds none of the others.
+     *
+     * The verdict also goes on the first line, because that is the
+     * line the app reads to decide whether a source found anything,
+     * and this one used to open with "Valid: true".
+     */
     private fun phoneInfo(input: String): Result<String> = try {
         val util = PhoneNumberUtil.getInstance()
         val number = util.parse(input, null)
         val region = util.getRegionCodeForNumber(number) ?: "?"
         val intl = util.format(number, PhoneNumberUtil.PhoneNumberFormat.INTERNATIONAL)
+        val national = util.format(number, PhoneNumberUtil.PhoneNumberFormat.NATIONAL)
+        val e164 = util.format(number, PhoneNumberUtil.PhoneNumberFormat.E164)
+        val valid = util.isValidNumber(number)
         val countryName = java.util.Locale("", region).displayCountry.ifBlank { region }
         val sb = StringBuilder()
-        sb.append("Valid: ${util.isValidNumber(number)}\n")
-        sb.append("Country: $countryName ($region)\n")
-        sb.append("Country code: +${number.countryCode}\n")
+        if (valid) {
+            sb.append("$e164 is a valid $countryName number")
+            val kind = util.getNumberType(number).name.lowercase().replace('_', ' ')
+            if (kind != "unknown") sb.append(" ($kind)")
+            sb.append(".\n")
+        } else {
+            sb.append("$input is not a valid number under any numbering plan ")
+            sb.append("this build knows — it may be mistyped, or from a range ")
+            sb.append("not yet allocated.\n")
+        }
+        sb.append("Country: $countryName ($region), country code +${number.countryCode}\n")
         sb.append("Line type: ${util.getNumberType(number)}\n")
-        sb.append("International: $intl\n")
-        sb.append("National: ${util.format(number, PhoneNumberUtil.PhoneNumberFormat.NATIONAL)}\n")
-        val enc = java.net.URLEncoder.encode("\"$intl\"", "UTF-8")
-        sb.append("\nSearch dorks:\n")
-        sb.append("https://www.google.com/search?q=$enc\n")
-        sb.append("https://www.google.com/search?q=${java.net.URLEncoder.encode(input, "UTF-8")}\n")
+
+        // Every written form, because a search for one finds none of
+        // the others.
+        val digits = e164.removePrefix("+")
+        val nsn = util.getNationalSignificantNumber(number)
+        val forms = linkedSetOf(
+            e164,
+            intl,
+            national,
+            digits,
+            nsn,
+            intl.replace(" ", "-"),
+            intl.replace(" ", ""),
+            national.replace(" ", "-"),
+            national.replace(" ", ""),
+            national.replace(" ", ".")
+        ).filter { it.isNotBlank() }
+        sb.append("\nWritten forms to search for:\n")
+        forms.forEach { sb.append("  ").append(it).append("\n") }
+
+        sb.append("\nWho holds this number is not public anywhere keyless: ")
+        sb.append("caller-ID and carrier-lookup services all want an account ")
+        sb.append("and most want payment. What is above is from the numbering ")
+        sb.append("plan itself, offline, and is as much as can be said without one.\n")
         Result.success(sb.toString())
     } catch (e: Exception) {
         Result.failure(IllegalArgumentException("Could not parse number (use E.164, e.g. +14155551234): ${e.message}"))

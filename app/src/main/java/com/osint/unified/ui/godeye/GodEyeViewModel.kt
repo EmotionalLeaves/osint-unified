@@ -1145,10 +1145,24 @@ class GodEyeViewModel(
      * they will touch.
      */
     private fun autoRun() {
+        // An image search that does not read the image.
+        //
+        // exif is marked touchesTarget, which is right for every
+        // other observable — reading a file off somebody's server
+        // because their domain came up in a search is exactly what
+        // the passive default exists to prevent. But when the
+        // observable IS the image, the file is the thing the user
+        // pasted and asked about, and fetching that one URL is the
+        // minimum action that answers the question. Without it an
+        // image search is two link builders and a Wayback call: the
+        // one tool that extracts GPS and camera metadata was held
+        // back from the one search that exists to run it.
+        val isTheImage = _state.value.observable is Observable.ImageUrl
         val tools = _state.value.suggestedTools.filter {
             it.executionMode != ExecutionMode.CLOUD &&
                 it.id !in REDUNDANT_SWEEPS &&
-                (!it.touchesTarget || settings.activeReconEnabled)
+                (!it.touchesTarget || settings.activeReconEnabled ||
+                    (isTheImage && it.id == "exif"))
         }
         _state.update { it.copy(plannedTools = tools.size) }
         runToolsInParallel(tools, thenEnrich = settings.followUpEnabled)

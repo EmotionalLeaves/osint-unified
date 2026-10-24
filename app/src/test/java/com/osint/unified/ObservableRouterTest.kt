@@ -178,8 +178,13 @@ class ObservableRouterTest {
 
     @Test
     fun classifyAsForcesType() {
-        assertTrue(router.classifyAs("anything", "email") is Observable.Email)
-        assertTrue(router.classifyAs("anything", "domain") is Observable.Domain)
+        // This used to assert that "anything" forced to EMAIL was an
+        // email address. It is the behaviour the fix removed: the
+        // chip chooses which question to ask, and the input still has
+        // to be a possible subject for it, or fifteen domain tools
+        // fire at a two-word phrase. See the test below.
+        assertTrue(router.classifyAs("a@b.com", "email") is Observable.Email)
+        assertTrue(router.classifyAs("example.com", "domain") is Observable.Domain)
         assertTrue(router.classifyAs("anything", "name") is Observable.Name)
     }
 

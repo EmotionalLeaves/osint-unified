@@ -300,7 +300,21 @@ class ObservableRouter {
             is Observable.Username -> listOf("keybase", "socialsweep", "github", "ghactivity", "sherlock", "maigret", "blackbird", "reddit", "hackernews", "telegram", "osmuser", "wikidata", "websearch", "dorks", "toolrun", "framework")
             is Observable.Domain -> listOf("subfinder", "breachcat", "crtsh", "subsweep", "commoncrawl", "dns", "tlscert", "mailsec", "headers", "sitefiles", "rdap", "hostintel", "otx", "typosquat", "httpx", "shodan", "urlscan", "waybackurls", "gau", "webcrawl", "wayback", "archive", "dorks", "toolrun", "framework", "nuclei")
             is Observable.IpAddress -> listOf("ipinfo", "ptr", "iprep", "torexit", "torrelay", "shodan", "bgpview", "asnintel", "otx", "rdap", "hostintel", "dorks", "toolrun", "framework", "httpx", "nuclei")
-            is Observable.PhoneNumber -> listOf("phoneinfoga", "websearch", "dorks", "toolrun", "framework")
+            // Four tools, and not one of them asked anything about
+            // the number: an offline parse and three lists of places
+            // to look. The literal bookmark bar.
+            //
+            // Nothing keyless will say who holds a number — those
+            // services all want an account and most want payment —
+            // but two sources here can be asked about one and were
+            // not. The bundled breach catalogue takes any needle,
+            // and GDELT indexes news text, where a number appears in
+            // a court report or a scam writeup more often than you
+            // would think.
+            is Observable.PhoneNumber -> listOf(
+                "phoneinfoga", "breachcat", "gdelt",
+                "websearch", "dorks", "toolrun", "framework"
+            )
             is Observable.Coordinate -> listOf("revgeo", "sunterrain", "photosnear", "wikinearby", "overpass_turbo", "osmrecon", "milsites", "cctvnear", "ukcrime", "histweather", "toolrun", "framework")
             is Observable.Url -> listOf("webcrawl", "wayback", "archive", "dorks", "toolrun", "framework")
             is Observable.ImageUrl -> listOf("exif", "reverseimage", "toolrun", "archive", "framework")
