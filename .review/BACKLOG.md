@@ -1022,6 +1022,194 @@ computed; a quiet window is compared with a declared city; and the
 dossier says what it cost. None of it needed a new source or a new
 request.
 
-## H. Then
+## H. Verified, 24 Oct — thirty-five defects in one day's work
+
+Two reviewers went over the day's forty commits, one on the
+analysis and source layers, one on the UI, lifecycle and
+persistence. Seventeen and eighteen defects. **Six were
+reintroductions of the exact bug the change had just fixed**, which
+is the same proportion as the last verification pass and the thing
+worth learning from.
+
+Worked hardest-first. Severe:
+
+- [ ] **H1. The photo decode cancels itself.** `ForensicsScreen`'s
+  effect calls `onImageHandled()` — which nulls its own
+  `LaunchedEffect` key — and then suspends in `fromUri`. The next
+  recomposition cancels it before `output` is ever assigned, and
+  `exifBusy` has no `finally`, so the screen sits busy forever.
+  Every pick, every share. The picker was hoisted above the lock
+  gate this morning and the result is thrown away one line later.
+- [ ] **H2. The coordinate-with-date input breaks six of the ten
+  coordinate tools.** `parseCoord` learned to tolerate a third
+  field; `cctvNear`, `osmRecon`, `militarySites`, `overpass`,
+  `revgeo` and `wikiNearby` all still demand exactly two and throw.
+  The dossier reports six sources unreachable because the app
+  malformed the question — and reverse geocoding, the tool that
+  says where you are, is one of them. Literally "a guard applied
+  to one call site out of four".
+- [ ] **H3. The same input reopens the seed-echo bug.**
+  `sameCoordinate` splits on commas and requires two fields, so
+  with a date on the seed the echo guard is dead and the user's own
+  coordinate comes back graded "confirmed by other sources". The
+  comment above that guard describes this exact failure as fixed.
+- [ ] **H4. `orStop()` went on the call that cannot throw and not on
+  the one that does.** In `siteFiles` and `ripeRouting` the inner
+  `runCatching` wraps a blocking `getBody`, so the guard is a
+  no-op; the cancellation arrives at `it.await()` inside the outer
+  bare `runCatching`. Press STOP during an IP dossier and the row
+  is written as a *successful* result asserting RIPEstat was
+  consulted and failed. `PeopleApis.codeAccounts` has it right
+  three lines away.
+- [ ] **H5. Every coordinate in a coordinate dossier contradicts
+  every other.** `exclusiveGroup` puts all COORD values in one
+  competing set with no notion of what each is a coordinate *of* —
+  so nine camera positions from `cctvNear` make each other
+  IMPROBABLE. And two renderings of one point at four and five
+  decimals contradict each other, because the comparison is on raw
+  strings while `sameCoordinate` exists and is not used.
+- [ ] **H6. A failed encryption migration reports success over an
+  empty database.** `migrateIfNeeded` returns a non-null string for
+  both success and failure, and the caller treats non-null as the
+  note. On a failed verification Room then creates a fresh
+  encrypted file, the probe passes, `encrypted = true`, and the
+  note reads "the copy did not match the original, so nothing was
+  changed" over an empty case list — while the real database is
+  never looked at again, because `encrypted.exists()` short-circuits
+  every later launch. Exactly what this morning's fix set out to
+  prevent.
+- [ ] **H7. Duplicate `items` keys crash the TOOLS tab on search.**
+  Two `items()` in one LazyColumn share a key space, and the
+  directory's four markdown catalogues dedupe URLs within a
+  catalogue and not across them. Type "shodan" and the list throws.
+- [ ] **H8. `liveNow` moved off the main thread with the
+  under-keying intact.** The same three layer lists as keys, for a
+  function that sweeps thirty-five — so arming TSUNAMI or CONFLICT
+  never refreshes the dossier's live-area block. The globe's copy
+  keys on the whole state. Reintroduction, in the commit whose own
+  comment names the bug.
+- [ ] **H9. `GA` is the country Georgia, and `IN` is India.** The
+  ambiguous-code rule intersects *codes* only, so a name collision
+  between a US state and a country is invisible to it. "Atlanta,
+  GA" is filed as a claim about the Caucasus and then contradicted
+  by its own posting hours. Indiana and New York are missing from
+  the subdivision table entirely, so `IN` falls through to India
+  and `NY` resolves to New York City, merging Albany with
+  Manhattan.
+- [ ] **H10. Candidate lists are read as assertions about the
+  subject.** `ghname` reads five different GitHub accounts that
+  merely share the searched name and prints `Name:`/`Company:`/
+  `Location:` for each — its own output says they are not the same
+  person until something ties them together, and the parser does
+  not read that line. Two strangers both in London become a
+  corroborated finding; the dossier's headline LOCATION can be the
+  third unrelated account's city; and the candidates' names all
+  contradict each other as PERSON. `orcid` has the same shape with
+  twenty records.
+
+High and medium, in the order they will be worked:
+
+- [ ] **H11.** An IP dossier marks both its geolocation and its
+  registry country IMPROBABLE — a prefix registered in the US and
+  geolocated in Germany is the ordinary state of the internet.
+  `exclusiveGroup` groups on "is this a country" and not on what
+  each source is describing.
+- [ ] **H12.** One Tor relay lookup asserts five contradicting
+  countries: the label is per-relay and the parser reads it as
+  per-subject.
+- [ ] **H13.** `ActivityHours` is confidently wrong at UTC+12 and
+  prints "UTC−14", which is not a real offset — the band is plain
+  integer containment on a circular quantity. Plus table errors:
+  Kenya, Uganda and Ethiopia at +2 (they are +3), Lebanon at +3
+  (+2), Costa Rica at −5 (−6), and Mexico and Indonesia present at
+  all when the doc says multi-zone countries are excluded.
+- [ ] **H14.** The watch notification's intent gets none of the
+  `consumedShare` protection, and with `singleTask` it becomes the
+  task's root intent — so every cold restore from recents re-fires
+  it.
+- [ ] **H15.** The notification's scroll-to-row never happens:
+  `onFocusHandled()` fires on the first composition, while the list
+  is still empty.
+- [ ] **H16.** "Nothing was lost" and the locked-out warning both
+  disappear after the user creates one case, because both decide
+  from "does the fallback have any rows".
+- [ ] **H17.** A swallowed checkpoint brings the WAL loss straight
+  back: `checkpoint` is a bare `runCatching` and the sidecars are
+  deleted unconditionally before the `if (kept)` branch.
+- [ ] **H18.** `whatFailed` blames the key for a missing native
+  library, because `dlopen failed: library "libsqlcipher.so"`
+  contains "sqlcipher" and that branch is tested first — the exact
+  mis-blame that sends somebody to reinstall over an intact
+  database.
+- [ ] **H19.** `SelfTest` loses results to a read-modify-write race
+  on `_results.value = _results.value + (...)`.
+- [ ] **H20.** `rememberTwoTap` passes the id as an *input*, not as
+  the saved-state key, so inside a plain `forEach` the armed state
+  is restored positionally and one tap can unfile the wrong target.
+- [ ] **H21.** Every real export failure is reported as "there is
+  nothing to export": `export()` swallows the exception before
+  `runExport` can see it.
+- [ ] **H22.** An export requested while one is running is dropped
+  silently, and an export that finishes after the screen is left
+  pops the share sheet on the next visit.
+- [ ] **H23.** The first watch check after the upgrade names every
+  identifier as new, because the diff runs in the same pass that
+  fills the baseline in. And the entity cap plus unsorted
+  extraction makes a reordered upstream look like movement — a
+  false *specific* claim where the old alert was merely vague.
+- [ ] **H24.** `ActivityHours` is handed places regardless of hop,
+  so the "declared location" can be a pivoted IP's hosting country.
+- [ ] **H25.** The URL host wave never fires for a shared link,
+  which is the entry point it was written for: `alsoTheHost` is
+  called only from `autoRun`, and a share is `fanOut = false`
+  followed by RUN ALL.
+- [ ] **H26.** `sunAndTerrain` queries the archive for dates it does
+  not have and prints "sunrise null, sunset null" as a finding; a
+  rejected date is reported as no date given; and `Calendar` is
+  left lenient so 31 February rolls to 3 March and is printed as
+  "the moment you gave".
+- [ ] **H27.** phoneinfoga's `Country:` line produces three junk
+  places and no country, because `Places.parts` splits a line that
+  was never a place list.
+- [ ] **H28.** The timezone finding is hidden behind
+  `if (timeline.isNotEmpty())`, so a dossier with the disagreement
+  and no dated events shows nothing.
+- [ ] **H29.** `AppLock.noWayIn` opens the app on API 26–29 when
+  biometrics are un-enrolled but a PIN remains.
+- [ ] **H30.** The dossier's cost line measures the whole process —
+  every feed poller and map tile — not the search.
+- [ ] **H31.** `Http.bulk = 32` makes the sweep's own `Semaphore(64)`
+  dead and halves a two-thousand-site sweep, and the rationale
+  contradicts itself; the real risk is head-of-line blocking from
+  the 20-second per-host gate.
+- [ ] **H32.** `singleTask` was heavier than needed: `singleTop` is
+  the minimal fix, and `singleTask` breaks Back from a share and
+  the `PROCESS_TEXT` result contract.
+- [ ] **H33.** Smaller: ORG values get no punctuation stripping and
+  `|` is the watch digest's own separator; `Control.SAYS_YES_TO_
+  ANYTHING`'s mark is unreachable; `aircraftSecondOpinion`'s
+  `Country:` enters the country group; `c2pa` is declared without
+  `touchesTarget` while `exif`, which fetches the same file the
+  same way, has it; three platforms saying Germany produce two
+  entities because `valuesOf` throws the label away before calling
+  `Places.parts`.
+
+### What this says about the day
+
+Six reintroductions out of thirty-five. Every one has the same
+shape: **the fix was applied where the bug was noticed and not
+where the bug lives.** `parseCoord` learned about dates and six
+sibling parsers did not. `orStop` went on the call the author was
+looking at rather than the one that can throw. `liveNow` was moved
+to a background thread with its keys copied across unexamined. The
+coordinate precision guard was written for the seed and not for
+the new contradiction path.
+
+Two signatures keep producing this: `migrateIfNeeded` returning
+`String?` for "nothing to do", "succeeded" and "failed" alike, and
+`rememberSaveable(key)` taking its first argument as an input
+rather than as the registry key.
+
+## I. Then
 
 Round again.
