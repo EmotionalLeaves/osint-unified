@@ -2317,7 +2317,7 @@ private fun LayerPicker(
                 "START WITH A QUESTION",
                 style = MaterialTheme.typography.labelSmall,
                 color = Intel.Cyan,
-                modifier = Modifier.padding(horizontal = 12.dp, bottom = 4.dp)
+                modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 4.dp)
             )
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
