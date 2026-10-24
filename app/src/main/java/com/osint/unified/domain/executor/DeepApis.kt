@@ -939,9 +939,24 @@ class DeepApis(
                 // waste the only part of this that answers the
                 // question somebody asked.
                 names.forEach { (name, n) ->
-                    sb.append("Declared name: $name")
-                    if (names.size > 1 || n > 1) sb.append("  ($n of ${items.size} read)")
-                    sb.append('\n')
+                    // The name alone on its label line, and the count
+                    // on an indented line under it.
+                    //
+                    // EntityExtractor reads "Declared name:" as a
+                    // PERSON, and it reads the whole rest of the line
+                    // as the name — so "Ada Lovelace  (18 of 20 read)"
+                    // was handed to the name parser with the
+                    // parenthetical attached, which it threw out as
+                    // not a name, and the only name that survived was
+                    // a bare one on another line. The count is real
+                    // signal (a name on eighteen of twenty commits is
+                    // not a name on one), so it stays — indented,
+                    // where the extractor correctly ignores it as a
+                    // candidate rather than a claim about the subject.
+                    sb.append("Declared name: $name\n")
+                    if (names.size > 1 || n > 1) {
+                        sb.append("    (on $n of ${items.size} commits read)\n")
+                    }
                 }
                 login?.let { sb.append("• Linked account: $it — https://github.com/$it\n") }
                 latest?.let { sb.append("• Most recent commit: $it\n") }
