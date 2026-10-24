@@ -18,9 +18,22 @@ import java.io.File
  * Caching them on disk means a restart does not refetch, and a source that
  * is temporarily refusing keeps working from the last good copy.
  */
-class DiskCache(private val context: Context) {
+class DiskCache(private val dir: File) {
 
-    private fun fileFor(name: String) = File(context.cacheDir, "feed-$name")
+    /**
+     * The directory, not the Context.
+     *
+     * `cacheDir` was the only thing this class ever wanted from it,
+     * and taking the whole Context made the class untestable on the
+     * JVM — which is why the four cheap tests T15 asked for shipped
+     * as three, and why the file named `DiskCacheAndFindingsTest`
+     * contained no DiskCache test. The write-to-temp-then-rename
+     * path and the clock-moved-backwards guard were both written
+     * and neither was ever run.
+     */
+    constructor(context: Context) : this(context.cacheDir)
+
+    private fun fileFor(name: String) = File(dir, "feed-$name")
 
     private val _trouble = MutableStateFlow<String?>(null)
 

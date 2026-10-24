@@ -147,10 +147,18 @@ class OrbitPropagatorTest {
         val (lat, height) = OrbitPropagator.geodetic(0.0, 6_756.0)
         assertEquals(90.0, lat, 1e-9)
         assertEquals(399.25, height, 0.5)
-        // And it agrees with a point a metre off the axis, which
-        // took the other branch all along.
+        // And it agrees with the standard branch just across the
+        // switchover.
+        //
+        // This asked for a point one metre off the axis, which does
+        // not cross it: the branch test is |cos(lat)| > 1e-6, and at
+        // hyp = 0.001 km the converged latitude gives cos(lat) of
+        // about 1.5e-7. Both calls took the pole branch, so the
+        // assertion compared it with itself and would have stayed
+        // green with the standard branch deleted. Ten metres
+        // crosses it — the threshold is near 6.8 m.
         assertEquals(
-            OrbitPropagator.geodetic(0.001, 6_756.0).second,
+            OrbitPropagator.geodetic(0.01, 6_756.0).second,
             height,
             0.01
         )

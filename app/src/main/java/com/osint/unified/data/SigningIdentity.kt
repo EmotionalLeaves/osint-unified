@@ -47,8 +47,21 @@ object SigningIdentity {
     }
 
     fun verdict(context: Context): Verdict {
-        val mine = fingerprint(context) ?: return Verdict.UNKNOWN
-        return if (mine.equals(BuildConfig.PUBLIC_KEY_SHA256, ignoreCase = true)) {
+        val mine = fingerprints(context) ?: return Verdict.UNKNOWN
+        if (mine.isEmpty()) return Verdict.UNKNOWN
+        // Any, not one.
+        //
+        // An APK can be signed by several keys, and `lastOrNull()`
+        // picked one of them by the order of the signing block,
+        // which nothing guarantees. So a build signed by [published,
+        // other] reported OTHER and the warning disappeared — in the
+        // direction this file exists to prevent. `firstOrNull()`,
+        // before it, was arbitrary in the other direction.
+        //
+        // The question is not "which key signed this" but "can
+        // anybody produce an app with this identity", and one
+        // published key in the set is enough for that to be yes.
+        return if (mine.any { it.equals(BuildConfig.PUBLIC_KEY_SHA256, ignoreCase = true) }) {
             Verdict.PUBLISHED
         } else {
             Verdict.OTHER
@@ -60,34 +73,50 @@ object SigningIdentity {
         verdict(context) == Verdict.PUBLISHED
 
     /** The SHA-256 of this app's signing certificate, lower-case hex. */
-    fun fingerprint(context: Context): String? = runCatching {
+    fun fingerprint(context: Context): String? = fingerprints(context)?.firstOrNull()
+
+    /**
+     * Every certificate that signed this APK, lower-case hex.
+     *
+     * Plural because an APK can carry more than one signer and
+     * picking one of them by array order answers a question nobody
+     * asked. Null means the signature could not be read at all,
+     * which is [Verdict.UNKNOWN] and not reassurance.
+     */
+    fun fingerprints(context: Context): List<String>? = runCatching {
         val packages = context.packageManager
-        val certificate: ByteArray = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            val info = packages.getPackageInfo(
-                context.packageName, PackageManager.GET_SIGNING_CERTIFICATES
-            )
-            val signing = info.signingInfo ?: return@runCatching null
-            // apkContentsSigners on both branches: it is what signed
-            // THIS apk, which is the question.
-            //
-            // The else branch read signingCertificateHistory, which
-            // is the rotation history oldest-first — so after the
-            // remedy this file documents, `firstOrNull()` returns
-            // the published certificate and the app would have
-            // reported the warning for ever. The doc says the
-            // opposite: "when the key is rotated this reports
-            // nothing and needs no further change."
-            val signers = signing.apkContentsSigners
-                ?.takeIf { it.isNotEmpty() }
-                ?: signing.signingCertificateHistory
-            signers?.lastOrNull()?.toByteArray() ?: return@runCatching null
-        } else {
-            @Suppress("DEPRECATION")
-            val info = packages.getPackageInfo(context.packageName, PackageManager.GET_SIGNATURES)
-            @Suppress("DEPRECATION")
-            info.signatures?.firstOrNull()?.toByteArray() ?: return@runCatching null
+        val certificates: Array<out android.content.pm.Signature> =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                val info = packages.getPackageInfo(
+                    context.packageName, PackageManager.GET_SIGNING_CERTIFICATES
+                )
+                val signing = info.signingInfo ?: return@runCatching null
+                // apkContentsSigners: it is what signed THIS apk,
+                // which is the question.
+                //
+                // The fallback is signingCertificateHistory, which is
+                // the rotation history oldest-first — so reading it
+                // first, after the remedy this file documents, would
+                // find the published certificate and report the
+                // warning for ever. The doc says the opposite: "when
+                // the key is rotated this reports nothing and needs
+                // no further change." The history's newest entry is
+                // the one that matters, so it is reversed into the
+                // same order.
+                signing.apkContentsSigners?.takeIf { it.isNotEmpty() }
+                    ?: signing.signingCertificateHistory?.reversedArray()
+                    ?: return@runCatching null
+            } else {
+                @Suppress("DEPRECATION")
+                val info =
+                    packages.getPackageInfo(context.packageName, PackageManager.GET_SIGNATURES)
+                @Suppress("DEPRECATION")
+                info.signatures ?: return@runCatching null
+            }
+        val digest = MessageDigest.getInstance("SHA-256")
+        certificates.map { signature ->
+            digest.reset()
+            digest.digest(signature.toByteArray()).joinToString("") { "%02x".format(it) }
         }
-        MessageDigest.getInstance("SHA-256").digest(certificate)
-            .joinToString("") { "%02x".format(it) }
     }.getOrNull()
 }
