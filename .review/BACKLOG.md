@@ -27,7 +27,7 @@ closed; their headings say so.
   URL the code can emit is public; without the actual link this is
   guesswork.
 
-### Third-pass defects (r13, 24 Oct) — the queue
+### Third-pass defects (r13, 24 Oct) — CLOSED, 26 for 26
 
 A fresh sweep over what the day's two verification passes did not
 judge: `ui/godeye/`, the feed sources, the watch worker, the rest of
@@ -35,10 +35,26 @@ judge: `ui/godeye/`, the feed sources, the watch worker, the rest of
 findings. Ordered here by what they cost the person holding the
 phone, not by the severity letter they arrived with.
 
-Five of them have an already-fixed sibling in the same or an adjacent
-file. Rule 1 again.
+**All twenty-six are fixed and green on CI (r460–r470).** Kept in
+full, because the shapes repeat: five of them had an already-fixed
+sibling in the same or an adjacent file, which is rule 1 for the
+second day running.
 
-- **Q1. CLEAR, the presets and every layer pill silently do nothing
+Three of the fixes changed a signature rather than a line, which is
+rule 2 working:
+- `PartlyAnswered` and `feedPartial`, so a feed merged from six
+  agencies can say which of them answered. `feedTrouble` as
+  `Map<layer, String>` was a structural ceiling on honesty, and Q3
+  could not be fixed properly without it.
+- `GlobePlan`, so the globe can report what it drew against what the
+  armed layers hold — something the flat map has been able to do
+  since the second tester's report and the globe, which is the
+  default view, could not.
+- `Control.COULD_NOT_ASK`, a fourth verdict, because three could not
+  tell "the control came back absent" from "the control was never
+  sent" and printed the first sentence for both.
+
+- [x] **Q1. CLEAR, the presets and every layer pill silently do nothing
   while ALL LAYERS is on.** `clearLayers()` resets all thirty-three
   `show*` flags and never sets `god = false`, and every armed test is
   `showX || god`. Press ALL LAYERS then CLEAR: nothing changes, every
@@ -46,21 +62,21 @@ file. Rule 1 again.
   indistinguishable from each other and from everything. `god` is
   `rememberSaveable`, so it survives a restart. One line, worst
   symptom on the list.
-- **Q2. The four on-demand layers load their data and are never
+- [x] **Q2. The four on-demand layers load their data and are never
   drawn.** Both marker plans key on `layerVersion`; `onDemand` and
   `ensureRadiation` write `loaded` and `feedTrouble` and never bump
   it. Arm CAMERAS alone on the globe: the pill reads `CAMERAS N ✓`
   and the sphere is empty until something unrelated moves. Same for
   SITES, MIL GROUND, RAD. The flat map recovers on a pan; the globe,
   which is the default, does not.
-- **Q3. `CycloneDataSource` returns a successful empty list while
+- [x] **Q3. `CycloneDataSource` returns a successful empty list while
   five of six centres are down, and the brief prints the all-clear.**
   The throw needs *every* centre to fail. NHC answering a quiet
   Atlantic while all five JTWC advisories 403 gives
   `all quiet · no tropical cyclones anywhere in the world` during a
   West Pacific typhoon. `TsunamiDataSource` fixed exactly this and
   wrote a comment about it; cyclone kept the old test.
-- **Q4. `BundledPointsDataSource` reports a missing dataset as "zero
+- [x] **Q4. `BundledPointsDataSource` reports a missing dataset as "zero
   in the world", and caches that for the life of the process.** Any
   parse or asset failure becomes `emptyList()`, which the poll reads
   as a clean answer: `PORTS·GLOBAL 0 ✓`. Reachable in shipped builds
@@ -68,11 +84,11 @@ file. Rule 1 again.
   *deletes* a bad one, on the stated grounds that the app "says so".
   It does not. The executors get this right (`breachCatalogue`,
   `unSanctions`); this does not.
-- **Q5. `SatellitesDataSource` asserts zero satellites overhead when
+- [x] **Q5. `SatellitesDataSource` asserts zero satellites overhead when
   the catalogue could not be loaded.** `loadCatalogue` swallows into
   empty, `fetch` returns empty as success, the HUD reads `SAT 0`.
   Every sibling feed throws here.
-- **Q6. The control probe marks a hit "verified" when no control
+- [x] **Q6. The control probe marks a hit "verified" when no control
   request was made.** `checkSite(...) is SiteAnswer.Found` is false
   for `NotApplicable` and `Unreachable` too, both of which land in
   the branch that prints ` ~` and the sentence "the site answered
@@ -82,26 +98,26 @@ file. Rule 1 again.
   hit on those sites gets the verified mark for free. The file's own
   comment reads `~` as *unverified*; the printed legend reads it as
   *verified*. One of the two is a lie and it is the printed one.
-- **Q7. The world brief cannot report a dead feed for most layers,
+- [x] **Q7. The world brief cannot report a dead feed for most layers,
   and never for earthquakes.** The EARTHQUAKES block takes no `key`,
   so no `· LAST KNOWN, FEED DOWN` mark and no `maybeQuiet` entry;
   `blips()` returns early on an empty source, so FEED DOWN can only
   appear for a feed that has cached data. Twenty-two layers have no
   representation in the brief at all.
-- **Q8. A multi-agency feed reports partial coverage as full
+- [x] **Q8. A multi-agency feed reports partial coverage as full
   health.** `feedTrouble` is `Map<layer, String>`, so a feed built
   from N agencies has one boolean's worth of honesty. USGS down and
   EMSC up reads clean. MetarDataSource: one of 24 boxes answering is
   a clean empty layer. **This is a signature that cannot express
   failure — rule 2 — and Q3 needs it fixed to say what it needs to
   say.**
-- **Q9. The globe never says it is showing a fraction of what the
+- [x] **Q9. The globe never says it is showing a fraction of what the
   layers hold.** The "Showing N of M" line is gated on `!roundEarth`.
   `thinGlobe` culls to `GLOBE_BUDGET = 2500`; arm FIRE·GLOBAL and the
   pill reads 100,000 with no line anywhere saying what the sphere
   actually drew. This is the second tester's "zoom in and the layers
   stop working", and the fix landed on the branch it was not on.
-- **Q10. One contradicting source of any quality drops a single
+- [x] **Q10. One contradicting source of any quality drops a single
   authoritative finding to IMPROBABLE.** `contradicted` is a bare
   count. For a single-source entity `agreeing = 0`, so any one
   contradiction makes `contradicting > agreeing` true: a soft-404
@@ -109,84 +125,84 @@ file. Rule 1 again.
   improbable`. The agreeing half was given a quality gate for exactly
   this reason; the contradicting half was not, and lets a weak source
   move a grade further in the other direction.
-- **Q11. `AreaReport` reports an absence over feeds that failed and
+- [x] **Q11. `AreaReport` reports an absence over feeds that failed and
   over regions that were never queried.** It reads only the layer
   lists — never `feedTrouble`, never `loaded` — and the on-demand
   layers are fetched in a 25–150 km circle around the view centre
   while the report's radius goes to 1,000 km.
-- **Q12. A watch check where nothing answered is recorded as a
+- [x] **Q12. A watch check where nothing answered is recorded as a
   successful, change-free check.** Correct not to alarm, but `Watch`
   has no column for how many sources answered, so it is
   indistinguishable from ten-of-ten agreeing. Happens silently four
   times a day; `NetworkType.CONNECTED` is satisfied by a captive
   portal.
-- **Q13. `CaseLinks` states "nothing found in more than one of them"
+- [x] **Q13. `CaseLinks` states "nothing found in more than one of them"
   over targets that were never investigated.** `targetCount` is every
   target filed into the case, run or not. Goes into the exported
   report.
-- **Q14. `ContentCredentials` names a generator from a bare
+- [x] **Q14. `ContentCredentials` names a generator from a bare
   substring.** No manifest requirement, no word boundary,
   case-insensitive, over every printable run. "Dallas" prints
   `names DALL·E (metadata written by the tool)`; a Spanish caption
   containing "imagen" prints `names Google Imagen`. The `MARKERS`
   branch eleven lines above was hardened for precisely this.
-- **Q15. Every coordinate any tool mentions becomes a top-priority
+- [x] **Q15. Every coordinate any tool mentions becomes a top-priority
   magenta FINDING pin, and the globe flies to the first one.**
   `wikiNearby`'s 25 nearby landmarks become 25 pins labelled
   "the investigation's own findings". They bypass `vis()`, so they
   draw with every layer off, under the line that says nothing is
   being fetched, with no pill to turn them off.
-- **Q16. Caltrans and the FAA SUA set are re-requested on every pan
+- [x] **Q16. Caltrans and the FAA SUA set are re-requested on every pan
   when they come back empty.** An empty result is never cached and
   `fetchedAt` never advances, so the TTL can never short-circuit and
   the "already have it" guard tests `isNotEmpty()`. Twelve parallel
   district requests per settled viewport, for as long as the pan
   lasts, with no backoff. Mobile data.
-- **Q17. US-only inventories are added to the map wherever you are
+- [x] **Q17. US-only inventories are added to the map wherever you are
   looking.** `near()` merges the location-aware Overpass query with
   the *whole* Caltrans camera set and the *whole* FAA special-use
   airspace set. Arm MIL GROUND over Poland and the pill counts
   several thousand US restricted areas. Inverse error in the same two
   files: a correctly-established zero is thrown as a feed failure.
-- **Q18. Per-frame allocation on the globe's draw path.**
+- [x] **Q18. Per-frame allocation on the globe's draw path.**
   `drawMarkers` allocates ~10–12k objects per frame over 2,500
   points; `strokeArcOfPoints` another ~4,700 for the graticule. The
   coastlines in the same file had exactly this removed, with a
   comment explaining why.
-- **Q19. Globe state that does not survive a rotation or a tab
+- [x] **Q19. Globe state that does not survive a rotation or a tab
   switch.** Nine plain `remember`s among saveable neighbours:
   `inspected`, `area`, `areaWanted`, `tapped`, `zoomNow`, `plotted`,
   `mapCentre`, `armedForGlobe`, `handoff`. `zoomNow` resetting to 2.5
   makes a WHAT'S HERE in that window use a 2,000 km radius.
-- **Q20. Nothing in the app ever checks whether there is a network.**
+- [x] **Q20. Nothing in the app ever checks whether there is a network.**
   `ACCESS_NETWORK_STATE` is declared and never read. With no network
   the app is honest per-source and incoherent overall: thirty
   differently-worded failures and a `SAT 0` that is a lie, and the
   one sentence that explains all of it is never said.
-- **Q21. `wikiNearby` reports a MediaWiki error as an established
+- [x] **Q21. `wikiNearby` reports a MediaWiki error as an established
   absence.** The action API returns 200 with an `error` object and no
   `query` key, which `getBody` does not throw on and which prints
   "No Wikipedia places within 10 km." — classified ABSENT and counted
   as a source that looked. `urlscan` has the same shape.
-- **Q22. `UsernameChecker` caches a partially-loaded ruleset and
+- [x] **Q22. `UsernameChecker` caches a partially-loaded ruleset and
   never says the sweep was narrowed.** sherlock.json and maigret.json
   are both optional in CI and deleted when they fail their floor;
   with only WhatsMyName the sweep still prints "Every site that was
   asked said no" over a list two-thirds smaller.
-- **Q23. Per-case source demotion is ignored when grading a
+- [x] **Q23. Per-case source demotion is ignored when grading a
   cross-target link.** `CaseLinks` reads `agreeingSource` from the
   catalogue grade, so a source this case has caught being wrong twice
   still corroborates at full strength.
-- **Q24. On API 33+ the CPU sphere renderer is unavailable as a
+- [x] **Q24. On API 33+ the CPU sphere renderer is unavailable as a
   fallback, and a failed shader bind burns an 8 MB buffer per camera
   move.** `EarthTexture.load` returns before building the `IntArray`
   whenever `GlobeShader.supported`; if `bind()` then fails the
   `produceState` relaunches on every camera change and allocates a
   1400×1400 IntArray to return null.
-- **Q25. `UtcClock` ticks at 1 Hz in the background**, and the
+- [x] **Q25. `UtcClock` ticks at 1 Hz in the background**, and the
   subsolar loop every four minutes. Neither is lifecycle-aware; the
   thirty feed polls are.
-- **Q26. `WatchWorker`: notification ids collide modulo 100,000** (a
+- [x] **Q26. `WatchWorker`: notification ids collide modulo 100,000** (a
   comment claims they are stable per target), and there is **no
   metered-network constraint and no Wi-Fi-only option anywhere** —
   ten passive tools per watched target, four times a day, on mobile
