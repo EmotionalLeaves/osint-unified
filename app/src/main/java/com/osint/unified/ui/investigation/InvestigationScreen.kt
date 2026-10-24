@@ -70,6 +70,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.osint.unified.data.ExportFormat
 import com.osint.unified.data.WatchRepository
 import com.osint.unified.network.DataMeter
+import com.osint.unified.domain.ActivityHours
 import com.osint.unified.domain.Corroboration
 import com.osint.unified.domain.EntityExtractor
 import com.osint.unified.domain.Findings
@@ -282,17 +283,20 @@ fun InvestigationScreen(
             observable.raw
         ) {
             value = withContext(Dispatchers.Default) {
-                // Built once and used twice: the list, and what the
-                // intervals between its entries add up to.
+                // Each built once and used twice: the timeline for
+                // its list and for the intervals between its entries,
+                // the entities for the corroboration section and for
+                // the comparison with the activity hours.
                 val builtTimeline = Timeline.build(state.results)
+                val entityList = Corroboration.merge(
+                    state.results,
+                    observable.raw,
+                    seedIsPlace = observable is Observable.Coordinate,
+                    dismissed = state.dismissals
+                )
                 Dossier(
                     facts = IntelSummary.synthesize(state.results, observable.raw),
-                    entities = Corroboration.merge(
-                        state.results,
-                        observable.raw,
-                        seedIsPlace = observable is Observable.Coordinate,
-                        dismissed = state.dismissals
-                    ),
+                    entities = entityList,
                     // A place is evidence, not a lead.
                     //
                     // The extractor reads declared places now so that
@@ -311,7 +315,23 @@ fun InvestigationScreen(
                         .filter { it.trim().lowercase() != seedRaw }
                         .toSet(),
                     timeline = builtTimeline,
-                    intervals = Timeline.observations(builtTimeline),
+                    intervals = Timeline.observations(builtTimeline) +
+                        // And what the hours say about the places.
+                        //
+                        // Two tools already printed a posting peak and
+                        // a quiet window in UTC and labelled one of
+                        // them "timezone hint"; the hint went nowhere.
+                        // Nothing compared it with the declared
+                        // location in the same dossier, which is a
+                        // thing the dossier reliably holds now.
+                        listOfNotNull(
+                            ActivityHours.compare(
+                                state.results,
+                                entityList
+                                    .filter { it.kind == "PLACE" && !it.dismissed }
+                                    .map { it.value }
+                            )
+                        ),
                     sorted = Findings.sort(state.results),
                     pending = Findings.pending(state.results),
                     ready = true
