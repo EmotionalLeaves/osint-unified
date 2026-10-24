@@ -88,7 +88,6 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.encodeToString
 import java.io.File
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 /**
  * Everything the dossier shows, computed in one pass off the main
  * thread.
@@ -142,6 +141,7 @@ private data class Dossier(
     val ready: Boolean = false
 )
 
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun InvestigationScreen(
     viewModel: GodEyeViewModel,
