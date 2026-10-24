@@ -828,9 +828,10 @@ class DeepApis(
         // name. Comparing against the header's own length is what
         // those numbers were trying to approximate.
         val headerOnly = sb.length
+        val q = java.net.URLEncoder.encode(t, "UTF-8")
         val reached = Reached()
         reached.of {
-            val r = get("https://api.hackertarget.com/reverseiplookup/?q=$t").trim()
+            val r = get("https://api.hackertarget.com/reverseiplookup/?q=$q").trim()
             if (hackertargetAnswered(r)) {
                 val hosts = r.lines().filter { it.isNotBlank() }
                 sb.append("\nOther sites on this IP (${hosts.size}):\n")
@@ -838,14 +839,22 @@ class DeepApis(
             }
         }
         reached.of {
-            val a = get("https://api.hackertarget.com/aslookup/?q=$t").trim()
+            val a = get("https://api.hackertarget.com/aslookup/?q=$q").trim()
             if (hackertargetAnswered(a)) sb.append("\nAS: $a\n")
         }
         reached.of {
-            val l = get("https://api.hackertarget.com/pagelinks/?q=http://$t").trim()
+            val l = get("https://api.hackertarget.com/pagelinks/?q=http%3A%2F%2F$q").trim()
             if (hackertargetAnswered(l)) {
                 val links = l.lines().filter { it.isNotBlank() }
-                val external = links.filterNot { it.contains(t) }.distinct()
+                // The host, not a substring of the whole link.
+                //
+                // `contains` calls a link to notexample.com internal
+                // when the target is ample.com, and calls
+                // evil.com/?ref=ample.com internal too — so outbound
+                // links to other people's sites were dropped from
+                // the count, which is the one number this section
+                // exists to give.
+                val external = links.filterNot { sameSite(it, t) }.distinct()
                 sb.append("\nOutbound links (${external.size} external):\n")
                 external.take(40).forEach { sb.append("• $it\n") }
             }
@@ -853,6 +862,20 @@ class DeepApis(
         if (sb.length > headerOnly) sb.toString()
         else if (reached.any) "Host intel: no data returned for $t."
         else "Could not reach hackertarget for $t, so nothing is claimed either way."
+    }
+
+    /** Whether a link points at this host or under it. */
+    private fun sameSite(link: String, host: String): Boolean {
+        val h = link.trim()
+            .substringAfter("://", link.trim())
+            .substringBefore('/')
+            .substringBefore('?')
+            .substringAfterLast('@')
+            .substringBefore(':')
+            .lowercase()
+            .removePrefix("www.")
+        val target = host.lowercase().removePrefix("www.")
+        return h == target || h.endsWith(".$target")
     }
 
     /**
@@ -1307,11 +1330,26 @@ class DeepApis(
      *  may no longer be linked anywhere. */
     fun commonCrawl(domain: String): Result<String> = runCatching {
         val d = domain.trim().lowercase().removePrefix("www.")
+        // No guessed index name.
+        //
+        // The fallback was a hardcoded crawl id, which is correct
+        // for about three months and then addresses an index that
+        // does not exist — and the 404 from that is reported as the
+        // source failing rather than as the app asking for the
+        // wrong thing. If the index list cannot be read, that is
+        // what gets said.
         val index = runCatching {
             (json.parseToJsonElement(get("https://index.commoncrawl.org/collinfo.json")) as? JsonArray)
                 ?.firstOrNull()?.jsonObject?.str("id")
-        }.getOrNull() ?: "CC-MAIN-2026-43"
-        val body = get("https://index.commoncrawl.org/$index-index?url=*.$d&output=json&limit=300")
+        }.getOrNull()
+            ?: return@runCatching "Common Crawl's index list could not be read, " +
+                "so there is no way to know which crawl to search. Nothing is " +
+                "claimed about $d either way."
+        val body = get(
+            "https://index.commoncrawl.org/$index-index?url=" +
+                java.net.URLEncoder.encode("*.$d", "UTF-8") +
+                "&output=json&limit=300"
+        )
         val urls = LinkedHashSet<String>()
         val statuses = LinkedHashMap<String, Int>()
         body.lineSequence().forEach { line ->
@@ -1706,7 +1744,16 @@ class DeepApis(
         val domain = Regex("""[@\s]([a-z0-9-]+(?:\.[a-z0-9-]+)+)\s*$""", RegexOption.IGNORE_CASE)
             .find(raw)?.groupValues?.get(1)?.lowercase()
             ?: return@runCatching "Give a name and a domain, e.g. 'Jane Doe @example.com'."
-        val nameParts = raw.substringBeforeLast(domain).trim().trimEnd('@').trim()
+        // Cut at where the domain actually is, not at a
+        // case-sensitive match for its lowercased form.
+        //
+        // domain is lowercased above, raw is whatever was typed —
+        // so "Jane Doe @Example.COM" found no match, the whole
+        // string stayed, and the last name became "@example.com".
+        // Every permutation it then generated was built from that.
+        val cut = raw.lastIndexOf(domain, ignoreCase = true)
+        val nameParts = (if (cut > 0) raw.substring(0, cut) else raw)
+            .trim().trimEnd('@').trim()
             .split(Regex("""\s+""")).filter { it.isNotBlank() }.map { it.lowercase() }
         if (nameParts.size < 2) {
             return@runCatching "Give at least a first and last name, e.g. 'Jane Doe @$domain'."
