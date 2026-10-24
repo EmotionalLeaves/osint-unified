@@ -133,7 +133,18 @@ class UsernameChecker(private val appContext: Context) {
                 pattern.startsWith("^") || pattern.endsWith("$") -> pattern
                 else -> "^(?:$pattern)$"
             }
-            return runCatching { Regex(anchored).matches(username) }.getOrDefault(true)
+            // Unicode character classes, because the rulesets were
+            // written for Python, where \w matches any letter. Java's
+            // \w is [a-zA-Z0-9_] unless this flag is set, so without
+            // it every pattern built on \w rejected every accented
+            // or non-Latin name — the same failure as the encoding
+            // one above, arriving by a different route.
+            return runCatching {
+                java.util.regex.Pattern
+                    .compile(anchored, java.util.regex.Pattern.UNICODE_CHARACTER_CLASS)
+                    .matcher(username)
+                    .matches()
+            }.getOrDefault(true)
         }
 
         private fun fill(template: String, username: String): String = template
@@ -208,7 +219,7 @@ class UsernameChecker(private val appContext: Context) {
                 sites.map { site ->
                     async {
                         semaphore.withPermit {
-                            when (val answer = checkSite(site, encoded)) {
+                            when (val answer = checkSite(site, username, encoded)) {
                                 is SiteAnswer.Found -> found.add(site to answer.url)
                                 SiteAnswer.Absent -> answeredNo.incrementAndGet()
                                 SiteAnswer.Unreachable -> couldNotAsk.incrementAndGet()
@@ -414,7 +425,8 @@ class UsernameChecker(private val appContext: Context) {
                             // found. A site that could not be asked about the
                             // control proves nothing, so the hit stands and
                             // keeps its unverified mark.
-                            val soft = checkSite(pair.first, control) is SiteAnswer.Found
+                            val soft =
+                                checkSite(pair.first, control, control) is SiteAnswer.Found
                             verdict.set(index, if (soft) 1 else 2)
                         }
                     }
@@ -499,13 +511,26 @@ class UsernameChecker(private val appContext: Context) {
         }
     }
 
-    private fun checkSite(site: SiteRule, username: String): SiteAnswer {
-        val url = site.urlFor(username)
-        val probe = site.probeFor(username)
+    /**
+     * [raw] is the name as typed; [encoded] is it fitted into a URL.
+     *
+     * The ruleset's pattern describes a NAME, and it was being tested
+     * against the URL-encoded form. "josé" encodes to "jos%C3%A9",
+     * and the patterns these rulesets ship are overwhelmingly of the
+     * shape ^[\w.+-]+$ — which the percent signs fail. So every
+     * non-ASCII handle was NotApplicable at every site, and because
+     * inapplicable sites are out of the coverage denominator, the
+     * sweep then reported near-total coverage of a list it had
+     * barely asked. The encoded form is for building the URL and
+     * nothing else.
+     */
+    private fun checkSite(site: SiteRule, raw: String, encoded: String): SiteAnswer {
+        val url = site.urlFor(encoded)
+        val probe = site.probeFor(encoded)
         if (!url.startsWith("http") || !probe.startsWith("http")) return SiteAnswer.Unreachable
         // A name this site could not hold is not a question worth asking,
         // and asking it can only produce a false positive.
-        if (!site.accepts(username)) return SiteAnswer.NotApplicable
+        if (!site.accepts(raw)) return SiteAnswer.NotApplicable
         return try {
             val request = Request.Builder()
                 .url(probe)
