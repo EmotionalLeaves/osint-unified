@@ -6,6 +6,7 @@ import java.util.Locale
 import java.util.TimeZone
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -86,5 +87,22 @@ class ChronoInputTest {
         assertNull(apis.parseWhen("0,0,2026-03-40"))
         assertNull(apis.parseWhen("0,0,2026-03-02T25:00"))
         assertNull(apis.parseWhen("0,0,2026-03-02T14:77"))
+        // A day that does not exist in that month. Calendar was
+        // lenient, so this rolled forward to 3 March and the tool
+        // then printed it as "the moment you gave".
+        assertNull(apis.parseWhen("0,0,2026-02-31"))
+        assertNull(apis.parseWhen("0,0,2025-02-29"))
+        assertNotNull("but a real leap day is real", apis.parseWhen("0,0,2024-02-29"))
+    }
+
+    /**
+     * Written and refused is not the same as never written, and the
+     * tools were reporting both as "no date was given".
+     */
+    @Test
+    fun aRefusedDateIsKnownToHaveBeenWritten() {
+        assertTrue(apis.datePresent("51.5,-0.12, 2026-13-02"))
+        assertNull(apis.parseWhen("51.5,-0.12, 2026-13-02"))
+        assertFalse(apis.datePresent("51.5, -0.12"))
     }
 }

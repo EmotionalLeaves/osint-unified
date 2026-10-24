@@ -337,7 +337,16 @@ fun InvestigationScreen(
                             ActivityHours.compare(
                                 state.results,
                                 entityList
-                                    .filter { it.kind == "PLACE" && !it.dismissed }
+                                    // hop 0 only. A place one step
+                                    // away is the hosting country of
+                                    // an address the second pass
+                                    // pivoted to, and measuring
+                                    // somebody's waking hours against
+                                    // a data centre is the mistake
+                                    // IntelSummary was just fixed for.
+                                    .filter {
+                                        it.kind == "PLACE" && !it.dismissed && it.hops == 0
+                                    }
                                     .map { it.value }
                             )
                         ),

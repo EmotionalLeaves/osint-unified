@@ -2065,6 +2065,11 @@ class DeepApis(
         val now = Date(asked?.instant ?: System.currentTimeMillis())
         val sun = solarPosition(lat, lon, now)
         if (asked == null) {
+            if (datePresent(input)) {
+                sb.append("\nThe date after the coordinate could not be read — a ")
+                sb.append("month must be 01-12 and a day a real day of it — so ")
+                sb.append("this is now, not the moment you meant.\n")
+            }
             sb.append("\nSun right now (${utc(now.time)}):\n")
         } else {
             sb.append("\nSun at ${utc(now.time)}")
@@ -2141,7 +2146,11 @@ class DeepApis(
         // one request, not a multiplier.
         runCatching {
             val day = isoDay(now.time)
-            val url = if (asked == null) {
+            // The archive runs about five days behind and has nothing
+            // at all for the future. Asking it anyway printed
+            // "sunrise null, sunset null" as a finding.
+            val tooRecent = now.time > System.currentTimeMillis() - ARCHIVE_LAG_MS
+            val url = if (asked == null || tooRecent) {
                 "https://api.open-meteo.com/v1/forecast?latitude=$lat&longitude=$lon" +
                     "&daily=sunrise,sunset,temperature_2m_max,temperature_2m_min," +
                     "precipitation_sum&timezone=UTC&forecast_days=1"
@@ -2151,9 +2160,13 @@ class DeepApis(
                     "&daily=sunrise,sunset,temperature_2m_max,temperature_2m_min," +
                     "precipitation_sum&timezone=UTC"
             }
+            if (asked != null && tooRecent) {
+                sb.append("\nThe weather archive runs about five days behind, so ")
+                sb.append("$day is not in it yet; what follows is today.\n")
+            }
             val o = json.parseToJsonElement(get(url)).jsonObject["daily"]?.jsonObject
             fun first(k: String) = ((o?.get(k) as? JsonArray)?.firstOrNull() as? JsonPrimitive)?.contentOrNull
-            sb.append(if (asked == null) "\nToday (UTC): " else "\n$day (UTC): ")
+            sb.append(if (asked == null || tooRecent) "\nToday (UTC): " else "\n$day (UTC): ")
             sb.append("sunrise ${first("sunrise")}, sunset ${first("sunset")}\n")
             sb.append("Temp ${first("temperature_2m_min")}–${first("temperature_2m_max")}°C, ")
             sb.append("precipitation ${first("precipitation_sum")} mm\n")
@@ -2193,9 +2206,25 @@ class DeepApis(
         if (asked != null) cal.timeInMillis = asked.instant
         // The archive runs about five days behind, so a date inside
         // that window has no data and the neighbours are what there is.
+        // The window ends before the archive's lag, never after it.
+        //
+        // It was the day plus or minus three, and the archive runs
+        // about five days behind — so for any date in the last three
+        // days every day in the window was empty and the output read
+        // as "the archive records nothing here" rather than "this is
+        // too recent to be in it". The end can also never be in the
+        // future, which the endpoint refuses outright.
+        val latest = System.currentTimeMillis() - ARCHIVE_LAG_MS
+        if (asked != null && asked.instant > latest) {
+            return@runCatching "The weather archive runs about five days " +
+                "behind, so ${isoDay(asked.instant)} is not in it yet. Ask " +
+                "again in a few days, or use the forecast the sun and terrain " +
+                "tool prints for today."
+        }
         cal.add(Calendar.DAY_OF_YEAR, if (asked != null) -3 else -31)
         val start = fmt.format(cal.time)
         cal.add(Calendar.DAY_OF_YEAR, if (asked != null) 6 else 24)
+        if (cal.timeInMillis > latest) cal.timeInMillis = latest
         val end = fmt.format(cal.time)
         val o = json.parseToJsonElement(
             get("https://archive-api.open-meteo.com/v1/archive?latitude=$lat&longitude=$lon" +
@@ -2209,6 +2238,13 @@ class DeepApis(
         if (asked != null) {
             sb.append("The days around ${isoDay(asked.instant)}, which is the date you gave")
             sb.append(" — $start to $end (UTC)\n\n")
+        } else if (datePresent(input)) {
+            // Written and refused, which is not the same as absent.
+            // The app answered a different question and said it had
+            // never been asked the first one.
+            sb.append("The date after the coordinate could not be read — a ")
+            sb.append("month must be 01-12 and a day a real day of it. This ")
+            sb.append("is the last month instead: $start to $end (UTC).\n\n")
         } else {
             sb.append("$start to $end (UTC). No date was given, so this is the ")
             sb.append("last month rather than any claimed day: add one after the ")
@@ -2394,6 +2430,10 @@ class DeepApis(
      * timestamp usually is not UTC and guessing would be worse than
      * stating the assumption.
      */
+    /** Whether something date-shaped was written at all. */
+    internal fun datePresent(input: String): Boolean =
+        WHEN_PATTERN.containsMatchIn(input)
+
     internal fun parseWhen(input: String): Moment? {
         val m = WHEN_PATTERN.find(input) ?: return null
         val (y, mo, d) = listOf(1, 2, 3).map { m.groupValues[it].toInt() }
@@ -2416,10 +2456,15 @@ class DeepApis(
         }
         val cal = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
             clear()
+            // Strict, so 31 February is refused rather than rolled
+            // forward to 3 March and then printed as "the moment you
+            // gave".
+            isLenient = false
             set(y, mo - 1, d, hh, mi, ss)
         }
+        val millis = runCatching { cal.timeInMillis }.getOrNull() ?: return null
         return Moment(
-            cal.timeInMillis - offsetSeconds * 1000L,
+            millis - offsetSeconds * 1000L,
             hasTime,
             m.value.trim()
         )
@@ -2634,6 +2679,17 @@ class DeepApis(
             """(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?)?\s*(Z|[+-]\d{2}:?\d{2})?""",
             RegexOption.IGNORE_CASE
         )
+
+        /**
+         * How far behind the weather archive runs.
+         *
+         * Asking it for a day inside this window answers with nulls,
+         * which were printed as findings: "sunrise null, sunset
+         * null". Six days, because five is the figure and a margin
+         * costs one request against a forecast endpoint that does
+         * have the day.
+         */
+        const val ARCHIVE_LAG_MS = 6L * 24 * 3600 * 1000
 
         /** The circle photosNear asks Panoramax about, in metres. */
         const val PANORAMAX_RADIUS_M = 400.0

@@ -1308,8 +1308,15 @@ class GodEyeViewModel(
      * the dossier prints the planned count before anything fires.
      */
     private fun alsoTheHost() {
-        val url = _state.value.observable as? Observable.Url ?: return
-        val host = ObservableRouter.hostOf(url.raw) ?: return
+        // An image URL is a URL too. Observable.ImageUrl is a sibling
+        // type rather than a subtype, so a shared image link got none
+        // of the domain tools either.
+        val raw = when (val o = _state.value.observable) {
+            is Observable.Url -> o.raw
+            is Observable.ImageUrl -> o.raw
+            else -> return
+        }
+        val host = ObservableRouter.hostOf(raw) ?: return
         val asDomain = router.classify(host)
         if (asDomain !is Observable.Domain) return
         val tools = runnable(router.suggestTools(asDomain))
@@ -1457,6 +1464,14 @@ class GodEyeViewModel(
         // the header read "scanning · 23/12 sources".
         notePlanned(_state.value.suggestedTools)
         runToolsInParallel(_state.value.suggestedTools, force = true)
+        // And the host, for the entry point the host wave was written
+        // for.
+        //
+        // alsoTheHost was called only from autoRun, and a link shared
+        // in from another app arrives with fanOut = false and is run
+        // by the person pressing RUN ALL — so the one case the
+        // feature exists for was the one case it never fired in.
+        alsoTheHost()
     }
 
     /**
