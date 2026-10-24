@@ -151,7 +151,9 @@ fun InvestigationScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var showGraph by remember { mutableStateOf(false) }
+    // Saveable, because rotating closed the graph you had just
+    // opened and threw the layout away with it.
+    var showGraph by rememberSaveable { mutableStateOf(false) }
     var graphData by remember { mutableStateOf<GraphBuilder.Graph?>(null) }
     val observable = state.observable
     // Whether this target is already being followed. Read once per target
@@ -264,6 +266,9 @@ fun InvestigationScreen(
                 )
             }
         }
+        // Which export is in flight, and why the last one did not work.
+        var exporting by remember { mutableStateOf<String?>(null) }
+        var exportTrouble by remember { mutableStateOf<String?>(null) }
         val facts = analysis.facts
         val entities = analysis.entities
         val pivots = analysis.pivots
@@ -745,14 +750,55 @@ fun InvestigationScreen(
                 }
                 if (state.results.isNotEmpty()) {
                     ConsoleButton("GRAPH") {
-                        graphData = GraphBuilder.build(observable.raw, state.results)
-                        showGraph = true
-                    }
-                    ExportFormat.values().forEach { fmt ->
-                        ConsoleButton(fmt.name) {
-                            scope.launch { viewModel.buildExport(fmt)?.let { shareFile(context, it, fmt) } }
+                        // Built off the main thread: this walks every
+                        // row's formatted output to make its nodes,
+                        // and it was running inside the click.
+                        scope.launch {
+                            graphData = withContext(Dispatchers.Default) {
+                                GraphBuilder.build(observable.raw, state.results)
+                            }
+                            showGraph = true
                         }
                     }
+                    ExportFormat.entries.forEach { fmt ->
+                        // One at a time, and it says when it fails.
+                        //
+                        // There was no busy flag, so tapping PDF twice
+                        // on a large case wrote two files and launched
+                        // two choosers; and buildExport returns null
+                        // when there is nothing to write, so `?.let`
+                        // made the button look dead with no message.
+                        // shareFile was also the one share path in the
+                        // app not wrapped, so a FileProvider or
+                        // chooser failure crashed rather than no-oped.
+                        ConsoleButton(fmt.name, enabled = exporting == null) {
+                            exporting = fmt.name
+                            scope.launch {
+                                val file = runCatching { viewModel.buildExport(fmt) }
+                                exportTrouble = when {
+                                    file.isFailure ->
+                                        file.exceptionOrNull()?.message?.take(120)
+                                            ?: "the export could not be written"
+                                    file.getOrNull() == null ->
+                                        "Nothing to export yet — this case has no results."
+                                    else -> runCatching {
+                                        shareFile(context, file.getOrNull()!!, fmt)
+                                    }.exceptionOrNull()?.let {
+                                        "Could not open the share sheet: ${it.message?.take(90)}"
+                                    }
+                                }
+                                exporting = null
+                            }
+                        }
+                    }
+                }
+                exportTrouble?.let { why ->
+                    Text(
+                        why,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Intel.Amber,
+                        modifier = Modifier.padding(top = 6.dp)
+                    )
                 }
             }
 
