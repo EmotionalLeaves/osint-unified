@@ -315,6 +315,28 @@ private fun WatchRow(
             modifier = Modifier.padding(top = 4.dp)
         )
 
+        // What the last check managed to ask.
+        //
+        // A check where nothing answered raises no alarm, correctly —
+        // and the row then read "no change in 12 checks · last 3m
+        // ago", which is the same sentence as a check where all ten
+        // sources answered and agreed. On a captive portal that
+        // happened silently, four times a day.
+        if (checked != null && watch.lastAsked > 0 && watch.lastAnswered < watch.lastAsked) {
+            Text(
+                if (watch.lastAnswered == 0) {
+                    "last check: none of ${watch.lastAsked} sources answered, " +
+                        "so nothing was compared"
+                } else {
+                    "last check: ${watch.lastAnswered} of ${watch.lastAsked} " +
+                        "sources answered"
+                },
+                style = MaterialTheme.typography.labelSmall,
+                color = if (watch.lastAnswered == 0) Intel.Danger else Intel.Amber,
+                modifier = Modifier.padding(top = 2.dp)
+            )
+        }
+
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth().padding(top = 6.dp)

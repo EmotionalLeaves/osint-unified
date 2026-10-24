@@ -14,7 +14,7 @@ import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
         Investigation::class, Result::class, Watch::class,
         WatchEvent::class, Dismissal::class, Case::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -46,7 +46,7 @@ abstract class AppDatabase : RoomDatabase() {
         /** The same number as the `version` in the @Database annotation
          *  above, which cannot reference this one. The pre-flight check
          *  refuses a commit where the two disagree. */
-        const val SCHEMA_VERSION = 7
+        const val SCHEMA_VERSION = 8
 
         @Volatile private var INSTANCE: AppDatabase? = null
 
@@ -83,6 +83,13 @@ abstract class AppDatabase : RoomDatabase() {
          * folder goes, the collection does not — so the foreign key
          * nulls rather than cascades.
          */
+        /** What a watch check actually managed to ask. */
+        private val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                MigrationSql.v7to8.forEach(db::execSQL)
+            }
+        }
+
         private val MIGRATION_6_7 = object : Migration(6, 7) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 MigrationSql.v6to7.forEach(db::execSQL)
@@ -256,7 +263,10 @@ abstract class AppDatabase : RoomDatabase() {
                     app, AppDatabase::class.java, DatabaseEncryption.ENCRYPTED_NAME
                 )
                     .openHelperFactory(SupportOpenHelperFactory(passphrase))
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                    .addMigrations(
+                        MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
+                        MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8
+                    )
                     .build()
             }
             val probe = built.getOrNull()?.let { db ->
@@ -430,7 +440,7 @@ abstract class AppDatabase : RoomDatabase() {
                 app, AppDatabase::class.java, DatabaseEncryption.PLAIN_NAME
             ).addMigrations(
                 MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4,
-                MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7
+                MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8
             ).build()
             // Pre-flighted exactly as the encrypted path is, and for a
             // stronger reason: this is the path most likely to be

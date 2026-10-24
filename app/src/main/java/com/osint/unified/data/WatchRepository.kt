@@ -187,7 +187,14 @@ class WatchRepository(
         // attempt is still recorded, or the watch would read as never
         // checked while the app had been trying all along.
         if (outcome.answered.isEmpty()) {
-            dao.update(watch.copy(lastCheckedAt = now, checks = watch.checks + 1))
+            dao.update(
+                watch.copy(
+                    lastCheckedAt = now,
+                    checks = watch.checks + 1,
+                    lastAnswered = 0,
+                    lastAsked = tools.size
+                )
+            )
             return null
         }
 
@@ -200,7 +207,9 @@ class WatchRepository(
                 watch.copy(
                     digest = serialise(fresh),
                     lastCheckedAt = now,
-                    checks = watch.checks + 1
+                    checks = watch.checks + 1,
+                    lastAnswered = outcome.answered.size,
+                    lastAsked = tools.size
                 )
             )
             return null
@@ -259,7 +268,9 @@ class WatchRepository(
                 lastCheckedAt = now,
                 checks = watch.checks + 1,
                 lastChange = description ?: watch.lastChange,
-                lastChangeAt = if (description != null) now else watch.lastChangeAt
+                lastChangeAt = if (description != null) now else watch.lastChangeAt,
+                lastAnswered = outcome.answered.size,
+                lastAsked = tools.size
             )
         )
         if (description == null) return null

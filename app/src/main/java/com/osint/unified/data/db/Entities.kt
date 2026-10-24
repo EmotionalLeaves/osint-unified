@@ -142,7 +142,20 @@ data class Watch(
     /** What changed at [lastChangeAt], in words, or empty if never. */
     val lastChange: String = "",
     val lastChangeAt: Long? = null,
-    val checks: Int = 0
+    val checks: Int = 0,
+    /**
+     * How many sources answered the last check, and how many were
+     * asked.
+     *
+     * A check where nothing answered correctly raises no alarm — but
+     * the row that recorded it was indistinguishable from one where
+     * all ten sources answered and agreed. On a captive portal, which
+     * satisfies the worker's CONNECTED constraint, every watch read
+     * "checked just now" four times a day while nothing had been
+     * consulted at all.
+     */
+    val lastAnswered: Int = 0,
+    val lastAsked: Int = 0
 )
 
 /**

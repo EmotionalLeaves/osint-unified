@@ -177,6 +177,17 @@ object MigrationSql {
             "ON `investigations` (`caseId`)",
     )
 
+    /**
+     * How much of a watch check actually happened.
+     *
+     * Zero is the honest default for a row written before this
+     * existed: nothing is known about how many sources answered it.
+     */
+    val v7to8: List<String> = listOf(
+        "ALTER TABLE `watches` ADD COLUMN `lastAnswered` INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE `watches` ADD COLUMN `lastAsked` INTEGER NOT NULL DEFAULT 0",
+    )
+
     /** Every step from 1 to [AppDatabase.SCHEMA_VERSION], in order. */
     val chain: List<Pair<Int, List<String>>> = listOf(
         2 to v1to2,
@@ -185,5 +196,6 @@ object MigrationSql {
         5 to v4to5,
         6 to v5to6,
         7 to v6to7,
+        8 to v7to8,
     )
 }
