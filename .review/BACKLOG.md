@@ -243,8 +243,34 @@ whole of the view-model's search bookkeeping.
   avoids. Blocked until a coordinate-bearing endpoint is found.
   Separately: a tap that opens the stream rather than a link —
   Wisconsin's records carry an HLS `videoUrl`.
-- **O5. The rest of B3.** GitHub commit search by author-email
-  (rate-limit fragile), GBIF, Open-Meteo air quality.
+- **O5. The rest of B3.** Probed 24 Oct, all keyless, all answering:
+  - **GitHub commit search by author-email** — works and *filters*.
+    `/search/commits?q=author-email%3A<addr>` returns real commits for
+    a real address and `total_count: 0` with an empty `items` for one
+    that cannot exist, which is the test that matters: this is a
+    source that can establish an absence. The address must be
+    percent-encoded or the qualifier is dropped and the whole index
+    comes back (293 million results, which is how the first probe
+    read). Keyless search is rate-limited to 10/minute per IP, so it
+    is one request per dossier and never in a sweep.
+  - **GBIF** — `/v1/occurrence/search` by free text and by
+    `decimalLatitude`/`decimalLongitude` bounding box, and
+    `/v1/species/match` for a name. The bounding-box form is the
+    interesting one: it is a geoint source, not a biology one —
+    dated, coordinate-bearing records of who was where with a camera.
+  - **iNaturalist** — `/v1/observations?user_login=` and by query.
+    Observations carry a date, a coordinate and a photograph, which
+    makes a handle on iNaturalist a movement history. Worth a handle
+    tool, not just a place one.
+  - **Crossref** — `/works?query.author=` for publications under a
+    name. Keyless, no account, and the polite-pool wants a contact
+    address it does not require.
+  - Open-Meteo air quality is already in. **OpenAQ v3 now refuses
+    without an X-API-Key** — it was keyless and is not any more, so it
+    is off the list rather than pending.
+  - **OpenAlex answers but warns** that a keyless request shares one
+    $0.10 daily budget across everyone on the IP. That is a shared
+    quota the app would be spending on strangers' behalf; skip it.
 - **O6. The dossier as a LazyColumn** (deliberately deferred). It is
   a `verticalScroll` Column; `CardList` caps each section at twelve
   rows behind a SHOW MORE, which is most of the win. Converting the
