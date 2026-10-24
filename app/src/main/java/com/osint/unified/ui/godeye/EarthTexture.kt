@@ -83,6 +83,34 @@ object EarthTexture {
     /** True once there is something better than an outline to draw. */
     fun ready(): Boolean = day != null || dayMap != null
 
+    /** Whether the CPU renderer has a texture to work from. */
+    fun hasCpuTexture(): Boolean = day != null
+
+    /**
+     * Builds the CPU texture, if it is not there already.
+     *
+     * [load] returns as soon as the shader path has its Bitmaps, so
+     * on Android 13 and up the IntArray the CPU renderer indexes is
+     * never built. That is right while the shader works — and when
+     * `GlobeShader.bind` fails, which it swallows, `gpuSphere` is
+     * null while `ready()` is still true: the render pass then
+     * relaunched on every camera move, allocated up to a 1400x1400
+     * IntArray, and returned null from `image()` every time. Seven
+     * and a half megabytes per camera move to produce nothing.
+     *
+     * Called only on that path, so the ordinary one pays nothing.
+     */
+    @Synchronized
+    fun loadCpuFallback(context: Context) {
+        if (day != null || cpuAttempted) return
+        cpuAttempted = true
+        if (roomy(context)) day = decode(context, HI_DAY)
+        if (day == null) day = decode(context, DAY)
+        if (night == null) night = decode(context, NIGHT)
+    }
+
+    @Volatile private var cpuAttempted = false
+
     /** True when the globe can be drawn by the GPU this frame. */
     fun shaded(): Boolean = GlobeShader.supported && dayMap != null
 

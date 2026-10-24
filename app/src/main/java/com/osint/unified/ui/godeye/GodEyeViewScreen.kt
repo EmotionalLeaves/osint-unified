@@ -86,6 +86,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import com.osint.unified.BuildConfig
 import com.osint.unified.ui.theme.Intel
 import kotlin.math.ceil
@@ -2074,12 +2075,21 @@ fun GodEyeViewScreen(
 @Composable
 private fun UtcClock() {
     var utc by remember { mutableStateOf("") }
-    LaunchedEffect(Unit) {
+    val owner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    // Once a second, and only while there is something to see.
+    //
+    // The composition is retained when the Activity stops, so a plain
+    // LaunchedEffect(Unit) kept ticking behind a dark screen all
+    // night. The thirty feed polls are gated on `foreground`; these
+    // two loops were written later and were not.
+    LaunchedEffect(owner) {
         val fmt = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US)
             .apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }
-        while (true) {
-            utc = fmt.format(java.util.Date())
-            kotlinx.coroutines.delay(1000)
+        owner.lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+            while (true) {
+                utc = fmt.format(java.util.Date())
+                kotlinx.coroutines.delay(1000)
+            }
         }
     }
     Text(

@@ -45,6 +45,7 @@ import kotlin.math.abs
 import kotlin.math.floor
 import kotlin.math.min
 import kotlin.math.roundToInt
+import androidx.lifecycle.repeatOnLifecycle
 
 /**
  * The Earth as a sphere you can turn.
@@ -221,10 +222,16 @@ fun GlobeView(
     // The sun moves a degree every four minutes, so this is recomputed
     // on that scale rather than per frame.
     var sun by remember { mutableStateOf(Orthographic.subsolar(System.currentTimeMillis())) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            sun = Orthographic.subsolar(System.currentTimeMillis())
-            kotlinx.coroutines.delay(4 * 60_000L)
+    val sunOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    // And only while the screen is there to show it. The composition
+    // survives the Activity stopping, so this went on waking every
+    // four minutes to move a terminator nobody could see.
+    LaunchedEffect(sunOwner) {
+        sunOwner.lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+            while (true) {
+                sun = Orthographic.subsolar(System.currentTimeMillis())
+                kotlinx.coroutines.delay(4 * 60_000L)
+            }
         }
     }
     val terminator = remember(sun) { Orthographic.terminator(sun.first, sun.second) }
@@ -327,8 +334,23 @@ fun GlobeView(
     // `drifting` drops the size to a quarter and starts a small render
     // into the middle of a two-megapixel one.
     val painter = remember { Mutex() }
-    val globe: Rendered? by produceState<Rendered?>(null, frame, textured, gpuSphere) {
-        if (gpuSphere != null || !textured || frame.d <= 8) {
+    // Built only if the CPU path is the one being used.
+    //
+    // `textured` is true as soon as the shader path has its Bitmaps,
+    // and on Android 13 and up that is all `load` builds — so a
+    // failed shader bind left `gpuSphere` null and `textured` true,
+    // and this relaunched on every camera move to allocate a
+    // multi-megabyte buffer and get null back from `image()`. The
+    // picture was right; the way it was reached was not.
+    val cpuTexture by produceState(initialValue = false, gpuSphere, textured, context) {
+        value = if (gpuSphere != null || !textured) false
+        else withContext(Dispatchers.IO) {
+            EarthTexture.loadCpuFallback(context)
+            EarthTexture.hasCpuTexture()
+        }
+    }
+    val globe: Rendered? by produceState<Rendered?>(null, frame, cpuTexture, gpuSphere) {
+        if (gpuSphere != null || !cpuTexture || frame.d <= 8) {
             value = null
             return@produceState
         }
