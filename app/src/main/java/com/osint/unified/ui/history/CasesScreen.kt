@@ -146,6 +146,9 @@ fun CaseDetail(
     targets: List<Investigation>,
     /** Null while the corroboration pass for this case is still running. */
     links: List<CaseLinks.Link>?,
+    /** How many of [targets] have a dossier to compare, or null while
+     *  that is still being worked out. */
+    compared: Int?,
     onOpenTarget: (Long) -> Unit,
     onUnfile: (Long) -> Unit,
     onSummary: (String) -> Unit,
@@ -199,7 +202,7 @@ fun CaseDetail(
             if (links == null) {
                 "${targets.size} targets \u00b7 working out what they share\u2026"
             } else {
-                CaseLinks.summary(links, targets.size)
+                CaseLinks.summary(links, targets.size, compared ?: targets.size)
             },
             style = MaterialTheme.typography.bodyMedium,
             color = Intel.CyanBright,

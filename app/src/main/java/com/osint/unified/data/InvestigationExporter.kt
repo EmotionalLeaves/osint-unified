@@ -188,7 +188,8 @@ class InvestigationExporter(private val appContext: Context) {
 
         append("\nWHAT HOLDS THIS CASE TOGETHER\n")
         append("-----------------------------\n")
-        append(CaseLinks.summary(links, targets.size)).append('\n')
+        append(CaseLinks.summary(links, targets.size, CaseLinks.compared(byTarget)))
+            .append('\n')
         if (links.isEmpty()) {
             append(
                 "\nNothing was found under more than one target. That is a " +

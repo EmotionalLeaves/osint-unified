@@ -45,10 +45,55 @@ object AreaReport {
         val lat: Double,
         val lon: Double,
         val radiusKm: Double,
-        val groups: List<Group>
+        val groups: List<Group>,
+        /**
+         * What this report could not see.
+         *
+         * It is a list of what is near a point, and a reader takes
+         * the layers it does not mention as empty there. That was
+         * only ever true for a layer that answered and covers this
+         * ground: an armed layer whose feed is down contributed
+         * nothing and was never mentioned, and the four on-demand
+         * layers are fetched in a small circle around the centre of
+         * the view while this radius reaches a thousand kilometres.
+         * Both read as an absence and neither was one.
+         */
+        val caveats: List<String> = emptyList()
     ) {
         val total: Int get() = groups.sumOf { it.total }
     }
+
+    /**
+     * How far from the view centre each on-demand layer actually
+     * asked, in kilometres. Beyond that nothing was queried, which is
+     * not the same as nothing being there.
+     */
+    private val ON_DEMAND_REACH_KM = mapOf(
+        "cameras" to 25.0,
+        "sites" to 120.0,
+        "airspace" to 150.0
+    )
+
+    /** For the caveat lines, in the words the pills use. */
+    private val LAYER_WORDS = mapOf(
+        "aircraft" to "aircraft", "milAircraft" to "military aircraft",
+        "vessels" to "vessels", "quakes" to "earthquakes",
+        "naturalEvents" to "natural events", "weather" to "US weather alerts",
+        "fires" to "wildfires", "satellites" to "satellites",
+        "gdacs" to "disaster alerts", "volcanoes" to "volcanoes",
+        "worldWarnings" to "severe-weather warnings", "seaLevel" to "tide gauges",
+        "ports" to "ports", "sites" to "controlled sites",
+        "launches" to "launches", "outages" to "internet outages",
+        "conflicts" to "conflict events", "airQuality" to "air quality",
+        "stations" to "seismic stations", "airports" to "airports",
+        "powerPlants" to "power plants", "aurora" to "aurora",
+        "buoys" to "ocean buoys", "metar" to "airfield weather",
+        "news" to "news hotspots", "cables" to "cable landings",
+        "cyclones" to "tropical cyclones", "tsunamis" to "tsunami bulletins",
+        "airportStatus" to "US airport status", "overlayPoints" to "your overlay",
+        "cameras" to "traffic cameras", "airspace" to "restricted airspace",
+        "radiation" to "radiation monitors"
+    )
 
     /**
      * Great-circle distance in kilometres.
@@ -162,7 +207,36 @@ object AreaReport {
         sweep("Custom overlay", state.overlayPoints, { it.lat }, { it.lon }, { it.label })
         sweep("Finding", state.findings, { it.lat }, { it.lon }, { it.label })
 
-        return Report(lat, lon, radiusKm, groups)
+        // What was not looked at, in the same report as what was.
+        val caveats = ArrayList<String>()
+        state.feedTrouble.keys.sorted().forEach { key ->
+            val word = LAYER_WORDS[key] ?: key
+            caveats.add("$word — the feed is not reporting, so nothing here rules them out")
+        }
+        state.feedPartial.keys.sorted().forEach { key ->
+            val word = LAYER_WORDS[key] ?: key
+            caveats.add("$word — ${state.feedPartial[key]}")
+        }
+        ON_DEMAND_REACH_KM.forEach { (key, reach) ->
+            // Armed, answered, and asked about somewhere else. The
+            // circle these fetch is centred on the view, not on the
+            // point long-pressed, and at a wide zoom this radius is
+            // forty times it.
+            if (key in state.loaded && key !in state.feedTrouble && radiusKm > reach) {
+                val word = LAYER_WORDS[key] ?: key
+                caveats.add(
+                    "$word — only fetched within ${fmtKm(reach)} of the centre of " +
+                        "the view, so most of this ${fmtKm(radiusKm)} was never asked about"
+                )
+            }
+        }
+        if ("radiation" in state.loaded && "radiation" !in state.feedTrouble) {
+            caveats.add(
+                "radiation monitors — only fetched for the area on screen when " +
+                    "the layer last loaded"
+            )
+        }
+        return Report(lat, lon, radiusKm, groups, caveats)
     }
 
     /**
@@ -175,7 +249,15 @@ object AreaReport {
      * comes first; the headline's job is to keep it.
      */
     fun headline(report: Report): String {
-        if (report.groups.isEmpty()) return "Nothing loaded within ${fmtKm(report.radiusKm)} of here."
+        if (report.groups.isEmpty()) {
+            val base = "Nothing loaded within ${fmtKm(report.radiusKm)} of here."
+            // "Loaded" was the only hedge, and nobody reads it as
+            // "three of your armed layers never answered".
+            return if (report.caveats.isEmpty()) base
+            else "$base ${report.caveats.size} layer" +
+                (if (report.caveats.size == 1) "" else "s") +
+                " could not say."
+        }
         return report.groups
             .take(4)
             .joinToString(" · ") { "${it.total} ${it.kind.lowercase()}" }

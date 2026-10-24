@@ -71,24 +71,50 @@ object ContentCredentials {
      * Generators that write their own name or their prompt into the
      * file, which is far more common than a signed manifest.
      */
-    private val GENERATORS: List<Pair<String, String>> = listOf(
-        "Stable Diffusion" to "Stable Diffusion",
-        "stable-diffusion" to "Stable Diffusion",
-        "Midjourney" to "Midjourney",
-        "DALL" to "DALL·E",
-        "openai" to "OpenAI",
-        "Firefly" to "Adobe Firefly",
-        "Adobe Firefly" to "Adobe Firefly",
-        "ComfyUI" to "ComfyUI",
-        "Automatic1111" to "Automatic1111",
-        "NovelAI" to "NovelAI",
-        "Imagen" to "Google Imagen",
-        "Gemini" to "Google Gemini",
-        "Flux" to "Flux",
-        "Leonardo.Ai" to "Leonardo.Ai",
-        "Craiyon" to "Craiyon",
-        "invokeai" to "InvokeAI",
+    private val GENERATORS: List<Triple<String, String, Boolean>> = listOf(
+        Triple("Stable Diffusion", "Stable Diffusion", false),
+        Triple("stable-diffusion", "Stable Diffusion", false),
+        Triple("Midjourney", "Midjourney", false),
+        // Case-sensitive, every one of them: these are ordinary words
+        // or fragments of them in some language, and a caption is
+        // text.
+        Triple("DALL", "DALL·E", true),
+        Triple("openai", "OpenAI", false),
+        Triple("Firefly", "Adobe Firefly", true),
+        Triple("Adobe Firefly", "Adobe Firefly", false),
+        Triple("ComfyUI", "ComfyUI", false),
+        Triple("Automatic1111", "Automatic1111", false),
+        Triple("NovelAI", "NovelAI", false),
+        Triple("Imagen", "Google Imagen", true),
+        Triple("Gemini", "Google Gemini", true),
+        Triple("Flux", "Flux", true),
+        Triple("Leonardo.Ai", "Leonardo.Ai", false),
+        Triple("Craiyon", "Craiyon", true),
+        Triple("invokeai", "InvokeAI", false),
     )
+
+    /**
+     * A whole word, not a fragment of one.
+     *
+     * The marker branch above was hardened because a substring is not
+     * evidence that a machine made the picture; this branch, eleven
+     * lines below it, was matching bare substrings case-insensitively
+     * over every printable run in the file. "Dallas", "Randall" and
+     * "Kendall" in a caption each printed "names DALL·E"; a Spanish
+     * caption with the word "imagen" in it printed "names Google
+     * Imagen"; a lens profile with "flux" in it printed "names Flux".
+     * Rule 1 — the fix went where the bug was noticed and not where
+     * it lives.
+     */
+    private val GENERATOR_PATTERNS: List<Pair<Regex, String>> by lazy {
+        GENERATORS.map { (needle, name, cased) ->
+            val options = if (cased) emptySet() else setOf(RegexOption.IGNORE_CASE)
+            Regex(
+                "(?<![A-Za-z0-9])" + Regex.escape(needle) + "(?![A-Za-z0-9])",
+                options
+            ) to name
+        }
+    }
 
     /** PNG text chunks a generator fills with its own settings. */
     private val PROMPT_KEYS = listOf("parameters", "prompt", "workflow", "Comment", "Dream")
@@ -121,9 +147,15 @@ object ContentCredentials {
             findings.add(Finding(meaning, "C2PA manifest"))
             if (meansGenerated) generated = true
         }
-        GENERATORS.forEach { (needle, name) ->
-            if (text.contains(needle, ignoreCase = true)) {
-                findings.add(Finding("names $name", "metadata written by the tool"))
+        val named = LinkedHashSet<String>()
+        GENERATOR_PATTERNS.forEach { (pattern, name) ->
+            if (name !in named && pattern.containsMatchIn(text)) {
+                named.add(name)
+                // "a name in the file's text", not "metadata written
+                // by the tool": the second is an assertion about who
+                // wrote it, and all this knows is that the name is in
+                // there.
+                findings.add(Finding("names $name", "a name found in the file's text"))
             }
         }
         PROMPT_KEYS.forEach { key ->

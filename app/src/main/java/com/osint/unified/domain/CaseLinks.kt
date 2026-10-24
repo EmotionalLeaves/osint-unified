@@ -137,13 +137,37 @@ object CaseLinks {
             )
     }
 
+    /**
+     * How many of a case's targets have anything to compare.
+     *
+     * A target filed from a pivot or a share and never run has an
+     * empty dossier, and [find] can say nothing about it either way.
+     */
+    fun compared(byTarget: Map<String, List<Corroboration.Entity>>): Int =
+        byTarget.count { it.value.isNotEmpty() }
+
     /** One line saying what, if anything, holds the case together. */
-    fun summary(links: List<Link>, targetCount: Int): String {
+    fun summary(links: List<Link>, targetCount: Int, compared: Int = targetCount): String {
         if (targetCount < 2) {
             return "One target. A case needs two before anything can connect them."
         }
+        // "Nothing found in more than one of them" is a statement
+        // about targets that were compared, and `targetCount` counts
+        // every target filed into the case, run or not. A case with
+        // one scanned target and one created from a pivot asserted
+        // that the two were unconnected, in the header and in the
+        // exported report.
+        if (compared < 2) {
+            return "$targetCount targets · only $compared has been run, " +
+                "so there is nothing to compare yet"
+        }
         if (links.isEmpty()) {
-            return "$targetCount targets · nothing found in more than one of them"
+            return if (compared < targetCount) {
+                "$targetCount targets · $compared with findings · nothing " +
+                    "found in more than one of those"
+            } else {
+                "$targetCount targets · nothing found in more than one of them"
+            }
         }
         val strong = links.count { it.credibility.code <= 2 }
         val named = links.count { it.isTarget }

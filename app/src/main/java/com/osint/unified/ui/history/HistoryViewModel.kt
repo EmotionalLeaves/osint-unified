@@ -204,11 +204,11 @@ class HistoryViewModel(
      * The links the pass has finished, tagged with the case they were
      * worked out for.
      */
-    private val computedLinks: StateFlow<Pair<Long, List<CaseLinks.Link>>?> =
+    private val computedLinks: StateFlow<Triple<Long, List<CaseLinks.Link>, Int>?> =
         _openCaseId
             .flatMapLatest { id ->
                 if (id == null) {
-                    flowOf<Pair<Long, List<CaseLinks.Link>>?>(null)
+                    flowOf<Triple<Long, List<CaseLinks.Link>, Int>?>(null)
                 } else {
                     repository.observeTargets(id)
                         // Keyed on the targets' identity, not on the
@@ -223,7 +223,19 @@ class HistoryViewModel(
                         .distinctUntilChanged { old, new ->
                             old.map { it.id } == new.map { it.id }
                         }
-                        .mapLatest { targets -> id to CaseLinks.find(entitiesByTarget(targets)) }
+                        .mapLatest { targets ->
+                            val byTarget = entitiesByTarget(targets)
+                            Triple(
+                                id,
+                                CaseLinks.find(byTarget),
+                                // How many of them have anything to
+                                // compare. A target filed and never
+                                // run has an empty dossier, and the
+                                // header used to count it as one of
+                                // the ones found to share nothing.
+                                CaseLinks.compared(byTarget)
+                            )
+                        }
                         // And off the main thread. mapLatest runs in
                         // the stateIn scope, which is viewModelScope —
                         // Dispatchers.Main.immediate — so the regex
@@ -262,6 +274,13 @@ class HistoryViewModel(
                 computed != null && computed.first == id -> computed.second
                 else -> null
             }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** How many of the open case's targets have a dossier to compare. */
+    val caseCompared: StateFlow<Int?> =
+        combine(_openCaseId, computedLinks) { id, computed ->
+            if (id != null && computed != null && computed.first == id) computed.third
+            else null
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     private suspend fun entitiesByTarget(

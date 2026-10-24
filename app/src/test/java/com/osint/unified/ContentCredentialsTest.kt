@@ -1,6 +1,7 @@
 package com.osint.unified
 
 import com.osint.unified.domain.ContentCredentials
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -74,5 +75,57 @@ class ContentCredentialsTest {
             byteArrayOf(0x01, 0x02, 0x03) +
             "AlgorithmicMedia".toByteArray(Charsets.US_ASCII)
         assertFalse(ContentCredentials.read(bytes).saysGenerated)
+    }
+
+    /**
+     * A caption is text, and these names are ordinary words or
+     * fragments of them. "Dallas" printed "names DALL·E" under a
+     * heading saying it was metadata the tool had written.
+     */
+    @Test
+    fun anOrdinaryWordIsNotAGeneratorName() {
+        listOf(
+            "Photo taken in Dallas, Texas",
+            "Portrait of Kendall Fisher",
+            "Randall Park at sunset",
+            "una imagen del puerto de Valencia",
+            "Lens profile: flux correction v2",
+            "Shot on the firefly trail"
+        ).forEach { caption ->
+            val read = ContentCredentials.read(("\u0000\u0000" + caption).toByteArray())
+            assertTrue(
+                caption + " -> " + read.findings.map { it.what },
+                read.findings.none { it.what.startsWith("names ") }
+            )
+        }
+    }
+
+    /** And a real one still is. */
+    @Test
+    fun arealGeneratorNameIsStillFound() {
+        listOf(
+            "Software: DALL-E 3" to "DALL",
+            "parameters: Stable Diffusion v1.5" to "Stable Diffusion",
+            "Created with Midjourney" to "Midjourney",
+            "Adobe Firefly" to "Firefly"
+        ).forEach { (text, _) ->
+            val read = ContentCredentials.read(("\u0000" + text).toByteArray())
+            assertTrue(
+                text + " -> " + read.findings.map { it.what },
+                read.findings.any { it.what.startsWith("names ") }
+            )
+        }
+    }
+
+    /** One name, once, however many times it appears. */
+    @Test
+    fun aNameIsNotReportedTwice() {
+        val read = ContentCredentials.read(
+            "\u0000Adobe Firefly\u0000Firefly\u0000".toByteArray()
+        )
+        assertEquals(
+            1,
+            read.findings.count { it.what == "names Adobe Firefly" }
+        )
     }
 }

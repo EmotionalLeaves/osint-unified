@@ -1727,6 +1727,27 @@ fun GodEyeViewScreen(
                             modifier = Modifier.padding(top = 2.dp)
                         )
                     }
+                    // Before the list, not after it. The reader takes
+                    // a layer this report does not mention as empty
+                    // here, and for a layer whose feed is down or
+                    // whose circle never reached this point that was
+                    // never what it meant.
+                    if (report.caveats.isNotEmpty()) {
+                        Text(
+                            "NOT ANSWERED FOR HERE · ${report.caveats.size}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Intel.Amber,
+                            modifier = Modifier.padding(top = 12.dp, bottom = 2.dp)
+                        )
+                        report.caveats.forEach { line ->
+                            Text(
+                                line,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Intel.TextMid,
+                                modifier = Modifier.padding(vertical = 1.dp)
+                            )
+                        }
+                    }
                     report.groups.forEach { group ->
                         Text(
                             "${group.kind.uppercase()} · ${group.total}",
