@@ -853,7 +853,7 @@ would make it a better tool. Worked in this order. Everything here
 is keyless, and the request cost of each is stated because mobile
 data is the one budget that matters.
 
-- [ ] **G-1. The corroboration engine cannot see a name, an employer
+- [x] **G-1. The corroboration engine cannot see a name, an employer
   or a place.** `EntityExtractor.extract` collects ten kinds and all
   ten are machine identifiers — email, handle, host, ip, phone,
   wallet, tail number, coordinate, sha256, md5. But the sources
@@ -875,7 +875,7 @@ data is the one budget that matters.
   `ProfileSignals.cluster` already does this shape of work and is
   called from exactly one place inside the username sweep; it never
   sees any of the nine sources above.
-- [ ] **G-2. The grading scheme can agree and cannot disagree.**
+- [x] **G-2. The grading scheme can agree and cannot disagree.**
   `Grading.credibility` takes a `contradicting` parameter and has an
   IMPROBABLE verdict for it. No caller passes it: both call sites
   pass `agreeing` only, so IMPROBABLE is unreachable in the shipped
@@ -891,7 +891,7 @@ data is the one budget that matters.
   anything derived so a conclusion never reads as an observation. A
   useful subset — coordinates, PTR, registration country — works
   without G-1.
-- [ ] **G-3. A URL runs two sources and never looks at the host.**
+- [x] **G-3. A URL runs two sources and never looks at the host.**
   `Observable.Url` routes to six tools, of which two are link lists
   and two are `touchesTarget` and so do not fire on the passive
   default. Searching a URL asks whether it is in the Wayback index
@@ -906,7 +906,7 @@ data is the one budget that matters.
   requests: roughly 2 passive fetches to roughly 20.** That is the
   bill a domain search already pays, and the dossier prints the
   planned count before it fires.
-- [ ] **G-4. A watch can tell you something changed and can never
+- [x] **G-4. A watch can tell you something changed and can never
   tell you what.** Each check reduces a tool's whole answer to a
   sha1 of its normalised text, so an event can only say "changed at
   Shodan". And `runTool` replaces the previous row, so the previous
@@ -919,7 +919,7 @@ data is the one budget that matters.
   mail2.example.com; declared location changed Vienna to Berlin".
   **Zero new requests:** the check already has the answer in hand
   before it throws it away. Also gives a case re-run a diff.
-- [ ] **G-5. The analysis does not know the target from something one
+- [x] **G-5. The analysis does not know the target from something one
   hop away.** The screen and the exporter both separate first-pass
   rows from rows looked up because the first pass named them.
   `Corroboration.merge` has `row.input` and drops it, and `Entity`
@@ -930,7 +930,7 @@ data is the one budget that matters.
   field, shown, and hop-1 rows barred from setting a headline fact.
   Small, and it gets worse rather than better once G-1 enlarges the
   entity pool — so do it with G-1.
-- [ ] **G-6. The chronolocation tools cannot be given the date.**
+- [x] **G-6. The chronolocation tools cannot be given the date.**
   `sunAndTerrain` computes the solar position for now;
   `historicalWeather` hardcodes the last 31 days. Both exist to test
   whether a photograph matches a claimed time and place, and neither
@@ -943,7 +943,7 @@ data is the one budget that matters.
   degrees, length ratio 1.6, consistent with 14:30 on 2 March", or
   "the sun was below the horizon". Pure arithmetic over data already
   fetched, and no keyless competitor offers it.
-- [ ] **G-7. The timeline is a list of dates and every interval is
+- [x] **G-7. The timeline is a list of dates and every interval is
   computed by hand.** `Timeline.build` returns a flat chronological
   list and the only aggregation is by year. The finding in a
   timeline is almost never a date; it is a gap — the domain
@@ -954,7 +954,7 @@ data is the one budget that matters.
   a candidate UTC offset, nor checked against the declared location
   the same dossier holds. All derived, no requests, and everything
   it concludes must be stamped INFERRED (see G-2).
-- [ ] **G-8. The dossier never says what it cost.** `DataMeter` is
+- [x] **G-8. The dossier never says what it cost.** `DataMeter` is
   process-wide, unpersisted, and surfaced only in the diagnostics
   panel. A search that fires forty tools and then eleven pivots at
   six tools each never reports its own bill, before or after — the
@@ -964,7 +964,7 @@ data is the one budget that matters.
   has the host and the count), print what the dossier cost, and keep
   a per-tool running average so the pre-flight can say "about 8 MB"
   before RUN ALL.
-- [ ] **G-9. `websearch` is classified as a bookmark and is not
+- [x] **G-9. `websearch` is classified as a bookmark and is not
   one.** B1 swept it into LINK_LISTS with `dorks` and `framework`,
   force-classified ABSENT and graded F. It fetches the DuckDuckGo
   instant-answer abstract and up to eight Wikipedia articles with
@@ -973,7 +973,7 @@ data is the one budget that matters.
   six of twelve types a real source is excluded from the findings.
   Grade it C and let it into the pool. `dorks`, `framework` and
   `reverseimage` are correctly classified and stay.
-- [ ] **G-10. Wallet and aircraft are 1:3.** Both have a second
+- [x] **G-10. Wallet and aircraft are 1:3.** Both have a second
   source already written as a curated template and not wired: a
   second block explorer would give wallet a real independence pair,
   and the second registry would do the same for a tail number.
@@ -999,6 +999,28 @@ dead. Confirmed with real records: **Idaho (457), Alaska (128),
 Wisconsin (491), Ohio (491)**. Nebraska, Iowa and Minnesota serve
 HTML on that path and need their own shape; New Jersey 403s;
 api.511.org, Trafikverket, DriveBC and Ontario all want a key.
+
+All ten done, 24 Oct. Three red builds on the way, each now
+impossible locally: a table built from lists declared below it in
+the same file (`init-order.py`), a constant used and never declared
+(`missing-constants.py`), and `Result.failure` in the package that
+declares the Room entity `Result` (`shadowed-stdlib.py`). The three
+checkers that blank comments and strings share one implementation
+now, because the first two were wrong about the same thing — a
+string template is a string containing code containing a string,
+and scanning quote to quote ends the outer string at the inner
+one's opening quote.
+
+What the batch came to, in one line: **the app can now state things
+it previously only held.** Five platforms saying Vienna is one
+finding with four witnesses rather than four one-witness findings;
+two sources answering a one-answer question differently is a
+section rather than two rows both reading "probably true"; a
+finding one step from the seed says so; a watch says what changed
+rather than that something did; the gap between two dates is
+computed; a quiet window is compared with a declared city; and the
+dossier says what it cost. None of it needed a new source or a new
+request.
 
 ## H. Then
 
