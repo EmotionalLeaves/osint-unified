@@ -246,4 +246,6 @@ python3 "$ROOT/tools/shadowed-stdlib.py" || exit 1
 echo
 python3 "$ROOT/tools/init-order.py" || exit 1
 echo
+python3 "$ROOT/tools/missing-constants.py" || exit 1
+echo
 python3 "$ROOT/tools/novel-calls.py" || true

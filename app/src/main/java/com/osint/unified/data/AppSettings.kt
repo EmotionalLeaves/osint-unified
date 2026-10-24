@@ -179,6 +179,13 @@ class AppSettings(context: Context) {
         const val KEY_PROXY_HOST = "proxy_host"
         const val KEY_PROXY_PORT = "proxy_port"
         const val KEY_APP_LOCK = "app_lock_enabled"
+        const val KEY_SEARCH_COSTS = "search_costs"
+
+        /** After twenty searches the oldest stop moving the mean,
+         *  which keeps a change of habit visible within a week
+         *  rather than a year. */
+        const val COST_SAMPLE_CAP = 20
+
         const val DEFAULT_AIS =
             "https://meri.digitraffic.fi/api/ais/v1/locations\n" +
                 "https://kystdatahuset.no/ws/api/ais/realtime/geojson"
