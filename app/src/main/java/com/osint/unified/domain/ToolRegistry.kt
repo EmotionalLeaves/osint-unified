@@ -404,6 +404,19 @@ object ToolRegistry {
         Tool("aircraftreg", "Aircraft lookup", GEOINT, "aircraft", "text", DIRECT,
             "Mode-S hex or tail number: type, registered owner, and live position if airborne.",
             "https://hexdb.io"),
+        // A second witness on each of the two types that had one.
+        //
+        // An owner and a balance are exactly the claims worth
+        // corroborating, and both came from a single source with
+        // nothing to check them against — while the chain is public
+        // and several operators index it, and the registries are
+        // compiled from different underlying data.
+        Tool("walletalt", "Wallet (second index)", FININT, "wallet", "text", DIRECT,
+            "The same Bitcoin address from a different operator's node, to check the first.",
+            "https://blockstream.info"),
+        Tool("aircraftdb", "Aircraft (second registry)", GEOINT, "aircraft", "text", DIRECT,
+            "Registration, type and registered owner from a second registry, to check the first.",
+            "https://www.adsbdb.com"),
         Tool("sunterrain", "Sun & terrain", GEOINT, "coordinate", "text", DIRECT,
             "Elevation, shadow direction and length at a given moment. Add the date after the coordinate: 51.5, -0.12, 2026-03-02 14:30",
             "https://open-meteo.com"),
@@ -548,7 +561,8 @@ object ToolRegistry {
             "hudsonrock", "breachcat", "webcrawl", "sitefiles", "headers",
             "mailsec", "torexit", "torrelay", "subsweep", "phoneinfoga",
             "holehe", "ghunt", "h8mail", "emailgithub",
-            "wikidata", "cve", "aircraftreg", "bgpview", "asnintel",
+            "wikidata", "cve", "aircraftreg", "aircraftdb", "walletalt",
+            "bgpview", "asnintel",
             // A profile name and a display name are whatever their
             // owner typed, and a Crossref author query is fuzzy — a
             // third party reporting what it holds, not a record of

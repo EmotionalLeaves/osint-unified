@@ -401,8 +401,10 @@ class ObservableRouter {
                 "exif", "imagetext", "imagehead", "imagehistory",
                 "reverseimage", "toolrun", "archive", "framework"
             )
-            is Observable.Wallet -> listOf("wallet", "websearch", "dorks", "toolrun", "framework")
-            is Observable.Aircraft -> listOf("aircraftreg", "websearch", "dorks", "toolrun", "framework")
+            is Observable.Wallet -> listOf("wallet", "walletalt", "websearch", "dorks", "toolrun", "framework")
+            is Observable.Aircraft -> listOf(
+                "aircraftreg", "aircraftdb", "websearch", "dorks", "toolrun", "framework"
+            )
             // A name is two different enquiries wearing the same
             // shape, and this used to run one list at both of them:
             // the company registries fired at every person and the

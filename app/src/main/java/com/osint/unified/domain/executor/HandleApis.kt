@@ -15,6 +15,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.IOException
 import java.net.URLEncoder
+import java.util.Locale
 import java.security.MessageDigest
 import java.time.Instant
 import java.time.ZoneOffset
@@ -523,4 +524,98 @@ class HandleApis(
         val DAY: DateTimeFormatter =
             DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneOffset.UTC)
     }
+    // ------------------------------------------------------------------
+    // A second witness, where there was only ever one
+    // ------------------------------------------------------------------
+
+    /**
+     * A Bitcoin address, read from Blockstream's own node.
+     *
+     * The wallet tool asks blockchain.info and nothing else, so a
+     * balance and a transaction count arrived with one witness and
+     * could never be corroborated — on the one kind of claim where a
+     * second opinion is free, because the chain is public and several
+     * people run an index of it.
+     *
+     * Blockstream rather than mempool.space: both run Esplora and
+     * answer with the same bytes, so pairing them would be two tools
+     * reading one source and the app counting them as agreement. This
+     * is a different operator with a different node.
+     */
+    suspend fun btcSecondOpinion(address: String): Result<String> = runCatching {
+        val a = address.trim()
+        if (!Regex("^(bc1|[13])[a-zA-HJ-NP-Z0-9]{25,62}$").matches(a)) {
+            return@runCatching "Not a Bitcoin address: $a"
+        }
+        val o = getOrNull("https://blockstream.info/api/address/$a")
+            ?: return@runCatching "Blockstream could not be reached for $a, " +
+                "so nothing is claimed either way."
+        val root = json.parseToJsonElement(o).jsonObject
+        val chain = root["chain_stats"] as? JsonObject
+        val pool = root["mempool_stats"] as? JsonObject
+        val funded = chain.long("funded_txo_sum") ?: 0L
+        val spent = chain.long("spent_txo_sum") ?: 0L
+        val txs = chain.int("tx_count") ?: 0
+        if (txs == 0 && (pool.int("tx_count") ?: 0) == 0) {
+            return@runCatching "Blockstream: address $a has never been used " +
+                "(no transactions on chain)."
+        }
+        val sat = 100_000_000.0
+        buildString {
+            append("Bitcoin address — $a (Blockstream)\n")
+            append("Balance: %.8f BTC\n".format(Locale.US, (funded - spent) / sat))
+            append("Total received: %.8f BTC\n".format(Locale.US, funded / sat))
+            append("Total sent: %.8f BTC\n".format(Locale.US, spent / sat))
+            append("Transactions: $txs\n")
+            (pool.int("tx_count") ?: 0).takeIf { it > 0 }?.let {
+                append("Unconfirmed in the mempool: $it\n")
+            }
+            append("\nA second index of the same public chain, run by a ")
+            append("different operator. Figures that disagree with the other ")
+            append("explorer mean one of them is behind, not that the chain is.")
+            append(DECLARED)
+        }
+    }
+
+    /**
+     * An aircraft registration, read from a second registry.
+     *
+     * The aircraft tool asks hexdb and nothing else for who owns a
+     * tail number — a claim about a person or a company, from one
+     * source, with no way to corroborate it. adsbdb is keyless, is
+     * built from different underlying registries, and answers by
+     * registration as well as by Mode-S.
+     */
+    suspend fun aircraftSecondOpinion(input: String): Result<String> = runCatching {
+        val t = input.trim().uppercase().replace(" ", "")
+        if (t.length < 2 || t.length > 12) {
+            return@runCatching "Give a registration or a Mode-S hex code."
+        }
+        val o = getOrNull("https://api.adsbdb.com/v0/aircraft/${enc(t)}")
+            ?: return@runCatching "adsbdb has no record of $t, or could not be " +
+                "reached — this says nothing either way."
+        val a = ((json.parseToJsonElement(o).jsonObject["response"] as? JsonObject)
+            ?.get("aircraft") as? JsonObject)
+            ?: return@runCatching "adsbdb has no aircraft record for $t."
+        buildString {
+            append("Aircraft — $t (adsbdb)\n")
+            a.str("registration")?.let { append("Registration: $it\n") }
+            a.str("mode_s")?.let { append("Mode-S: $it\n") }
+            val made = listOfNotNull(a.str("manufacturer"), a.str("type"))
+                .joinToString(" ")
+            if (made.isNotBlank()) append("Type: $made")
+            a.str("icao_type")?.let { append(" ($it)") }
+            if (made.isNotBlank()) append("\n")
+            a.str("registered_owner")?.let { append("Registered owner: $it\n") }
+            a.str("registered_owner_country_name")?.let { append("Country: $it\n") }
+            a.str("registered_owner_operator_flag_code")
+                ?.let { append("Operator code: $it\n") }
+            a.str("url_photo")?.let { append("Photo: $it\n") }
+            append("\nA second registry, independent of the first. An owner ")
+            append("the two disagree about is worth more attention than one ")
+            append("they agree on.")
+            append(DECLARED)
+        }
+    }
+
 }

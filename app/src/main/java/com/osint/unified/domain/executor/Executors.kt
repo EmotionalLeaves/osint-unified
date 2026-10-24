@@ -406,6 +406,20 @@ class DirectToolExecutor(
                 starts("No web/wiki results for") -> Findings.Kind.ABSENT
                 else -> null
             }
+            "walletalt" -> when {
+                starts("Not a Bitcoin address") -> Findings.Kind.UNREACHABLE
+                starts("Blockstream could not be reached") -> Findings.Kind.UNREACHABLE
+                starts("Blockstream: address") -> Findings.Kind.ABSENT
+                starts("Bitcoin address —") -> Findings.Kind.HIT
+                else -> null
+            }
+            "aircraftdb" -> when {
+                starts("Give a registration") -> Findings.Kind.UNREACHABLE
+                starts("adsbdb has no record of") -> Findings.Kind.UNREACHABLE
+                starts("adsbdb has no aircraft record") -> Findings.Kind.ABSENT
+                starts("Aircraft —") -> Findings.Kind.HIT
+                else -> null
+            }
             // toolrun was in that list and does not belong in it.
             //
             // It is the one tool that takes the curated directory and
@@ -671,6 +685,8 @@ class DirectToolExecutor(
                 "edgar" -> deep.secEdgar(input)
                 "fbi" -> deep.fbiWanted(input)
                 "aircraftreg" -> deep.aircraft(input)
+                "aircraftdb" -> handles.aircraftSecondOpinion(input)
+                "walletalt" -> handles.btcSecondOpinion(input)
                 "wallet" -> deep.wallet(input)
                 "sunterrain" -> deep.sunAndTerrain(input)
                 "histweather" -> deep.historicalWeather(input)
