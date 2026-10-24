@@ -325,17 +325,14 @@ abstract class AppDatabase : RoomDatabase() {
                         .use { it.moveToFirst() }
                 }
             }
-            val attempt = when {
-                probe == null -> Result.failure(
-                    built.exceptionOrNull() ?: IllegalStateException("not built")
-                )
-                probe.isFailure -> {
-                    runCatching { built.getOrNull()?.close() }
-                    Result.failure(probe.exceptionOrNull()!!)
-                }
-                else -> Result.success(built.getOrNull()!!)
-            }
-            attempt.getOrNull()?.let { db ->
+            // Carried as a database and a reason rather than a
+            // kotlin.Result, because the name Result in this package is
+            // the Room entity for a tool's output: naming its stdlib
+            // members here resolves to that data class and does not
+            // compile. tools/shadowed-stdlib.py now says so locally.
+            val opened = built.getOrNull()
+            val stopped = probe?.exceptionOrNull() ?: built.exceptionOrNull()
+            if (opened != null && stopped == null) {
                 encrypted = true
                 encryptionNote = when {
                     repaired != null ->
@@ -347,8 +344,13 @@ abstract class AppDatabase : RoomDatabase() {
                 // Only now is the plaintext copy of any existing database
                 // no longer needed.
                 runCatching { app.getDatabasePath(DatabaseEncryption.BACKUP_NAME).delete() }
-                return db
+                return opened
             }
+            // Built but unusable: close it, or its SQLCipher connection,
+            // WAL and SHM handles and invalidation tracker stay open on
+            // the encrypted file for the life of the process while a
+            // second database is opened beside it.
+            if (opened != null) runCatching { opened.close() }
 
             // The encrypted database would not open. If the plaintext copy
             // is still there, that is the one with the data in it — far
@@ -356,7 +358,7 @@ abstract class AppDatabase : RoomDatabase() {
             // an empty file.
             val backup = app.getDatabasePath(DatabaseEncryption.BACKUP_NAME)
             val plainFile = app.getDatabasePath(DatabaseEncryption.PLAIN_NAME)
-            val why = attempt.exceptionOrNull()?.message
+            val why = stopped?.message
             if (backup.exists() && !plainFile.exists()) {
                 runCatching { backup.renameTo(plainFile) }
             }
