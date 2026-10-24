@@ -297,6 +297,8 @@ object Corroboration {
         // seed. One source asked about the target itself outweighs
         // three asked about something it named.
         val nearest = HashMap<Pair<String, String>, Int>()
+        /** Keys some source asserted outright, rather than implied. */
+        val stated = HashSet<Pair<String, String>>()
         val seedInput = seed.trim().lowercase()
 
         results.forEach { row ->
@@ -329,6 +331,9 @@ object Corroboration {
                 val key = pivot.kind to value
                 assertions.getOrPut(key) { mutableListOf() }.add(row.toolId to pivot.count)
                 nearest[key] = minOf(nearest[key] ?: hop, hop)
+                // A value only ever split out of a longer one cannot
+                // contradict anything. See EntityExtractor.Pivot.
+                if (!pivot.derived) stated.add(key)
             }
         }
 
@@ -352,6 +357,7 @@ object Corroboration {
         // only country-level places compete with each other.
         val exclusive = HashMap<String, MutableMap<String, Int>>()
         assertions.forEach { (key, claims) ->
+            if (key !in stated) return@forEach
             val group = exclusiveGroup(key.first, key.second) ?: return@forEach
             val independent = independentCount(claims.map { it.first }.distinct())
             exclusive.getOrPut(group) { HashMap() }[key.second] = independent
@@ -383,7 +389,7 @@ object Corroboration {
             // number from the best witness and the one the credibility
             // lift should depend on.
             val corroborator = grades.getOrNull(1) ?: reliability
-            val group = exclusiveGroup(kind, value)
+            val group = if (key in stated) exclusiveGroup(kind, value) else null
             val rivals = group?.let { exclusive[it] }
                 ?.filterKeys { it != value }
                 .orEmpty()

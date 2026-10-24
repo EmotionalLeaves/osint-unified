@@ -915,7 +915,13 @@ class DirectToolExecutor(
             sb.append("this build knows — it may be mistyped, or from a range ")
             sb.append("not yet allocated.\n")
         }
-        sb.append("Country: $countryName ($region), country code +${number.countryCode}\n")
+        // The country on its own line, and the dialling code on its
+        // own. They were one line, so the place reader split it on the
+        // comma and produced "united kingdom gb" and "country code 44"
+        // as two places and the actual country as none.
+        sb.append("Country: $countryName\n")
+        sb.append("Region: $region\n")
+        sb.append("Dialling code: +${number.countryCode}\n")
         sb.append("Line type: ${util.getNumberType(number)}\n")
 
         // Every written form, because a search for one finds none of

@@ -13,7 +13,26 @@ import com.osint.unified.data.db.Result as ResultRow
  */
 object EntityExtractor {
 
-    data class Pivot(val kind: String, val value: String, val count: Int)
+    data class Pivot(
+        val kind: String,
+        val value: String,
+        val count: Int,
+        /**
+         * True when the app worked this value out of a longer one
+         * rather than the source stating it.
+         *
+         * "Vienna, Austria" is a claim about a city and implies one
+         * about a country, and that implication is what lets a source
+         * saying only "AT" agree with it — but it must not be able to
+         * CONTRADICT anything. An IP whose prefix is registered in
+         * the United States and whose geolocation reads Frankfurt,
+         * Hesse, Germany is the ordinary state of the internet, and
+         * both answers were graded improbable because the country
+         * split out of the second looked like a rival of the first. A
+         * derived value corroborates and does not refute.
+         */
+        val derived: Boolean = false
+    )
 
     private val email = Regex("""[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,24}""")
     private val ipv4 = Regex("""\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\b""")
@@ -243,7 +262,38 @@ object EntityExtractor {
      */
     private val NAME_MEANS_PERSON = setOf("username", "name", "email", "image")
 
-    private val labelLine = Regex("""^\s*[•\-*]?\s*([A-Za-z][A-Za-z /'-]{1,28}):\s*(.+?)\s*$""")
+    /**
+     * Tools whose subject can have an employer or a membership.
+     *
+     * Everywhere else an `Org:` or a `Company:` line is the operator
+     * of an autonomous system, the holder of a certificate or the
+     * registrar of a domain — facts about infrastructure. An IP
+     * dossier was reporting "Cloudflare, Inc." as an organisation
+     * discovered about the subject, which is the same mistake
+     * NAME_MEANS_PERSON was added to stop `Name:` making.
+     */
+    private val ORG_MEANS_AFFILIATION =
+        setOf("username", "name", "email", "image", "url")
+
+    /**
+     * A labelled claim about the subject, at the left margin.
+     *
+     * Indented and bulleted lines are deliberately excluded, because
+     * that is how every tool here writes a list of CANDIDATES.
+     * `ghname` reads five different GitHub accounts that merely carry
+     * the searched name and prints "  Name:", "  Company:" and
+     * "  Location:" under each, and its own last line says they are
+     * not the same person until something ties them together. Reading
+     * those gave two strangers who both live in London a corroborated
+     * finding, made every candidate's name contradict every other,
+     * and let the third unrelated account's city become the dossier's
+     * headline location. `orcid` does the same with twenty
+     * researchers and `torRelay` with five relays in five countries.
+     * The indentation was already carrying the distinction; nothing
+     * was reading it.
+     */
+    private val labelLine =
+        Regex("""^([A-Za-z][A-Za-z /'-]{1,28}):[ \t]*(.+?)\s*$""")
 
     /** Values that are the source declining to say, not an answer. */
     private val emptyValues = setOf(
@@ -257,7 +307,7 @@ object EntityExtractor {
         seedLower: String,
         limitPerKind: Int
     ): List<Pivot> {
-        val counts = LinkedHashMap<Pair<String, String>, Int>()
+        val counts = LinkedHashMap<Triple<String, String, Boolean>, Int>()
         results.forEach { row ->
             if (Findings.kindOf(row) != Findings.Kind.HIT) return@forEach
             if (row.toolId in ToolRegistry.QUOTES_OTHERS) return@forEach
@@ -276,12 +326,14 @@ object EntityExtractor {
                 val kind = when {
                     label in PERSON_LABELS -> "PERSON"
                     label == "name" && inputType in NAME_MEANS_PERSON -> "PERSON"
-                    label in ORG_LABELS -> "ORG"
+                    label in ORG_LABELS && inputType in ORG_MEANS_AFFILIATION -> "ORG"
                     label in PLACE_LABELS -> "PLACE"
                     else -> return@inner
                 }
-                valuesOf(kind, raw).forEach { v ->
-                    if (v != seedLower) counts[kind to v] = (counts[kind to v] ?: 0) + 1
+                valuesOf(kind, raw).forEach { (v, derived) ->
+                    if (v == seedLower) return@forEach
+                    val k = Triple(kind, v, derived)
+                    counts[k] = (counts[k] ?: 0) + 1
                 }
             }
         }
@@ -290,7 +342,7 @@ object EntityExtractor {
             .flatMap { (_, entries) ->
                 entries.sortedByDescending { it.value }
                     .take(limitPerKind)
-                    .map { Pivot(it.key.first, it.key.second, it.value) }
+                    .map { Pivot(it.key.first, it.key.second, it.value, it.key.third) }
             }
     }
 
@@ -303,12 +355,20 @@ object EntityExtractor {
      * splitting "Smith, Jones and Partners" on its comma would invent
      * two firms.
      */
-    internal fun valuesOf(kind: String, raw: String): List<String> = when (kind) {
-        "PLACE" -> Places.parts(raw)
-        "PERSON" -> listOfNotNull(PersonName.normalise(raw))
-        else -> listOfNotNull(
-            raw.lowercase().replace(Regex("\\s+"), " ").trim()
-                .takeIf { it.length in 2..60 }
-        )
-    }
+    internal fun valuesOf(kind: String, raw: String): List<Pair<String, Boolean>> =
+        when (kind) {
+            "PLACE" -> {
+                // The whole is what the source said; everything after
+                // it this app worked out by splitting on a comma.
+                Places.parts(raw).mapIndexed { index, value -> value to (index > 0) }
+            }
+            "PERSON" -> listOfNotNull(PersonName.normalise(raw)).map { it to false }
+            else -> listOfNotNull(
+                raw.lowercase().replace(Regex("\\s+"), " ").trim()
+                    // A semicolon-joined list of institutions is a
+                    // list, and joining it into one name invents an
+                    // organisation nobody belongs to.
+                    .takeIf { it.length in 2..60 && !it.contains(';') }
+            ).map { it to false }
+        }
 }
