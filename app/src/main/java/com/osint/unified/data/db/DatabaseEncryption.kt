@@ -38,10 +38,38 @@ internal object DatabaseEncryption {
      * second does not. Returns a description of what happened, for the
      * screen that reports on it; null means there was nothing to do.
      */
-    fun migrateIfNeeded(context: Context, passphrase: ByteArray): String? {
+    /**
+     * What the one-off move did, as three distinct answers.
+     *
+     * It returned `String?`, where null meant "nothing to do" and a
+     * string meant either success or failure — and the caller could
+     * not tell which, so it took a failure note and carried on to
+     * open an encrypted database that the failure path had just
+     * deleted. Room then created a fresh empty one, the probe
+     * succeeded on it, and the app reported `encrypted = true` with
+     * the note "the copy did not match the original, so nothing was
+     * changed" over an empty case list — while the real database sat
+     * on disk and was never looked at again, because the next launch
+     * short-circuits on the encrypted file existing.
+     *
+     * A signature that cannot express failure will keep producing
+     * that bug. This one can.
+     */
+    sealed interface Move {
+        /** No plaintext database, or the move has already happened. */
+        object NothingToDo : Move
+
+        /** The rows are in the encrypted file now. */
+        data class Moved(val note: String) : Move
+
+        /** They are not, and the plaintext file still has them. */
+        data class Failed(val note: String) : Move
+    }
+
+    fun migrateIfNeeded(context: Context, passphrase: ByteArray): Move {
         val plain = context.getDatabasePath(PLAIN_NAME)
         val encrypted = context.getDatabasePath(ENCRYPTED_NAME)
-        if (!plain.exists() || encrypted.exists()) return null
+        if (!plain.exists() || encrypted.exists()) return Move.NothingToDo
 
         val working = File(encrypted.parentFile, WORKING_NAME)
         cleanUp(working)
@@ -58,7 +86,7 @@ internal object DatabaseEncryption {
             // so the backup did not. The backup was therefore a strictly
             // older snapshot than the thing it was insuring against, and
             // the fallback that reads it says "nothing was lost".
-            checkpoint(plain)
+            val checkpointed = checkpoint(plain)
             val before = inspectPlaintext(plain)
             copyInto(context, working, passphrase, plain, before.version)
             // Opened at the version the file now has. Opening it at any
@@ -72,11 +100,14 @@ internal object DatabaseEncryption {
             val after = countTables(context, WORKING_NAME, passphrase, before.version, before.counts.keys)
             if (after != before.counts) {
                 cleanUp(working)
-                "the copy did not match the original ($before -> $after), " +
-                    "so nothing was changed"
+                Move.Failed(
+                    "the copy did not match the original ($before -> $after), " +
+                        "so nothing was changed and your cases are still in the " +
+                        "unencrypted file"
+                )
             } else if (!working.renameTo(encrypted)) {
                 cleanUp(working)
-                "the encrypted copy could not be put in place"
+                Move.Failed("the encrypted copy could not be put in place")
             } else {
                 // Kept, not deleted. It is removed once Room has opened
                 // the encrypted database and read a row out of it.
@@ -95,22 +126,57 @@ internal object DatabaseEncryption {
                 // the app with no backup and no original, and if Room
                 // then could not open the encrypted copy there was
                 // nothing at all to fall back to.
-                sidecarsOf(plain).forEach { runCatching { it.delete() } }
                 if (kept) {
+                    // And only now the sidecars, and only if the
+                    // checkpoint above actually worked.
+                    //
+                    // They were deleted unconditionally, before this
+                    // branch. A checkpoint that silently failed — the
+                    // file still open, the pragma refused — leaves the
+                    // last session's committed pages in -wal and
+                    // nowhere else, so deleting it destroyed them and
+                    // the "backup" became the older snapshot this was
+                    // written to stop it being. If the checkpoint did
+                    // not take, the sidecars go WITH the backup
+                    // instead of into the bin.
+                    if (checkpointed) {
+                        sidecarsOf(plain).forEach { runCatching { it.delete() } }
+                    } else {
+                        moveSidecars(plain, backup)
+                    }
                     runCatching { plain.delete() }
-                    "moved ${before.counts.values.sum()} rows into an encrypted database"
+                    Move.Moved(
+                        "moved ${before.counts.values.sum()} rows into an " +
+                            "encrypted database"
+                    )
                 } else {
-                    // No backup, so the original stays exactly where the
-                    // fallback path looks for it.
+                    // No backup, so the original stays exactly where
+                    // the fallback path looks for it — with its
+                    // write-ahead log, which is part of it.
                     cleanUp(encrypted)
-                    "the original database could not be set aside, so it " +
-                        "has been left as it was and nothing is encrypted"
+                    Move.Failed(
+                        "the original database could not be set aside, so it " +
+                            "has been left as it was and nothing is encrypted"
+                    )
                 }
             }
         } catch (e: Exception) {
             cleanUp(working)
-            "could not encrypt the existing database (${e.message}); it is " +
-                "being used as it was"
+            Move.Failed(
+                "could not encrypt the existing database (${e.message}); it is " +
+                    "being used as it was"
+            )
+        }
+    }
+
+    /** The journal, log and shared-memory files, renamed beside [to]. */
+    private fun moveSidecars(from: File, to: File) {
+        listOf("-journal", "-wal", "-shm").forEach { suffix ->
+            val source = File(from.parentFile, "${from.name}$suffix")
+            if (!source.exists()) return@forEach
+            val target = File(to.parentFile, "${to.name}$suffix")
+            runCatching { target.delete() }
+            if (!source.renameTo(target)) runCatching { source.delete() }
         }
     }
 
@@ -318,14 +384,19 @@ internal object DatabaseEncryption {
      * connection is reading, and the whole point here is that after
      * this call the single file is the whole database.
      */
-    private fun checkpoint(file: File) {
-        runCatching {
-            android.database.sqlite.SQLiteDatabase.openDatabase(
-                file.absolutePath, null,
-                android.database.sqlite.SQLiteDatabase.OPEN_READWRITE
-            ).use { db ->
-                db.rawQuery("PRAGMA wal_checkpoint(TRUNCATE)", null).use { it.moveToFirst() }
+    private fun checkpoint(file: File): Boolean = runCatching {
+        android.database.sqlite.SQLiteDatabase.openDatabase(
+            file.absolutePath, null,
+            android.database.sqlite.SQLiteDatabase.OPEN_READWRITE
+        ).use { db ->
+            // The pragma's own answer: the first column is 1 when the
+            // checkpoint was blocked. runCatching alone made a refusal
+            // indistinguishable from success, and the caller then
+            // deleted the log it had failed to fold in.
+            db.rawQuery("PRAGMA wal_checkpoint(TRUNCATE)", null).use { c ->
+                if (!c.moveToFirst()) return@runCatching false
+                c.getInt(0) == 0
             }
         }
-    }
+    }.getOrDefault(false)
 }

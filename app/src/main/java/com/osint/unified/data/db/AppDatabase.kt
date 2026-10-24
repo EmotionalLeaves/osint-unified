@@ -6,6 +6,7 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import java.io.File
 import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 
 @Database(
@@ -25,6 +26,23 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun caseDao(): CaseDao
 
     companion object {
+        /**
+         * Written beside the fallback database the first time this
+         * app creates an empty one because the encrypted database
+         * would not open.
+         *
+         * Both notes used to decide from "does the fallback have any
+         * rows", which is true the moment the user creates one case
+         * after the failure — so the long warning naming fifty
+         * unreadable cases and saying not to reinstall collapsed into
+         * "the keystore would not provide a key", and the other
+         * branch began saying "nothing was lost". A row count cannot
+         * tell "these are your cases" from "this is one case you made
+         * since"; a marker written at the moment of the failure can,
+         * and it says so for good.
+         */
+        private const val FRESH_MARKER = "osint-unified-fallback-is-new"
+
         /** The same number as the `version` in the @Database annotation
          *  above, which cannot reference this one. The pre-flight check
          *  refuses a commit where the two disagree. */
@@ -168,7 +186,9 @@ abstract class AppDatabase : RoomDatabase() {
                 // exists says nothing, because plain() is what creates
                 // it; whether it has anything in it is the question.
                 val fallback = plain(app)
-                lockedOut = sealed.exists() && (plainRows ?: 0L) <= 0L
+                lockedOut = sealed.exists() &&
+                    ((plainRows ?: 0L) <= 0L || isFreshFallback(app))
+                val alsoBroken = plainFailure
                 encryptionNote = if (lockedOut) {
                     "this device's keystore no longer holds the key to your " +
                         "existing cases, so they cannot be opened. They are " +
@@ -177,6 +197,14 @@ abstract class AppDatabase : RoomDatabase() {
                         "delete them. This usually follows a lock-screen " +
                         "reset or a restore onto a new phone. Anything from " +
                         "here on goes into a new database."
+                } else if (alsoBroken != null) {
+                    // Said, rather than handing back a database whose
+                    // first query will throw with nothing explaining
+                    // why. The other fallback branch reports this and
+                    // this one did not.
+                    "this device's keystore would not provide a key, and the " +
+                        "unencrypted database would not open either " +
+                        "($alsoBroken)"
                 } else {
                     "this device's keystore would not provide a key"
                 }
@@ -195,7 +223,25 @@ abstract class AppDatabase : RoomDatabase() {
 
             val moved = runCatching {
                 DatabaseEncryption.migrateIfNeeded(app, passphrase)
-            }.getOrNull()
+            }.getOrElse { DatabaseEncryption.Move.Failed(it.message ?: "unknown") }
+
+            // A failed move does not then open an encrypted database.
+            //
+            // It used to. migrateIfNeeded returned a string for both
+            // outcomes, this took it as the note, and Room went on to
+            // open a file the failure path had just removed — creating
+            // a fresh empty one, passing the probe on it, and
+            // reporting "encrypted at rest" with a failure note over
+            // an empty case list, while the real database sat beside
+            // it and was never read again. The rows are still in the
+            // plaintext file, so that is what gets opened.
+            if (moved is DatabaseEncryption.Move.Failed) {
+                val fallback = plain(app)
+                lockedOut = false
+                encryptionNote = "${moved.note}. Your cases are being read " +
+                    "from the unencrypted file, where they still are."
+                return fallback
+            }
 
             // Built and probed separately, so the probe's failure can
             // close what the build opened. Both were inside one
@@ -237,7 +283,7 @@ abstract class AppDatabase : RoomDatabase() {
                     repaired != null ->
                         "recovered a database that an earlier build had " +
                             "renumbered, and encrypted at rest"
-                    moved != null -> moved
+                    moved is DatabaseEncryption.Move.Moved -> moved.note
                     else -> "encrypted at rest"
                 }
                 // Only now is the plaintext copy of any existing database
@@ -290,7 +336,18 @@ abstract class AppDatabase : RoomDatabase() {
             // reinstalling is the one thing that destroys it.
             val fallback = plain(app)
             val rows = plainRows
-            val plainHasCases = rows != null && rows > 0L
+            // "Has cases" means it had them BEFORE this, not that the
+            // user has since made one.
+            //
+            // Both this and the keystore branch decided from "does the
+            // fallback have any rows", so creating a single case after
+            // the failure flipped it: the long warning naming fifty
+            // unreadable cases and saying not to reinstall collapsed
+            // to "the keystore would not provide a key", and the other
+            // branch started saying "nothing was lost". The sealed
+            // file is still there in both cases, so the warning
+            // belongs there until it is not.
+            val plainHasCases = rows != null && rows > 0L && !isFreshFallback(app)
             lockedOut = sealed.exists() && !plainHasCases
             encryptionNote = when {
                 plainHasCases ->
@@ -319,6 +376,15 @@ abstract class AppDatabase : RoomDatabase() {
         private fun whatFailed(why: String?): String {
             val m = why.orEmpty().lowercase()
             return when {
+                // The library first, because its failure message
+                // contains the word that the key branch matches on:
+                // `dlopen failed: library "libsqlcipher.so" not found`
+                // was being reported as "the stored key no longer
+                // opens this database", which is the mis-blame that
+                // sends somebody to reinstall over an intact one.
+                m.contains("unsatisfiedlink") || m.contains("dlopen") ||
+                    m.contains("library") || m.contains(".so") ->
+                    "the encryption library would not load on this device"
                 m.contains("migration") || m.contains("schema") ||
                     m.contains("downgrade") || m.contains("version") ->
                     "the database could not be brought up to this build's " +
@@ -327,8 +393,6 @@ abstract class AppDatabase : RoomDatabase() {
                 m.contains("not a database") || m.contains("encrypted") ||
                     m.contains("sqlcipher") || m.contains("key") ->
                     "the stored key no longer opens this database"
-                m.contains("unsatisfiedlink") || m.contains("library") ->
-                    "the encryption library would not load on this device"
                 else -> "the encrypted database could not be opened"
             }
         }
@@ -337,6 +401,25 @@ abstract class AppDatabase : RoomDatabase() {
          * How many investigations the unencrypted database holds, or
          * null if it would not open. Set by [plain].
          */
+        /**
+         * Whether the unencrypted database is one this app created
+         * after a failure, rather than the one holding the user's
+         * work. Marked once and never unmarked: a fresh file does not
+         * become the original by having things put in it.
+         */
+        private fun isFreshFallback(app: Context): Boolean =
+            File(app.getDatabasePath(DatabaseEncryption.PLAIN_NAME).parentFile, FRESH_MARKER)
+                .exists()
+
+        private fun markFreshFallback(app: Context) {
+            runCatching {
+                File(
+                    app.getDatabasePath(DatabaseEncryption.PLAIN_NAME).parentFile,
+                    FRESH_MARKER
+                ).createNewFile()
+            }
+        }
+
         private var plainRows: Long? = null
 
         /** Why the unencrypted database would not open, if it would not. */
@@ -364,6 +447,14 @@ abstract class AppDatabase : RoomDatabase() {
             }.getOrElse { failure ->
                 plainFailure = failure.message ?: failure::class.java.simpleName
                 null
+            }
+            // Marked the moment an empty one is created while a sealed
+            // database exists, so that every later launch knows this
+            // file is not the user's work however much goes into it.
+            if (plainRows == 0L &&
+                app.getDatabasePath(DatabaseEncryption.ENCRYPTED_NAME).exists()
+            ) {
+                markFreshFallback(app)
             }
             return db
         }
