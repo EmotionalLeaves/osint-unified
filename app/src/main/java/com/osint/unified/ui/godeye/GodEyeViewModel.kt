@@ -59,10 +59,17 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -151,6 +158,8 @@ data class GodEyeUiState(
     /** Why the last tap on the search button did nothing, if it did
      *  nothing. An empty box used to be answered with silence. */
     val queryTrouble: String? = null,
+    /** What the box will do with what is in it: "Reads as EMAIL · asks 23 sources". */
+    val queryPreview: String? = null,
     /**
      * How many sources this search will actually dispatch.
      *
@@ -518,6 +527,31 @@ class GodEyeViewModel(
         )
     )
     val state: StateFlow<GodEyeUiState> = _state.asStateFlow()
+
+    /**
+     * The last few targets searched, newest first, for the pills under
+     * an empty search box.
+     *
+     * Opening one opens the stored case — navigation, not a new enquiry,
+     * so it costs no data. Only searches that began somewhere: a pivot is
+     * reached from its parent. Collected on IO and inside a flow builder,
+     * so the database is not opened on the main thread for it.
+     */
+    val recentTargets: StateFlow<List<Pair<Long, String>>> =
+        kotlinx.coroutines.flow.flow { emitAll(repository.observeInvestigations()) }
+            .map { all ->
+                all.asSequence()
+                    .filter { it.parentId == null && it.seedObservable.isNotBlank() }
+                    .distinctBy { it.seedObservable.trim().lowercase() }
+                    .take(RECENT_TARGETS)
+                    .map { it.id to it.seedObservable.trim() }
+                    .toList()
+            }
+            // A database that will not open leaves the pills empty — they
+            // are a shortcut, and no pills claims nothing.
+            .catch { }
+            .flowOn(Dispatchers.IO)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private var currentInvestigationId: Long? = null
 
@@ -1148,7 +1182,8 @@ class GodEyeViewModel(
     }
 
     fun onQueryChange(value: String) {
-        _state.update { it.copy(query = value, queryTrouble = null) }
+        val preview = previewOf(value, _state.value.searchType)
+        _state.update { it.copy(query = value, queryTrouble = null, queryPreview = preview) }
     }
 
     private var notesJob: Job? = null
@@ -1247,7 +1282,8 @@ class GodEyeViewModel(
     }
 
     fun onTypeSelected(type: String) {
-        _state.update { it.copy(searchType = type) }
+        val preview = previewOf(_state.value.query, type)
+        _state.update { it.copy(searchType = type, queryPreview = preview) }
     }
 
     /**
@@ -1411,13 +1447,7 @@ class GodEyeViewModel(
         // image search is two link builders and a Wayback call: the
         // one tool that extracts GPS and camera metadata was held
         // back from the one search that exists to run it.
-        val isTheImage = _state.value.observable is Observable.ImageUrl
-        val tools = _state.value.suggestedTools.filter {
-            it.executionMode != ExecutionMode.CLOUD &&
-                it.id !in REDUNDANT_SWEEPS &&
-                (!it.touchesTarget || settings.activeReconEnabled ||
-                    (isTheImage && it.id in IMAGE_ITSELF))
-        }
+        val tools = firstWave(_state.value.observable, _state.value.suggestedTools)
         // Counted as sources. The link lists still run — their
         // output is a useful section — but a Google dork is not a
         // source that looked, and counting it as one is how "15 of
@@ -1634,6 +1664,50 @@ class GodEyeViewModel(
      */
     private val planned = HashSet<String>()
     private val plannedLinks = HashSet<String>()
+
+    /**
+     * What a search runs on its own, before anything is tapped.
+     *
+     * One function, because the line under the search box says how many
+     * sources a search will ask before it is run, and a count worked out
+     * separately from the run is a count that drifts from it.
+     */
+    private fun firstWave(observable: Observable?, suggested: List<Tool>): List<Tool> {
+        val isTheImage = observable is Observable.ImageUrl
+        return suggested.filter {
+            it.executionMode != ExecutionMode.CLOUD &&
+                it.id !in REDUNDANT_SWEEPS &&
+                (!it.touchesTarget || settings.activeReconEnabled ||
+                    (isTheImage && it.id in IMAGE_ITSELF))
+        }
+    }
+
+    /**
+     * What the box will do with what is in it, said before it is done.
+     *
+     * The search was a box that did something you found out about
+     * afterwards: type "london" and learn from the results that it was
+     * taken as a username. Now the line under the box reads it as you
+     * type — what it is taken for, how many sources that asks, and what
+     * a search of that kind has cost on this phone — so a wrong reading
+     * is fixed with a type chip before any data is spent on it.
+     */
+    private fun previewOf(query: String, type: String): String? {
+        val q = query.trim()
+        if (q.isEmpty() || q.length > MAX_QUERY) return null
+        val observable = runCatching {
+            if (type == "auto") router.classify(q) else router.classifyAs(q, type)
+        }.getOrNull() ?: return null
+        val wave = firstWave(observable, runnable(router.suggestTools(observable)))
+        val sources = wave.count { it.id !in ToolRegistry.LINK_LISTS }
+        val reads = if (type == "auto") "Reads as" else "Searched as"
+        val cost = settings.searchCost(observable.typeLabel)
+            ?.takeIf { it.second >= 2 }
+            ?.let { " · usually ${DataMeter.human(it.first)}" }
+            .orEmpty()
+        return "$reads ${observable.typeLabel.uppercase()} · asks $sources " +
+            (if (sources == 1) "source" else "sources") + cost
+    }
 
     private fun notePlanned(tools: List<Tool>) {
         tools.forEach {
@@ -2000,6 +2074,7 @@ class GodEyeViewModel(
             _state.update {
                 it.copy(
                     query = investigation.seedObservable,
+                    queryPreview = null,
                     observable = observable,
                     suggestedTools = runnable(router.suggestTools(observable)),
                     workflowName = Workflows.forObservable(observable)?.name,
@@ -2046,6 +2121,7 @@ class GodEyeViewModel(
                 _state.update {
                     it.copy(
                         query = fresh.raw,
+                        queryPreview = null,
                         observable = fresh,
                         suggestedTools = runnable(router.suggestTools(fresh)),
                         navSignal = it.navSignal + 1
@@ -2219,6 +2295,9 @@ class GodEyeViewModel(
          *  question about one. A domain tops out at 253 characters
          *  and nothing else here comes close. */
         const val MAX_QUERY = 256
+
+        /** How many recent targets the empty search box offers. */
+        const val RECENT_TARGETS = 6
 
         /** Tools that touch the target only by reading the one file
          *  the user pasted, which is the thing they asked about. */

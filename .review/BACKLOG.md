@@ -1058,7 +1058,7 @@ whole of the view-model's search bookkeeping.
   booleans spread across three files. Every layer added since has had
   to be added in three places, and the header, the pill and the brief
   have each disagreed with the others at least once because of it.
-- **O2. Search as the spine** (was C8, I1). The globe is the entry
+- **O2. Search as the spine** — r20: the box now says what it will do before it does it ("Reads as EMAIL · asks 23 sources · usually 1.2 MB", from the same first-wave filter the search runs), and an empty box offers the last six targets as pills that reopen the stored case without spending data. (was C8, I1). The globe is the entry
   point and search is a box on it; the tester's "none of the search
   features really worked" is partly that.
 - **O3. The subscribe half of the briefing** (was G2). Scheduled

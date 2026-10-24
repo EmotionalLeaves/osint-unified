@@ -692,8 +692,10 @@ fun GodEyeViewScreen(
                 // A search that will not run says so under the box
                 // it will not run from.
                 isError = state.queryTrouble != null,
-                supportingText = state.queryTrouble?.let {
-                    { Text(it, style = MaterialTheme.typography.labelSmall) }
+                // The trouble when there is some; otherwise what the box
+                // will do with what is in it, before it does it.
+                supportingText = (state.queryTrouble ?: state.queryPreview)?.let {
+                    { Text(it, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                 },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -722,6 +724,31 @@ fun GodEyeViewScreen(
             ) {
                 SEARCH_TYPES.forEach { (key, label) ->
                     TypeChip(label, state.searchType == key) { viewModel.onTypeSelected(key) }
+                }
+            }
+
+            // The last few targets, while the box is empty. A case is
+            // reopened, not searched again: no sources are asked and no
+            // data is spent. The History tab has them all; these are the
+            // ones somebody is most likely to want back.
+            val recent by viewModel.recentTargets.collectAsStateWithLifecycle()
+            if (state.query.isBlank() && recent.isNotEmpty()) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        "RECENT",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Intel.TextLow,
+                        modifier = Modifier.align(Alignment.CenterVertically)
+                    )
+                    recent.forEach { (id, target) ->
+                        ExamplePill(target.take(RECENT_PILL_CHARS)) { viewModel.openStored(id) }
+                    }
                 }
             }
 
@@ -1962,6 +1989,9 @@ private const val VIEWPORT_STEP = 2f
 
 /** The finest the marker plan's key grid goes, in degrees: about ten metres. */
 private const val MIN_PLAN_STEP = 1e-4
+
+/** A recent target longer than this is shortened on its pill. */
+private const val RECENT_PILL_CHARS = 28
 
 /** And how long it has to stay there. A drag emits sixty cameras a
  *  second and a viewport report can start a network query. */
