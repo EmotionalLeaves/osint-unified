@@ -654,12 +654,17 @@ class DeepApis(
         ).jsonObject["changesets"] as? JsonArray
         if (sets.isNullOrEmpty()) return@runCatching "OpenStreetMap: no edits by '$u'."
         val sb = StringBuilder("OpenStreetMap — $u\n${sets.size} recent changesets\n")
-        var total: String? = null
         val centres = ArrayList<Pair<Double, Double>>()
         sets.take(25).forEach { el ->
             val o = el as? JsonObject ?: return@forEach
             val tags = o["tags"] as? JsonObject
-            total = total ?: tags.str("changesets_count")
+            // A lifetime changeset count was read from here and
+            // printed as "Lifetime changesets: N". changesets_count is
+            // a field of the OSM user object; a changeset's tags are
+            // free text a mapper writes, so this read nothing almost
+            // always and, on the day somebody used that word as a tag,
+            // would have printed their sentence as this account's
+            // lifetime total.
             val minLat = o.dbl("min_lat"); val maxLat = o.dbl("max_lat")
             val minLon = o.dbl("min_lon"); val maxLon = o.dbl("max_lon")
             sb.append("\n• ${o.str("created_at")?.substringBefore('T')}")
@@ -671,7 +676,7 @@ class DeepApis(
             }
             tags.str("created_by")?.let { sb.append("\n  Editor: $it") }
         }
-        total?.let { sb.append("\n\nLifetime changesets: $it") }
+
         if (centres.isNotEmpty()) {
             // Averaged on the sphere, and only reported if it means
             // anything.

@@ -91,7 +91,16 @@ fun GraphDialog(graph: GraphBuilder.Graph, onDismiss: () -> Unit) {
 
 @Composable
 private fun GraphCanvas(graph: GraphBuilder.Graph, modifier: Modifier = Modifier) {
-    val measurer = rememberTextMeasurer()
+    // A cache big enough for a graph, not for eight labels.
+    //
+    // drawLabel measures every visible label on every frame, and the
+    // default rememberTextMeasurer keeps eight results — so a graph of
+    // forty nodes re-laid-out forty strings per frame while the user's
+    // finger was still on the screen. The labels do not change while a
+    // pan is in progress, so the only thing a bigger cache costs is
+    // some text layout held in memory, and this app has decided that
+    // size is not what it is short of.
+    val measurer = rememberTextMeasurer(cacheSize = 256)
     val density = LocalDensity.current
     var scale by remember { mutableFloatStateOf(1f) }
     var pan by remember { mutableStateOf(Offset.Zero) }

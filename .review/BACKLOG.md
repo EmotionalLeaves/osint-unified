@@ -412,88 +412,49 @@ else keyed, if the person wants it.
   rewrite of the whole map surface with no device here, and the seam
   it removes is now a seam you cross once. Revisit after C1–C3.
 
-## D. Correctness still open, by review
+## D. Correctness by review, r6-r10 — closed 24 Oct
 
-### r6 — OsintApis / Executors
-siteFiles DONE · Overpass absences (A1) · cctvNear (A1) · reverseDns
-still uses dohTxt · GDELT DONE · Hudson Rock vendor prose is the
-first line and a clean result reads as a HIT · webcrawl DONE ·
-directoryRun (A4) · UA DONE · **cctvNear rebuilds CctvDataSource per
-call and defeats both caches — the largest avoidable data cost found**
-· Cert Spotter pagination counted as complete · DMARC DONE ·
-wikiNearby unvalidated input · startsWith("http") DONE ·
-CancellationException swallowed in four places · the 40-hit cap means
-sdn-alt.csv is never searched · six headers promising more than
-follows · Twitch/Telegram raw handle interpolation · isDomain matches
-an IPv4 in dorks · siteFiles serial · ripeRouting serial · classify
-has no HIT case for unsanctions.
+Audited item by item against the current source. Of the items still
+listed as open, **thirty-five had already been fixed in earlier
+rounds and never ticked off** — the list had become a record of what
+had once been wrong rather than of what was. Ten were genuinely
+open, and all ten are now done:
 
-### r7 — data layer
-Key commit DONE · WAL/SHM DONE · sha256 DONE · dismissals DONE ·
-Timeline snapshots DONE · IntelSummary LOCATION DONE · IDENTIFIERS
-DONE · **recordSnapshot runs regex + SHA-256 over a whole page on the
-main thread and swallows the failure** · **caseLinks re-runs the whole
-case analysis on Main on every write to the investigations table** ·
-**CHECK NOW runs the watch sweep on Main** · shared SimpleDateFormat
-and one-second filenames · export failure is silent · running rows
-DONE · a migration failure is reported as an encryption failure ·
-cases has no FK and deleteCase is not transactional.
+- photosNear's three bare runCatchings, which printed "No geotagged
+  imagery found near 51.50735, -0.12776" — a London street corner
+  with thousands of photographs of it — whenever the connection
+  failed. A stated clean sheet manufactured by the user's own
+  network, and counted as a source that answered.
+- The `~` mark, appended from whether a site is tested by status
+  rather than from whether anything had tested it, while the control
+  pass only probes the first 400 hits inside 12 seconds. The legend
+  then told the investigator every mark meant "confirmed by a control
+  username". Unprobed hits are `?` now, with the reason and the
+  numbers.
+- The chronolocation pair, which could not be told the date they were
+  documented as checking. See G-6; this was the larger half of it.
+- Panoramax's 566 m corner reported as "within 400 m", and its page
+  size reported as a count.
+- Eight more headers stating a total and then listing fewer.
+- The ruleset-load failure, which omitted the verdict field and
+  relied on a prose fallback to be classified correctly.
+- AreaReport rebuilt on the main thread in the dossier on every feed
+  poll — the globe's copy had been moved and this one missed.
+- The tool directory filtering twelve hundred leaves and several
+  thousand templates on the thread drawing the keystroke.
+- The watch sweep and the diagnostics self-test, both launched into
+  the screen's own scope, so leaving the tab mid-run cancelled them
+  silently — up to a hundred requests' worth of mobile data spent and
+  discarded. Both now live outside any screen, and the self-test is
+  bounded to twelve at once rather than fanning out unbounded.
+- A lifetime changeset count read out of a changeset's free-text
+  tags, and every graph label re-measured on every pan frame.
 
-### r8 — godeye
-Bitmap per frame DONE · AreaReport DONE · landscape handoff DONE ·
-long-press zoom DONE · radiation DONE · on-demand re-query DONE ·
-visibleLayers on dispose DONE · ALL LAYERS off DONE · **WorldBrief
-sorts every layer in composition to take six** · searchJobs DONE ·
-pointerInput DONE · markerIcon allocates a Path per draw [done] ·
-per-frame allocation in drawStars [done] · thinBy regex [checked, already fine] · header vs pill disagree about
-aircraft · the HUD ticker drops the FEED DOWN mark · lastSuccess [done].
-
-### r9 — DeepApis / UsernameChecker
-socialSweep DONE · githubActivity DONE · **seven bare runCatching
-blocks still leaving a false absence: OTX, network data, host intel,
-subdomain sweep, CVE, PGP, photos** · **ipReputation reads a
-non-answering resolver as a clean sheet** · **UsernameChecker tests
-the ruleset against the URL-ENCODED name, so every non-ASCII handle
-is NotApplicable everywhere and coverage is inflated** · the `~`
-legend claims a control probe most hits never got · historicalWeather
-and sunAndTerrain cannot take the date they are documented as
-checking · hostIntel's external-link substring test · osmUser averages
-bbox centres and calls it where somebody lives · get() reads every
-body unbounded · headers vs caps · secEdgar DONE · emailPermutations
-case-sensitive domain strip · the ruleset-load failure omits the
-verdict field · Mastodon P4033 URL shape · Panoramax 566 m corner ·
-CVE path [checked, validated by regex] · BTC counterparties DONE · hardcoded CC-MAIN
-fallback.
-
-### r10 — ui outside godeye
-App lock DONE · rotation re-run DONE · **the dossier runs six
-full-corpus regex passes during composition on every arriving result**
-· **the dossier is a verticalScroll Column, not a LazyColumn** · the
-isolated browser's in-page Back closes it · a thread leaked per
-proxy keystroke · proxy applied per keystroke and resolved on Main ·
-caseLinks (r7) · export double-tap and silent failure · **any app can
-start an investigation** DONE · FrameworkScreen filters thousands per
-keystroke · work cancelled by a tab switch · ForensicsScreen loses
-everything on rotation · GraphCanvas writes state during draw.
-
-### r11 — synthesis
-socialsweep verdict DONE · six header-first tools DONE · SecAgent
-DONE · dns family DONE · RIPEstat family DONE · credibility DONE ·
-IntelSummary LOCATION DONE · SOURCES count DONE · **emailperm's
-generated addresses enter the corroboration pool as assertions** ·
-**ptr builds a malformed query from an IPv6 or CIDR seed and reports
-a clean absence** · INFRASTRUCTURE and noiseDomains disagree, and the
-exporter calls extract() directly · ProfileSignals DONE ·
-independentCount DONE · blank output filed ABSENT · coordinate tools
-echo the seed back as a corroborated discovery.
-
-### r12 — domain
-MGRS DONE · Kepler DONE · workflow step failure swallowed ·
-ResultFormatter does not fall back on an empty parse · hexDecode DONE
-· Base64url DONE · graph DONE · Timeline DONE · checksums DONE ·
-IPv6 DONE · **ObservableExtractor turns config.yaml and Mr.Smith into
-pivot targets, and is O(n^2) with no length cap** · ForceLayout DONE
-· GraphBuilder hash DONE.
+**Deliberately not done.** The dossier is still a `verticalScroll`
+Column rather than a LazyColumn. `CardList` caps each section at
+twelve rows behind a SHOW MORE, which is most of the win; converting
+the whole screen is a structural rewrite with no device here to look
+at the result. Revisit if the tester reports scrolling trouble.
 
 ## E. People, continued (task #50)
 
