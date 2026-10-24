@@ -132,6 +132,8 @@ data class GodEyeUiState(
     val runningTools: Map<String, Int> = emptyMap(),
     val workflowName: String? = null,
     val workflowRunning: Boolean = false,
+    /** Steps of the last chain that did not run, and why. */
+    val workflowSkipped: List<String> = emptyList(),
     /** The second pass is chasing what the first pass turned up. */
     val enrichmentRunning: Boolean = false,
     /** Identifiers the first pass discovered and the second pass is looking
@@ -1073,22 +1075,62 @@ class GodEyeViewModel(
         // sources at the target behind it.
         searchJobs addAndForget viewModelScope.launch {
             val investigationId = ensureInvestigation(observable)
-            _state.update { it.copy(workflowRunning = true) }
+            _state.update { it.copy(workflowRunning = true, workflowSkipped = emptyList()) }
+            // What did not run, and why.
+            //
+            // A chain is a sequence of promises and this kept none of
+            // them. A step whose tool id is not in the registry was
+            // skipped in silence; a step that needed the previous
+            // step's hosts and had none was skipped in silence; and
+            // because `previousHosts` was only overwritten on
+            // success, a three-step chain whose middle step failed
+            // ran step three on step ONE's hosts and presented the
+            // result as step two's. The screen showed the workflow
+            // finishing normally either way, indistinguishable from
+            // a domain that genuinely has no subdomains.
+            val skipped = mutableListOf<String>()
             try {
                 var previousHosts = emptyList<String>()
+                var brokenAt: String? = null
                 for (step in workflow.steps) {
-                    val tool = ToolRegistry.byId(step.toolId) ?: continue
-                    val input = if (step.fromPreviousHosts) previousHosts.joinToString("\n") else observable.raw
-                    if (step.fromPreviousHosts && previousHosts.isEmpty()) continue
+                    val tool = ToolRegistry.byId(step.toolId)
+                    if (tool == null) {
+                        skipped += "${step.toolId} (no such tool in this build)"
+                        continue
+                    }
+                    if (step.fromPreviousHosts && brokenAt != null) {
+                        skipped += "${tool.name} (needed what $brokenAt did not return)"
+                        continue
+                    }
+                    if (step.fromPreviousHosts && previousHosts.isEmpty()) {
+                        skipped += "${tool.name} (the step before it found no hosts)"
+                        continue
+                    }
+                    val input =
+                        if (step.fromPreviousHosts) previousHosts.joinToString("\n")
+                        else observable.raw
                     _state.update { it.copy(runningTools = it.runningTools.plusRunning(listOf(tool.id))) }
                     val row = repository.runTool(investigationId, tool, input)
                     _state.update { it.copy(runningTools = it.runningTools.minusRunning(tool.id)) }
                     if (row.status == "success") {
                         previousHosts = Workflows.extractHosts(tool.id, row.rawOutput)
+                        brokenAt = null
+                    } else {
+                        // Stale hosts are worse than none: the next
+                        // step would otherwise run on the output of
+                        // the step before last, under this one's name.
+                        previousHosts = emptyList()
+                        brokenAt = tool.name
+                        skipped += "${tool.name} (${row.errorMessage?.take(60) ?: "did not finish"})"
                     }
                 }
             } finally {
-                _state.update { it.copy(workflowRunning = false) }
+                _state.update {
+                    it.copy(
+                        workflowRunning = false,
+                        workflowSkipped = skipped.toList()
+                    )
+                }
             }
         }
     }

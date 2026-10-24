@@ -792,6 +792,17 @@ fun InvestigationScreen(
                         }
                     }
                 }
+                // A chain that skipped steps did not finish, whatever
+                // the button says.
+                if (state.workflowSkipped.isNotEmpty()) {
+                    Text(
+                        "The chain did not run in full — " +
+                            state.workflowSkipped.joinToString("; "),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Intel.Amber,
+                        modifier = Modifier.padding(top = 6.dp)
+                    )
+                }
                 exportTrouble?.let { why ->
                     Text(
                         why,
