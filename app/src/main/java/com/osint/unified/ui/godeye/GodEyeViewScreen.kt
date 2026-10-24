@@ -205,7 +205,7 @@ fun GodEyeViewScreen(
     // three call sites were running it synchronously inside the
     // gesture handler. A long press froze the screen for seconds and
     // on a slow phone was an ANR. Every other heavy thing in this
-    // package — planMarkers, thinGlobe, the vector load — is already
+    // package — thinGlobe, the vector load — is already
     // off the main thread; this was the one that was not.
     // The standing request, not a one-shot: it used to be cleared the
     // moment the report was built, which left nothing to rebuild from

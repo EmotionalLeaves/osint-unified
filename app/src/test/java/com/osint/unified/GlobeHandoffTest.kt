@@ -2,17 +2,16 @@ package com.osint.unified
 
 import com.osint.unified.ui.godeye.GlobeHandoff
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Where the globe stops and the map starts.
+ * The scale maths behind the one-view globe.
  *
- * The two used to be a toggle, which made them two places: you turned
- * the Earth until you found something, pressed MAP, and arrived over
- * the Atlantic. They are one view now, and the arithmetic that keeps
- * the camera is what makes that true.
+ * These used to decide a handoff between a sphere and a flat map.
+ * There is no map now — the globe fetches its own tiles — so what is
+ * left, and what is tested here, is the conversion: how much ground
+ * the sphere shows, and the tile zoom whose pixels match it.
  */
 class GlobeHandoffTest {
 
@@ -35,41 +34,17 @@ class GlobeHandoffTest {
     }
 
     /**
-     * The whole point: a camera converted to the other view and back
-     * must be the camera you started with.
+     * A globe zoom converted to the tile zoom that shows the same
+     * ground and back must be the globe zoom you started with.
      */
     @Test
-    fun theCameraSurvivesTheRoundTrip() {
+    fun theScaleSurvivesTheRoundTrip() {
         listOf(2.0f, 3.5f, 5.0f, 6.0f).forEach { zoom ->
             val span = GlobeHandoff.spanDegrees(w, h, zoom)
             val tile = GlobeHandoff.tileZoom(span, w)
             val back = GlobeHandoff.globeZoom(GlobeHandoff.mapSpanDegrees(tile, w), w, h)
             assertEquals("round trip at $zoom", zoom, back, 0.01f)
         }
-    }
-
-    /**
-     * The thresholds must not overlap. Switching at one boundary in
-     * both directions means a pinch that lands on it flips the view
-     * back and forth under the thumb.
-     */
-    @Test
-    fun theTwoThresholdsLeaveAGapBetweenThem() {
-        // The globe hands over somewhere around zoom six.
-        assertFalse(GlobeHandoff.shouldHandToMap(w, h, 5f))
-        assertTrue(GlobeHandoff.shouldHandToMap(w, h, 6f))
-
-        // At the tile zoom it hands over to, the map must not want to
-        // hand straight back.
-        val tile = GlobeHandoff.tileZoom(GlobeHandoff.spanDegrees(w, h, 6f), w)
-        assertFalse(GlobeHandoff.shouldReturnToGlobe(tile, w))
-
-        // And the globe zoom the map hands back must not immediately
-        // want to hand over again.
-        val returning = 4.0
-        assertTrue(GlobeHandoff.shouldReturnToGlobe(returning, w))
-        val globe = GlobeHandoff.globeZoom(GlobeHandoff.mapSpanDegrees(returning, w), w, h)
-        assertFalse(GlobeHandoff.shouldHandToMap(w, h, globe))
     }
 
     /** A zoom nobody can use is not offered. */
@@ -103,77 +78,29 @@ class GlobeHandoffTest {
     }
 
     /**
-     * The map opens at whatever zoom it was last left at, and that is
-     * usually wide. The test on its own says "hand back to the globe"
-     * for most of the range a map is ever at — which is why arriving
-     * on the map sent you straight back to the sphere and the toggle
-     * looked broken. The arithmetic was right and the rule around it
-     * was not: it takes a deliberate zoom out now.
-     */
-    @Test
-    fun aMapAtItsUsualZoomWantsToBeAGlobe() {
-        assertTrue(GlobeHandoff.shouldReturnToGlobe(2.5, w))
-        assertTrue(GlobeHandoff.shouldReturnToGlobe(4.0, w))
-        assertFalse(GlobeHandoff.shouldReturnToGlobe(5.0, w))
-    }
-
-    /**
-     * And the rule that stops it: a map has to have been close before
-     * zooming out of it means anything.
-     *
-     * Pressing MAP from a whole-Earth globe lands around zoom 3, which
-     * is both "wide enough to be a globe" and "nowhere near close
-     * enough to count as using the map" — so the second test is what
-     * keeps the first from firing the instant the map appears.
-     */
-    @Test
-    fun arrivingWideDoesNotCountAsHavingUsedTheMap() {
-        val landing = GlobeHandoff.tileZoom(GlobeHandoff.spanDegrees(w, h, 1f), w)
-        assertTrue(GlobeHandoff.shouldReturnToGlobe(landing, w))
-        assertFalse(GlobeHandoff.closeEnoughToArm(landing, w))
-    }
-
-    /**
-     * The other arrival. A pinch that crosses the handoff boundary
-     * lands on the map already close, so reversing that same pinch
-     * has to take the sphere straight back.
-     */
-    @Test
-    fun arrivingByPinchCountsImmediately() {
-        // The pinch hands over at exactly the boundary span, so the
-        // arming test has to be satisfied *at* it and not merely past
-        // it — this failed the first time for want of one degree.
-        val boundary = GlobeHandoff.tileZoom(22.0, w)
-        assertTrue(GlobeHandoff.closeEnoughToArm(boundary, w))
-        // And a hair the wrong side of it, since the real arrival zoom
-        // is whatever osmdroid rounded the handoff to.
-        assertTrue(GlobeHandoff.closeEnoughToArm(GlobeHandoff.tileZoom(23.0, w), w))
-    }
-
-    /**
-     * The handoff has to hand over the same amount of ground at every
-     * latitude, and for a long time it did not.
+     * The tiles fetched have to be for the same amount of ground the
+     * globe is showing, at every latitude, and for a long time they
+     * were not.
      *
      * The globe is orthographic, so its span is a great-circle angle.
-     * A slippy map is Mercator, where a pixel is a fixed amount of
-     * longitude and so only cos(latitude) as much ground. Converting
-     * one to the other without that factor meant a globe showing 22
-     * degrees of Norway handed over to a map showing 11: the view
-     * jumped twice as close as the person had pinched, at exactly the
-     * moment the handoff is supposed to be invisible.
+     * Tiles are Mercator, where a pixel is a fixed amount of longitude
+     * and so only cos(latitude) as much ground. Converting one to the
+     * other without that factor meant a globe showing 22 degrees of
+     * Norway asking for tiles covering 11 — twice the detail the view
+     * could show, on somebody's mobile data.
      */
     @Test
-    fun theSameGroundArrivesOnTheMapAtEveryLatitude() {
+    fun theSameGroundIsAskedForAtEveryLatitude() {
         for (lat in listOf(0.0, 30.0, 45.0, 60.0, 75.0)) {
             val z = GlobeHandoff.tileZoom(22.0, w, lat)
-            val arrived = GlobeHandoff.mapSpanDegrees(z, w, lat)
-            assertEquals("at $lat", 22.0, arrived, 0.05)
+            val covered = GlobeHandoff.mapSpanDegrees(z, w, lat)
+            assertEquals("at $lat", 22.0, covered, 0.05)
         }
     }
 
     /** And back the other way, for the same reason. */
     @Test
-    fun theSameGroundArrivesBackOnTheGlobe() {
+    fun theSameGroundConvertsBackToTheGlobe() {
         for (lat in listOf(0.0, 45.0, 70.0)) {
             val span = GlobeHandoff.spanDegrees(w, h, 2.5f)
             val z = GlobeHandoff.tileZoom(span, w, lat)
@@ -193,82 +120,6 @@ class GlobeHandoffTest {
         assertTrue("expected roughly half of 22 degrees, got $ground", ground in 10.0..12.0)
     }
 
-    /** Somewhere between the two is where the arming happens. */
-    @Test
-    fun armingAndReturningDoNotOverlap() {
-        var armed = false
-        var returned = false
-        var z = 3.0
-        while (z <= 12.0) {
-            if (GlobeHandoff.closeEnoughToArm(z, w)) armed = true
-            if (GlobeHandoff.shouldReturnToGlobe(z, w)) returned = true
-            // And the same must hold well away from the equator, where
-            // the two spans are a factor of two apart.
-            assertFalse(
-                GlobeHandoff.closeEnoughToArm(z, w, 60.0) &&
-                    GlobeHandoff.shouldReturnToGlobe(z, w, 60.0)
-            )
-            // No zoom may be both at once, or a single pinch would arm
-            // the rule and trip it in the same frame.
-            assertFalse(
-                GlobeHandoff.closeEnoughToArm(z, w) &&
-                    GlobeHandoff.shouldReturnToGlobe(z, w)
-            )
-            z += 0.1
-        }
-        assertTrue(armed)
-        assertTrue(returned)
-    }
-
-    /**
-     * Rotating the phone must not make the handoff unreachable.
-     *
-     * The threshold used to be measured across the screen's width.
-     * On a 2340x1080 landscape screen the width shows twice as much
-     * Earth for the same closeness, so reaching 22 degrees across it
-     * needed globe zoom 12.3 — and MAX_ZOOM is 8. You could pinch to
-     * the stop and stay on a hand-drawn sphere for ever.
-     */
-    @Test
-    fun theHandoffIsReachableInLandscape() {
-        val lw = 2340
-        val lh = 1080
-        assertTrue(
-            "landscape never reaches the map",
-            GlobeHandoff.shouldHandToMap(lw, lh, 6f)
-        )
-        assertFalse(GlobeHandoff.shouldHandToMap(lw, lh, 5f))
-        // And at the same zoom the two orientations agree about how
-        // close the person is, which is the whole reason the measure
-        // moved to the short side.
-        assertEquals(
-            GlobeHandoff.thresholdSpan(w, h, 4f),
-            GlobeHandoff.thresholdSpan(lw, lh, 4f),
-            1e-9
-        )
-    }
-
-    /** The gap between the thresholds has to survive rotation too. */
-    @Test
-    fun landscapeDoesNotFlipBackAndForth() {
-        val lw = 2340
-        val lh = 1080
-        val handover = GlobeHandoff.spanDegrees(lw, lh, 6f)
-        val tile = GlobeHandoff.tileZoom(handover, lw)
-        assertFalse(
-            "the map hands straight back",
-            GlobeHandoff.shouldReturnToGlobe(tile, lw, 0.0, lh)
-        )
-        val returning = GlobeHandoff.tileZoom(
-            GlobeHandoff.spanDegrees(lw, lh, 1.5f), lw
-        )
-        assertTrue(GlobeHandoff.shouldReturnToGlobe(returning, lw, 0.0, lh))
-        val globe = GlobeHandoff.globeZoom(
-            GlobeHandoff.mapSpanDegrees(returning, lw), lw, lh
-        )
-        assertFalse(GlobeHandoff.shouldHandToMap(lw, lh, globe))
-    }
-
     /**
      * The visible radius reaches the corner, not the side.
      *
@@ -276,14 +127,11 @@ class GlobeHandoffTest {
      * radius*sin(theta) from the centre of the disc, in whatever
      * direction it happens to lie — so on a portrait screen the
      * furthest point still in frame is in a corner, further out
-     * than the half-width the handoff's own span measures. Culling
-     * markers to the width dropped everything along the top and
-     * bottom edges.
+     * than the half-width the span measures. Culling markers to the
+     * width dropped everything along the top and bottom edges.
      */
     @Test
     fun theVisibleRadiusCoversTheCornersOfAPortraitView() {
-        val w = 1080
-        val h = 2000
         listOf(1.2f, 2f, 4f, 8f).forEach { zoom ->
             val span = GlobeHandoff.spanDegrees(w, h, zoom)
             val radius = GlobeHandoff.visibleRadiusDegrees(w, h, zoom)

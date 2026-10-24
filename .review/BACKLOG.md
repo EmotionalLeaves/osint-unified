@@ -24,7 +24,7 @@ closed; their headings say so.
   raised from 8 to tile zoom 19; flying-to-a-focus carried across by
   hand so a coordinate search still moves the view. `Tiles` +
   `TileStore`, tested.
-- [ ] **U1a. The dead half of the two-view code.** Deleting the map
+- [x] **U1a. The dead half of the two-view code.** Deleting the map
   left `planMarkers`, `PendingMarker`, `MapWindow`, `MapPlan`,
   `planFor` and `markerBucket` in `MarkerPlan.kt` alive only through
   `MarkerPlanTest`, and `shouldHandToMap`, `closeEnoughToArm`,
