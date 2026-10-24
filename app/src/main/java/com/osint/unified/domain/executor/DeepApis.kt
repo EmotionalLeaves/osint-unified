@@ -868,6 +868,8 @@ class DeepApis(
         val asked = Reached()
         val sb = StringBuilder()
 
+        var usersAnswered = false
+        var commitsAnswered = false
         asked.answering {
             val items = json.parseToJsonElement(
                 get("https://api.github.com/search/users?q=$e+in:email")
@@ -880,7 +882,8 @@ class DeepApis(
                 }
                 sb.append('\n')
             }
-            items != null
+            usersAnswered = items != null
+            usersAnswered
         }
 
         var commits = 0
@@ -971,17 +974,39 @@ class DeepApis(
                         "and an address can be shared or spoofed in a commit.\n"
                 )
             }
+            commitsAnswered = true
             true
         }
 
         if (!asked.any) {
             throw IOException("GitHub did not answer either search for $address")
         }
+        // Each half of the sentence on its own search's word.
+        //
+        // This said "no account lists it, and no public commit was
+        // authored from it" whenever either search answered — and
+        // GitHub's keyless search allows about ten a minute, so a
+        // refused commit search beside an empty user search came out
+        // as two established absences, one of which nobody had asked.
+        val gaps = buildList {
+            if (!usersAnswered) add("the account search")
+            if (!commitsAnswered) add("the commit search")
+        }
+        val gapNote = if (gaps.isEmpty()) "" else
+            "\n${gaps.joinToString(" and ").replaceFirstChar { it.uppercase() }} " +
+                "could not be asked (GitHub limits keyless searches to about ten " +
+                "a minute), so nothing is known from it."
         if (sb.isEmpty()) {
-            "No GitHub account lists $address, and no public commit was " +
-                "authored from it."
+            val said = buildList {
+                if (usersAnswered) add("No GitHub account lists $address")
+                if (commitsAnswered) {
+                    add(if (usersAnswered) "and no public commit was authored from it" else
+                        "No public GitHub commit was authored from $address")
+                }
+            }.joinToString(", ")
+            "$said.$gapNote"
         } else {
-            sb.toString().trimEnd()
+            sb.toString().trimEnd() + gapNote
         }
     }
 

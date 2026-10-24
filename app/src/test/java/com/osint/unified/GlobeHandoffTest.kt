@@ -52,7 +52,10 @@ class GlobeHandoffTest {
     fun theResultsStayInsideWhatEachViewCanShow() {
         assertEquals(2.0, GlobeHandoff.tileZoom(100000.0, w), 1e-9)
         assertEquals(19.0, GlobeHandoff.tileZoom(0.00001, w), 1e-9)
-        assertEquals(8f, GlobeHandoff.globeZoom(0.5, w, h), 1e-6f)
+        // The globe's whole range now, not the old map handoff's 8: a
+        // half-degree view is a town, and that is far inside it.
+        assertTrue(GlobeHandoff.globeZoom(0.5, w, h) > 100f)
+        assertEquals(GlobeHandoff.MAX_GLOBE_ZOOM.toFloat(), GlobeHandoff.globeZoom(1e-9, w, h), 1f)
         assertTrue(GlobeHandoff.globeZoom(179.0, w, h) >= 0.6f)
     }
 
@@ -149,5 +152,21 @@ class GlobeHandoffTest {
         assertEquals(180.0, GlobeHandoff.visibleRadiusDegrees(1080, 2000, 0.6f), 0.0)
         // And a view with no size yet cannot cull anything.
         assertEquals(180.0, GlobeHandoff.visibleRadiusDegrees(0, 0, 2f), 0.0)
+    }
+
+    /**
+     * A coordinate search asks for a town and gets one.
+     *
+     * The fly-to asks for tile zoom 9. With the old clamp it landed at a
+     * 15.6-degree view whatever the latitude — a large country across.
+     */
+    @Test
+    fun aSearchLandsAtTownScale() {
+        for (lat in listOf(0.0, 51.5)) {
+            val asked = GlobeHandoff.mapSpanDegrees(9.0, w, lat)
+            val zoom = GlobeHandoff.globeZoom(asked, w, h)
+            val landed = GlobeHandoff.spanDegrees(w, h, zoom)
+            assertEquals("at $lat", asked, landed, asked * 0.02)
+        }
     }
 }

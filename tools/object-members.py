@@ -65,6 +65,13 @@ def body_of(text: str, open_brace: int) -> str:
     return ""
 
 
+STDLIB_FUNCTIONS = {
+    line.strip()
+    for line in (Path(__file__).parent / "stdlib-functions.txt").read_text().splitlines()
+    if line.strip() and not line.startswith("#")
+}
+
+
 def main() -> int:
     files = list(SRC.rglob("*.kt"))
     whole = "\n".join(code(p) for p in files)
@@ -188,11 +195,12 @@ def main() -> int:
     # one because the first was recorded would be a false positive
     # in a check whose whole value is that it is trusted.
     file_private: dict[str, set[Path]] = {}
+    extensions: set[str] = set()
     public_names: set[str] = set()
     PRIVATE_DECL = re.compile(
         r"(?:^|\n)[ \t]*private\s+(?:suspend\s+|inline\s+|tailrec\s+|operator\s+|infix\s+)*"
         r"fun\s+(?:<[^>]*>\s*)?"
-        r"(?:[A-Za-z_][A-Za-z0-9_.<>?]*\.)?([A-Za-z_][A-Za-z0-9_]*)\s*\("
+        r"(?:([A-Za-z_][A-Za-z0-9_.<>?]*)\.)?([A-Za-z_][A-Za-z0-9_]*)\s*\("
     )
     # Anything declared without `private` in front of it, at any
     # indent, could be what a call site is reaching.
@@ -241,7 +249,12 @@ def main() -> int:
         imported[path] = names
     for path, text in blanked.items():
         for m in PRIVATE_DECL.finditer(text):
-            file_private.setdefault(m.group(1), set()).add(path)
+            file_private.setdefault(m.group(2), set()).add(path)
+            # An extension is called with a receiver — `x.name()` — which
+            # is the shape r512 actually had and the one a bare-call
+            # pattern cannot see.
+            if m.group(1):
+                extensions.add(m.group(2))
         for m in OPEN_DECL.finditer(text):
             public_names.add(m.group(1))
         for m in TYPE_DECL.finditer(text):
@@ -269,7 +282,14 @@ def main() -> int:
                 re.escape(name), re.escape(name)
             ), text):
                 continue
-            for use in re.finditer(r"(?<![A-Za-z0-9_.])%s\s*\(" % re.escape(name), text):
+            # `x.name()` is only this project's extension if the stdlib
+            # has no function of that name: `orEmpty` is both a private
+            # helper in PeopleApis and the stdlib's String?.orEmpty(),
+            # and every `s.orEmpty()` elsewhere is the stdlib's.
+            receiver = name in extensions and name not in STDLIB_FUNCTIONS
+            call = (r"(?<![A-Za-z0-9_])%s\s*\(" if receiver
+                    else r"(?<![A-Za-z0-9_.])%s\s*\(")
+            for use in re.finditer(call % re.escape(name), text):
                 line = text.count("\n", 0, use.start()) + 1
                 where = ", ".join(sorted(h.name for h in homes))
                 bad.append(

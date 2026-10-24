@@ -92,6 +92,7 @@ import com.osint.unified.BuildConfig
 import com.osint.unified.ui.theme.Intel
 import kotlin.math.ceil
 import kotlin.math.cos
+import kotlin.math.floor
 import kotlin.math.log2
 import kotlin.math.pow
 import kotlin.math.roundToInt
@@ -356,11 +357,23 @@ fun GodEyeViewScreen(
     // of it is a network query.
     run {
         val (vw, vh) = globeSize
+        // A quarter of what is on screen, not a fixed two degrees.
+        //
+        // Two degrees is about two hundred kilometres. That was a sensible
+        // grain when the globe stopped at a country across and a map took
+        // over below; the map reported every pan. With the globe going to
+        // street level, panning from London to Reading crossed no grid line,
+        // nothing was reported, the camera layer never re-asked — and an
+        // area report there stated no cameras within 25 km, an absence it
+        // had never looked for. Snapped to a power of two so the key does
+        // not churn as the zoom slides.
+        val span = if (vw > 0) GlobeHandoff.spanDegrees(vw, vh, globeCamera.zoom) else 180.0
+        val step = 2.0.pow(floor(log2((span / 4.0).coerceIn(1e-5, VIEWPORT_STEP.toDouble()))))
         LaunchedEffect(
             vw, vh,
-            (globeCamera.lat / VIEWPORT_STEP).roundToInt(),
-            (globeCamera.lon / VIEWPORT_STEP).roundToInt(),
-            (globeCamera.zoom * 4f).roundToInt()
+            floor(globeCamera.lat / step).toLong(),
+            floor(globeCamera.lon / step).toLong(),
+            (log2(globeCamera.zoom.toDouble().coerceAtLeast(0.1)) * 4).roundToInt()
         ) {
             if (vw > 0) {
                 kotlinx.coroutines.delay(VIEWPORT_SETTLE_MS)
@@ -379,11 +392,18 @@ fun GodEyeViewScreen(
     //
     // The flat map did this and the globe did not, so deleting the
     // map would have deleted the behaviour with it — searching a
-    // coordinate would have set a focus nothing acted on. Animated
-    // rather than set, because unlike the old handoff this is not
-    // the continuation of a gesture: it is the view being taken
-    // somewhere, and it should be visible that it moved.
-    var appliedFocus by remember { mutableStateOf<Pair<Double, Double>?>(null) }
+    // coordinate would have set a focus nothing acted on.
+    //
+    // Saved, not merely remembered. The focus stays set in the view
+    // model, and this screen is rebuilt on every return from another tab
+    // and every rotation — so with a plain `remember` the marker reset,
+    // the effect fired again, and the camera was thrown back to the last
+    // search each time, wherever the person had since gone. The deleted
+    // map had exactly this fix, with exactly this comment, and it was
+    // lost in the move.
+    var appliedFocus by rememberSaveable(stateSaver = DoublePairSaver) {
+        mutableStateOf<Pair<Double, Double>?>(null)
+    }
     LaunchedEffect(state.mapFocus, globeSize) {
         val focus = state.mapFocus ?: return@LaunchedEffect
         val (w, h) = globeSize

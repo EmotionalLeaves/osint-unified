@@ -487,7 +487,14 @@ jobs:
           # build with error annotations is just noise.
           SUMMARY=""
           for f in "$A"/*; do
-            SUMMARY="${SUMMARY}$(basename "$f") $(wc -c < "$f") bytes%0A"
+            # The globe's tiles are a directory of a few thousand files;
+            # wc on a directory fails, and under set -e that failed the
+            # whole build. Counted on their own line instead.
+            if [ -d "$f" ]; then
+              SUMMARY="${SUMMARY}$(basename "$f")/ $(find "$f" -type f | wc -l) files, $(du -sb "$f" | cut -f1) bytes%0A"
+            else
+              SUMMARY="${SUMMARY}$(basename "$f") $(wc -c < "$f") bytes%0A"
+            fi
           done
           echo "::notice title=bundled-assets::${SUMMARY}"
           echo "::notice title=rule-counts::${COUNTS}"

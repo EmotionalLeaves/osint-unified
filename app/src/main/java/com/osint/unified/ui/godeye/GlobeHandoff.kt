@@ -106,11 +106,21 @@ internal object GlobeHandoff {
     /** The globe zoom that shows the same ground as that span. */
     fun globeZoom(spanDegrees: Double, width: Int, height: Int): Float {
         if (width <= 0 || height <= 0) return 1f
-        val half = Math.toRadians(spanDegrees.coerceIn(1.0, 179.0) / 2.0)
+        // The globe's own range, not the old one. This clamped to 8 —
+        // where the separate map used to take over — so a coordinate
+        // search asking for a town landed at a 15-degree view, a large
+        // country across, five times short of what it asked for. And
+        // the minimum span was a whole degree.
+        val half = Math.toRadians(spanDegrees.coerceIn(MIN_SPAN, 179.0) / 2.0)
         val radius = (width / 2.0) / sin(half)
         val zoom = radius / (min(width, height) / 2.0 * GLOBE_FILL)
-        return zoom.coerceIn(0.6, 8.0).toFloat()
+        return zoom.coerceIn(0.6, MAX_GLOBE_ZOOM).toFloat()
     }
+
+    /** The deepest the globe goes: tile zoom 19 on a phone-width screen. */
+    const val MAX_GLOBE_ZOOM = 48_000.0
+
+    private const val MIN_SPAN = 1e-4
 
     /** How much of the smaller screen dimension the globe fills. */
     private const val GLOBE_FILL = 0.92

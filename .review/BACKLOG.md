@@ -75,34 +75,34 @@ closed; their headings say so.
 ### Fifth pass, over today's globe and dossier work (r19, 24 Oct) — OPEN
 
 HIGH
-- [ ] **P1.** Search fly-to stops ~5x short: `globeZoom` still clamps to
+- [x] **P1.** (closed r20: globeZoom clamps to the globe's own range (span ≥1e-4°, zoom ≤48 000); aSearchLandsAtTownScale.) Search fly-to stops ~5x short: `globeZoom` still clamps to
   0.6..8, so tile zoom 9 lands at a 15.6° span, inside the fade band.
   Reproduced.
-- [ ] **P2.** Every tab return / rotation snaps the camera to the last
+- [x] **P2.** (closed r20: appliedFocus is rememberSaveable with a pair saver.) Every tab return / rotation snaps the camera to the last
   search: `appliedFocus` is `remember`, not saveable. The deleted map had
   this exact fix (rule 1, lost in the move).
-- [ ] **P3.** At deep zoom the viewport is only reported on a 2° grid, so
+- [x] **P3.** (closed r20: viewport key step scales with span (power of two ≤ span/4), plus zoom quarter-octaves.) At deep zoom the viewport is only reported on a 2° grid, so
   on-demand layers (cameras 0.1° cells, sites, airspace, radiation) never
   re-fetch while panning at street level — and the area report then
   asserts an absence it never established.
-- [ ] **P4.** `emailToGithub` states both absences when either search
+- [x] **P4.** (closed r20: each clause depends on its own search; a failed one is named as a gap.) `emailToGithub` states both absences when either search
   answered; each clause must depend on its own search.
-- [ ] **P5.** Tile requests are issued during gestures and never
+- [x] **P5.** (closed r20: TileStore drops superseded live fetches, fetches nothing live mid-gesture, and cancels its scope with the screen.) Tile requests are issued during gestures and never
   cancelled: a pinch from z5 to z18 queues ~800 fetches ahead of the
   final view, all downloaded, continuing after the screen is left.
-- [ ] **P6.** object-members' cross-file check misses `.name()` with a
+- [x] **P6.** (closed r20: receiver calls checked for extensions; stdlib names (tools/stdlib-functions.txt) excluded. Injected `s.drawOcean()` from MarkerPlan is caught.) object-members' cross-file check misses `.name()` with a
   receiver — the exact r512 case — and skips any private name that also
   exists as a public fun anywhere. Reproduced.
 
 MEDIUM
 - [ ] **P7.** Float camera quantises at max zoom: 100 drags of 1 px move
   0 px. Reproduced.
-- [ ] **P8.** Tile cover misses top corners away from the equator (uses
+- [x] **P8.** (closed r20: Tiles.visible() unprojects a screen grid + edges + rim rings instead of a centre-latitude box.) Tile cover misses top corners away from the equator (uses
   cos of centre latitude); they draw black once tiles are opaque.
   Reproduced, 4–27%.
 - [ ] **P9.** Cooldown checked before the pacing sleep, so one collision
   escalates the back-off twice.
-- [ ] **P10.** A tile-zoom change flashes to the mosaic / black instead of
+- [x] **P10.** (closed r20: base and parent tiles are drawn under the current zoom, so a zoom change shows the previous tiles.) A tile-zoom change flashes to the mosaic / black instead of
   showing the previous zoom's tiles that are still in memory.
 - [ ] **P11.** A re-run that comes back UNREACHABLE in prose (or PARTIAL)
   still overwrites an earlier complete answer.
