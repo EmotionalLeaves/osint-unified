@@ -46,11 +46,11 @@ internal class TileStore(context: Context) {
      * Decoded tiles, by packed z/x/y and layer.
      *
      * RGB_565: photography with no transparency, at half the bytes of
-     * ARGB. 400 tiles is about 50 MB of bitmap memory, which on Android 8
+     * ARGB. 400 tiles (more on a larger screen) is about 50 MB of bitmap memory, which on Android 8
      * and later lives outside the Java heap — a full high-resolution
      * screen at three levels plus room to pan back the way you came.
      */
-    private val memory = object : LruCache<Long, Bitmap>(MAX_TILES) {
+    private val memory = object : LruCache<Long, Bitmap>(capacity(context)) {
         override fun sizeOf(key: Long, value: Bitmap) = 1
     }
 
@@ -184,6 +184,20 @@ internal class TileStore(context: Context) {
         private const val GIBS = "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best"
 
         private const val MAX_TILES = 400
+
+        /**
+         * Scaled with the screen, like the per-view cap in [Tiles]: a
+         * 1440 x 3120 view may ask for 300 live tiles, and with the level
+         * beneath and the bundled base that is more than 400 — the memory
+         * would evict tiles still on screen and fetch them again.
+         */
+        private fun capacity(context: Context): Int {
+            val metrics = context.resources.displayMetrics
+            val scale = metrics.widthPixels.toDouble() * metrics.heightPixels / (1080.0 * 2340.0)
+            return (MAX_TILES * scale).toInt().coerceIn(MAX_TILES, MAX_TILES_LARGE)
+        }
+
+        private const val MAX_TILES_LARGE = 560
         private const val MAX_IN_FLIGHT = 6
 
         private val OPTIONS = BitmapFactory.Options().apply {

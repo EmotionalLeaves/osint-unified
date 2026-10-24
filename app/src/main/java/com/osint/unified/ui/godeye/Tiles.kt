@@ -178,7 +178,7 @@ internal object Tiles {
         var z = zoom.coerceIn(MIN_TILE_ZOOM, MAX_TILE_ZOOM)
         while (true) {
             val keys = sample(z, width, height, cx, cy, radius, lat0, lon0)
-            if (keys.size <= MAX_TILES || z <= MIN_TILE_ZOOM) {
+            if (keys.size <= capFor(z, width, height) || z <= MIN_TILE_ZOOM) {
                 val side = 1 shl z
                 val centreX = tileXOf(lon0, z)
                 val centreY = tileYOf(lat0, z)
@@ -327,6 +327,37 @@ internal object Tiles {
     // imagery soft — and a 1440x3120 one needs up to about 190 at the
     // zoom that rounds up.
     private const val MAX_TILES = 200
+
+    /**
+     * The bundled levels are allowed more.
+     *
+     * The cap exists for mobile data, and bundled tiles cost none. It
+     * was stepping the half-zoomed globe — the rim in view, where tiles
+     * crowd together — from zoom 5 down to 4, a quarter of the detail,
+     * to save reading a few more files out of the APK. Every view
+     * measured on a 1080 x 2340 phone needs fewer than this; the tile
+     * memory holds 400, and bundled levels draw nothing beneath them.
+     */
+    private const val MAX_BUNDLED_TILES = 360
+
+    /**
+     * The live cap, scaled to the screen.
+     *
+     * The number of tiles a view needs goes with its pixel count, and
+     * [MAX_TILES] was measured on a 1080 x 2340 phone. On a 1440 x 3120
+     * one the same cap stepped twelve views in eight hundred down a
+     * zoom — half the sharpness, on the phones with the sharpest
+     * screens. Never below the measured figure, never above what the
+     * tile memory holds with room for the level beneath.
+     */
+    private fun capFor(z: Int, width: Int, height: Int): Int {
+        if (z <= BUNDLED_MAX_ZOOM) return MAX_BUNDLED_TILES
+        val scale = width.toDouble() * height / (1080.0 * 2340.0)
+        return (MAX_TILES * scale).toInt().coerceIn(MAX_TILES, MAX_LIVE_TILES)
+    }
+
+    /** The most live tiles one view may ask for, whatever the screen. */
+    private const val MAX_LIVE_TILES = 300
 
     /** Where the Mercator projection is cut off, as every slippy map does. */
     private const val MERCATOR_LIMIT = 85.0511

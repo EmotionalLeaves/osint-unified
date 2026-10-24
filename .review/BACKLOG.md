@@ -116,7 +116,7 @@ MEDIUM
   Reproduced.
 
 LOW
-- [ ] **P16.** The tile cap still drops a zoom level on 3–10% of zooms.
+- [x] **P16.** (closed r20: bundled levels cap at 360 (they cost no data), the live cap scales with screen pixels (200..300) and tile memory with it (400..560). Measured over 846 views: 0 drops on 1080x2340, 2560x1600 and 720x1600; 4 on 1440x3120, all near-whole-globe z6 falling back to bundled z5.) The tile cap still drops a zoom level on 3–10% of zooms.
 - [x] **P17.** (closed r20: the coast stops below 0.2 px a frame, measured with the degrees-per-pixel at the throw.) Flings die above ~zoom 600 (SPIN_FLOOR in degrees).
 - [ ] **P18.** Deep-zoom marker thinning covers ≥1° though the screen is
   ~1 km, so dense layers drop on-screen markers.
