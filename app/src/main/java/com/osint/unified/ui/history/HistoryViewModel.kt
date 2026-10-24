@@ -204,11 +204,11 @@ class HistoryViewModel(
      * The links the pass has finished, tagged with the case they were
      * worked out for.
      */
-    private val computedLinks: StateFlow<Triple<Long, List<CaseLinks.Link>, Int>?> =
+    private val computedLinks: StateFlow<Triple<Long, List<CaseLinks.Link>, CaseLinks.Counts>?> =
         _openCaseId
             .flatMapLatest { id ->
                 if (id == null) {
-                    flowOf<Triple<Long, List<CaseLinks.Link>, Int>?>(null)
+                    flowOf<Triple<Long, List<CaseLinks.Link>, CaseLinks.Counts>?>(null)
                 } else {
                     repository.observeTargets(id)
                         // Keyed on the targets' identity, not on the
@@ -233,7 +233,7 @@ class HistoryViewModel(
                                 // run has an empty dossier, and the
                                 // header used to count it as one of
                                 // the ones found to share nothing.
-                                CaseLinks.compared(byTarget)
+                                CaseLinks.counts(byTarget)
                             )
                         }
                         // And off the main thread. mapLatest runs in
@@ -267,20 +267,24 @@ class HistoryViewModel(
      * answer. Null is "not worked out yet", which is a different thing
      * from an empty list, and the screen says so.
      */
-    val caseLinks: StateFlow<List<CaseLinks.Link>?> =
+    /**
+     * The links and the counts together.
+     *
+     * Two `stateIn`s over one source were two Compose states, and a
+     * recomposition landing between the two writes computed the
+     * header with one of them from the previous pass. They have to
+     * arrive as one value because they describe one computation.
+     */
+    data class CaseView(val links: List<CaseLinks.Link>, val counts: CaseLinks.Counts)
+
+    val caseView: StateFlow<CaseView?> =
         combine(_openCaseId, computedLinks) { id, computed ->
             when {
-                id == null -> emptyList()
-                computed != null && computed.first == id -> computed.second
+                id == null -> CaseView(emptyList(), CaseLinks.Counts(0, 0))
+                computed != null && computed.first == id ->
+                    CaseView(computed.second, computed.third)
                 else -> null
             }
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
-
-    /** How many of the open case's targets have a dossier to compare. */
-    val caseCompared: StateFlow<Int?> =
-        combine(_openCaseId, computedLinks) { id, computed ->
-            if (id != null && computed != null && computed.first == id) computed.third
-            else null
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     private suspend fun entitiesByTarget(

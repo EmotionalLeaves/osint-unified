@@ -47,7 +47,11 @@ import java.io.IOException
 class AisDataSource(
     private val settings: AppSettings,
     private val client: OkHttpClient = Http.feedClient
-) {
+) : PartlyAnswered {
+
+    @Volatile override var lastGaps: String? = null
+        private set
+
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
     /** What one feed last gave, how big it was, and where it covers. */
@@ -103,7 +107,7 @@ class AisDataSource(
             // down returned an empty list and reported success, and an
             // empty vessel layer is read as "no ships", not as "no
             // answer".
-            var answered = false
+            var answered = 0
             for (url in urls) {
                 if (merged.size >= 20000) break
                 val last = synchronized(held) { held[url] }
@@ -117,16 +121,22 @@ class AisDataSource(
                 } else {
                     last?.vessels
                 }
-                if (vessels != null) answered = true
+                if (vessels != null) answered++
                 vessels?.forEach { v ->
                     merged.putIfAbsent(v.mmsi.ifBlank { "${v.lat},${v.lon}" }, v)
                 }
             }
-            if (!answered) {
+            if (answered == 0) {
                 throw IOException(
                     "no AIS feed answered and none had anything held from before"
                 )
             }
+            // One national authority of several is a real picture of
+            // one sea and an empty one everywhere else, and the pill
+            // could not say which it was holding.
+            lastGaps =
+                if (answered >= urls.size) null
+                else "${urls.size - answered} of ${urls.size} AIS feeds did not answer"
             merged.values.toList()
         }
 

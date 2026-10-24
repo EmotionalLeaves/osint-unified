@@ -33,10 +33,22 @@ import java.util.Locale
 class FiresDataSource(
     private val cache: DiskCache? = null,
     private val client: OkHttpClient = Http.bulkClient
-) {
+) : PartlyAnswered {
+
+    @Volatile override var lastGaps: String? = null
+        private set
 
     suspend fun fetch(): List<GeoBlip> = withContext(Dispatchers.IO) {
         val bodies = SOURCES.mapNotNull { (key, url) -> load(key, url) }
+        // Losing one instrument is losing half the detections, and
+        // nothing said so. MODIS and VIIRS see the same ground at
+        // different resolutions, so a map drawn from one of them is a
+        // real map with real gaps in it — which is exactly the state
+        // `lastGaps` exists to name.
+        lastGaps =
+            if (bodies.size >= SOURCES.size) null
+            else "${SOURCES.size - bodies.size} of ${SOURCES.size} " +
+                "satellite instruments did not answer"
         if (bodies.isEmpty()) throw IOException("NASA FIRMS unavailable")
         // Deliberately not deduplicated between instruments. The two
         // satellites see the same fire at different resolutions and

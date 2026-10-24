@@ -153,16 +153,42 @@ object CaseLinks {
     }
 
     /**
-     * How many of a case's targets have anything to compare.
+     * How many distinct targets in this case have anything to
+     * compare.
      *
      * A target filed from a pivot or a share and never run has an
      * empty dossier, and [find] can say nothing about it either way.
+     *
+     * Counted against [byTarget]'s own size, never against a row
+     * count: `byTarget` is keyed by seed observable, so two
+     * investigations of one email are one key, and comparing a
+     * deduplicated numerator with an undeduplicated denominator
+     * produced "2 targets · only 1 has been run" for a case where
+     * both had been run.
      */
     fun compared(byTarget: Map<String, List<Corroboration.Entity>>): Int =
         byTarget.count { it.value.isNotEmpty() }
 
-    /** One line saying what, if anything, holds the case together. */
-    fun summary(links: List<Link>, targetCount: Int, compared: Int = targetCount): String {
+    /**
+     * The two numbers the case header needs, from the same map, so
+     * they cannot be keyed differently from each other.
+     */
+    data class Counts(val distinct: Int, val compared: Int)
+
+    fun counts(byTarget: Map<String, List<Corroboration.Entity>>): Counts =
+        Counts(byTarget.size, compared(byTarget))
+
+    /**
+     * One line saying what, if anything, holds the case together.
+     *
+     * [compared] has no default on purpose. It had one, and a
+     * default is how a call site added later silently keeps the
+     * behaviour the parameter was introduced to fix — which is the
+     * hazard the view model's own `clear()` carries a comment
+     * about. Three characters at each call site is the price of not
+     * having that happen.
+     */
+    fun summary(links: List<Link>, targetCount: Int, compared: Int): String {
         if (targetCount < 2) {
             return "One target. A case needs two before anything can connect them."
         }
@@ -173,8 +199,17 @@ object CaseLinks {
         // that the two were unconnected, in the header and in the
         // exported report.
         if (compared < 2) {
-            return "$targetCount targets · only $compared has been run, " +
-                "so there is nothing to compare yet"
+            // "Run" is the honest word only for zero or one. A
+            // target that was run and whose tools legitimately found
+            // nothing also has an empty dossier, so the sentence
+            // says what is actually known: how many have anything in
+            // them.
+            return when (compared) {
+                0 -> "$targetCount targets · none of them has any findings yet, " +
+                    "so there is nothing to compare"
+                else -> "$targetCount targets · only one of them has any findings, " +
+                    "so there is nothing to compare yet"
+            }
         }
         if (links.isEmpty()) {
             return if (compared < targetCount) {

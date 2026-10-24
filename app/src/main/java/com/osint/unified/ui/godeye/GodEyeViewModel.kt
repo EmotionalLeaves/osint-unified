@@ -550,12 +550,12 @@ class GodEyeViewModel(
         // spiked memory/CPU). Each poll is exception-guarded so one bad fetch
         // can't kill its loop, and updates stay atomic per field.
         poll(0, 25_000, "aircraft", { aircraftDataSource.fetch(focus, wideView) }) { s, v -> s.copy(aircraft = v) }
-        poll(100, 30_000, "vessels", { aisDataSource.fetch(focus) }) { s, v -> s.copy(vessels = v) }
+        poll(100, 30_000, "vessels", { aisDataSource.fetch(focus) }, gaps = { aisDataSource.lastGaps }) { s, v -> s.copy(vessels = v) }
         poll(200, 15_000, "satellites", { satellitesDataSource.fetch() }) { s, v -> s.copy(satellites = v) }
         poll(375, 300_000, "quakes", { earthquakeDataSource.fetch() }, gaps = { earthquakeDataSource.lastGaps }) { s, v -> s.copy(quakes = v) }
         poll(625, 600_000, "naturalEvents", { naturalEventsDataSource.fetch() }) { s, v -> s.copy(naturalEvents = v) }
         poll(875, 60_000, "overlayPoints", { overlayDataSource.fetch() }) { s, v -> s.copy(overlayPoints = v) }
-        poll(1125, 600_000, "fires", { firesDataSource.fetch() }) { s, v -> s.copy(fires = v) }
+        poll(1125, 600_000, "fires", { firesDataSource.fetch() }, gaps = { firesDataSource.lastGaps }) { s, v -> s.copy(fires = v) }
         poll(1375, 600_000, "volcanoes", { volcanoDataSource.fetch() }) { s, v -> s.copy(volcanoes = v) }
         poll(1510, 600_000, "worldWarnings", { worldWarningsDataSource.fetch() }) { s, v -> s.copy(worldWarnings = v) }
         poll(1640, 600_000, "seaLevel", { seaLevelDataSource.fetch() }) { s, v -> s.copy(seaLevel = v) }
@@ -574,7 +574,7 @@ class GodEyeViewModel(
         poll(4000, 1_800_000, "conflicts", { conflictDataSource.fetch() }) { s, v -> s.copy(conflicts = v) }
         poll(300, 3_600_000, "airports", { airportDataSource.fetch() }) { s, v -> s.copy(airports = v) }
         poll(450, 3_600_000, "powerPlants", { powerPlantDataSource.fetch() }) { s, v -> s.copy(powerPlants = v) }
-        poll(900, 900_000, "spaceWeather", { spaceWeatherDataSource.fetch() }) { s, v -> s.copy(spaceWeather = v) }
+        poll(900, 900_000, "spaceWeather", { spaceWeatherDataSource.fetch() }, gaps = { spaceWeatherDataSource.lastGaps }) { s, v -> s.copy(spaceWeather = v) }
         poll(1200, 86_400_000, "cables", { cableLandingDataSource.fetch() }) { s, v -> s.copy(cables = v) }
         poll(700, 600_000, "cyclones", { cycloneDataSource.fetch() }, gaps = { cycloneDataSource.lastGaps }) { s, v -> s.copy(cyclones = v) }
         poll(800, 600_000, "tsunamis", { tsunamiDataSource.fetch() }, gaps = { tsunamiDataSource.lastGaps }) { s, v -> s.copy(tsunamis = v) }

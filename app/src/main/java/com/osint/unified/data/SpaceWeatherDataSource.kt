@@ -55,15 +55,23 @@ data class SpaceWeather(
  * NOAA SWPC, keyless: planetary K index, GOES X-ray flux (converted to the
  * familiar A/B/C/M/X class) and the live space weather warning feed.
  */
-class SpaceWeatherDataSource(private val client: OkHttpClient = Http.feedClient) {
+class SpaceWeatherDataSource(private val client: OkHttpClient = Http.feedClient) :
+    PartlyAnswered {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
+
+    @Volatile override var lastGaps: String? = null
+        private set
 
     suspend fun fetch(): SpaceWeather = withContext(Dispatchers.IO) {
         var kp: Double? = null
         var xray = ""
         val alerts = ArrayList<String>()
-        var answered = false
+        // Which of the three answered, by name, rather than one
+        // boolean for all of them: losing the planetary K index and
+        // keeping the alerts is a HUD showing space weather with its
+        // main number missing, under a clean tick.
+        val missing = ArrayList<String>()
 
         runCatching {
             val arr = json.parseToJsonElement(
@@ -72,9 +80,9 @@ class SpaceWeatherDataSource(private val client: OkHttpClient = Http.feedClient)
             // Newest sample last; the feed is an array of objects.
             (arr?.lastOrNull() as? JsonObject)?.let { o ->
                 kp = (o["Kp"] as? JsonPrimitive)?.doubleOrNull
-                if (kp != null) answered = true
             }
         }
+        if (kp == null) missing.add("the planetary K index")
 
         runCatching {
             // The 6-hour file is small; fall back to the 1-day file, which is
@@ -91,14 +99,20 @@ class SpaceWeatherDataSource(private val client: OkHttpClient = Http.feedClient)
             } as? JsonObject
             ((last?.get("flux") as? JsonPrimitive)?.doubleOrNull)?.let {
                 xray = flareClass(it)
-                answered = true
             }
         }
+        if (xray.isBlank()) missing.add("the X-ray flux")
 
+        var alertsAnswered = false
         runCatching {
             val arr = json.parseToJsonElement(
                 get("https://services.swpc.noaa.gov/products/alerts.json")
             ) as? JsonArray
+            // Only an array is an answer. `answered = true` sat at
+            // the end of this block unconditionally, so a body that
+            // parsed to something else — an error page, an object —
+            // counted as the alerts feed having reported.
+            if (arr != null) alertsAnswered = true
             arr?.take(40)?.forEach { el ->
                 val msg = ((el as? JsonObject)?.get("message") as? JsonPrimitive)?.contentOrNull ?: return@forEach
                 val headline = msg.lineSequence().firstOrNull {
@@ -106,15 +120,20 @@ class SpaceWeatherDataSource(private val client: OkHttpClient = Http.feedClient)
                 }?.trim()
                 if (!headline.isNullOrBlank() && alerts.none { it == headline }) alerts.add(headline)
             }
-            answered = true
         }
+        if (!alertsAnswered) missing.add("the alert feed")
 
         // Each part is allowed to fail on its own — losing the X-ray flux
         // should not cost the K index. But if none of the three answered,
         // the feed is down, and returning a tidy object of defaults told
         // the polling loop it had succeeded and the HUD that space was
         // quiet.
-        if (!answered) throw java.io.IOException("SWPC did not answer any of its three feeds")
+        if (missing.size == 3) {
+            throw java.io.IOException("SWPC did not answer any of its three feeds")
+        }
+        lastGaps =
+            if (missing.isEmpty()) null
+            else "SWPC did not answer for " + missing.joinToString(" or ")
 
         SpaceWeather(kp, xray, alerts.take(8))
     }

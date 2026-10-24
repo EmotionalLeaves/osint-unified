@@ -146,9 +146,10 @@ fun CaseDetail(
     targets: List<Investigation>,
     /** Null while the corroboration pass for this case is still running. */
     links: List<CaseLinks.Link>?,
-    /** How many of [targets] have a dossier to compare, or null while
-     *  that is still being worked out. */
-    compared: Int?,
+    /** Distinct targets and how many of them have any findings, or
+     *  null while that is still being worked out. Both come from the
+     *  same map, so they cannot be counted differently. */
+    counts: CaseLinks.Counts?,
     onOpenTarget: (Long) -> Unit,
     onUnfile: (Long) -> Unit,
     onSummary: (String) -> Unit,
@@ -202,7 +203,11 @@ fun CaseDetail(
             if (links == null) {
                 "${targets.size} targets \u00b7 working out what they share\u2026"
             } else {
-                CaseLinks.summary(links, targets.size, compared ?: targets.size)
+                CaseLinks.summary(
+                    links,
+                    counts?.distinct ?: targets.size,
+                    counts?.compared ?: targets.size
+                )
             },
             style = MaterialTheme.typography.bodyMedium,
             color = Intel.CyanBright,
@@ -232,11 +237,12 @@ fun CaseDetail(
             // that were compared. The header above was taught to say
             // so and this paragraph was not, so the card stated both
             // sentences at once.
-            val ran = compared ?: targets.size
+            val ran = counts?.compared ?: targets.size
+            val of = counts?.distinct ?: targets.size
             Text(
                 if (ran < 2) {
                     "There is nothing to compare yet: only $ran of " +
-                        "${targets.size} targets has been run."
+                        "$of targets has any findings."
                 } else {
                     "Nothing was found under more than one of these targets. " +
                         "That is a result, not a gap — they may simply not be " +

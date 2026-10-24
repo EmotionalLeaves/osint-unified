@@ -188,16 +188,16 @@ class InvestigationExporter(private val appContext: Context) {
 
         append("\nWHAT HOLDS THIS CASE TOGETHER\n")
         append("-----------------------------\n")
-        val compared = CaseLinks.compared(byTarget)
-        append(CaseLinks.summary(links, targets.size, compared)).append('\n')
-        if (links.isEmpty() && compared < 2) {
+        val counts = CaseLinks.counts(byTarget)
+        append(CaseLinks.summary(links, counts.distinct, counts.compared)).append('\n')
+        if (links.isEmpty() && counts.compared < 2) {
             // The header says this properly; what must not happen is
             // the paragraph below it asserting the opposite. It did,
             // in the same report, eleven lines apart.
             append(
-                "\nThere is nothing to compare yet: only $compared of " +
-                    "${targets.size} targets has been run. Run the others and " +
-                    "export again.\n"
+                "\nThere is nothing to compare yet: only ${counts.compared} of " +
+                    "${counts.distinct} targets has any findings. Run the others " +
+                    "and export again.\n"
             )
         } else if (links.isEmpty()) {
             append(

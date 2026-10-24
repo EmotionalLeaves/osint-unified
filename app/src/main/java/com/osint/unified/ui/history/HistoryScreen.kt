@@ -79,8 +79,7 @@ fun HistoryScreen(
     val openCaseId by viewModel.openCaseId.collectAsStateWithLifecycle()
     val openCase by viewModel.openCase.collectAsStateWithLifecycle()
     val caseTargets by viewModel.caseTargets.collectAsStateWithLifecycle()
-    val caseLinks by viewModel.caseLinks.collectAsStateWithLifecycle()
-    val caseCompared by viewModel.caseCompared.collectAsStateWithLifecycle()
+    val caseView by viewModel.caseView.collectAsStateWithLifecycle()
     // Two things live on this screen: the targets searched, and the cases
     // they have been filed into. The list of targets is the older and
     // more used of the two, so it opens first.
@@ -182,8 +181,8 @@ fun HistoryScreen(
                         CaseDetail(
                             case = case,
                             targets = caseTargets,
-                            links = caseLinks,
-                            compared = caseCompared,
+                            links = caseView?.links,
+                            counts = caseView?.counts,
                             onOpenTarget = { viewModel.select(it) },
                             onUnfile = { viewModel.fileUnder(it, null) },
                             onSummary = { viewModel.setCaseSummary(case.id, it) },

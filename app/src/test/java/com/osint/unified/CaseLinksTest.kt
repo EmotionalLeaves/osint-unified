@@ -40,7 +40,7 @@ class CaseLinksTest {
     fun oneTargetCanLinkToNothing() {
         val links = CaseLinks.find(mapOf("alice@example.com" to listOf(entity("HOST", "x.org"))))
         assertTrue(links.isEmpty())
-        assertTrue(CaseLinks.summary(links, 1).contains("needs two"))
+        assertTrue(CaseLinks.summary(links, 1, 1).contains("needs two"))
     }
 
     @Test
@@ -102,7 +102,7 @@ class CaseLinksTest {
         )
         assertEquals(1, links.size)
         assertTrue(links.first().isTarget)
-        assertTrue(CaseLinks.summary(links, 3).contains("names another target"))
+        assertTrue(CaseLinks.summary(links, 3, 3).contains("names another target"))
     }
 
     /** A target asserting its own seed links it to nothing. */

@@ -1044,7 +1044,7 @@ fun GodEyeViewScreen(
                 }
                 },
                 "AT SEA" to {
-                LayerPill("SEA·N.EUROPE", state.vessels.size, Intel.Teal, showVessels || god, full = "Vessels (AIS)", loaded = "vessels" in state.loaded, trouble = "vessels" in state.feedTrouble) { settleGod(); showVessels = !showVessels }
+                LayerPill("SEA·N.EUROPE", state.vessels.size, Intel.Teal, showVessels || god, full = "Vessels (AIS)", loaded = "vessels" in state.loaded, trouble = "vessels" in state.feedTrouble, partial = "vessels" in state.feedPartial) { settleGod(); showVessels = !showVessels }
                 LayerPill("PORTS·GLOBAL", state.ports.size, Color(0xFF7FD4FF), showPorts || god, full = "Ports", loaded = "ports" in state.loaded, trouble = "ports" in state.feedTrouble) { settleGod(); showPorts = !showPorts }
                 LayerPill("BUOY", state.buoys.size, Color(0xFF4DD0E1), showBuoys || god, full = "Ocean buoys", loaded = "buoys" in state.loaded, trouble = "buoys" in state.feedTrouble) { settleGod(); showBuoys = !showBuoys }
                 LayerPill("TIDE·GLOBAL", state.seaLevel.size, Color(0xFF4DD0E1), showSeaLevel || god, full = "Sea level gauges", loaded = "seaLevel" in state.loaded, trouble = "seaLevel" in state.feedTrouble) { settleGod(); showSeaLevel = !showSeaLevel }
@@ -1055,7 +1055,7 @@ fun GodEyeViewScreen(
                 LayerPill("VOLC·GLOBAL", state.volcanoes.size, Color(0xFFFF4D4D), showVolcanoes || god, full = "Volcanoes", loaded = "volcanoes" in state.loaded, trouble = "volcanoes" in state.feedTrouble) { settleGod(); showVolcanoes = !showVolcanoes }
                 LayerPill("STATIONS", state.stations.size, Color(0xFF9AB0C0), showStations || god, full = "Seismic stations", loaded = "stations" in state.loaded, trouble = "stations" in state.feedTrouble) { settleGod(); showStations = !showStations }
                 LayerPill("EVT", state.naturalEvents.size, Intel.Amber, showEvents || god, full = "Natural events", loaded = "naturalEvents" in state.loaded, trouble = "naturalEvents" in state.feedTrouble) { settleGod(); showEvents = !showEvents }
-                LayerPill("FIRE·GLOBAL", state.fires.size, Color(0xFFFF5A4D), showFires || god, full = "Wildfires", loaded = "fires" in state.loaded, trouble = "fires" in state.feedTrouble) { settleGod(); showFires = !showFires }
+                LayerPill("FIRE·GLOBAL", state.fires.size, Color(0xFFFF5A4D), showFires || god, full = "Wildfires", loaded = "fires" in state.loaded, trouble = "fires" in state.feedTrouble, partial = "fires" in state.feedPartial) { settleGod(); showFires = !showFires }
                 },
                 "WEATHER AND HAZARD" to {
                 LayerPill("WX·US", state.weather.size, Color(0xFF7FB2FF), showWeather || god, full = "Weather alerts (US)", loaded = "weather" in state.loaded, trouble = "weather" in state.feedTrouble) { settleGod(); showWeather = !showWeather }
