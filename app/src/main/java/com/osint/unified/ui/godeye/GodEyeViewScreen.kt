@@ -176,6 +176,19 @@ fun GodEyeViewScreen(
     // fetched, and there was no way to clear them off the map.
     var showFindings by rememberSaveable { mutableStateOf(true) }
     val context = LocalContext.current
+    // One sentence instead of thirty.
+    //
+    // With no network the app was honest per source and incoherent
+    // overall: thirty differently-worded failures on thirty pills, a
+    // black map and a dossier of excuses, and nowhere the one line
+    // that explains all of it. The permission to read this has been
+    // in the manifest since the beginning and nothing read it.
+    val link by produceState(
+        com.osint.unified.network.Connectivity.State(true, false, false),
+        context
+    ) {
+        com.osint.unified.network.Connectivity.observe(context).collect { value = it }
+    }
     var inspected by remember { mutableStateOf<Inspected?>(null) }
     // What a long press on the globe turned up: every loaded layer, swept
     // for a radius around that point.
@@ -1124,6 +1137,22 @@ fun GodEyeViewScreen(
             // nobody asked to see. But an empty globe with an empty row
             // of pills under it looks like an app that is broken rather
             // than one that is idle, so it says which it is.
+            if (!link.online || link.walledGarden) {
+                Text(
+                    if (!link.online) {
+                        "No network. Nothing can be fetched, and every count " +
+                            "below is the last thing that was."
+                    } else {
+                        "This network is not reaching the internet — a sign-in " +
+                            "page, or a connection that has dropped. Feeds will " +
+                            "fail until it does."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Intel.Danger,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                )
+            }
+
             if (visibleLayers.isEmpty()) {
                 Text(
                     "No layers on, so nothing is being fetched and no " +

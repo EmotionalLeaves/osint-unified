@@ -166,6 +166,12 @@ fun InvestigationScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val link by produceState(
+        com.osint.unified.network.Connectivity.State(true, false, false),
+        context
+    ) {
+        com.osint.unified.network.Connectivity.observe(context).collect { value = it }
+    }
     // Saveable, because rotating closed the graph you had just
     // opened and threw the layout away with it.
     var showGraph by rememberSaveable { mutableStateOf(false) }
@@ -377,6 +383,24 @@ fun InvestigationScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(12.dp)
         ) {
+            // Before anything else, because without it a dossier where
+            // every row failed is thirty separate excuses and no
+            // explanation.
+            if (!link.online || link.walledGarden) {
+                Text(
+                    if (!link.online) {
+                        "No network. Nothing below could be asked, and every " +
+                            "row that failed failed for that reason."
+                    } else {
+                        "This network is not reaching the internet — a sign-in " +
+                            "page, or a connection that has dropped."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Intel.Danger,
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                )
+            }
+
             // ---- Dossier header ----
             Column(
                 modifier = Modifier
