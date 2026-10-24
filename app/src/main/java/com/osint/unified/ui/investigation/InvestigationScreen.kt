@@ -81,11 +81,33 @@ import com.osint.unified.ui.godeye.AreaReport
 import com.osint.unified.ui.godeye.GodEyeViewModel
 import com.osint.unified.ui.theme.Intel
 import com.osint.unified.ui.theme.categoryColor
+import androidx.compose.runtime.produceState
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import kotlinx.serialization.encodeToString
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+/**
+ * Everything the dossier shows, computed in one pass off the main
+ * thread.
+ *
+ * [ready] is false for the first frame, so the screen can say it is
+ * still reading rather than draw an empty dossier over a case that
+ * has results.
+ */
+private data class Dossier(
+    val facts: List<IntelSummary.Fact> = emptyList(),
+    val entities: List<Corroboration.Entity> = emptyList(),
+    val pivots: List<EntityExtractor.Pivot> = emptyList(),
+    val alreadyChased: Set<String> = emptySet(),
+    val timeline: List<Timeline.Event> = emptyList(),
+    val sorted: Findings.Sorted = Findings.sort(emptyList()),
+    val pending: List<com.osint.unified.data.db.Result> = emptyList(),
+    val ready: Boolean = false
+)
+
 @Composable
 fun InvestigationScreen(
     viewModel: GodEyeViewModel,
@@ -164,30 +186,55 @@ fun InvestigationScreen(
             it.input.trim().lowercase() == seedRaw && it.status != "running"
         }
         val found = state.results.count { Findings.isHit(it) }
-        val facts = remember(state.results) { IntelSummary.synthesize(state.results) }
-        // What the case found, as things rather than as tool output.
-        val entities = remember(state.results, observable.raw, state.dismissals) {
-            Corroboration.merge(
-                state.results,
-                observable.raw,
-                seedIsPlace = observable is com.osint.unified.domain.Observable.Coordinate,
-                dismissed = state.dismissals
-            )
+        // Everything the dossier is made of, worked out once and away
+        // from the main thread.
+        //
+        // These were six `remember(state.results)` blocks computing
+        // during composition. Corroboration.merge alone runs eleven
+        // regexes over every row's raw output — and a single row can
+        // be a megabyte of JSON — then EntityExtractor runs them
+        // again, then IntelSummary, Timeline, and two passes of
+        // Findings. `state.results` changes once per tool completion,
+        // so a forty-tool scan with a second pass re-ran all of that
+        // forty times over everything collected so far, on the thread
+        // drawing the progress bar it was animating. The rest of this
+        // app moved comparable work to produceState years of commits
+        // ago; the heaviest screen in it did not.
+        val analysis by produceState(
+            initialValue = Dossier(),
+            state.results,
+            state.dismissals,
+            observable.raw
+        ) {
+            value = withContext(Dispatchers.Default) {
+                Dossier(
+                    facts = IntelSummary.synthesize(state.results),
+                    entities = Corroboration.merge(
+                        state.results,
+                        observable.raw,
+                        seedIsPlace = observable is Observable.Coordinate,
+                        dismissed = state.dismissals
+                    ),
+                    pivots = EntityExtractor.extract(
+                        state.results,
+                        observable.raw,
+                        seedIsPlace = observable is Observable.Coordinate
+                    ),
+                    alreadyChased = state.results.map { it.input }
+                        .filter { it.trim().lowercase() != seedRaw }
+                        .toSet(),
+                    timeline = Timeline.build(state.results),
+                    sorted = Findings.sort(state.results),
+                    pending = Findings.pending(state.results),
+                    ready = true
+                )
+            }
         }
-        val pivots = remember(state.results) {
-            EntityExtractor.extract(
-                state.results,
-                observable.raw,
-                seedIsPlace = observable is Observable.Coordinate
-            )
-        }
+        val facts = analysis.facts
+        val entities = analysis.entities
+        val pivots = analysis.pivots
         // Identifiers the second pass has already run tools against.
-        val alreadyChased = remember(state.results) {
-            val seed = observable.raw.trim().lowercase()
-            state.results.map { it.input }
-                .filter { it.trim().lowercase() != seed }
-                .toSet()
-        }
+        val alreadyChased = analysis.alreadyChased
 
         Column(
             modifier = Modifier.padding(pad).fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp)
@@ -363,7 +410,7 @@ fun InvestigationScreen(
             }
 
             // ---- When it happened ----
-            val timeline = remember(state.results) { Timeline.build(state.results) }
+            val timeline = analysis.timeline
             if (timeline.isNotEmpty()) {
                 var timelineOpen by rememberSaveable { mutableStateOf(false) }
                 Row(
@@ -745,8 +792,8 @@ fun InvestigationScreen(
                 // Four ways, through the one function the export also uses,
                 // so the screen and the report cannot disagree about a count
                 // — which is the one thing the README says cannot happen.
-                val sorted = remember(state.results) { Findings.sort(state.results) }
-                val pending = remember(state.results) { Findings.pending(state.results) }
+                val sorted = analysis.sorted
+                val pending = analysis.pending
                 val hits = sorted.hits
                 val misses = sorted.empty + sorted.failed
 
