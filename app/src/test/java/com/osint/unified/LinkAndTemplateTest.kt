@@ -77,6 +77,29 @@ class LinkAndTemplateTest {
         assertTrue(resolved, !resolved.contains("{LAT}") && !resolved.contains("{LON}"))
     }
 
+    /**
+     * A coordinate is two numbers, or the template is left alone.
+     *
+     * Both halves used to go into the URL as typed, and fourteen of
+     * these templates put the pair into a query string — so an
+     * ampersand or a hash in the input built a different request
+     * from the one the label named.
+     */
+    @Test
+    fun aCoordinateTemplateRefusesWhatIsNotACoordinate() {
+        val t = ToolTemplates.curated("coordinate").first { it.url.contains("{LAT}") }
+        listOf(
+            "48.8584&zoom=1, 2.2945",
+            "48.8584, 2.2945#x",
+            "here, there",
+            "999, 2.2945",
+            "48.8584, 999",
+            "48.8584"
+        ).forEach { bad ->
+            assertEquals(bad, t.url, ToolTemplates.resolve(t, bad))
+        }
+    }
+
     @Test
     fun everyCuratedTemplateHasAPlaceholder() {
         val types = listOf("domain", "ip", "email", "name", "coordinate", "phone", "wallet", "image", "aircraft")

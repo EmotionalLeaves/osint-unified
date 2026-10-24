@@ -232,6 +232,21 @@ object Http {
             // this map is bounded: better to lose the bookkeeping for a
             // host than to keep a semaphore for every site on the internet.
             if (gates.size > MAX_TRACKED_HOSTS) gates.clear()
+            // And the same for the cooldowns, which had no bound at all.
+            //
+            // An entry is only ever removed by asking that host again,
+            // so a sweep across two thousand sites that refuses a few
+            // hundred of them left those few hundred in the map for
+            // the life of the process, whether or not anything ever
+            // went back. Expired ones go first, because they are the
+            // ones that no longer mean anything; only if that is not
+            // enough does the rest go, and losing a live cooldown
+            // costs one 429, not a wrong answer.
+            if (cooldowns.size > MAX_TRACKED_HOSTS) {
+                val now = System.currentTimeMillis()
+                cooldowns.entries.removeAll { it.value <= now }
+                if (cooldowns.size > MAX_TRACKED_HOSTS) cooldowns.clear()
+            }
             // computeIfAbsent rather than getOrPut: two threads arriving
             // together would otherwise each make a semaphore, and the limit
             // this exists to impose would not be imposed.

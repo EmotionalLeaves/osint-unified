@@ -335,13 +335,29 @@ object ToolTemplates {
     /** Resolves a template against a target, handling coordinate pairs. */
     fun resolve(template: Template, target: String): String {
         if (template.url.contains("{LAT}")) {
-            val parts = target.split(",").map { it.trim() }
+            // Numbers, not whatever was typed.
+            //
+            // The two halves of the target went straight into the URL
+            // — fourteen of these templates are coordinate ones and
+            // several put the pair into a query string — so anything
+            // with an ampersand or a hash in it built a different
+            // request from the one the label named. A coordinate is
+            // two numbers or it is not a coordinate, and a template
+            // that cannot be filled is better left unfilled.
+            val parts = target.split(",").map { it.trim().toDoubleOrNull() }
             val lat = parts.getOrNull(0) ?: return template.url
             val lon = parts.getOrNull(1) ?: return template.url
-            return template.url.replace("{LAT}", lat).replace("{LON}", lon)
+            if (lat !in -90.0..90.0 || lon !in -180.0..180.0) return template.url
+            return template.url
+                .replace("{LAT}", trimZeros(lat))
+                .replace("{LON}", trimZeros(lon))
         }
         return template.resolve(target)
     }
+
+    /** Six decimals is about a tenth of a metre, and no trailing noise. */
+    private fun trimZeros(v: Double): String =
+        "%.6f".format(java.util.Locale.US, v).trimEnd('0').trimEnd('.')
 
     /** Maps an observable to the type key used by the templates. */
     fun typeOf(observable: Observable): String = when (observable) {
