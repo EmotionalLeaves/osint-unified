@@ -97,6 +97,40 @@ import java.io.File
  * still reading rather than draw an empty dossier over a case that
  * has results.
  */
+/**
+ * A run of result cards, bounded.
+ *
+ * Every card named here is composed and measured at once, because
+ * the dossier is a scrolling Column rather than a lazy list, and each
+ * card parses its own raw output to build its summary and its pivot
+ * list. A big case names more than a hundred of them. Showing the
+ * first few and offering the rest costs one tap and takes the screen
+ * from a hundred parses to a dozen.
+ */
+@Composable
+private fun CardList(
+    rows: List<com.osint.unified.data.db.Result>,
+    viewModel: GodEyeViewModel,
+    first: Int = 12
+) {
+    var showAll by rememberSaveable(rows.size) { mutableStateOf(false) }
+    val shown = if (showAll) rows else rows.take(first)
+    shown.forEach { row ->
+        ResultCard(row, onPivot = { value -> viewModel.onPivot(value) })
+        Spacer(Modifier.height(10.dp))
+    }
+    if (rows.size > shown.size) {
+        Text(
+            "SHOW ${rows.size - shown.size} MORE",
+            style = MaterialTheme.typography.labelMedium,
+            color = Intel.Cyan,
+            modifier = Modifier
+                .padding(bottom = 10.dp)
+                .clickable { showAll = true }
+        )
+    }
+}
+
 private data class Dossier(
     val facts: List<IntelSummary.Fact> = emptyList(),
     val entities: List<Corroboration.Entity> = emptyList(),
@@ -803,6 +837,16 @@ fun InvestigationScreen(
                 val seed = observable.raw.trim().lowercase()
                 val (direct, derived) = hits.partition { it.input.trim().lowercase() == seed }
 
+                // Not every card at once.
+                //
+                // This screen is a plain scrolling Column, so every
+                // ResultCard it names is composed and measured
+                // immediately — and each one parses its own raw
+                // output to build a summary and a pivot list. Sixty
+                // to a hundred and twenty of those on one dossier is
+                // the rest of why this screen is slow. A section
+                // shows its first cards and offers the others; the
+                // misses below already work exactly this way.
                 if (direct.isNotEmpty()) {
                     val byCategory = direct.groupBy { row ->
                         com.osint.unified.domain.ToolRegistry.byId(row.toolId)?.category
@@ -810,10 +854,7 @@ fun InvestigationScreen(
                     }
                     byCategory.forEach { (category, rows) ->
                         SectionHeader(category.name, categoryColor(category))
-                        rows.forEach { row ->
-                            ResultCard(row, onPivot = { value -> viewModel.onPivot(value) })
-                            Spacer(Modifier.height(10.dp))
-                        }
+                        CardList(rows, viewModel)
                     }
                 }
 
@@ -830,10 +871,7 @@ fun InvestigationScreen(
                             fontFamily = FontFamily.Monospace,
                             modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
                         )
-                        rows.forEach { row ->
-                            ResultCard(row, onPivot = { value -> viewModel.onPivot(value) })
-                            Spacer(Modifier.height(10.dp))
-                        }
+                        CardList(rows, viewModel)
                     }
                 }
 
