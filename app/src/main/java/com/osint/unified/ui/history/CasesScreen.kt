@@ -291,7 +291,15 @@ fun CaseDetail(
                         color = Intel.TextLow
                     )
                 }
-                CaseAction("REMOVE", Intel.TextLow) { onUnfile(t.id) }
+                // Also two taps, and for a reason beyond undoing it:
+                // this sits inside the row that opens the target, so a
+                // tap that misses the row by a few pixels used to
+                // unfile it instead.
+                val unfile = com.osint.unified.ui.common.rememberTwoTap(t.id) { onUnfile(t.id) }
+                CaseAction(
+                    if (unfile.armed) "CONFIRM" else "REMOVE",
+                    if (unfile.armed) Intel.Danger else Intel.TextLow
+                ) { unfile.tap() }
             }
         }
 
@@ -320,12 +328,12 @@ fun CaseDetail(
             }
         }
 
-        var confirming by rememberSaveable(case.id) { mutableStateOf(false) }
+        val deleteCase = com.osint.unified.ui.common.rememberTwoTap(case.id, onDelete)
         Spacer(Modifier.height(14.dp))
         CaseAction(
-            if (confirming) "CONFIRM — DELETE CASE" else "DELETE CASE",
-            if (confirming) Intel.Danger else Intel.TextLow
-        ) { if (confirming) onDelete() else confirming = true }
+            if (deleteCase.armed) "CONFIRM — DELETE CASE" else "DELETE CASE",
+            if (deleteCase.armed) Intel.Danger else Intel.TextLow
+        ) { deleteCase.tap() }
         Text(
             "Deleting a case removes the folder. Every target in it keeps " +
                 "its results and stays under TARGETS.",

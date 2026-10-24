@@ -403,8 +403,10 @@ private fun InvestigationRow(
     onDelete: () -> Unit
 ) {
     // One tap used to destroy a case. Deleting an investigation someone
-    // spent an evening on should take two.
-    var confirming by remember(investigation.id) { mutableStateOf(false) }
+    // spent an evening on should take two — and two that are a decision,
+    // not one finger bouncing. See TwoTap: arm and confirm share a
+    // position, so without a guard a double tap was a deletion.
+    val delete = com.osint.unified.ui.common.rememberTwoTap(investigation.id, onDelete)
 
     Row(
         modifier = Modifier
@@ -455,14 +457,14 @@ private fun InvestigationRow(
             }
         }
         Text(
-            if (confirming) "CONFIRM" else "DELETE",
+            if (delete.armed) "CONFIRM" else "DELETE",
             style = MaterialTheme.typography.labelSmall,
-            color = if (confirming) Intel.Danger else Intel.TextLow,
+            color = if (delete.armed) Intel.Danger else Intel.TextLow,
             // A 27dp target whose second tap deletes a case.
             modifier = Modifier
                 .minimumInteractiveComponentSize()
                 .clip(RoundedCornerShape(6.dp))
-                .clickable { if (confirming) onDelete() else confirming = true }
+                .clickable { delete.tap() }
                 .padding(horizontal = 10.dp, vertical = 6.dp)
         )
     }

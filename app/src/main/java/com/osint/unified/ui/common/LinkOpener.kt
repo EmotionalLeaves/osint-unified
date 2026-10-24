@@ -51,8 +51,30 @@ object LinkOpener {
      * also trimmed.
      */
     fun sanitize(raw: String): String {
-        var url = raw.trim().trimEnd('.', ',', ')', ']', '}', '"', '\'', ';', '>', '*')
+        var url = raw.trim().trimEnd('.', ',', ']', '}', '"', '\'', ';', '>', '*')
+        // A closing parenthesis only goes if nothing opened one.
+        //
+        // It was in the list above, which broke every Wikipedia article
+        // with a disambiguator — /wiki/Foo_(bar) opened /wiki/Foo_(bar
+        // and 404ed — while the case it was there for is a URL at the
+        // end of a parenthetical sentence, which has no '(' in it.
+        while (url.endsWith(')') && url.count { it == '(' } < url.count { it == ')' }) {
+            url = url.dropLast(1)
+        }
         if (url.isBlank()) return ""
+        // http and https, and nothing else.
+        //
+        // This is the only scheme check on the path that matters.
+        // shouldOverrideUrlLoading guards every navigation the private
+        // browser makes except the first one — and the first one is the
+        // one carrying a string from outside the app. GeoBlip.url comes
+        // straight from the news, EONET and GDACS feeds and from the
+        // user's own custom overlay, so a feed answering with
+        // `data:text/html,...` rendered its HTML inside a dialog
+        // captioned NO COOKIES · NOTHING KEPT · SCRIPTS RUN, and
+        // `javascript:` ran.
+        val scheme = url.substringBefore(':', "").lowercase()
+        if (scheme != "http" && scheme != "https") return ""
         // Separate the fragment so characters there are encoded too, but the
         // '#' itself survives.
         val illegal = mapOf(
@@ -76,7 +98,15 @@ object LinkOpener {
         }
         url = sb.toString()
         // A URL that is nothing but a scheme is not worth opening.
-        return if (url.length <= "https://".length) "" else url
+        //
+        // Measured against the scheme actually present, not against the
+        // longer of the two: `http://x` is eight characters and was
+        // silently dropped, as was any template that resolved to a bare
+        // host. A link that does nothing when tapped is worse than one
+        // that goes somewhere unhelpful, because nothing tells the
+        // person it was discarded.
+        val afterScheme = url.substringAfter("://", "")
+        return if (afterScheme.isBlank()) "" else url
     }
 
     private fun Char.isHexDigit() = this in '0'..'9' || this in 'a'..'f' || this in 'A'..'F'

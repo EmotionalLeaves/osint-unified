@@ -52,6 +52,47 @@ class LinkAndTemplateTest {
         assertEquals("", LinkOpener.sanitize("https://"))
     }
 
+    /**
+     * A parenthesis that belongs to the address, not to the sentence
+     * around it. Every Wikipedia disambiguator has one.
+     */
+    @Test
+    fun aBalancedParenthesisSurvives() {
+        assertEquals(
+            "https://en.wikipedia.org/wiki/Mercury_(planet)",
+            LinkOpener.sanitize("https://en.wikipedia.org/wiki/Mercury_(planet)")
+        )
+        // And one that closes nothing is still prose.
+        assertEquals(
+            "https://en.wikipedia.org/wiki/Mercury",
+            LinkOpener.sanitize("https://en.wikipedia.org/wiki/Mercury)")
+        )
+    }
+
+    /** Short is not the same as empty. */
+    @Test
+    fun aShortButRealUrlIsNotDiscarded() {
+        assertEquals("http://x.io", LinkOpener.sanitize("http://x.io"))
+        assertEquals("https://t.co", LinkOpener.sanitize("https://t.co"))
+    }
+
+    /**
+     * The private browser's own guard is not consulted for the first
+     * load, and the first load is the one carrying a string from a
+     * remote feed.
+     */
+    @Test
+    fun onlyHttpAndHttpsOpen() {
+        assertEquals("", LinkOpener.sanitize("data:text/html,<script>alert(1)</script>"))
+        assertEquals("", LinkOpener.sanitize("javascript:alert(1)"))
+        assertEquals("", LinkOpener.sanitize("file:///data/data/com.osint.unified/databases/x"))
+        assertEquals("", LinkOpener.sanitize("content://com.other.app/secret"))
+        assertEquals("", LinkOpener.sanitize("intent://scan/#Intent;scheme=zxing;end"))
+        assertEquals("", LinkOpener.sanitize("JaVaScRiPt:alert(1)"))
+        assertEquals("https://example.com/a", LinkOpener.sanitize("https://example.com/a"))
+        assertEquals("HTTP://example.com/a", LinkOpener.sanitize("HTTP://example.com/a"))
+    }
+
     @Test
     fun searchUrlsBecomeRunnableTemplates() {
         val t = ToolTemplates.templateFor("https://example.com/search?q=placeholder&lang=en")
