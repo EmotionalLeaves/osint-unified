@@ -136,6 +136,34 @@ private fun thin(pending: List<PendingMarker>): List<PendingMarker> =
  * layers change rather than on every pan, and because the globe can
  * usefully show more at once — it is the view for seeing everything.
  */
+/**
+ * What the globe is drawing, and what the armed layers hold.
+ *
+ * The flat map has carried this pair since the second tester
+ * reported "zoom in and all the layers stop working"; the globe,
+ * which is the view that opens, had no number to report, so the
+ * sentence explaining an empty screen could only ever appear on the
+ * branch where the problem was milder. The sphere culls to the
+ * visible cap plus a margin and then thins to [GLOBE_BUDGET], so a
+ * hundred thousand wildfires become at most two and a half thousand
+ * markers under a pill still reading a hundred thousand.
+ */
+internal data class GlobePlan(
+    val points: List<GlobePoint>,
+    /** Everything the armed layers hold, before the camera is applied. */
+    val total: Int
+)
+
+internal fun planGlobe(
+    points: List<GlobePoint>,
+    budget: Int = GLOBE_BUDGET,
+    centre: Pair<Double, Double>? = null,
+    keepWithinDegrees: Double = 180.0
+): GlobePlan = GlobePlan(
+    thinGlobe(points, budget, centre, keepWithinDegrees),
+    points.size
+)
+
 internal fun thinGlobe(
     points: List<GlobePoint>,
     budget: Int = GLOBE_BUDGET,

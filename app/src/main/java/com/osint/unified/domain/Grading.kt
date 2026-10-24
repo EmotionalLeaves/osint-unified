@@ -97,9 +97,31 @@ object Grading {
          * Defaults to [source] so a caller that has only one grade to
          * give gets the behaviour it always had.
          */
-        agreeingSource: Reliability = source
+        agreeingSource: Reliability = source,
+        /**
+         * The best grade among the sources that say otherwise.
+         *
+         * Same reasoning as [agreeingSource], in the direction that
+         * matters more. A contradiction was a bare count, and a
+         * single-source finding has `agreeing = 0`, so one dissenting
+         * source of any quality at all made `contradicting > agreeing`
+         * true: an E-grade username hit asserting a different country
+         * graded a certificate-transparency record A5 — improbable.
+         * A source nobody should believe cannot promote a claim and
+         * must not be able to destroy one.
+         *
+         * Defaults to [source] so a caller with one grade to give gets
+         * the behaviour it always had.
+         */
+        contradictingSource: Reliability = source
     ): Credibility = when {
-        contradicting > agreeing -> Credibility.IMPROBABLE
+        // A dissenting source has to be worth listening to, and it has
+        // to be at least as good as the one it is contradicting.
+        // Below that it is noted — `contradicted` is carried on the
+        // entity and shown — but it does not move the grade.
+        contradicting > agreeing &&
+            contradictingSource <= Reliability.FAIRLY &&
+            contradictingSource <= source -> Credibility.IMPROBABLE
         // Agreement from sources nobody should believe is not
         // confirmation. It is still worth something — two accounts of
         // the same thing are better than one — so it lifts to

@@ -266,6 +266,54 @@ class CorroborationTest {
         )
     }
 
+    /**
+     * The mirror of [aWeakWitnessDoesNotConfirmAStrongOne], and the
+     * worse half: a single-source finding has `agreeing = 0`, so one
+     * dissenting source of any quality made `contradicting > agreeing`
+     * true and graded a certificate-transparency record "A5 —
+     * improbable".
+     */
+    @Test
+    fun aWeakWitnessDoesNotRefuteAStrongOne() {
+        assertEquals(
+            Grading.Credibility.PROBABLE,
+            Grading.credibility(
+                source = Grading.Reliability.COMPLETE,
+                agreeing = 0,
+                contradicting = 1,
+                contradictingSource = Grading.Reliability.UNRELIABLE
+            )
+        )
+    }
+
+    /** But a source as good as the one it contradicts still does. */
+    @Test
+    fun anEqualWitnessStillRefutes() {
+        assertEquals(
+            Grading.Credibility.IMPROBABLE,
+            Grading.credibility(
+                source = Grading.Reliability.COMPLETE,
+                agreeing = 0,
+                contradicting = 1,
+                contradictingSource = Grading.Reliability.COMPLETE
+            )
+        )
+    }
+
+    /** And a weak claim contradicted by a good source is improbable. */
+    @Test
+    fun aGoodWitnessRefutesAWeakClaim() {
+        assertEquals(
+            Grading.Credibility.IMPROBABLE,
+            Grading.credibility(
+                source = Grading.Reliability.NOT_USUALLY,
+                agreeing = 0,
+                contradicting = 1,
+                contradictingSource = Grading.Reliability.USUALLY
+            )
+        )
+    }
+
     @Test
     fun twoGoodSourcesStillConfirm() {
         assertEquals(

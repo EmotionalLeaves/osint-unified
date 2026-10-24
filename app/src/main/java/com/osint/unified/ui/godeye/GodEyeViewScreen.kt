@@ -1132,7 +1132,7 @@ fun GodEyeViewScreen(
             // being careful. Reported from a second phone as "zoom in
             // and all the layers stop working", because that is what
             // it looks like from the outside. Said plainly instead.
-            if (!roundEarth && visibleLayers.isNotEmpty() && plotted.second > 0) {
+            if (visibleLayers.isNotEmpty() && plotted.second > 0) {
                 val (shown, total) = plotted
                 if (shown == 0) {
                     Text(
@@ -1144,7 +1144,13 @@ fun GodEyeViewScreen(
                     )
                 } else if (shown < total) {
                     Text(
-                        "Showing $shown of $total — the rest are outside this view.",
+                        if (roundEarth) {
+                            "Showing $shown of $total — the rest are over the " +
+                                "horizon, or thinned out of a crowd. Zoom in " +
+                                "for the ones here."
+                        } else {
+                            "Showing $shown of $total — the rest are outside this view."
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = Intel.TextLow,
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
@@ -1355,13 +1361,13 @@ fun GodEyeViewScreen(
                     // returns something genuinely different, and
                     // `visibleLayers` covers the other thing that
                     // changes what is drawn: which layers are on.
-                    val globePoints by produceState(
-                        emptyList<GlobePoint>(),
+                    val globePlan by produceState(
+                        GlobePlan(emptyList(), 0),
                         state.layerVersion, visibleLayers, god,
                         keyLat, keyLon, step
                     ) {
                         value = withContext(Dispatchers.Default) {
-                            thinGlobe(
+                            planGlobe(
                                 layers.points(),
                                 centre = globeCamera.lat.toDouble() to globeCamera.lon.toDouble(),
                                 // The corner radius, plus the
@@ -1374,6 +1380,14 @@ fun GodEyeViewScreen(
                                 keepWithinDegrees = visible + step
                             )
                         }
+                    }
+                    val globePoints = globePlan.points
+                    // The globe reports what it drew, exactly as the
+                    // flat map does, so the sentence below the pills
+                    // works on the view that opens and not only on the
+                    // one you have to switch to.
+                    LaunchedEffect(globePlan) {
+                        plotted = globePoints.size to globePlan.total
                     }
                     GlobeView(
                         points = globePoints,

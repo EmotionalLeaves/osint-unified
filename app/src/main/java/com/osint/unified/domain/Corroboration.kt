@@ -356,11 +356,25 @@ object Corroboration {
         // A city and the country it is in are not a contradiction, so
         // only country-level places compete with each other.
         val exclusive = HashMap<String, MutableMap<String, Int>>()
+        // And by WHOM. A contradiction used to be a bare count, so a
+        // single E-grade soft-404 hit asserting a different country
+        // beat crt.sh asserting one — for a single-source finding
+        // `agreeing` is zero, so any one rival made
+        // `contradicting > agreeing` true and the record came out
+        // "A5 — improbable". Agreement was given a quality gate for
+        // exactly this reason and contradiction was not, which let a
+        // weak source move a grade further in the other direction
+        // than it could ever move it in this one.
+        val exclusiveBest = HashMap<String, MutableMap<String, Grading.Reliability>>()
         assertions.forEach { (key, claims) ->
             if (key !in stated) return@forEach
             val group = exclusiveGroup(key.first, key.second) ?: return@forEach
             val independent = independentCount(claims.map { it.first }.distinct())
             exclusive.getOrPut(group) { HashMap() }[key.second] = independent
+            exclusiveBest.getOrPut(group) { HashMap() }[key.second] =
+                claims.map { it.first }.distinct()
+                    .map { ToolRegistry.byId(it)?.reliability ?: Grading.Reliability.UNJUDGED }
+                    .minOrNull() ?: Grading.Reliability.UNJUDGED
         }
 
         return assertions.map { (key, claims) ->
@@ -394,6 +408,12 @@ object Corroboration {
                 ?.filterKeys { it != value }
                 .orEmpty()
             val contradicted = rivals.values.sum()
+            // The best source saying something else. Enum order runs
+            // best-first, so `min` is the strongest rival.
+            val contradictor = group?.let { exclusiveBest[it] }
+                ?.filterKeys { it != value }
+                ?.values?.minOrNull()
+                ?: Grading.Reliability.UNJUDGED
             val wrong = dismissed[key]
             val caveat = when {
                 wrong != null -> "you marked this wrong"
@@ -410,7 +430,8 @@ object Corroboration {
                     reliability,
                     agreeing = independent - 1,
                     contradicting = contradicted,
-                    agreeingSource = corroborator
+                    agreeingSource = corroborator,
+                    contradictingSource = contradictor
                 ),
                 mentions = claims.sumOf { it.second },
                 caveat = caveat,
