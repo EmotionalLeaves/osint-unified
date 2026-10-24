@@ -38,30 +38,22 @@ object DataMeter {
      * The dossier's "this cost N" line was the difference of [total]
      * across the search, so a ten-second username search run with the
      * globe on screen was charged everything those polled — off by a
-     * large multiple, under a sentence naming the dossier. A tool
-     * marks its own requests, so the two can be told apart.
+     * large multiple, under a sentence naming the dossier.
+     *
+     * The two travel on different clients already — tools on
+     * `Http.client`, the map layers on `Http.feedClient` — so the
+     * interceptor that counts them knows which it is on. Counted
+     * there and not by a thread-local, because the work suspends and
+     * resumes on whatever thread happens to be free.
      */
     private val toolTotal = AtomicLong(0)
 
-    private val onToolThread = ThreadLocal.withInitial { false }
-
-    /** Runs [block] with everything it fetches counted as tool traffic. */
-    fun <T> asTool(block: () -> T): T {
-        val was = onToolThread.get()
-        onToolThread.set(true)
-        return try {
-            block()
-        } finally {
-            onToolThread.set(was)
-        }
-    }
-
     fun toolBytes(): Long = toolTotal.get()
 
-    internal fun add(host: String, bytes: Long) {
+    internal fun add(host: String, bytes: Long, forTool: Boolean = false) {
         if (bytes <= 0) return
         total.addAndGet(bytes)
-        if (onToolThread.get() == true) toolTotal.addAndGet(bytes)
+        if (forTool) toolTotal.addAndGet(bytes)
         // Bounded, because a dossier can touch hundreds of hosts and
         // this is a diagnostic rather than a ledger.
         if (byHost.size < MAX_HOSTS || byHost.containsKey(host)) {
