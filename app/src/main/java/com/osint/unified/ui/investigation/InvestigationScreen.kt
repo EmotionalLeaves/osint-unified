@@ -114,7 +114,16 @@ private fun CardList(
     viewModel: GodEyeViewModel,
     first: Int = 12
 ) {
-    var showAll by rememberSaveable(rows.size) { mutableStateOf(false) }
+    // Keyed on the section, not on how many rows are in it.
+    //
+    // It was keyed on rows.size, so every result that arrived during
+    // a scan reset it: expand a section to read it and it snapped
+    // shut a second later, which looks exactly like the app
+    // discarding what it had found.
+    // It resets when the target changes, which is the one time it
+    // should.
+    val sectionKey = rows.firstOrNull()?.investigationId ?: 0L
+    var showAll by rememberSaveable(sectionKey) { mutableStateOf(false) }
     val shown = if (showAll) rows else rows.take(first)
     shown.forEach { row ->
         ResultCard(row, onPivot = { value -> viewModel.onPivot(value) })

@@ -243,6 +243,7 @@ fun GodEyeViewScreen(
     var bannerPx by remember { mutableIntStateOf(0) }
     var headerPx by remember { mutableIntStateOf(0) }
     var searchPx by remember { mutableIntStateOf(0) }
+    var typesPx by remember { mutableIntStateOf(0) }
     var panelPx by remember { mutableIntStateOf(0) }
     // A thing called a God's Eye View should be a globe. Mercator is the
     // right tool for looking at a street and the wrong one for looking at
@@ -457,7 +458,7 @@ fun GodEyeViewScreen(
       BoxWithConstraints(modifier = Modifier.padding(pad).fillMaxSize()) {
         val viewport = maxHeight
         val density = LocalDensity.current
-        val chrome = with(density) { (bannerPx + headerPx + searchPx).toDp() }
+        val chrome = with(density) { (bannerPx + headerPx + searchPx + typesPx).toDp() }
         // A map worth looking at. Below this there is no point
         // drawing one, and the panel has to give way instead.
         val mapFloor = 200.dp
@@ -689,11 +690,41 @@ fun GodEyeViewScreen(
                 ),
                 keyboardActions = KeyboardActions(onSearch = { viewModel.onSearch() }),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                // A search that will not run says so under the box
+                // it will not run from.
+                isError = state.queryTrouble != null,
+                supportingText = state.queryTrouble?.let {
+                    { Text(it, style = MaterialTheme.typography.labelSmall) }
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .onSizeChanged { searchPx = it.height }
                     .padding(horizontal = 12.dp, vertical = 8.dp)
             )
+
+            // The type chips belong with the box they change.
+            //
+            // The search field was lifted out of the fold because on
+            // a fresh install there was no visible search box at all.
+            // The chips that decide what a search MEANS were left
+            // behind it, which is the same bug one step along: a box
+            // you can find and no way to tell it that "london" is a
+            // place and not somebody's handle. The comment three
+            // screens down still said "what folds away is the search
+            // box, the type chips and the examples" while the box had
+            // already gone. The examples can stay folded; they are a
+            // convenience, and these are not.
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onSizeChanged { typesPx = it.height }
+                    .padding(horizontal = 12.dp, vertical = 2.dp)
+            ) {
+                SEARCH_TYPES.forEach { (key, label) ->
+                    TypeChip(label, state.searchType == key) { viewModel.onTypeSelected(key) }
+                }
+            }
 
             // The panel and the map share what is left, in one of the
             // two arrangements decided above.
@@ -712,17 +743,6 @@ fun GodEyeViewScreen(
                     .onSizeChanged { panelPx = it.height }
             ) {
             if (panelOpen) {
-            // Search-type selector: AUTO detects; others force the type so a
-            // query always routes to the right tools.
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp)
-            ) {
-                SEARCH_TYPES.forEach { (key, label) ->
-                    TypeChip(label, state.searchType == key) { viewModel.onTypeSelected(key) }
-                }
-            }
-
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)

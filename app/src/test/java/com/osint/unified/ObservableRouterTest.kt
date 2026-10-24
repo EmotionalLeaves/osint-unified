@@ -219,6 +219,52 @@ class ObservableRouterTest {
     }
 
     /**
+     * A single word is a word, not somebody's handle.
+     *
+     * The username pattern matched any run of three to thirty
+     * characters and was tested before the name fallback, so every
+     * bare word anybody typed went to the account sweep: Keybase,
+     * Reddit, Hacker News and Telegram were asked whether anyone is
+     * called "london", all four said no, and the dossier read
+     * NOTHING FOUND. The sixteen sources that would have had
+     * something to say about a place, a person or a company were
+     * never asked at all. It fires on the most natural thing to
+     * type into a box labelled "query any target".
+     */
+    @Test
+    fun aBareWordIsANameAndNotAHandle() {
+        listOf("london", "tesla", "gazprom", "smith", "putin", "nestle").forEach {
+            assertTrue(it, router.classify(it) is Observable.Name)
+        }
+        // What a name does not carry is still a handle.
+        listOf("mrbeast_", "john.doe9", "x_ae_a12", "a-b-c", "averyveryverylonghandle").forEach {
+            assertTrue(it, router.classify(it) is Observable.Username)
+        }
+    }
+
+    /**
+     * Forcing a type says which question to ask, not that the input
+     * is a valid subject for it. Only the coordinate branch checked;
+     * picking DOMAIN and typing a person's name fired fifteen domain
+     * tools at a two-word phrase.
+     */
+    @Test
+    fun aForcedTypeTheInputCannotSatisfyFallsBackToAName() {
+        assertTrue(router.classifyAs("john smith", "domain") is Observable.Name)
+        assertTrue(router.classifyAs("bob", "email") is Observable.Name)
+        assertTrue(router.classifyAs("not an address", "ip") is Observable.Name)
+        assertTrue(router.classifyAs("hello", "phone") is Observable.Name)
+        assertTrue(router.classifyAs("example.com", "image") is Observable.Name)
+        // And the ones it can satisfy still go where they were sent.
+        assertTrue(router.classifyAs("example.com", "domain") is Observable.Domain)
+        assertTrue(router.classifyAs("a@b.com", "email") is Observable.Email)
+        assertTrue(router.classifyAs("8.8.8.8", "ip") is Observable.IpAddress)
+        assertTrue(router.classifyAs("+14155550123", "phone") is Observable.PhoneNumber)
+        assertTrue(router.classifyAs("london", "username") is Observable.Username)
+        assertTrue(router.classifyAs("https://x/y.jpg", "image") is Observable.ImageUrl)
+    }
+
+    /**
      * A MAC address is not an IP address. The IPv6 pattern took
      * anything with colons in it, so hardware addresses and clock
      * times were sent to ipwho.is, Shodan, RDAP and BGPView.

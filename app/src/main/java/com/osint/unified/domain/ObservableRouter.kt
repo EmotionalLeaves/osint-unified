@@ -124,6 +124,10 @@ class ObservableRouter {
         return digits in 7..15
     }
 
+    /** Either family, for the forced-type check. */
+    private fun looksLikeIp(input: String): Boolean =
+        ipv4Regex.matches(input) || looksLikeIpv6(input)
+
     private fun hasKnownTld(input: String): Boolean {
         val tld = input.substringAfterLast('.').lowercase()
         return tld in KNOWN_TLDS || (tld.length == 2 && tld.all { it.isLetter() })
@@ -185,10 +189,47 @@ class ObservableRouter {
             // check, because "doe" looks like a TLD if you never ask.
             domainRegex.matches(input) && hasKnownTld(input) -> Observable.Domain(input)
 
-            usernameRegex.matches(input) -> Observable.Username(input)
+            // A handle looks like a handle, and a word is a word.
+            //
+            // This matched any run of three to thirty characters, so
+            // every single word anybody typed — london, tesla,
+            // gazprom, a surname on its own — went to the account
+            // sweep, which asked Keybase and Reddit and Hacker News
+            // whether anyone is called that, got no for an answer
+            // from all of them, and printed NOTHING FOUND. The
+            // sixteen sources that would have had something to say
+            // about a place or a person or a company were never
+            // asked. It is the single worst routing decision in the
+            // app and it fires on the most natural thing to type.
+            //
+            // A bare word of letters is now read as a name. A token
+            // carrying something a name does not carry — a digit, an
+            // underscore, a dot, a hyphen — is still a handle, and
+            // the USER chip forces it either way.
+            usernameRegex.matches(input) && looksLikeHandle(input) ->
+                Observable.Username(input)
 
             else -> Observable.Name(input)
         }
+    }
+
+    /**
+     * Whether a bare token is more handle than word.
+     *
+     * Punctuation and digits are the signal: people do not have a
+     * 7 or an underscore in their name, and accounts very often do.
+     * Length is the other: nobody is called "xq", and a
+     * twenty-five-character run with no space in it is not a name
+     * anybody was given.
+     */
+    internal fun looksLikeHandle(token: String): Boolean {
+        if (token.any { it.isDigit() || it == '_' }) return true
+        if (token.contains('.') || token.contains('-')) return true
+        // Reached only for a token the username pattern already
+        // accepted, so the floor is its three characters; the ceiling
+        // is the one that matters. Nobody is given a twenty-character
+        // name with no space in it.
+        return token.length > 20
     }
 
     /** Classifies with the type forced by the user (the search type selector),
@@ -196,14 +237,36 @@ class ObservableRouter {
     fun classifyAs(rawInput: String, type: String): Observable {
         val input = rawInput.trim()
         if (input.isEmpty()) return Observable.Unknown(input)
+        // Forcing a type says which question to ask, not that the
+        // input is a valid subject for it.
+        //
+        // Only the coordinate branch checked, and its comment said
+        // exactly why: "500, 900" was being sent to Nominatim as a
+        // place on Earth. Every other chip took the input verbatim,
+        // so picking DOMAIN and typing "john smith" fired fifteen
+        // domain tools at a two-word phrase — and mailsec's
+        // substringAfter('@') returns the whole string when there is
+        // no @, so it resolved DNS for "john smith". A dossier full
+        // of malformed questions, every one of them reported as the
+        // source failing.
+        //
+        // A chip the input cannot satisfy falls back to a name, the
+        // way the coordinate branch already did.
         return when (type) {
-            "email" -> Observable.Email(input)
-            "username" -> Observable.Username(input)
-            "domain" -> Observable.Domain(input)
-            "ip" -> Observable.IpAddress(input)
-            "phone" -> Observable.PhoneNumber(input)
-            "url" -> Observable.Url(input)
-            "image" -> Observable.ImageUrl(input)
+            "email" -> if (emailRegex.matches(input)) Observable.Email(input)
+                else Observable.Name(input)
+            "username" -> if (usernameRegex.matches(input)) Observable.Username(input)
+                else Observable.Name(input)
+            "domain" -> if (domainRegex.matches(input) && hasKnownTld(input))
+                Observable.Domain(input) else Observable.Name(input)
+            "ip" -> if (looksLikeIp(input)) Observable.IpAddress(input)
+                else Observable.Name(input)
+            "phone" -> if (looksLikePhone(input)) Observable.PhoneNumber(input)
+                else Observable.Name(input)
+            "url" -> if (input.startsWith("http://", true) || input.startsWith("https://", true))
+                Observable.Url(input) else Observable.Name(input)
+            "image" -> if (input.startsWith("http://", true) || input.startsWith("https://", true))
+                Observable.ImageUrl(input) else Observable.Name(input)
             "name" -> Observable.Name(input)
             "wallet" -> Observable.Wallet(input)
             "aircraft" -> Observable.Aircraft(input.uppercase())

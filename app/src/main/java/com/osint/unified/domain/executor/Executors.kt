@@ -274,6 +274,10 @@ class DirectToolExecutor(
     private val client: OkHttpClient = Http.client
 ) : ToolExecutor {
 
+    /** The line directoryRun writes under its own header. */
+    private val DIRECTORY_TALLY =
+        Regex("""^(\d+) of \d+ executable endpoints returned data""", RegexOption.MULTILINE)
+
     private val formUrlEncoded = "application/x-www-form-urlencoded".toMediaType()
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
@@ -350,10 +354,47 @@ class DirectToolExecutor(
                         Findings.Kind.UNREACHABLE else null
                 }
             }
-            "framework", "toolrun", "dorks", "websearch", "reverseimage" ->
+            "framework", "dorks", "websearch", "reverseimage" ->
                 // These are lists of places to look, not findings about the
                 // target. Counting them as hits inflated every dossier.
                 Findings.Kind.ABSENT
+            // toolrun was in that list and does not belong in it.
+            //
+            // It is the one tool that takes the curated directory and
+            // actually runs every endpoint in it, in parallel, and
+            // summarises the bodies. Grading it ABSENT whatever it
+            // returned meant "5 of 7 executable endpoints returned
+            // data" was filed under NOTHING FOUND and collapsed —
+            // the single piece of evidence that this app is not a
+            // bookmark bar, hidden behind a line saying nothing was
+            // found. It is also marked touchesTarget, so it is in no
+            // automatic set and the only way to see it at all is to
+            // run it by hand.
+            "toolrun" -> {
+                // Its first line names the target, so the verdict is
+                // the line after it, which it writes itself.
+                val tally = DIRECTORY_TALLY.find(output)
+                when {
+                    tally == null -> null
+                    tally.groupValues[1].toIntOrNull() == 0 -> Findings.Kind.ABSENT
+                    else -> Findings.Kind.HIT
+                }
+            }
+            // A tool that says it cannot take this input has not
+            // looked. Three of them answer an IPv6 search with a
+            // careful sentence explaining that they need an IPv4
+            // address, and none of those sentences matches an
+            // absence or an unreachable shape — so they were filed
+            // as findings and counted in "returned intel", three
+            // cards whose content is that they did not run.
+            "ptr", "torexit", "iprep" -> when {
+                starts(
+                    "A reverse lookup needs one IPv4 address",
+                    "The Tor bulk exit list is IPv4 only",
+                    "IP reputation needs an IPv4 address"
+                ) -> Findings.Kind.UNREACHABLE
+                else -> null
+            }
             else -> null
         }
     }

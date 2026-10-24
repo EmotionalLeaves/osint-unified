@@ -134,6 +134,9 @@ data class GodEyeUiState(
     val workflowRunning: Boolean = false,
     /** Steps of the last chain that did not run, and why. */
     val workflowSkipped: List<String> = emptyList(),
+    /** Why the last tap on the search button did nothing, if it did
+     *  nothing. An empty box used to be answered with silence. */
+    val queryTrouble: String? = null,
     /** The second pass is chasing what the first pass turned up. */
     val enrichmentRunning: Boolean = false,
     /** Identifiers the first pass discovered and the second pass is looking
@@ -879,7 +882,7 @@ class GodEyeViewModel(
     }
 
     fun onQueryChange(value: String) {
-        _state.update { it.copy(query = value) }
+        _state.update { it.copy(query = value, queryTrouble = null) }
     }
 
     private var notesJob: Job? = null
@@ -1005,8 +1008,35 @@ class GodEyeViewModel(
     fun onSearch(fanOut: Boolean = true) {
         // Tapping search with an empty box used to navigate to the dossier's
         // "enter something" placeholder, which is the app answering a
-        // question nobody asked.
-        if (_state.value.query.isBlank()) return
+        // question nobody asked. The fix for that was to return, which
+        // is the app not answering a question somebody did ask: no
+        // toast, no error, no focus, nothing at all. From a tester's
+        // seat the search button is simply broken, and that is one of
+        // the things this app was reported as.
+        if (_state.value.query.isBlank()) {
+            _state.update {
+                it.copy(queryTrouble = "Type a name, address, domain, handle or coordinate first.")
+            }
+            return
+        }
+        // Long enough to be a question rather than a target.
+        //
+        // Nothing capped this, and a box labelled "query any target"
+        // invites a sentence. A sentence of five words or more is
+        // read as an organisation and goes to the company registries
+        // and the sanctions lists; a few thousand characters becomes
+        // a dozen concurrent 414s, every one of them reported as the
+        // source being unreachable rather than the question being
+        // impossible.
+        if (_state.value.query.trim().length > MAX_QUERY) {
+            _state.update {
+                it.copy(
+                    queryTrouble = "That is longer than any target. Give the one " +
+                        "thing you are looking for, not a sentence about it."
+                )
+            }
+            return
+        }
         val type = _state.value.searchType
         val observable = if (type == "auto") router.classify(_state.value.query)
             else router.classifyAs(_state.value.query, type)
@@ -1639,6 +1669,11 @@ class GodEyeViewModel(
          *  running more than one of them is the same several thousand
          *  requests over again for the same answer. */
         val REDUNDANT_SWEEPS = setOf("maigret", "blackbird")
+
+        /** The longest thing that is still a target and not a
+         *  question about one. A domain tops out at 253 characters
+         *  and nothing else here comes close. */
+        const val MAX_QUERY = 256
 
         const val POLL_IDLE_MS = 3_000L
 
