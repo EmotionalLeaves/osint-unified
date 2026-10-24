@@ -7,6 +7,7 @@ import com.osint.unified.domain.ToolRegistry
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -351,6 +352,44 @@ class ObservableRouterTest {
             ObservableRouter().classify("51.5074, -0.1278, next tuesday")
                 !is Observable.Coordinate
         )
+    }
+
+    /**
+     * The host out of a URL, which the app was throwing away.
+     *
+     * Searching a URL asked two questions about the page and nothing
+     * at all about the host that serves it.
+     */
+    @Test
+    fun theHostIsReadOutOfAUrl() {
+        mapOf(
+            "https://example.com/a/b?c=1#d" to "example.com",
+            "http://Example.COM" to "example.com",
+            "https://user:pw@sub.example.co.uk:8443/x" to "sub.example.co.uk",
+            "example.com/path" to "example.com",
+            "https://example.com." to "example.com",
+        ).forEach { (input, expected) ->
+            assertEquals(input, expected, ObservableRouter.hostOf(input))
+        }
+    }
+
+    @Test
+    fun somethingWithNoHostHasNoHost() {
+        listOf("https://", "not a url", "localhost", "https://localhost:8080", "")
+            .forEach { assertNull(it, ObservableRouter.hostOf(it)) }
+    }
+
+    /**
+     * And a URL now asks about the page itself, not only where to go
+     * and look.
+     */
+    @Test
+    fun aUrlRunsSomethingAgainstThePage() {
+        val tools = ObservableRouter()
+            .suggestTools(ObservableRouter().classify("https://example.com/a/b"))
+            .map { it.id }
+        assertTrue("$tools", tools.contains("imagehead"))
+        assertTrue("$tools", tools.contains("wayback"))
     }
 
 }

@@ -1247,6 +1247,43 @@ class GodEyeViewModel(
         planned.clear()
         notePlanned(tools)
         runToolsInParallel(tools, thenEnrich = settings.followUpEnabled)
+        alsoTheHost()
+    }
+
+    /**
+     * A URL is a domain plus a path, and the domain was thrown away.
+     *
+     * Searching a URL asked two questions — is it in the Wayback
+     * index, and what is the latest capture — and asked nothing at all
+     * about the host: not DNS, not the certificate log, not the
+     * registration, not the security headers, none of the eighteen a
+     * bare domain gets. That is the most common entry point on a
+     * phone, because a link shared in from another app lands exactly
+     * here.
+     *
+     * Dispatched as its own wave rather than merged into the URL's
+     * tool list, because those tools take a domain and a path would
+     * break them. Same gates as the first pass: no cloud tools, no
+     * active recon unless it is switched on, and the rows land in the
+     * same dossier marked one step from the seed — a fact about the
+     * host is not a fact about the page.
+     *
+     * It multiplies the requests a URL search makes, from about two to
+     * about twenty. That is the bill a domain search already pays, and
+     * the dossier prints the planned count before anything fires.
+     */
+    private fun alsoTheHost() {
+        val url = _state.value.observable as? Observable.Url ?: return
+        val host = ObservableRouter.hostOf(url.raw) ?: return
+        val asDomain = router.classify(host)
+        if (asDomain !is Observable.Domain) return
+        val tools = runnable(router.suggestTools(asDomain))
+            .filter { it.executionMode == ExecutionMode.DIRECT }
+            .filter { it.id !in REDUNDANT_SWEEPS }
+            .filter { !it.touchesTarget || settings.activeReconEnabled }
+        if (tools.isEmpty()) return
+        notePlanned(tools)
+        runToolsInParallel(tools, againstInput = host)
     }
 
     /** Runs the active tools for the current target, on request. */
@@ -1413,13 +1450,21 @@ class GodEyeViewModel(
     private fun runToolsInParallel(
         tools: List<Tool>,
         thenEnrich: Boolean = false,
-        force: Boolean = false
+        force: Boolean = false,
+        /**
+         * What to run them against, when that is not the seed itself.
+         *
+         * Used for a URL's host: the same dossier, the same run, a
+         * different question.
+         */
+        againstInput: String? = null
     ) {
         val observable = _state.value.observable ?: return
+        val input = againstInput ?: observable.raw
         val fresh = if (force) {
-            tools.onEach { dispatched.add("${it.id}|${observable.raw}") }
+            tools.onEach { dispatched.add("${it.id}|$input") }
         } else {
-            tools.filter { dispatched.add("${it.id}|${observable.raw}") }
+            tools.filter { dispatched.add("${it.id}|$input") }
         }
         if (fresh.isEmpty()) {
             if (thenEnrich) searchJobs addAndForget viewModelScope.launch { enrich(observable) }
@@ -1434,7 +1479,7 @@ class GodEyeViewModel(
                 fresh.map { tool ->
                     async {
                         try {
-                            repository.runTool(investigationId, tool, observable.raw)
+                            repository.runTool(investigationId, tool, input)
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Exception) {

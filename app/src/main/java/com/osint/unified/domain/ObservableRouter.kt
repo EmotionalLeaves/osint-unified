@@ -10,10 +10,35 @@ package com.osint.unified.domain
  */
 class ObservableRouter {
 
-    private companion object {
+    companion object {
+        /**
+         * The host a URL points at, or null if there is not one.
+         *
+         * A URL is a domain plus a path, and the app was throwing the
+         * domain away: searching one asked whether it was in the Wayback
+         * index and what the latest capture was, and never asked a single
+         * question about the host — none of the eighteen a bare domain
+         * gets. This is the most common way anything arrives on a phone,
+         * because a link shared in from another app lands exactly here.
+         */
+        fun hostOf(url: String): String? {
+            val after = url.trim()
+                .substringAfter("://", url.trim())
+                .substringBefore('/')
+                .substringBefore('?')
+                .substringBefore('#')
+                .substringAfterLast('@')
+                .substringBefore(':')
+                .trim()
+                .trimEnd('.')
+            if (after.isBlank() || !after.contains('.')) return null
+            if (after.any { it.isWhitespace() }) return null
+            return after.lowercase()
+        }
+
         /** Common generic TLDs; any two-letter label is treated as a country
          *  code, which covers the rest without shipping the IANA list. */
-        val KNOWN_TLDS = setOf(
+        private val KNOWN_TLDS = setOf(
             "com", "org", "net", "edu", "gov", "mil", "int", "info", "biz",
             "name", "pro", "aero", "coop", "museum", "jobs", "mobi", "travel",
             "xxx", "asia", "cat", "tel", "post", "app", "dev", "io", "ai",
@@ -360,7 +385,14 @@ class ObservableRouter {
                 "websearch", "dorks", "toolrun", "framework"
             )
             is Observable.Coordinate -> listOf("revgeo", "sunterrain", "photosnear", "wikinearby", "overpass_turbo", "osmrecon", "milsites", "cctvnear", "ukcrime", "histweather", "toolrun", "framework")
-            is Observable.Url -> listOf("webcrawl", "wayback", "archive", "dorks", "toolrun", "framework")
+            // The page itself. What the HOST is, separately, comes from
+            // the domain set, dispatched against the host at search
+            // time rather than squeezed into this list — those tools
+            // take a domain and would choke on a path.
+            is Observable.Url -> listOf(
+                "wayback", "archive", "imagehead", "webcrawl",
+                "dorks", "toolrun", "framework"
+            )
             // The weakest type in the app: three tools, two of them
             // link builders. exif reads the picture, and these two
             // ask the host what it is actually serving and the
