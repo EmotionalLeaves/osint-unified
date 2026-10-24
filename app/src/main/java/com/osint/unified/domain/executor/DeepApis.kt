@@ -265,7 +265,7 @@ class DeepApis(
             // Verdict first, because the classifier reads the first
             // non-blank line and the header above it is not one.
             val why = if (reached) {
-                "No public activity for $username in GitHub's last 300 events."
+                "No public activity for $username in GitHub's last 100 public events."
             } else {
                 val code = httpCode(attempt.exceptionOrNull() ?: IOException(""))
                 when (code) {
@@ -978,6 +978,9 @@ class DeepApis(
         else "Could not reach hackertarget for $t, so nothing is claimed either way."
     }
 
+    /** This app's page size against the Common Crawl index. */
+    private const val COMMON_CRAWL_LIMIT = 300
+
     /** A marker, because this one is not a prefix. */
     private val MASTODON = "\u0000mastodon"
 
@@ -1489,7 +1492,7 @@ class DeepApis(
         val body = get(
             "https://index.commoncrawl.org/$index-index?url=" +
                 java.net.URLEncoder.encode("*.$d", "UTF-8") +
-                "&output=json&limit=300"
+                "&output=json&limit=$COMMON_CRAWL_LIMIT"
         )
         val urls = LinkedHashSet<String>()
         val statuses = LinkedHashMap<String, Int>()
@@ -1503,7 +1506,11 @@ class DeepApis(
         }
         if (urls.isEmpty()) return@runCatching "Common Crawl has no indexed pages for $d in $index."
         buildString {
-            append("Common Crawl ($index) — $d\n${urls.size} indexed URLs\n")
+            // The page size, said as a page size. `limit=300` is
+            // what this app asked for, not what the index holds.
+            append("Common Crawl ($index) — $d\n")
+            append(if (urls.size >= COMMON_CRAWL_LIMIT) "at least " else "")
+            append("${urls.size} indexed URLs\n")
             if (statuses.isNotEmpty()) {
                 append("Status codes: ${statuses.entries.joinToString(", ") { "${it.key}×${it.value}" }}\n")
             }
@@ -1555,7 +1562,13 @@ class DeepApis(
             )
             val pages = (answer["query"] as? JsonObject)?.get("pages") as? JsonObject
             if (pages != null && pages.isNotEmpty()) {
-                sb.append("\nWikimedia Commons — ${pages.size} geotagged items within 3 km:\n")
+                // ggslimit=40 is a page, not a count of what is
+                // within three kilometres. The Panoramax arm of this
+                // same function was given an "at least" and a comment
+                // saying exactly that, and its two siblings were not.
+                sb.append("\nWikimedia Commons — ")
+                sb.append(if (pages.size >= 40) "at least " else "")
+                sb.append("${pages.size} geotagged items within 3 km:\n")
                 pages.values.take(40).forEach { p ->
                     val o = p as? JsonObject ?: return@forEach
                     sb.append("• ${o.str("title")}")
@@ -1591,7 +1604,9 @@ class DeepApis(
                 // implying it shows the place as it is now.
                 val sorted = data.mapNotNull { it as? JsonObject }
                     .sortedByDescending { it.str("dateAdded").orEmpty() }
-                sb.append("\nKartaView street-level — ${data.size} photos within 400 m")
+                sb.append("\nKartaView street-level — ")
+                sb.append(if (data.size >= 50) "at least " else "")
+                sb.append("${data.size} photos within 400 m")
                 sb.append(", newest first:\n")
                 sorted.take(25).forEach { o ->
                     val taken = o.str("dateAdded")?.substringBefore(' ')
@@ -2447,7 +2462,11 @@ class DeepApis(
         results.forEach { (source, arr) ->
             val rows = arr as? JsonArray ?: return@forEach
             if (rows.isEmpty()) return@forEach
-            sb.append("\n${source.uppercase()} — ${rows.size} records:\n")
+            // A header that states a total must not then list
+            // fewer. This said "412 records" and printed 25.
+            sb.append("\n${source.uppercase()} — ${rows.size} records")
+            if (rows.size > 25) sb.append(", the first 25")
+            sb.append(":\n")
             rows.take(25).forEach { row ->
                 val pair = row as? JsonArray ?: return@forEach
                 val id = (pair.getOrNull(0) as? JsonPrimitive)?.contentOrNull

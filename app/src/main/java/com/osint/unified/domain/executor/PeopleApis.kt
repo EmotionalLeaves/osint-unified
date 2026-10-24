@@ -63,16 +63,34 @@ class PeopleApis(
                 "so \"$name\" was not looked up there."
         }
         val q = URLEncoder.encode(name.trim(), "UTF-8")
-        val rows = json.parseToJsonElement(
+        // A shape this does not understand is a refusal, not an
+        // absence about a researcher — the file's own doc calls
+        // ORCID "the strongest keyless people source there is", and
+        // `No ORCID record for Jane Doe` is a statement about her.
+        // The same fix as `publications` and `authorWorks`, which
+        // got it and these four siblings did not.
+        val root = json.parseToJsonElement(
             get("https://pub.orcid.org/v3.0/expanded-search/?q=$q&rows=20")
-        ).jsonObjectOrNull()?.get("expanded-result") as? JsonArray
+        ).jsonObjectOrNull()
+            ?: throw java.io.IOException("ORCID answered in an unexpected shape")
+        val rows = root["expanded-result"] as? JsonArray
+            ?: throw java.io.IOException("ORCID returned no result block")
 
-        if (rows.isNullOrEmpty()) {
+        if (rows.isEmpty()) {
             return@runCatching "No ORCID record for \"$name\"."
         }
+        // ORCID gives the real total in num-found and it was being
+        // ignored in favour of the page size.
+        val total = (root["num-found"] as? JsonPrimitive)?.intOrNull
         buildString {
-            append("ORCID — ${rows.size} researcher records matching \"$name\"")
-            if (rows.size >= 20) append(" (the first 20)")
+            append("ORCID — ")
+            append(
+                if (total != null && total > rows.size) {
+                    "$total researcher records matching \"$name\" (the first ${rows.size})"
+                } else {
+                    "${rows.size} researcher records matching \"$name\""
+                }
+            )
             append(":\n")
             rows.mapNotNull { it as? JsonObject }.take(20).forEach { o ->
                 val id = o.str("orcid-id") ?: return@forEach
@@ -215,9 +233,11 @@ class PeopleApis(
         val found = json.parseToJsonElement(
             get("https://api.github.com/search/users?q=$q&per_page=10")
         ).jsonObjectOrNull()
-        val items = found?.get("items") as? JsonArray
-        val total = (found?.get("total_count") as? JsonPrimitive)?.intOrNull ?: 0
-        if (items.isNullOrEmpty()) {
+            ?: throw java.io.IOException("GitHub answered in an unexpected shape")
+        val items = found["items"] as? JsonArray
+            ?: throw java.io.IOException("GitHub returned no items block")
+        val total = (found["total_count"] as? JsonPrimitive)?.intOrNull ?: 0
+        if (items.isEmpty()) {
             return@runCatching "No GitHub account carries the name \"$n\"."
         }
 
@@ -272,11 +292,15 @@ class PeopleApis(
         val actors = json.parseToJsonElement(
             get("https://public.api.bsky.app/xrpc/app.bsky.actor.searchActors?q=$q&limit=25")
         ).jsonObjectOrNull()?.get("actors") as? JsonArray
-        if (actors.isNullOrEmpty()) {
+            ?: throw java.io.IOException("Bluesky answered in an unexpected shape")
+        if (actors.isEmpty()) {
             return@runCatching "No Bluesky account found under the name \"$name\"."
         }
         buildString {
-            append("Bluesky — ${actors.size} accounts matching \"$name\":\n")
+            append("Bluesky — ")
+            // limit=25 and the cursor is not followed.
+            append(if (actors.size >= 25) "at least " else "")
+            append("${actors.size} accounts matching \"$name\":\n")
             actors.mapNotNull { it as? JsonObject }.forEach { o ->
                 val handle = o.str("handle") ?: return@forEach
                 append("\n▸ ${o.str("displayName")?.takeIf { it.isNotBlank() } ?: handle}\n")
@@ -381,9 +405,11 @@ class PeopleApis(
         val o = json.parseToJsonElement(
             get("https://projects.propublica.org/nonprofits/api/v2/search.json?q=$q")
         ).jsonObjectOrNull()
-        val orgs = o?.get("organizations") as? JsonArray
-        val total = (o?.get("total_results") as? JsonPrimitive)?.intOrNull ?: 0
-        if (orgs.isNullOrEmpty()) {
+            ?: throw java.io.IOException("ProPublica answered in an unexpected shape")
+        val orgs = o["organizations"] as? JsonArray
+            ?: throw java.io.IOException("ProPublica returned no organizations block")
+        val total = (o["total_results"] as? JsonPrimitive)?.intOrNull ?: 0
+        if (orgs.isEmpty()) {
             return@runCatching "No US registered non-profit matches \"$name\"."
         }
         buildString {
