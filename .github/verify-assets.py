@@ -134,6 +134,16 @@ def main() -> int:
         if optional:
             # Deleted rather than shipped: the app handles an absent dataset
             # and says so, and cannot tell that a present one is nonsense.
+            #
+            # "And says so" was an assumption for a while rather than a
+            # fact. BundledPointsDataSource swallowed a missing asset
+            # into an empty list, which the poll read as a clean answer
+            # and the pill printed as "PORTS·GLOBAL 0" with a loaded
+            # tick; the username sweep printed "Every site that was
+            # asked said no" over a list two thirds shorter without
+            # mentioning which rulesets this build did not have. Both
+            # now say it out loud. Anything added to this table has to
+            # be able to say it too, or it does not belong here.
             os.remove(full(name))
             print(f"::warning title=dataset-dropped::{why}")
             report.append(f"{name}: dropped — {why}")
