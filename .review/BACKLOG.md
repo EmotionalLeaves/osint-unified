@@ -318,13 +318,13 @@ else keyed, if the person wants it.
 
 ## B. The bookmark-bar problem
 
-- **B1. Link-list tools must stop counting as sources.** framework,
+- [done] **B1. Link-list tools must stop counting as sources.** framework,
   toolrun, dorks, websearch, reverseimage are graded F and classified
   ABSENT, which keeps them out of the findings — but they are still
   dispatched by `autoRun`, still fill the runningTools progress bar,
   and still occupy slots in "N of M sources". Move them out of the
   source list into a "places to look" section of their own.
-- **B2. Count what actually runs, per observable type**, and publish
+- [done] **B2. Count what actually runs, per observable type**, and publish
   the number in the app. If a username search runs eleven tools and
   four of them are link lists, the person should be able to see that.
 - **B3. More sources that fetch.** People landed seven. Do the same
@@ -341,16 +341,19 @@ else keyed, if the person wants it.
 - **C3. G5 — pollers rebuild the whole point set.** Diff per layer.
 - **C4. L1 — 34 flat pills with a search box to find a pill.** One
   Layers button, a grouped sheet, 3–5 pinned quick chips.
-- **C5. L2 — presets.** Aviation, Maritime, Disaster, Conflict,
+- [done] **C5. L2 — presets.** Aviation, Maritime, Disaster, Conflict,
   Infrastructure, Space weather.
 - **C6. L3 — layers as data**, one registry, not 34 booleans in three
   files.
-- **C7. C1 — zero-config first run.** Raw backendUrl / tar1090Url /
+- [done] **C7. C1 — zero-config first run.** Raw backendUrl / tar1090Url /
   aisUrl / overlayUrl / token fields on a fresh install. Public
   defaults, everything else behind Advanced, and a dead layer should
   say what it needs inline.
 - **C8. I1 — search as the spine**, not the globe.
-- **C9. A2 — a blip tap feeds a case** rather than opening a URL.
+- [done] **C9. A2 — a blip tap feeds a case** rather than opening a URL.
+  Already done: the inspect dialog shows what INVESTIGATE will
+  search for, runs it, and when the marker is a place rather than a
+  name it says so and offers the action that does work instead.
 - **C10. A1 — one map engine.** Deferred deliberately: it is a
   rewrite of the whole map surface with no device here, and the seam
   it removes is now a seam you cross once. Revisit after C1–C3.
