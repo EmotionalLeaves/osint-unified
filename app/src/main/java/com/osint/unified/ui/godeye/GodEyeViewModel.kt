@@ -557,9 +557,25 @@ class GodEyeViewModel(
         // when the view has moved far enough that the last answer no longer
         // covers it. Without that test every pan gesture fired a fresh
         // query on someone's mobile data.
-        if (!movedBeyond(lat, lon, zoom)) return
-        if (radiationOn) ensureRadiation()
-        // And so do the other three.
+        if (radiationOn && movedBeyond(lat, lon, zoom)) ensureRadiation()
+        // And so do the other three — on their own terms.
+        //
+        // These used to sit behind movedBeyond as well, which is
+        // radiation's freshness test: it measures against the centre
+        // radiation was last fetched for, and against
+        // AreaReport.radiusForZoom, which is a function of zoom and
+        // nothing to do with how far any of these three actually
+        // reach. Cameras fetch a 25 km circle, sites 120 km, ground
+        // airspace 150 km. At zoom 5 the gate's limit is 200 km, so
+        // a 100 km pan took the viewport clean off the camera circle
+        // and did not re-ask. And with the radiation layer off the
+        // gate had no centre to compare against and passed
+        // everything, so the same code either refused every refresh
+        // or allowed every one depending on an unrelated layer.
+        //
+        // Each of the three already keeps its own cell key. That key
+        // is the test; it just has to be sized to the layer's own
+        // radius rather than all being 0.1 degrees.
         //
         // Cameras, controlled sites and airspace are all queried
         // around wherever the view is pointed, and all three said so
@@ -661,7 +677,10 @@ class GodEyeViewModel(
         // and nothing said. Cameras and airspace both check the job
         // first; this was the one with the order wrong.
         if (sitesJob?.isActive == true) return
-        val key = "%.1f,%.1f".format(java.util.Locale.US, where.first, where.second)
+        // Half the 120 km this layer fetches. A tenth of a degree is
+        // eleven kilometres, which re-asked Overpass for a 120 km
+        // circle after a pan that had barely left the middle of it.
+        val key = cellKey(where, SITES_CELL)
         if (key == sitesKey && _state.value.sites.isNotEmpty()) return
         sitesKey = key
         onDemand(
@@ -672,6 +691,12 @@ class GodEyeViewModel(
             apply = { st, v -> st.copy(sites = v) }
         )
     }
+
+    /** Half of what each of these actually fetches, in degrees of
+     *  latitude: cameras 25 km, sites 120 km, ground airspace 150 km. */
+    private val CAMERA_CELL = 0.1
+    private val SITES_CELL = 0.5
+    private val AIRSPACE_CELL = 0.7
 
     private var camerasJob: Job? = null
     private var airspaceJob: Job? = null
@@ -700,9 +725,7 @@ class GodEyeViewModel(
         // globe is pointed, so unlike the old Californian list this has
         // to be asked again when the view moves somewhere else.
         val where = focus
-        val key = where?.let {
-            "%.1f,%.1f".format(java.util.Locale.US, it.first, it.second)
-        } ?: "none"
+        val key = where?.let { cellKey(it, CAMERA_CELL) } ?: "none"
         if (key == cameraKey && _state.value.cameras.isNotEmpty()) return
         cameraKey = key
         onDemand(
@@ -728,9 +751,7 @@ class GodEyeViewModel(
     fun ensureAirspace() {
         if (airspaceJob?.isActive == true) return
         val where = focus
-        val key = where?.let {
-            "%.0f,%.0f".format(java.util.Locale.US, it.first, it.second)
-        } ?: "none"
+        val key = where?.let { cellKey(it, AIRSPACE_CELL) } ?: "none"
         if (key == airspaceKey && _state.value.airspace.isNotEmpty()) return
         airspaceKey = key
         onDemand(
@@ -754,6 +775,23 @@ class GodEyeViewModel(
      * previous answer no longer covers it.
      */
     /** True when the view has left the area the last radiation query covered. */
+    /**
+     * Which cell of its own grid a point falls in.
+     *
+     * One grid per on-demand layer, sized to roughly half what that
+     * layer fetches, so the view has to leave the middle of the last
+     * answer before another request goes out. Latitude only: a cell
+     * that is a fixed number of degrees of longitude is a different
+     * width at every latitude, but the layer's radius is a circle, so
+     * erring small near the poles costs an occasional extra request
+     * and never a stale one.
+     */
+    private fun cellKey(where: Pair<Double, Double>, cellDegrees: Double): String {
+        val la = kotlin.math.floor(where.first / cellDegrees).toInt()
+        val lo = kotlin.math.floor(where.second / cellDegrees).toInt()
+        return "$la,$lo@$cellDegrees"
+    }
+
     private fun movedBeyond(lat: Double, lon: Double, zoom: Double): Boolean {
         val last = radiationCentre ?: return true
         if (radiationZoomBand != zoomBand(zoom)) return true

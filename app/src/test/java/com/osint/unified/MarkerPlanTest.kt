@@ -139,6 +139,61 @@ class MarkerPlanTest {
         assertTrue(points.count { it.kind == "Wildfire" } > 1000)
     }
 
+    /**
+     * The budget is spent where the camera is looking.
+     *
+     * It used to be spent on the whole Earth, once, and never
+     * recomputed — and the only view test was at draw time, which
+     * is correct and invisible. The visible fraction of a sphere is
+     * (1 - cos(span/2))/2, so by the time the globe hands over to
+     * tiles at 22 degrees of span, under one per cent of the
+     * survivors were on screen, shared between thirty layers. Every
+     * layer emptied together as the user zoomed in. This is the
+     * regression test for the shape of that: a tight view over one
+     * place must not spend its budget on the other side of the
+     * planet.
+     */
+    @Test
+    fun theGlobeSpendsItsBudgetWhereTheCameraPoints() {
+        val layers = MapLayers(
+            fires = blips(60_000, lat = 10.0, lon = 10.0),
+            cameras = blips(400, lat = -40.0, lon = -120.0)
+        )
+        // Pointed at the fires, with the span the globe has just
+        // before it gives up and shows tiles.
+        val near = com.osint.unified.ui.godeye.thinGlobe(
+            layers.points(), centre = 10.0 to 10.0, keepWithinDegrees = 11.0 + 3.0
+        )
+        assertTrue(near.isNotEmpty())
+        assertEquals(0, near.count { it.kind == "Traffic camera" })
+        // And the fires now get the whole budget rather than half of
+        // it, because nothing else is in view to share with.
+        assertTrue(near.size > com.osint.unified.ui.godeye.GLOBE_BUDGET / 2)
+    }
+
+    @Test
+    fun aWholeEarthViewStillThinsEverything() {
+        val layers = MapLayers(
+            fires = blips(60_000, lat = 10.0, lon = 10.0),
+            cameras = blips(400, lat = -40.0, lon = -120.0)
+        )
+        val all = com.osint.unified.ui.godeye.thinGlobe(layers.points())
+        assertEquals(400, all.count { it.kind == "Traffic camera" })
+        assertTrue(all.size <= com.osint.unified.ui.godeye.GLOBE_BUDGET)
+    }
+
+    @Test
+    fun angularDistanceIsMeasuredOnTheSphereAndNotOnAGrid() {
+        val within = com.osint.unified.ui.godeye.withinDegrees(0.0, 0.0, 0.0, 10.0, 11.0)
+        assertTrue(within)
+        assertTrue(!com.osint.unified.ui.godeye.withinDegrees(0.0, 0.0, 0.0, 12.0, 11.0))
+        // Ten degrees of longitude near the pole is a short way, and a
+        // flat comparison on the numbers would call it far.
+        assertTrue(com.osint.unified.ui.godeye.withinDegrees(85.0, 0.0, 85.0, 30.0, 11.0))
+        // Across the antimeridian, where a flat comparison breaks.
+        assertTrue(com.osint.unified.ui.godeye.withinDegrees(0.0, 179.0, 0.0, -179.0, 5.0))
+    }
+
     /** Thinning twice gives the same answer, however the feed reorders. */
     @Test
     fun theGlobeSubsetIsStable() {

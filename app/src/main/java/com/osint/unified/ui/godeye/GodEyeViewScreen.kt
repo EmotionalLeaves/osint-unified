@@ -1925,10 +1925,29 @@ private fun GlobeMap(
             }
         },
         update = { map -> runCatching {
+            // Not only when the window is missing.
+            //
+            // The window came from three places: the first-layout
+            // listener, a debounced scroll or zoom event, and this
+            // block when it had nothing at all. So any camera change
+            // that emits no listener event — setZoom and animateTo
+            // are both called from this file — left the markers
+            // planned against where the map used to be, with nothing
+            // that would ever notice. Comparing the live camera
+            // against the one the window was captured at costs three
+            // reads and closes that off.
+            val liveLat = map.mapCenter.latitude
+            val liveLon = map.mapCenter.longitude
+            val liveZoom = map.zoomLevelDouble
+            val captured = lastCamera.value
+            val drifted = captured == null ||
+                kotlin.math.abs(captured.third - liveZoom) > 0.01 ||
+                kotlin.math.abs(captured.first - liveLat) > 1e-6 ||
+                kotlin.math.abs(captured.second - liveLon) > 1e-6
             // The first pass happens before any scroll or zoom event, so
             // the window is unknown and everything would be planned. Fill
             // it in and let the recomposition that causes do the work.
-            if (inView == null) {
+            if (inView == null || drifted) {
                 // Only once it is a real box.
                 //
                 // This used to take whatever osmdroid said on the
@@ -1940,17 +1959,14 @@ private fun GlobeMap(
                 // drag: nothing, for ever. Left null until it is
                 // valid, which the planner reads as "do not cull".
                 map.boundingBox.asWindowOrNull()?.let { window ->
-                    inView = window
+                    if (window != inView) inView = window
+                    lastCamera.value = Triple(liveLat, liveLon, liveZoom)
                     // And say where that is. The viewport used to be
                     // reported only from the listeners, so until the
                     // map had been panned the app did not know where
                     // it was looking and the layers that query around
                     // the view gave up silently when asked.
-                    onViewport(
-                        map.mapCenter.latitude,
-                        map.mapCenter.longitude,
-                        map.zoomLevelDouble
-                    )
+                    onViewport(liveLat, liveLon, liveZoom)
                 }
             }
             // Not an `else`: the pass that fills the window in must
