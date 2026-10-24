@@ -41,10 +41,18 @@ class CorroborationTest {
         val ungraded = ToolRegistry.all.filter {
             it.reliability == Grading.Reliability.UNJUDGED
         }.map { it.id }
-        // The four directories are deliberately ungraded: they are places
-        // to look, not sources that said anything.
+        // The three directories are deliberately ungraded: they are
+        // places to look, not sources that said anything.
+        //
+        // websearch was the fourth, and it was a mistake of naming.
+        // It fetches the DuckDuckGo instant-answer abstract and up to
+        // eight Wikipedia articles with their snippets and emits no
+        // search-engine links at all, so a fetching source was being
+        // force-classified as an absence and graded F in six of the
+        // twelve observable types. It is a C now — a third party
+        // reporting what it holds.
         assertEquals(
-            listOf("framework", "websearch", "dorks", "toolrun").sorted(),
+            listOf("framework", "dorks", "toolrun").sorted(),
             ungraded.sorted()
         )
     }
