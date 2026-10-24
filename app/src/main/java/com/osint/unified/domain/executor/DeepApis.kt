@@ -297,14 +297,21 @@ class DeepApis(
         val sb = StringBuilder("Wikidata — $label ($id)\n")
         if (!desc.isNullOrBlank()) sb.append("$desc\n")
 
-        // Identifier properties carry straight to a profile URL.
+        // Identifier properties carry straight to a profile URL,
+        // except the one that does not.
         val handles = listOf(
             "P2002" to ("X/Twitter" to "https://twitter.com/"),
             "P2037" to ("GitHub" to "https://github.com/"),
             "P2003" to ("Instagram" to "https://instagram.com/"),
             "P2013" to ("Facebook" to "https://facebook.com/"),
             "P3185" to ("VK" to "https://vk.com/"),
-            "P4033" to ("Mastodon" to "https://"),
+            // Handled below, not here: a Mastodon address is
+            // user@instance, and gluing https:// to the front of
+            // that makes https://user@instance — a URL whose host
+            // is the instance and whose username is treated as
+            // credentials. It opens the instance's front page, or
+            // a browser warning, and never the profile.
+            "P4033" to ("Mastodon" to MASTODON),
             "P2397" to ("YouTube channel" to "https://youtube.com/channel/"),
             "P7085" to ("TikTok" to "https://tiktok.com/@"),
             "P6634" to ("LinkedIn" to "https://linkedin.com/in/"),
@@ -316,7 +323,17 @@ class DeepApis(
         val socialLines = ArrayList<String>()
         handles.forEach { (prop, pair) ->
             claims.stringValues(prop).forEach { v ->
-                socialLines.add("• ${pair.first}: ${if (pair.second.isEmpty()) v else pair.second + v}")
+                val url = when {
+                    pair.second == MASTODON -> {
+                        val at = v.trim().removePrefix("@")
+                        val user = at.substringBefore('@')
+                        val instance = at.substringAfter('@', "")
+                        if (instance.isNotBlank()) "https://$instance/@$user" else v
+                    }
+                    pair.second.isEmpty() -> v
+                    else -> pair.second + v
+                }
+                socialLines.add("• ${pair.first}: $url")
             }
         }
 
@@ -904,6 +921,9 @@ class DeepApis(
         else if (reached.any) "Host intel: no data returned for $t."
         else "Could not reach hackertarget for $t, so nothing is claimed either way."
     }
+
+    /** A marker, because this one is not a prefix. */
+    private val MASTODON = "\u0000mastodon"
 
     /** Whether a link points at this host or under it. */
     private fun sameSite(link: String, host: String): Boolean {
