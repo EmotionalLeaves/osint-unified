@@ -157,6 +157,40 @@ class ExifReader(
                     val h = exif.getAttributeInt(ExifInterface.TAG_IMAGE_LENGTH, 0)
                     if (w > 0 && h > 0) sb.append("Dimensions: ${w}x$h\n")
 
+                    // The thumbnail nobody re-rendered.
+                    //
+                    // A JPEG usually carries a small copy of itself, and
+                    // most editors that crop or retouch the main image
+                    // leave that copy alone — so the embedded thumbnail
+                    // is frequently the picture before the edit. It is a
+                    // classic forensic tell and this file already had an
+                    // ExifInterface open over the bytes; it was one call
+                    // away and nobody made it.
+                    if (exif.hasThumbnail()) {
+                        val t = exif.getThumbnailBytes()
+                        sb.append("\nEmbedded thumbnail: yes")
+                        t?.let { sb.append(" (${it.size} bytes)") }
+                        val thumb = exif.thumbnailBitmap
+                        val tw = thumb?.width ?: 0
+                        val th = thumb?.height ?: 0
+                        if (tw > 0 && th > 0) {
+                            sb.append(", ${tw}x$th")
+                            // A thumbnail whose shape disagrees with the
+                            // image's is the interesting case.
+                            if (w > 0 && h > 0) {
+                                val full = w.toFloat() / h
+                                val small = tw.toFloat() / th
+                                if (kotlin.math.abs(full - small) > 0.02f) {
+                                    sb.append("\n⚠ The thumbnail's proportions do not ")
+                                    sb.append("match the image's. Editors that crop ")
+                                    sb.append("often leave the thumbnail alone, so this ")
+                                    sb.append("one may show the picture before the crop.")
+                                }
+                            }
+                        }
+                        sb.append("\n")
+                    }
+
                     sb.toString().ifBlank { "No EXIF metadata found." }
                 } finally {
                     runCatching { file.delete() }

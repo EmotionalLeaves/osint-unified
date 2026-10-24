@@ -260,6 +260,23 @@ object ToolRegistry {
             "Name, bio, published models and the organisations an ML account " +
                 "belongs to.",
             "https://huggingface.co"),
+        // An image search ran three tools, two of which only build
+        // links, so the type that exists to answer "what is this
+        // picture" answered almost nothing. These two ask the host
+        // and the archive rather than the user.
+        Tool("imagehead", "What the host serves", FORENSICS, "image", "text", DIRECT,
+            "True content type against the claimed extension, exact size and " +
+                "last-modified date — headers only, so it costs nothing to run.",
+            "https://developer.mozilla.org/docs/Web/HTTP/Methods/HEAD",
+            // It asks the host that serves the image, which is the
+            // target's own infrastructure. Marked honestly, and
+            // exempted for an image observable the same way exif is,
+            // because there the file IS what the user handed over.
+            touchesTarget = true),
+        Tool("imagehistory", "How old this image is", FORENSICS, "image", "text", DIRECT,
+            "Earliest Wayback capture of this exact image URL, and whether the " +
+                "bytes under it have ever been replaced.",
+            "https://web.archive.org"),
         Tool("libravatar", "Libravatar", SOCMINT, "email", "text", DIRECT,
             "Whether a federated or self-hosted avatar is published for this " +
                 "address — the people who avoid Gravatar on purpose.",
@@ -499,6 +516,9 @@ object ToolRegistry {
             "keybase", "pgpkey", "gravatar", "geocode", "revgeo",
             "wikinearby", "osmrecon", "osmuser", "overpass_turbo",
             "milsites", "photosnear", "ukcrime", "fbi", "histweather",
+            // The host's own headers about its own file, and the
+            // archive's own record of what it captured.
+            "imagehead", "imagehistory",
             "sunterrain", "outages", "cctvnear", "reddit", "hackernews",
             "telegram", "gdelt", "breaches", "tar1090", "exif", "exiftool",
             // Edit counts and registration dates are the wikis' own

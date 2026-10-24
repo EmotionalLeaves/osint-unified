@@ -1166,7 +1166,7 @@ class GodEyeViewModel(
             it.executionMode != ExecutionMode.CLOUD &&
                 it.id !in REDUNDANT_SWEEPS &&
                 (!it.touchesTarget || settings.activeReconEnabled ||
-                    (isTheImage && it.id == "exif"))
+                    (isTheImage && it.id in IMAGE_ITSELF))
         }
         // Counted as sources. The link lists still run — their
         // output is a useful section — but a Google dork is not a
@@ -1762,6 +1762,10 @@ class GodEyeViewModel(
          *  question about one. A domain tops out at 253 characters
          *  and nothing else here comes close. */
         const val MAX_QUERY = 256
+
+        /** Tools that touch the target only by reading the one file
+         *  the user pasted, which is the thing they asked about. */
+        val IMAGE_ITSELF = setOf("exif", "imagehead")
 
         const val POLL_IDLE_MS = 3_000L
 

@@ -343,7 +343,14 @@ class ObservableRouter {
             )
             is Observable.Coordinate -> listOf("revgeo", "sunterrain", "photosnear", "wikinearby", "overpass_turbo", "osmrecon", "milsites", "cctvnear", "ukcrime", "histweather", "toolrun", "framework")
             is Observable.Url -> listOf("webcrawl", "wayback", "archive", "dorks", "toolrun", "framework")
-            is Observable.ImageUrl -> listOf("exif", "reverseimage", "toolrun", "archive", "framework")
+            // The weakest type in the app: three tools, two of them
+            // link builders. exif reads the picture, and these two
+            // ask the host what it is actually serving and the
+            // archive how long it has been there.
+            is Observable.ImageUrl -> listOf(
+                "exif", "imagehead", "imagehistory",
+                "reverseimage", "toolrun", "archive", "framework"
+            )
             is Observable.Wallet -> listOf("wallet", "websearch", "dorks", "toolrun", "framework")
             is Observable.Aircraft -> listOf("aircraftreg", "websearch", "dorks", "toolrun", "framework")
             // A name is two different enquiries wearing the same

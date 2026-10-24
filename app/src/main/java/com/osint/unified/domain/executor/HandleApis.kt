@@ -342,6 +342,133 @@ class HandleApis(
     }
 
     // ------------------------------------------------------------------
+    // Images
+    // ------------------------------------------------------------------
+
+    /**
+     * What the server says the file is, without downloading it.
+     *
+     * An image search had two tools in it, one of which only builds
+     * links. This is the cheapest real question there is about a
+     * remote file and it costs headers rather than megabytes, which
+     * matters on a phone: the true content type against the
+     * extension the URL claims, the exact size, and when the host
+     * last changed it.
+     *
+     * A type that disagrees with the extension is the interesting
+     * case. A .jpg served as text/html is a redirect or a login
+     * page, and a .png served as image/jpeg has been through
+     * something that re-encoded it.
+     */
+    fun imageHead(url: String): Result<String> = runCatching {
+        val target = url.trim()
+        if (!target.startsWith("http://", true) && !target.startsWith("https://", true)) {
+            return@runCatching "Give the image's URL."
+        }
+        val request = Request.Builder().url(target).head()
+            .header("User-Agent", Http.defaultUserAgent)
+            .build()
+        client.newCall(request).execute().use { resp ->
+            if (!resp.isSuccessful) {
+                return@runCatching "The host answered HTTP ${resp.code} for this " +
+                    "image, so nothing was read from it."
+            }
+            val type = resp.header("Content-Type")?.substringBefore(';')?.trim()
+            val length = resp.header("Content-Length")?.toLongOrNull()
+            val modified = resp.header("Last-Modified")
+            val claimed = target.substringAfterLast('.', "").substringBefore('?')
+                .lowercase().takeIf { it.length in 2..5 }
+            buildString {
+                append("The host serves this file as ${type ?: "an unstated type"}")
+                length?.let { append(", ${it / 1024} KB") }
+                append(".\n")
+                modified?.let { append("Last modified on the host: $it\n") }
+                resp.header("ETag")?.let { append("ETag: $it\n") }
+                if (type != null && claimed != null) {
+                    val agrees = when (claimed) {
+                        "jpg", "jpeg" -> type.endsWith("jpeg")
+                        "png" -> type.endsWith("png")
+                        "gif" -> type.endsWith("gif")
+                        "webp" -> type.endsWith("webp")
+                        "heic", "heif" -> type.contains("hei")
+                        "tif", "tiff" -> type.endsWith("tiff")
+                        else -> true
+                    }
+                    if (!agrees) {
+                        append("\n⚠ The URL ends in .$claimed and the host calls it ")
+                        append("$type. Those disagree: the link may redirect, or the ")
+                        append("file may have been re-encoded, or it may not be an ")
+                        append("image at all.\n")
+                    }
+                }
+                if (type != null && !type.startsWith("image/")) {
+                    append("\nThis is not being served as an image, so the metadata ")
+                    append("tools will have nothing to read.\n")
+                }
+            }
+        }
+    }
+
+    /**
+     * How long this exact image has been online, and whether it has
+     * changed.
+     *
+     * The app already asks the Wayback Machine about domains. Asked
+     * about one image URL it answers a different and more useful
+     * question: the earliest capture is a floor on the picture's
+     * age, which is the cheapest way to contradict "this was taken
+     * last week", and the digest column says whether the bytes are
+     * the same ones. A digest that changes under a URL that did not
+     * is an image quietly replaced.
+     */
+    fun imageHistory(url: String): Result<String> = runCatching {
+        val target = url.trim().removePrefix("https://").removePrefix("http://")
+        if (target.isBlank()) return@runCatching "Give the image's URL."
+        val body = getOrNull(
+            "https://web.archive.org/cdx/search/cdx?url=" + enc(target) +
+                "&output=json&fl=timestamp,statuscode,digest&limit=40"
+        ) ?: return@runCatching "The Wayback Machine has never captured this image."
+        val rows = runCatching { json.parseToJsonElement(body).jsonArray }.getOrNull()
+        if (rows == null || rows.size <= 1) {
+            return@runCatching "The Wayback Machine has never captured this image, " +
+                "which says nothing about its age — most images are never archived."
+        }
+        val captures = rows.drop(1).mapNotNull { row ->
+            val cells = (row as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+            if (cells == null || cells.size < 3) null else Triple(cells[0], cells[1], cells[2])
+        }
+        if (captures.isEmpty()) {
+            return@runCatching "The Wayback Machine has never captured this image."
+        }
+        val first = captures.first()
+        val last = captures.last()
+        val digests = captures.map { it.third }.distinct()
+        buildString {
+            append("This image has been online since at least ${stamp(first.first)}.\n")
+            append("${captures.size} captures, the latest ${stamp(last.first)}.\n")
+            if (digests.size == 1) {
+                append("\nEvery capture has the same digest, so the bytes under this ")
+                append("URL have not changed since ${stamp(first.first)}.\n")
+            } else {
+                append("\n⚠ ${digests.size} different digests across those captures: ")
+                append("the file at this URL has been replaced at least ")
+                append("${digests.size - 1} time")
+                append(if (digests.size == 2) "" else "s")
+                append(". What is served now is not what was served then.\n")
+            }
+            append("\nhttps://web.archive.org/web/${first.first}/$target\n")
+            append("\nAn earliest capture is a floor on the age, not the age: it ")
+            append("is when a crawler first saw it, which can be long after it ")
+            append("was taken.\n")
+        }
+    }
+
+    /** CDX timestamps are yyyyMMddHHmmss. */
+    private fun stamp(v: String): String =
+        if (v.length >= 8) "${v.substring(0, 4)}-${v.substring(4, 6)}-${v.substring(6, 8)}"
+        else v
+
+    // ------------------------------------------------------------------
 
     private val DECLARED =
         "\nEverything above except the dates is what the account holder " +

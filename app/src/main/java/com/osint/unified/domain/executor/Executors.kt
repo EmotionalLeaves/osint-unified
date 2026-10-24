@@ -454,6 +454,18 @@ class DirectToolExecutor(
                 head.contains(" exists") -> Findings.Kind.HIT
                 else -> null
             }
+            "imagehead" -> when {
+                starts("The host answered HTTP", "Give the image") ->
+                    Findings.Kind.UNREACHABLE
+                head.contains("The host serves this file as") -> Findings.Kind.HIT
+                else -> null
+            }
+            "imagehistory" -> when {
+                starts("The Wayback Machine has never captured") -> Findings.Kind.ABSENT
+                starts("Give the image") -> Findings.Kind.UNREACHABLE
+                head.contains("has been online since at least") -> Findings.Kind.HIT
+                else -> null
+            }
             "libravatar" -> when {
                 starts("Libravatar has an avatar") -> Findings.Kind.HIT
                 starts("No Libravatar avatar") -> Findings.Kind.ABSENT
@@ -563,6 +575,8 @@ class DirectToolExecutor(
                 "pgpkey" -> deep.pgpKey(input)
                 "commoncrawl" -> deep.commonCrawl(input)
                 "photosnear" -> deep.photosNear(input)
+                "imagehead" -> handles.imageHead(input)
+                "imagehistory" -> handles.imageHistory(input)
                 "chess" -> handles.chess(input)
                 "lichess" -> handles.lichess(input)
                 "codeforces" -> handles.codeforces(input)
