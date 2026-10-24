@@ -42,21 +42,7 @@ abstract class AppDatabase : RoomDatabase() {
          */
         private val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
-                    """
-                    CREATE TABLE IF NOT EXISTS `watches` (
-                        `id` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-                        `observable` TEXT NOT NULL,
-                        `observableType` TEXT NOT NULL,
-                        `createdAt` INTEGER NOT NULL,
-                        `lastCheckedAt` INTEGER,
-                        `digest` TEXT NOT NULL,
-                        `lastChange` TEXT NOT NULL,
-                        `lastChangeAt` INTEGER,
-                        `checks` INTEGER NOT NULL
-                    )
-                    """.trimIndent()
-                )
+                MigrationSql.v1to2.forEach(db::execSQL)
             }
         }
 
@@ -68,8 +54,7 @@ abstract class AppDatabase : RoomDatabase() {
          */
         private val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE `investigations` ADD COLUMN `parentId` INTEGER")
-                db.execSQL("ALTER TABLE `investigations` ADD COLUMN `viaPivot` TEXT")
+                MigrationSql.v2to3.forEach(db::execSQL)
             }
         }
 
@@ -82,25 +67,7 @@ abstract class AppDatabase : RoomDatabase() {
          */
         private val MIGRATION_6_7 = object : Migration(6, 7) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
-                    """
-                    CREATE TABLE IF NOT EXISTS `cases` (
-                        `id` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-                        `name` TEXT NOT NULL,
-                        `createdAt` INTEGER NOT NULL,
-                        `updatedAt` INTEGER NOT NULL,
-                        `summary` TEXT NOT NULL
-                    )
-                    """.trimIndent()
-                )
-                db.execSQL("ALTER TABLE `investigations` ADD COLUMN `caseId` INTEGER")
-                db.execSQL(
-                    "ALTER TABLE `investigations` ADD COLUMN `tags` TEXT NOT NULL DEFAULT ''"
-                )
-                db.execSQL(
-                    "CREATE INDEX IF NOT EXISTS `index_investigations_caseId` " +
-                        "ON `investigations` (`caseId`)"
-                )
+                MigrationSql.v6to7.forEach(db::execSQL)
             }
         }
 
@@ -112,25 +79,7 @@ abstract class AppDatabase : RoomDatabase() {
          */
         private val MIGRATION_5_6 = object : Migration(5, 6) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
-                    """
-                    CREATE TABLE IF NOT EXISTS `dismissals` (
-                        `id` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-                        `investigationId` INTEGER NOT NULL,
-                        `kind` TEXT NOT NULL,
-                        `value` TEXT NOT NULL,
-                        `at` INTEGER NOT NULL,
-                        `reason` TEXT NOT NULL,
-                        FOREIGN KEY(`investigationId`) REFERENCES `investigations`(`id`)
-                            ON UPDATE NO ACTION ON DELETE CASCADE
-                    )
-                    """.trimIndent()
-                )
-                db.execSQL(
-                    "CREATE UNIQUE INDEX IF NOT EXISTS " +
-                        "`index_dismissals_investigationId_kind_value` " +
-                        "ON `dismissals` (`investigationId`, `kind`, `value`)"
-                )
+                MigrationSql.v5to6.forEach(db::execSQL)
             }
         }
 
@@ -143,15 +92,7 @@ abstract class AppDatabase : RoomDatabase() {
          */
         private val MIGRATION_4_5 = object : Migration(4, 5) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
-                    "ALTER TABLE `results` ADD COLUMN `outputSha256` TEXT NOT NULL DEFAULT ''"
-                )
-                db.execSQL(
-                    "ALTER TABLE `results` ADD COLUMN `outputBytes` INTEGER NOT NULL DEFAULT 0"
-                )
-                db.execSQL(
-                    "ALTER TABLE `results` ADD COLUMN `truncated` INTEGER NOT NULL DEFAULT 0"
-                )
+                MigrationSql.v4to5.forEach(db::execSQL)
             }
         }
 
@@ -167,49 +108,7 @@ abstract class AppDatabase : RoomDatabase() {
          */
         private val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
-                    """
-                    CREATE TABLE IF NOT EXISTS `watch_events` (
-                        `id` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-                        `watchId` INTEGER NOT NULL,
-                        `at` INTEGER NOT NULL,
-                        `summary` TEXT NOT NULL,
-                        `appeared` TEXT NOT NULL,
-                        `vanished` TEXT NOT NULL,
-                        `altered` TEXT NOT NULL,
-                        `acknowledged` INTEGER NOT NULL,
-                        FOREIGN KEY(`watchId`) REFERENCES `watches`(`id`)
-                            ON UPDATE NO ACTION ON DELETE CASCADE
-                    )
-                    """.trimIndent()
-                )
-                db.execSQL(
-                    "CREATE INDEX IF NOT EXISTS `index_watch_events_watchId` " +
-                        "ON `watch_events` (`watchId`)"
-                )
-                db.execSQL(
-                    "CREATE INDEX IF NOT EXISTS `index_watch_events_at` " +
-                        "ON `watch_events` (`at`)"
-                )
-                db.execSQL(
-                    "DELETE FROM `watches` WHERE `id` NOT IN " +
-                        "(SELECT MIN(`id`) FROM `watches` GROUP BY `observable`)"
-                )
-                db.execSQL(
-                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_watches_observable` " +
-                        "ON `watches` (`observable`)"
-                )
-                // The one change each watch already remembers becomes the
-                // first entry of its log, rather than being thrown away.
-                db.execSQL(
-                    """
-                    INSERT INTO `watch_events`
-                        (`watchId`, `at`, `summary`, `appeared`, `vanished`, `altered`, `acknowledged`)
-                    SELECT `id`, `lastChangeAt`, `lastChange`, '', '', '', 1
-                    FROM `watches`
-                    WHERE `lastChangeAt` IS NOT NULL AND `lastChange` != ''
-                    """.trimIndent()
-                )
+                MigrationSql.v3to4.forEach(db::execSQL)
             }
         }
 

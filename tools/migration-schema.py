@@ -21,7 +21,11 @@ import pathlib
 
 ROOT = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else ".")
 ENTITIES = ROOT / "app/src/main/java/com/osint/unified/data/db/Entities.kt"
+# The CREATE TABLE statements moved out of AppDatabase.kt when the
+# migrations became data a JVM test can replay; both files are read, so
+# this keeps working whichever one a statement is written in.
 DATABASE = ROOT / "app/src/main/java/com/osint/unified/data/db/AppDatabase.kt"
+MIGRATION_SQL = ROOT / "app/src/main/java/com/osint/unified/data/db/MigrationSql.kt"
 
 # Kotlin type -> the SQLite affinity Room uses for it.
 AFFINITY = {
@@ -108,6 +112,8 @@ def main():
         return 0
     ent = entities(ENTITIES.read_text(encoding="utf-8"))
     db_text = DATABASE.read_text(encoding="utf-8")
+    if MIGRATION_SQL.exists():
+        db_text += "\n" + MIGRATION_SQL.read_text(encoding="utf-8")
     made, extra = created(db_text), added(db_text)
 
     problems = []

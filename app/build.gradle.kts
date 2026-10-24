@@ -230,6 +230,11 @@ dependencies {
     ksp("androidx.room:room-compiler:$roomVersion")
 
     testImplementation("junit:junit:4.13.2")
+    // Real SQLite on the JVM, so the migration chain can be replayed
+    // without a device. Room's own MigrationTestHelper needs an
+    // instrumented test and an emulator; the only compiler this project
+    // has is a CI runner with neither. Test-only: nothing in the APK.
+    testImplementation("org.xerial:sqlite-jdbc:3.46.1.3")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
 
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
