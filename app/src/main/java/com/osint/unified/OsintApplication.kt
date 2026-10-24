@@ -84,8 +84,36 @@ class OsintApplication : Application() {
             runCatching {
                 kotlinx.coroutines.runBlocking { repository.markInterruptedRuns() }
             }
+            // A dossier left in the cache by an export that was never
+            // followed by another one. The purge used to run only on
+            // the way into a new export.
+            runCatching {
+                kotlinx.coroutines.runBlocking { exporter.purgeStaleExports() }
+            }
+            _ready.value = true
         }, "db-warmup").start()
     }
+
+    private val _ready = kotlinx.coroutines.flow.MutableStateFlow(false)
+
+    /**
+     * Whether the database is open and the screen may ask for it.
+     *
+     * `database` is `by lazy`, which is SYNCHRONIZED: whichever thread
+     * reaches it first does the keystore unseal, the version repair —
+     * which opens the file up to seven times probing for its number —
+     * and, on the first launch after the encryption upgrade, a whole
+     * sqlcipher_export of every case, while holding the monitor. The
+     * warm-up thread above was started to be that thread, and it is a
+     * race, not a guarantee: composition resolves the view-model
+     * factories, and onStart touched the view model earlier still, so
+     * on a cold start the main thread usually got there first or
+     * blocked on the monitor for the whole of it. An ANR on the first
+     * launch after the upgrade, worst for whoever had the most cases.
+     *
+     * So the screen waits on this instead of racing it.
+     */
+    val ready: kotlinx.coroutines.flow.StateFlow<Boolean> = _ready
 
     val database: AppDatabase by lazy { AppDatabase.get(this) }
     val diskCache: DiskCache by lazy { DiskCache(this) }

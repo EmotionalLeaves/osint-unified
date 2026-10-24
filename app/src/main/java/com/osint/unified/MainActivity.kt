@@ -55,14 +55,25 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
      * Twenty-six polling loops carried on in the background, which is a
      * phone bill and a flat battery for data nobody is looking at.
      */
+    /**
+     * Whether the app is on screen, recorded rather than applied.
+     *
+     * Applying it here meant touching the view model, which resolves
+     * the view-model factory, which resolves the database — on the
+     * main thread, before the first frame, racing the warm-up thread
+     * that exists to do exactly that work off it. The composition
+     * applies it once the database is open; see OsintApplication.ready.
+     */
+    private val foreground = androidx.compose.runtime.mutableStateOf(false)
+
     override fun onStart() {
         super.onStart()
-        godEyeViewModel.setForeground(true)
+        foreground.value = true
     }
 
     override fun onStop() {
         super.onStop()
-        godEyeViewModel.setForeground(false)
+        foreground.value = false
         // Re-locked the moment it leaves the screen, which is the moment
         // the phone is likely to change hands.
         if ((application as OsintApplication).settings.appLockEnabled) {
@@ -301,6 +312,20 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                             locked.value = false
                         }
                         return@Surface
+                    }
+
+                    // Nothing below this line may touch the database,
+                    // and everything below it does: the view-model
+                    // factories resolve the repository the moment
+                    // composition asks for a view model.
+                    val ready by (application as OsintApplication)
+                        .ready.collectAsStateWithLifecycle()
+                    if (!ready) {
+                        PreparingScreen()
+                        return@Surface
+                    }
+                    LaunchedEffect(foreground.value) {
+                        godEyeViewModel.setForeground(foreground.value)
                     }
 
                     var accepted by rememberSaveable { mutableStateOf(settings.termsAccepted) }
@@ -674,6 +699,43 @@ private fun SharedTargetOffer(
                         .padding(horizontal = 14.dp, vertical = 8.dp)
                 )
             }
+        }
+    }
+}
+
+/**
+ * Shown for as long as it takes to open the database.
+ *
+ * Usually nothing: the warm-up thread starts in Application.onCreate
+ * and is normally finished before the first frame. It is visible on
+ * the one launch that matters — the first after the encryption
+ * upgrade, where every case is copied into an encrypted file — and
+ * says so, because an app that appears frozen for ten seconds while
+ * it silently moves someone's work is an app they will force-close
+ * halfway through.
+ */
+@Composable
+private fun PreparingScreen() {
+    androidx.compose.foundation.layout.Box(
+        Modifier
+            .fillMaxSize()
+            .background(com.osint.unified.ui.theme.Intel.Base),
+        contentAlignment = androidx.compose.ui.Alignment.Center
+    ) {
+        Column(horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
+            androidx.compose.material3.Text(
+                "PREPARING",
+                style = androidx.compose.material3.MaterialTheme.typography.titleSmall,
+                color = com.osint.unified.ui.theme.Intel.TextMid
+            )
+            androidx.compose.material3.Text(
+                "Opening your cases. The first run after an update can take " +
+                    "a few seconds while they are re-encrypted.",
+                style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
+                color = com.osint.unified.ui.theme.Intel.TextLow,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                modifier = Modifier.padding(top = 10.dp, start = 40.dp, end = 40.dp)
+            )
         }
     }
 }

@@ -91,7 +91,7 @@ class InvestigationExporter(private val appContext: Context) {
         when (format) {
             ExportFormat.JSON ->
                 file.writeText(toJson(observable, results, notes, dismissals))
-            ExportFormat.CSV -> file.writeText(toCsv(results))
+            ExportFormat.CSV -> file.writeText(toCsv(results, notes, dismissals))
             ExportFormat.TEXT ->
                 file.writeText(toDossier(observable, results, notes, dismissals))
             ExportFormat.PDF ->
@@ -136,7 +136,7 @@ class InvestigationExporter(private val appContext: Context) {
         purgeOldExports(dir)
         val file = File(dir, exportName(format))
         when (format) {
-            ExportFormat.CSV -> file.writeText(toCaseCsv(targets))
+            ExportFormat.CSV -> file.writeText(toCaseCsv(caseName, summary, targets))
             ExportFormat.JSON -> file.writeText(toCaseJson(caseName, summary, targets))
             ExportFormat.TEXT -> file.writeText(toCaseReport(caseName, summary, targets))
             ExportFormat.PDF -> writePdf(file, toCaseReport(caseName, summary, targets))
@@ -348,8 +348,35 @@ class InvestigationExporter(private val appContext: Context) {
     }
 
     /** Every target's results in one sheet, with a column saying whose. */
-    private fun toCaseCsv(targets: List<CaseTarget>): String {
-        val sb = StringBuilder(
+    private fun toCaseCsv(
+        caseName: String,
+        summary: String,
+        targets: List<CaseTarget>
+    ): String {
+        val sb = StringBuilder()
+        // Which case this is, what it amounts to, and what was struck
+        // from it. None of the three used to be here: the case CSV did
+        // not even name the case.
+        sb.append("# case,").append(csv(caseName)).append('\n')
+        if (summary.isNotBlank()) {
+            summary.lineSequence().forEach {
+                sb.append("# summary,").append(csv(it)).append('\n')
+            }
+        }
+        targets.forEach { t ->
+            if (t.notes.isNotBlank()) {
+                t.notes.lineSequence().forEach {
+                    sb.append("# note,").append(csv(t.observable.raw)).append(',')
+                        .append(csv(it)).append('\n')
+                }
+            }
+            t.dismissals.forEach { (key, reason) ->
+                sb.append("# ruled out,").append(csv(t.observable.raw)).append(',')
+                    .append(csv("${key.first}: ${key.second}")).append(',')
+                    .append(csv(reason.ifBlank { "no reason given" })).append('\n')
+            }
+        }
+        sb.append(
             "target,tool,toolId,status,verdict,input,startedAt,finishedAt,sha256,bytes,output\n"
         )
         targets.forEach { t ->
@@ -368,6 +395,22 @@ class InvestigationExporter(private val appContext: Context) {
             }
         }
         return sb.toString()
+    }
+
+    /**
+     * Reports older than a day are swept, whether or not another is
+     * made.
+     *
+     * purgeOldExports only ever ran immediately before writing a new
+     * report, so somebody who exported once and never again left that
+     * dossier — the target's identifier and every raw source answer —
+     * in cacheDir/exports for the life of the install, in the one
+     * directory the FileProvider exposes. Called from the application's
+     * warm-up thread as well now.
+     */
+    suspend fun purgeStaleExports() = withContext(Dispatchers.IO) {
+        runCatching { purgeOldExports(File(appContext.cacheDir, "exports")) }
+        Unit
     }
 
     /** Reports older than a day are not worth the exposure of keeping. */
@@ -498,8 +541,32 @@ class InvestigationExporter(private val appContext: Context) {
         return prettyJson.encodeToString(JsonElement.serializer(), doc)
     }
 
-    private fun toCsv(results: List<ResultRow>): String {
-        val sb = StringBuilder(
+    private fun toCsv(
+        results: List<ResultRow>,
+        notes: String,
+        dismissals: Map<Pair<String, String>, String>
+    ): String {
+        val sb = StringBuilder()
+        // The investigator's own judgement, above the rows.
+        //
+        // CSV was the one format that carried none of it. JSON and the
+        // dossier both print the notes and the ruled-out list; this
+        // wrote the raw rows and nothing else, so a colleague handed
+        // the spreadsheet could not tell that a lead had been struck,
+        // or why. Comment lines rather than columns, because the
+        // notes and the dismissals are per-case and the rows are not,
+        // and every spreadsheet and every csv reader will show them.
+        if (notes.isNotBlank()) {
+            notes.lineSequence().forEach { sb.append("# note,").append(csv(it)).append('\n') }
+        }
+        dismissals.forEach { (key, reason) ->
+            sb.append("# ruled out,")
+                .append(csv("${key.first}: ${key.second}"))
+                .append(',')
+                .append(csv(reason.ifBlank { "no reason given" }))
+                .append('\n')
+        }
+        sb.append(
             "tool,tool_id,source_grade,verdict,input,started_utc,finished_utc," +
                 "sha256,warning,output_or_error\n"
         )
