@@ -335,21 +335,51 @@ abstract class AppDatabase : RoomDatabase() {
             }
             val sealed = app.getDatabasePath(DatabaseEncryption.ENCRYPTED_NAME)
             lockedOut = sealed.exists() && !plainFile.exists()
+            // Which failure this was.
+            //
+            // Three different things open this database — the keystore
+            // key, the SQLCipher library, and Room's schema migrations
+            // — and every one of them was reported to the user as
+            // "encryption failed". A migration that throws is not an
+            // encryption problem: nothing is wrong with the key, the
+            // file is readable, and the fix is a build rather than a
+            // new phone. Saying the wrong one sends people looking in
+            // the wrong place, and in the worst case makes them
+            // reinstall over a database that was fine.
+            val blame = whatFailed(why)
             encryptionNote = when {
                 plainFile.exists() ->
-                    "encryption failed ($why), so the unencrypted copy of your " +
+                    "$blame ($why), so the unencrypted copy of your " +
                         "cases is being used — nothing was lost, but nothing is " +
                         "encrypted either"
                 lockedOut ->
                     "the encrypted database on this device would not open " +
-                        "($why), so your existing cases cannot be read. They " +
-                        "have not been deleted. Anything from here on goes " +
-                        "into a new database."
+                        "— $blame ($why) — so your existing cases cannot be " +
+                        "read. They have not been deleted. Anything from here " +
+                        "on goes into a new database."
                 else ->
-                    "encryption failed ($why); the database is readable by " +
+                    "$blame ($why); the database is readable by " +
                         "anything that can read this app's files"
             }
             return plain(app)
+        }
+
+        /** Names the part that actually failed, from what it threw. */
+        private fun whatFailed(why: String?): String {
+            val m = why.orEmpty().lowercase()
+            return when {
+                m.contains("migration") || m.contains("schema") ||
+                    m.contains("downgrade") || m.contains("version") ->
+                    "the database could not be brought up to this build's " +
+                        "schema — this is a bug in the app, not a problem " +
+                        "with your device"
+                m.contains("not a database") || m.contains("encrypted") ||
+                    m.contains("sqlcipher") || m.contains("key") ->
+                    "the stored key no longer opens this database"
+                m.contains("unsatisfiedlink") || m.contains("library") ->
+                    "the encryption library would not load on this device"
+                else -> "the encrypted database could not be opened"
+            }
         }
 
         private fun plain(app: Context): AppDatabase = Room.databaseBuilder(

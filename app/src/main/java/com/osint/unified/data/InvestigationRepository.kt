@@ -168,9 +168,7 @@ class InvestigationRepository(
      * target is simply unfiled first.
      */
     suspend fun deleteCase(id: Long) {
-        val now = System.currentTimeMillis()
-        caseDao.targets(id).forEach { caseDao.fileUnder(it.id, null, now) }
-        caseDao.delete(id)
+        caseDao.deleteWithTargets(id, System.currentTimeMillis())
     }
 
     suspend fun setDismissalReason(

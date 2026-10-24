@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
@@ -182,6 +183,27 @@ interface CaseDao {
 
     @Query("DELETE FROM cases WHERE id = :id")
     suspend fun delete(id: Long)
+
+    @Query("UPDATE investigations SET caseId = NULL, updatedAt = :at WHERE caseId = :caseId")
+    suspend fun unfileAll(caseId: Long, at: Long)
+
+    /**
+     * Unfile every target, then drop the case, as one thing.
+     *
+     * The repository did this as a loop of single-row updates
+     * followed by the delete, outside any transaction. There is no
+     * foreign key on investigations.caseId, so nothing in the
+     * database objected if the delete landed and some of the updates
+     * had not: those rows kept pointing at a case that no longer
+     * exists, the case list counted them against a row it could not
+     * show, and they were reachable from nothing. One statement and
+     * one transaction, so it either all happened or none of it did.
+     */
+    @Transaction
+    suspend fun deleteWithTargets(id: Long, at: Long) {
+        unfileAll(id, at)
+        delete(id)
+    }
 
     @Query("SELECT * FROM investigations WHERE caseId = :caseId ORDER BY createdAt")
     fun observeTargets(caseId: Long): Flow<List<Investigation>>
