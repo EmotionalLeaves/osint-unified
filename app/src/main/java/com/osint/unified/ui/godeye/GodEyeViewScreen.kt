@@ -170,6 +170,11 @@ fun GodEyeViewScreen(
     // Everything on at once, which costs real bandwidth, so it is its own
     // deliberate switch rather than the fifth stop on a colour cycle.
     var god by rememberSaveable { mutableStateOf(false) }
+    // The dossier's own coordinates. Drawn on top of everything in
+    // magenta and, until now, with no switch at all: they appeared
+    // with every layer off, under the line saying nothing was being
+    // fetched, and there was no way to clear them off the map.
+    var showFindings by rememberSaveable { mutableStateOf(true) }
     val context = LocalContext.current
     var inspected by remember { mutableStateOf<Inspected?>(null) }
     // What a long press on the globe turned up: every loaded layer, swept
@@ -1044,6 +1049,14 @@ fun GodEyeViewScreen(
                 LayerPill("LAUNCH·GLOBAL", state.launches.size, Color(0xFFFFF066), showLaunches || god, full = "Rocket launches", loaded = "launches" in state.loaded, trouble = "launches" in state.feedTrouble) { settleGod(); showLaunches = !showLaunches }
                 LayerPill("AURORA", state.aurora.size, Color(0xFF66FFB2), showAurora || god, full = "Aurora", loaded = "aurora" in state.loaded, trouble = "aurora" in state.feedTrouble) { settleGod(); showAurora = !showAurora }
                 },
+                "THIS INVESTIGATION" to {
+                if (state.findings.isNotEmpty()) {
+                LayerPill(
+                "FINDINGS", state.findings.size, Color(0xFFE24FD6), showFindings,
+                full = "Coordinates from this dossier"
+                ) { showFindings = !showFindings }
+                }
+                },
                 "BEING REPORTED" to {
                 LayerPill("CONFLICT", state.conflicts.size, Color(0xFFFF2E2E), showConflict || god, full = "Armed conflict", loaded = "conflicts" in state.loaded, trouble = "conflicts" in state.feedTrouble) { settleGod(); showConflict = !showConflict }
                 LayerPill("NEWS", state.news.size, Color(0xFFFF79C6), showNews || god, full = "News", loaded = "news" in state.loaded, trouble = "news" in state.feedTrouble) { settleGod(); showNews = !showNews }
@@ -1287,7 +1300,9 @@ fun GodEyeViewScreen(
                     tsunamis = vis(showTsunami, state.tsunamis),
                     airportStatus = vis(showAirportStatus, state.airportStatus),
                     radiation = vis(showRadiation, state.radiation),
-                    findings = state.findings
+                    // Not through vis(): these are not a feed, so
+                    // ALL LAYERS has no business arming them.
+                    findings = if (showFindings) state.findings else emptyList()
                 )
                 if (roundEarth) {
                     // Thinned before the sphere ever sees it. The globe

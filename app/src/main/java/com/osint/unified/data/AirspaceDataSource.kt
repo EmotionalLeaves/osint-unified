@@ -41,11 +41,37 @@ class AirspaceDataSource(
      * two anyway.
      */
     suspend fun near(lat: Double, lon: Double): List<GeoBlip> = withContext(Dispatchers.IO) {
-        val mapped = runCatching { ground.near(lat, lon) }.getOrDefault(emptyList())
-        val faa = runCatching { fetch() }.getOrDefault(emptyList())
-        val merged = mapped + faa
-        if (merged.isEmpty()) throw java.io.IOException("no airspace source answered")
+        val mapped = runCatching { ground.near(lat, lon) }
+        // The FAA set is United States special-use airspace and
+        // nothing else, and it was merged in wherever the globe was
+        // pointed: MIL GROUND over Poland counted several thousand US
+        // restricted areas, and the brief and the area report read
+        // from the same list.
+        val faa = if (inUsAirspace(lat, lon)) runCatching { fetch() } else null
+        val attempts = listOfNotNull(mapped, faa)
+        val merged = attempts.flatMap { it.getOrDefault(emptyList()) }
+        // Only a failure is a failure. An area with no mapped military
+        // ground and no US airspace over it is an answer.
+        if (merged.isEmpty() && attempts.all { it.isFailure }) {
+            throw java.io.IOException("no airspace source answered")
+        }
         merged
+    }
+
+    /**
+     * The United States and its approaches, generously: the lower 48
+     * with a margin, Alaska, Hawaii and Puerto Rico. Generous on
+     * purpose — a boundary that cuts a restricted area in half is
+     * worse than one that fetches a set nobody needed.
+     */
+    private fun inUsAirspace(lat: Double, lon: Double): Boolean {
+        val boxes = listOf(
+            doubleArrayOf(21.0, 52.0, -128.0, -64.0),   // lower 48 + margin
+            doubleArrayOf(51.0, 72.0, -170.0, -129.0),  // Alaska
+            doubleArrayOf(17.0, 23.5, -161.5, -154.0),  // Hawaii
+            doubleArrayOf(17.0, 19.0, -68.0, -64.0)     // Puerto Rico
+        )
+        return boxes.any { lat >= it[0] && lat <= it[1] && lon >= it[2] && lon <= it[3] }
     }
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
@@ -68,7 +94,14 @@ class AirspaceDataSource(
             out.addAll(page)
             offset += 2000
         }
-        if (out.isNotEmpty()) { cache = out; fetchedAt = System.currentTimeMillis() }
+        // Cached even when empty, as in CctvDataSource and for the
+        // same reason: an uncached empty answer never advances
+        // `fetchedAt`, so the TTL can never short-circuit and every
+        // settled pan re-asked the FAA with no backoff.
+        cache = out
+        fetchedAt =
+            if (out.isNotEmpty()) System.currentTimeMillis()
+            else System.currentTimeMillis() - (12 * 60 * 60 * 1000L * 9 / 10)
         out
     }
 

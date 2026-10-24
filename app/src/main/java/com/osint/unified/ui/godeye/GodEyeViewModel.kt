@@ -744,6 +744,11 @@ class GodEyeViewModel(
     private var sitesJob: Job? = null
     @Volatile private var sitesKey: String? = null
 
+    /** As with the cameras: answered, not non-empty. Overpass finding
+     *  no embassy within 120 km of a stretch of Siberia is an answer,
+     *  and it was re-asked on every pan. */
+    @Volatile private var sitesKeyAnswered: String? = null
+
     /**
      * Controlled places around the view, when the layer is on.
      *
@@ -847,13 +852,17 @@ class GodEyeViewModel(
         // eleven kilometres, which re-asked Overpass for a 120 km
         // circle after a pan that had barely left the middle of it.
         val key = cellKey(where, SITES_CELL)
-        if (key == sitesKey && _state.value.sites.isNotEmpty()) return
+        if (key == sitesKey && key == sitesKeyAnswered) return
         sitesKey = key
         onDemand(
             key = "sites",
             job = { sitesJob },
             setJob = { sitesJob = it },
-            fetch = { sitesDataSource.near(where.first, where.second) },
+            fetch = {
+                val v = sitesDataSource.near(where.first, where.second)
+                sitesKeyAnswered = key
+                v
+            },
             apply = { st, v -> st.copy(sites = v) }
         )
     }
@@ -885,6 +894,19 @@ class GodEyeViewModel(
      *  not re-query a volunteer-run service on every frame. */
     @Volatile private var cameraKey: String? = null
 
+    /**
+     * The cells that have been asked and answered, whatever they
+     * answered.
+     *
+     * The guard used to be `key == cameraKey && cameras.isNotEmpty()`,
+     * which an honestly-empty answer fails every single time: over
+     * open water, where OpenStreetMap has no mapped cameras and no
+     * operator publishes any, every settled viewport change re-fired
+     * the whole fetch. Twelve parallel Caltrans requests per pan was
+     * the visible half of that; this is the half that made it repeat.
+     */
+    @Volatile private var cameraKeyAnswered: String? = null
+
     fun ensureCameras() {
         if (camerasJob?.isActive == true) return
         // Mapped cameras are a worldwide set queried around wherever the
@@ -892,15 +914,18 @@ class GodEyeViewModel(
         // to be asked again when the view moves somewhere else.
         val where = focus
         val key = where?.let { cellKey(it, CAMERA_CELL) } ?: "none"
-        if (key == cameraKey && _state.value.cameras.isNotEmpty()) return
+        if (key == cameraKey && key == cameraKeyAnswered) return
         cameraKey = key
         onDemand(
             key = "cameras",
             job = { camerasJob },
             setJob = { camerasJob = it },
             fetch = {
-                if (where == null) cctvDataSource.fetch()
-                else cctvDataSource.near(where.first, where.second)
+                val v =
+                    if (where == null) cctvDataSource.fetch()
+                    else cctvDataSource.near(where.first, where.second)
+                cameraKeyAnswered = key
+                v
             },
             apply = { st, v -> st.copy(cameras = v) }
         )
@@ -914,19 +939,25 @@ class GodEyeViewModel(
      */
     @Volatile private var airspaceKey: String? = null
 
+    /** As with the cameras: answered, not non-empty. */
+    @Volatile private var airspaceKeyAnswered: String? = null
+
     fun ensureAirspace() {
         if (airspaceJob?.isActive == true) return
         val where = focus
         val key = where?.let { cellKey(it, AIRSPACE_CELL) } ?: "none"
-        if (key == airspaceKey && _state.value.airspace.isNotEmpty()) return
+        if (key == airspaceKey && key == airspaceKeyAnswered) return
         airspaceKey = key
         onDemand(
             key = "airspace",
             job = { airspaceJob },
             setJob = { airspaceJob = it },
             fetch = {
-                if (where == null) airspaceDataSource.fetch()
-                else airspaceDataSource.near(where.first, where.second)
+                val v =
+                    if (where == null) airspaceDataSource.fetch()
+                    else airspaceDataSource.near(where.first, where.second)
+                airspaceKeyAnswered = key
+                v
             },
             apply = { st, v -> st.copy(airspace = v) }
         )
@@ -1784,7 +1815,8 @@ class GodEyeViewModel(
                 // on the first one if the search didn't already set a focus.
                 val findings = rows.flatMap { r ->
                     if (r.status != "success") emptyList()
-                    else GeoExtractor.allCoordinates(r.rawOutput).take(30)
+                    else GeoExtractor.allCoordinates(r.rawOutput)
+                        .take(perToolPinCap(r.toolId))
                         .map { FindingPin(it.first, it.second, r.toolName) }
                 }
                 _state.update { st ->
@@ -1796,6 +1828,31 @@ class GodEyeViewModel(
                 }
             }
         }
+    }
+
+    /**
+     * Tools whose coordinates describe the surroundings, not the
+     * target.
+     *
+     * Every coordinate any tool printed became a magenta FINDING pin
+     * at the top of the draw order, described in the UI as "the
+     * investigation's own findings", and the globe flew to the first
+     * of them. Searching a coordinate runs `wikiNearby`, which lists
+     * twenty-five notable places within ten kilometres — so
+     * Wikipedia's list of landmarks in the area was presented as
+     * twenty-five findings about the target, and counted as such in
+     * the area report.
+     *
+     * These tools answer "what is around here", which is useful and
+     * is not a finding. The layers already draw that kind of thing.
+     */
+    private fun perToolPinCap(toolId: String): Int = when (toolId) {
+        "wikinearby", "cctvnear", "photosnear", "osmrecon", "milsites",
+        "overpass_turbo", "ukcrime", "sunterrain", "histweather" -> 0
+        // A geocoder's answer is the first candidate; the rest are
+        // the alternatives it is offering.
+        "geocode", "revgeo" -> 1
+        else -> 8
     }
 
     /**

@@ -85,23 +85,42 @@ class CctvDataSource(
      * Either failing leaves the other.
      */
     suspend fun near(lat: Double, lon: Double): List<GeoBlip> = withContext(Dispatchers.IO) {
-        val mapped = runCatching { surveillance.near(lat, lon) }.getOrDefault(emptyList())
-        val live = runCatching { fetch() }.getOrDefault(emptyList())
+        val mapped = runCatching { surveillance.near(lat, lon) }
+        // Caltrans only where Caltrans is.
+        //
+        // Every other network in this file is fetched by where the
+        // globe is pointed, with a comment explaining that London's
+        // cameras are a megabyte and downloading them to look at
+        // Tokyo is somebody's data spent on nothing. The Californian
+        // set was merged unconditionally anyway, so the pill over
+        // Warsaw counted fifteen hundred cameras in California and
+        // the globe drew none of them.
+        val wantsCaltrans = CALIFORNIA.covers(lat, lon)
+        val live = if (wantsCaltrans) runCatching { fetch() } else null
         // And whichever operator publishes cameras where you are
         // looking. Only those: the test is a box with a few degrees
         // of margin, so panning towards a city picks its network up
         // before you arrive and looking at an ocean fetches nothing.
+        val here = networks.filter { it.covers(lat, lon) }
         val local = coroutineScope {
-            networks.filter { it.covers(lat, lon) }
-                .map { net -> async { runCatching { cached(net) }.getOrDefault(emptyList()) } }
-                .flatMap { it.await() }
+            here.map { net -> async { runCatching { cached(net) } } }.map { it.await() }
         }
-        val merged = mapped + live + local
-        if (merged.isEmpty()) {
+        val attempts = listOfNotNull(mapped, live) + local
+        val merged = attempts.flatMap { it.getOrDefault(emptyList()) }
+        // A zero that was established is a zero. Looking at the middle
+        // of the Pacific, where OpenStreetMap has no mapped cameras
+        // and no operator publishes any, used to be reported as a feed
+        // failure — the inverse of the mistake the rest of this pass
+        // is about, and it put a red mark on a layer that had worked.
+        if (merged.isEmpty() && attempts.all { it.isFailure }) {
             throw java.io.IOException("no camera source answered")
         }
         merged
     }
+
+    /** The state Caltrans publishes cameras for, with the margin the
+     *  other networks use. */
+    private val CALIFORNIA = Network("Caltrans", 32.5, 42.1, -124.5, -114.1) { emptyList() }
 
     /** Six hours, per network, like the Californian set. */
     private suspend fun cached(net: Network): List<GeoBlip> {
@@ -215,7 +234,20 @@ class CctvDataSource(
             districts.map { d -> async { runCatching { district(d) }.getOrDefault(emptyList()) } }
                 .flatMap { it.await() }
         }
-        if (merged.isNotEmpty()) { cache = merged; fetchedAt = System.currentTimeMillis() }
+        // An empty answer is cached too, for a tenth as long.
+        //
+        // It used not to be, and `fetchedAt` was not advanced either,
+        // so the six-hour check could never short-circuit: with the
+        // Caltrans host unreachable, every settled viewport change —
+        // a 250 ms debounce on the flat map — fired twelve parallel
+        // district requests, back to back, for as long as the pan
+        // lasted, with no backoff. On mobile data.
+        cache = merged
+        fetchedAt =
+            if (merged.isNotEmpty()) System.currentTimeMillis()
+            // Backdated, so an empty result is retried in thirty-six
+            // minutes rather than in six hours or on the next pan.
+            else System.currentTimeMillis() - (6 * 60 * 60 * 1000L * 9 / 10)
         merged
     }
 
