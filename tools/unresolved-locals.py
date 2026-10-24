@@ -45,6 +45,10 @@ PARAM = re.compile(
 )
 
 
+# `{ name ->` and `{ a, b ->`, and `{ (a, b) ->` for a destructure.
+LAMBDA_PARAM = re.compile(r"\{\s*([A-Za-z_][A-Za-z0-9_]*(?:\s*,\s*[A-Za-z_][A-Za-z0-9_]*)*)\s*->")
+LAMBDA_DESTRUCTURE = re.compile(r"\{\s*\(([^)]*)\)\s*->")
+
 ENUM = re.compile(r"\benum\s+class\s+[A-Za-z_][A-Za-z0-9_]*[^{\n]*\{")
 ENTRY = re.compile(r"^\s*(?:@\w+(?:\([^)]*\))?\s*)*([A-Z_][A-Za-z0-9_]*)")
 
@@ -126,6 +130,19 @@ def parameter_names(text):
             else:
                 flat.append(" " if depth > 0 else c)
         out.update(PARAM.findall("".join(flat)))
+    # Lambda parameters too.
+    #
+    # `index["seed"]?.let { seedIndex -> … }` declares a name that
+    # DECL cannot see — there is no val in front of it — and a use
+    # of that name OUTSIDE the lambda is then dismissed as the SDK's
+    # absence rather than reported. That shipped a red build: the
+    # pin was moved into a `let` and the second use of it, forty
+    # lines down inside the iteration loop, was left behind. CI
+    # found it six minutes later, which is what this file exists to
+    # prevent.
+    out.update(LAMBDA_PARAM.findall(text))
+    for m in LAMBDA_DESTRUCTURE.finditer(text):
+        out.update(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", m.group(1)))
     return out
 # Both spellings on purpose.
 #

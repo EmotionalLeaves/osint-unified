@@ -10,17 +10,25 @@
 # a name the check can no longer catch, so add one only after reading
 # the line it fired on and confirming the receiver really is a type the
 # SDK provides.
+#
+# `window` is Activity.window and `inner` is a Compose content
+# lambda; both became visible to the check when lambda parameters
+# were added to the declared set — which was added because a name
+# that exists only as a lambda parameter was invisible, and a use
+# of one outside its lambda shipped a red build.
 add
 close
 color
+density
 description
+header
+inner
 intent
 item
+kind
 paint
 settings
 size
 type
 value
-density
-header
-kind
+window
