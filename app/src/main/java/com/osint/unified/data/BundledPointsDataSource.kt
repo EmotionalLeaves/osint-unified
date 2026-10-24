@@ -61,8 +61,13 @@ class BundledPointsDataSource(
         val text = try {
             appContext.assets.open(assetName).bufferedReader().use { it.readText() }
         } catch (e: Exception) {
-            java.io.IOException("$assetName is not bundled in this build", e)
-                .also { missing = it; throw it }
+            // Thrown on its own line, not out of an `also`: the
+            // compiler cannot see that the lambda never returns, so
+            // the try-expression's type became the common supertype
+            // of String and IOException.
+            val absent = java.io.IOException("$assetName is not bundled in this build", e)
+            missing = absent
+            throw absent
         }
         val parsed = try {
             json.parseToJsonElement(text).jsonArray.mapNotNull { el ->
