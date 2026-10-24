@@ -241,6 +241,9 @@ object Places {
     /** The two-letter city shorthands, which collide most. */
     private val SHORT_CITY_CODES = setOf("la", "ny", "sf", "dc", "hk")
 
+    /** Where the city and the country are one and the same. */
+    private val CITY_STATES = setOf("singapore", "monaco", "luxembourg", "vatican city")
+
     /**
      * Anything in this table with more than one plausible meaning.
      *
@@ -270,6 +273,9 @@ object Places {
         // And the city abbreviations that collide with a subdivision:
         // LA is Los Angeles and Louisiana.
         addAll(SHORT_CITY_CODES.filter { it in subdivisionCodes || it in COUNTRY_CODES })
+        // Except where the city and the country are the same place,
+        // which is what a city-state is.
+        removeAll(CITY_STATES)
     }
 
 
@@ -340,8 +346,19 @@ object Places {
         return out.toList()
     }
 
-    /** Whether a canonical form names a country rather than somewhere in one. */
-    fun isCountry(canonical: String): Boolean = canonical in COUNTRY_NAMES
+    /**
+     * Whether a canonical form names a country rather than somewhere
+     * in one — and is not also the name of something else.
+     *
+     * Georgia is a country and a US state. Putting it in the
+     * country-level exclusive group meant "Atlanta, GA" was graded as
+     * a claim about the Caucasus, corroborated by anything that
+     * mentioned the country, and then contradicted by its own posting
+     * hours. A name with two meanings is not a country for the
+     * purpose of deciding what contradicts what.
+     */
+    fun isCountry(canonical: String): Boolean =
+        canonical in COUNTRY_NAMES && canonical !in AMBIGUOUS
 
     private fun clean(raw: String): String? {
         var v = raw.trim()

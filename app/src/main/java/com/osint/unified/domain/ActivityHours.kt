@@ -156,7 +156,11 @@ object ActivityHours {
         listOf("kenya", "uganda", "ethiopia", "tanzania").forEach { put(it, 3) }
         listOf("turkey", "belarus", "iraq", "saudi arabia", "qatar", "kuwait", "jordan")
             .forEach { put(it, 3) }
-        listOf("united arab emirates", "georgia", "armenia", "azerbaijan").forEach { put(it, 4) }
+        // Georgia is not here: it is a country and a US state, and
+        // Places refuses to call that name a country for exactly
+        // that reason. An offset for it would put an Atlanta
+        // profile in the Caucasus.
+        listOf("united arab emirates", "armenia", "azerbaijan").forEach { put(it, 4) }
         listOf("pakistan", "uzbekistan").forEach { put(it, 5) }
         listOf("sri lanka").forEach { put(it, 5) }
         listOf("bangladesh").forEach { put(it, 6) }

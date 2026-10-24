@@ -285,6 +285,13 @@ class DeclaredAttributesTest {
             "a state that shares a country's name must not be filed as the country",
             Places.isCountry(Places.canonical("GA") ?: "")
         )
+        assertFalse(
+            "and the full name is no better — it still means two places",
+            Places.isCountry("georgia")
+        )
+        // A city-state is still a country, which is the exception
+        // the ambiguity rule must not swallow.
+        assertTrue(Places.isCountry(Places.canonical("Singapore") ?: ""))
         val parts = Places.parts("Atlanta, GA")
         assertTrue("$parts", parts.none { Places.isCountry(it) })
     }
