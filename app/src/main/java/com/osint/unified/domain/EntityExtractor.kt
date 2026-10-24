@@ -330,7 +330,7 @@ object EntityExtractor {
                     label in PLACE_LABELS -> "PLACE"
                     else -> return@inner
                 }
-                valuesOf(kind, raw).forEach { (v, derived) ->
+                valuesOf(kind, raw, label).forEach { (v, derived) ->
                     if (v == seedLower) return@forEach
                     val k = Triple(kind, v, derived)
                     counts[k] = (counts[k] ?: 0) + 1
@@ -355,14 +355,31 @@ object EntityExtractor {
      * splitting "Smith, Jones and Partners" on its comma would invent
      * two firms.
      */
-    internal fun valuesOf(kind: String, raw: String): List<Pair<String, Boolean>> =
-        when (kind) {
-            "PLACE" -> {
+    internal fun valuesOf(
+        kind: String,
+        raw: String,
+        label: String = ""
+    ): List<Pair<String, Boolean>> =
+        when {
+            // A field whose label says "country" is a country, so a
+            // two-letter code in it is the country's code and not a
+            // US state's.
+            //
+            // The ambiguity rule is there for free text, where "DE"
+            // really could be Delaware — but chess and lichess write
+            // "Declared country: DE" and codeforces writes "Declared
+            // country: Germany", so the flagship case produced two
+            // entities with one and two witnesses instead of one with
+            // three. The label was in hand and thrown away.
+            kind == "PLACE" && label.contains("country") ->
+                listOfNotNull(Places.country(raw)).map { it to false }
+            kind == "PLACE" -> {
                 // The whole is what the source said; everything after
                 // it this app worked out by splitting on a comma.
                 Places.parts(raw).mapIndexed { index, value -> value to (index > 0) }
             }
-            "PERSON" -> listOfNotNull(PersonName.normalise(raw)).map { it to false }
+            kind == "PERSON" ->
+                listOfNotNull(PersonName.normalise(raw)).map { it to false }
             else -> listOfNotNull(
                 raw.lowercase()
                     // The pipe is the watch digest's own separator,

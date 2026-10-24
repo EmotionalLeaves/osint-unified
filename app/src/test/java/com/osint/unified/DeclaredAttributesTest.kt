@@ -345,4 +345,31 @@ class DeclaredAttributesTest {
         )
     }
 
+    /**
+     * The flagship case, which the ambiguity rule was costing: a
+     * field labelled "country" is not free text, so a code in it is
+     * a country code.
+     */
+    @Test
+    fun threePlatformsDeclaringOneCountryAreOneFinding() {
+        val rows = listOf(
+            row("chess", "chess.com — jdoe\nDeclared country: DE"),
+            row("lichess", "lichess — jdoe\nDeclared country: DE"),
+            row("codeforces", "Codeforces — jdoe\nDeclared country: Germany")
+        )
+        val entities = Corroboration.merge(rows, seed = "jdoe")
+        val places = entities.filter { it.kind == "PLACE" }
+        assertEquals("one place, not two: $places", 1, places.size)
+        assertEquals("germany", places.first().value)
+        assertEquals(3, places.first().sources.size)
+    }
+
+    /** And in free text, DE still means neither. */
+    @Test
+    fun freeTextKeepsItsCaution() {
+        assertEquals("de", Places.canonical("DE"))
+        assertEquals("germany", Places.country("DE"))
+        assertNull("a state is not a country however it is labelled", Places.country("TX"))
+    }
+
 }

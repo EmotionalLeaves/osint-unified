@@ -161,6 +161,11 @@ object Places {
         "qc" to "quebec", "sk" to "saskatchewan",
     )
 
+    /** Every country code to the name it means, ambiguity aside. */
+    private val CODE_TO_COUNTRY: Map<String, String> = buildMap {
+        COUNTRIES.forEach { (name, codes) -> codes.forEach { put(it, name) } }
+    }
+
     /** Every code any country in the table goes by. */
     private val COUNTRY_CODES: Set<String> =
         COUNTRIES.flatMap { it.second }.toSet()
@@ -323,6 +328,24 @@ object Places {
     fun canonical(raw: String): String? {
         val cleaned = clean(raw) ?: return null
         return ALIASES[cleaned] ?: cleaned
+    }
+
+    /**
+     * A country, read from a field that says it is one.
+     *
+     * The ambiguity rule exists for free text, where "DE" really
+     * could be Delaware and "GA" really could be Atlanta's state. A
+     * field labelled `country` is not free text, so the code
+     * resolves — which is what lets "Declared country: DE" from two
+     * platforms agree with "Declared country: Germany" from a third,
+     * instead of producing two findings with one and two witnesses
+     * where there should be one with three.
+     */
+    fun country(raw: String): String? {
+        val cleaned = clean(raw) ?: return null
+        CODE_TO_COUNTRY[cleaned]?.let { return it }
+        val byName = ALIASES[cleaned] ?: cleaned
+        return if (byName in COUNTRY_NAMES) byName else null
     }
 
     /**

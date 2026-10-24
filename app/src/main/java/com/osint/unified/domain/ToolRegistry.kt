@@ -274,7 +274,7 @@ object ToolRegistry {
             touchesTarget = true),
         Tool("c2pa", "Content Credentials", FORENSICS, "image", "text", DIRECT,
             "Does the file say who or what made it: a C2PA manifest, a generator's name, a prompt chunk.",
-            "https://c2pa.org"),
+            "https://c2pa.org", touchesTarget = true),
         Tool("imagehead", "What the host serves", FORENSICS, "image", "text", DIRECT,
             "True content type against the claimed extension, exact size and " +
                 "last-modified date — headers only, so it costs nothing to run.",
