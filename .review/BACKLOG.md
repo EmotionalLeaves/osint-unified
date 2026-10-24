@@ -291,21 +291,29 @@ else keyed, if the person wants it.
 
 ## A. Oldest open reports
 
-- **A1. Overpass-backed layers still file failures as absences.**
+- [done]**A1. Overpass-backed layers still file failures as absences.**
   Asked for on 22 Oct ("infrastructure scan, overpass and military
   sites have never worked"). The layers were fixed; the TOOLS were
   not. `militarySites` and `osmRecon` treat a 200-with-non-JSON — the
   normal shape of an Overpass timeout — as an empty result and state
   "No military-tagged sites within 25 km." `cctvNear`'s OSM fallback
   does the same. r6 #2, #3.
-- **A2. "0 military-tagged sites" is classified as a finding** and
+- [done]**A2. "0 military-tagged sites" is classified as a finding** and
   the Overpass head line "No mapped features within 500 m" matches no
   absence pattern. r6 #7, r6 below-the-cut.
-- **A3. OSM Notes sign-in wall** (task #44). No notes URL exists in
-  the code; the links are to `openstreetmap.org/node/<id>` and plain
-  map views, both public. Needs either the exact marker from the user
-  or a sweep of every OSM URL the app can emit. Do the sweep.
-- **A4. directoryRun's 20-byte "returned data" test**, and
+- **A3. OSM Notes sign-in wall** (task #44). Swept 23 Oct: every
+  OpenStreetMap URL the code can emit is public — the Nominatim
+  endpoints, `api.openstreetmap.org/api/0.6/changesets.json`
+  (read API, no auth), `openstreetmap.org/user/<name>`,
+  `/node|way|relation/<id>`, and `?mlat=&mlon=#map=`. None of them
+  is a notes URL and none needs an account. Either the marker came
+  from a bundled asset (assets/ is filled by CI and is empty in
+  the tree, so it cannot be checked from here) or it was a
+  different site. **Needs the exact URL from the tester.** While
+  sweeping: the Overpass Turbo link was `?Q=&C=lat;lon;16` — an
+  empty query, so it opened the editor over the right place with
+  nothing to run. Fixed.
+- [done]**A4. directoryRun's 20-byte "returned data" test**, and
   `SecAgent.NOT_SET` silently joining the "No data from" list. r6 #9.
 
 ## B. The bookmark-bar problem

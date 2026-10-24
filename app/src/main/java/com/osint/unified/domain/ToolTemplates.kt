@@ -136,7 +136,17 @@ object ToolTemplates {
         Template("SunCalc", "https://www.suncalc.org/#/{LAT},{LON},15/", "coordinate"),
         Template("Peakvisor", "https://peakvisor.com/panorama.html?lat={LAT}&lng={LON}", "coordinate"),
         Template("Wikimapia", "https://wikimapia.org/#lat={LAT}&lon={LON}&z=16", "coordinate"),
-        Template("Overpass turbo", "https://overpass-turbo.eu/?Q=&C={LAT};{LON};16", "coordinate"),
+        // With a query in it.
+        //
+        // Q was empty, so this opened the editor over the right place
+        // with nothing to run — a link that goes somewhere and then
+        // asks you to write the thing it was supposed to hand you.
+        // &R runs it on arrival.
+        Template(
+            "Overpass turbo",
+            "https://overpass-turbo.eu/?Q=%5Bout%3Ajson%5D%5Btimeout%3A30%5D%3B%0Anwr%28around%3A500%2C{LAT}%2C{LON}%29%3B%0Aout%20center%3B&C={LAT};{LON};16&R",
+            "coordinate"
+        ),
 
         // ---- phone ----
         Template("Truecaller", "https://www.truecaller.com/search/us/{}", "phone"),
