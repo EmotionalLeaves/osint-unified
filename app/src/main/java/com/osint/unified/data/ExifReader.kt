@@ -225,7 +225,7 @@ class ExifReader(
     suspend fun credentialsFromUri(uri: Uri): String = withContext(Dispatchers.IO) {
         val bytes = runCatching {
             appContext.contentResolver.openInputStream(uri)
-                ?.use { it.readNBytes(CREDENTIAL_BYTES) }
+                ?.use { readAtMost(it, CREDENTIAL_BYTES) }
         }.getOrNull()
             ?: return@withContext "Could not read that image."
         ContentCredentials.describe(ContentCredentials.read(bytes))
@@ -248,13 +248,31 @@ class ExifReader(
                     throw IOException("HTTP ${resp.code} fetching the image")
                 }
                 val body = resp.body ?: throw IOException("the server sent no body")
-                val bytes = body.byteStream().use { it.readNBytes(CREDENTIAL_BYTES) }
+                val bytes = body.byteStream().use { readAtMost(it, CREDENTIAL_BYTES) }
                 if (bytes.isEmpty()) throw IOException("the server sent an empty image")
                 ContentCredentials.describe(ContentCredentials.read(bytes))
             }
         } catch (e: IOException) {
             "Could not read $target: ${e.message}"
         }
+    }
+
+    /**
+     * The first [limit] bytes, read by hand.
+     *
+     * Not InputStream.readNBytes: that is API 33 and this app's floor
+     * is 26, so it would compile, pass every check here, and throw
+     * NoSuchMethodError on most of the phones that run this.
+     */
+    private fun readAtMost(input: java.io.InputStream, limit: Int): ByteArray {
+        val out = java.io.ByteArrayOutputStream(minOf(limit, 64 * 1024))
+        val buf = ByteArray(32 * 1024)
+        while (out.size() < limit) {
+            val n = input.read(buf, 0, minOf(buf.size, limit - out.size()))
+            if (n < 0) break
+            out.write(buf, 0, n)
+        }
+        return out.toByteArray()
     }
 
 }
