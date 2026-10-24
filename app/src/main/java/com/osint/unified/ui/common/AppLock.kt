@@ -64,6 +64,48 @@ object AppLock {
     }
 
     /**
+     * Whether there is genuinely no way for this person to authenticate
+     * on this device, as opposed to no way right now.
+     *
+     * The difference is the whole lock. [prompt] used to open the app
+     * whenever [usable] came back null, and null is every status that
+     * is not SUCCESS: no enrolment, no hardware — and also
+     * HW_UNAVAILABLE, LOCKOUT and LOCKOUT_PERMANENT. So five failed
+     * fingerprints put the sensor in lockout, and the next
+     * background-and-return opened the app to whoever was holding it,
+     * with no prompt at all. A sensor that is momentarily busy did the
+     * same on any phone.
+     *
+     * Only the two permanent answers justify opening. Below Android 11
+     * the combined set is refused outright, so that refusal is not an
+     * answer about the device either and the biometric-only reply is
+     * the one that counts.
+     */
+    private fun noWayIn(context: Context): Boolean {
+        val manager = BiometricManager.from(context)
+        val answer = runCatching { manager.canAuthenticate(BIOMETRIC_ONLY) }.getOrNull()
+        return answer == BiometricManager.BIOMETRIC_ERROR_NONE_ENROLLED ||
+            answer == BiometricManager.BIOMETRIC_ERROR_NO_HARDWARE
+    }
+
+    /** Why the prompt could not be shown, in words, or null if it can. */
+    fun unavailableReason(context: Context): String? {
+        if (usable(context) != null) return null
+        val manager = BiometricManager.from(context)
+        return when (runCatching { manager.canAuthenticate(BIOMETRIC_ONLY) }.getOrNull()) {
+            BiometricManager.BIOMETRIC_ERROR_HW_UNAVAILABLE ->
+                "The fingerprint sensor is busy. Try again in a moment, or " +
+                    "lock and unlock the phone itself first."
+            BiometricManager.BIOMETRIC_ERROR_SECURITY_UPDATE_REQUIRED ->
+                "This phone needs a security update before it will " +
+                    "authenticate for an app."
+            else ->
+                "This phone would not accept an unlock just now. Lock and " +
+                    "unlock the phone itself, then try again."
+        }
+    }
+
+    /**
      * Whether this device can actually unlock.
      *
      * Checked before the setting is offered, not after it is turned on. An
@@ -75,10 +117,14 @@ object AppLock {
 
     fun prompt(activity: FragmentActivity, onUnlocked: () -> Unit) {
         val allowed = usable(activity) ?: run {
-            // The lock was turned on and then the screen lock was removed.
-            // Refusing to open would be a self-inflicted lockout with no
-            // way out, so it opens.
-            onUnlocked()
+            // The lock was turned on and then the screen lock was
+            // removed, or the phone never had a way to authenticate at
+            // all. Refusing to open would be a self-inflicted lockout
+            // with no way out, so it opens — but only for those two,
+            // and not for a sensor that is merely busy or in lockout
+            // after failed attempts, which is the state an unwelcome
+            // holder of the phone has just put it in.
+            if (noWayIn(activity)) onUnlocked()
             return
         }
         val prompt = BiometricPrompt(
@@ -117,9 +163,15 @@ object AppLock {
 @Composable
 fun AppLockScreen(activity: FragmentActivity, onUnlocked: () -> Unit) {
     var asked by remember { mutableStateOf(false) }
+    // Said only when the prompt could not be shown. A lock screen that
+    // silently does nothing when tapped is indistinguishable from a
+    // broken app, and the way out — lock and unlock the phone itself —
+    // is not something anyone guesses.
+    var trouble by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) {
         if (!asked) {
             asked = true
+            trouble = AppLock.unavailableReason(activity)
             AppLock.prompt(activity, onUnlocked)
         }
     }
@@ -148,9 +200,21 @@ fun AppLockScreen(activity: FragmentActivity, onUnlocked: () -> Unit) {
                     .padding(top = 20.dp)
                     .clip(RoundedCornerShape(8.dp))
                     .background(Intel.Cyan)
-                    .clickable { AppLock.prompt(activity, onUnlocked) }
+                    .clickable {
+                        trouble = AppLock.unavailableReason(activity)
+                        AppLock.prompt(activity, onUnlocked)
+                    }
                     .padding(horizontal = 22.dp, vertical = 10.dp)
             )
+            trouble?.let { why ->
+                Text(
+                    why,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Intel.TextMid,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(top = 16.dp, start = 32.dp, end = 32.dp)
+                )
+            }
         }
     }
 }

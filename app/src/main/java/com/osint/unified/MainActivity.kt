@@ -12,6 +12,16 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.LaunchedEffect
@@ -109,6 +119,32 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
     private val sharedText = androidx.compose.runtime.mutableStateOf<String?>(null)
     private val sharedImage = androidx.compose.runtime.mutableStateOf<android.net.Uri?>(null)
 
+    /**
+     * A shared target held back because a search was already running.
+     *
+     * onSearch cancels every in-flight job, nulls the current
+     * investigation and drops the pending notes write before it decides
+     * whether to fan out — so "prepared, not fired" was true of the new
+     * target and said nothing about the old one. RUN ALL forty sources
+     * deep, a link shared in from another app, and the lot was gone
+     * with no warning and no undo. It is offered instead, and the
+     * person decides.
+     */
+    private val pendingShare = androidx.compose.runtime.mutableStateOf<String?>(null)
+
+    /**
+     * The share this activity has already acted on, as its content.
+     *
+     * [consumedKey] is an extra put on the Intent object, which is
+     * right for a configuration change — the same object comes back —
+     * and useless after process death, where the system rebuilds the
+     * Intent from the parcel it captured at launch, before the extra
+     * existed. Reopening from recents then re-fired the old share over
+     * whatever was open. Saved instance state survives that, so the
+     * content itself is what is remembered.
+     */
+    private var consumedShare: String? = null
+
     private fun consume(intent: Intent?) {
         if (intent == null) return
         // Marked on the intent itself, because Android hands the
@@ -148,9 +184,21 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         }
 
         if (text == null && image == null) return
+        val signature = "${intent.action}|${text.orEmpty()}|${image?.toString().orEmpty()}"
+        if (signature == consumedShare) return
+        consumedShare = signature
         sharedText.value = text
         sharedImage.value = image
         sharedAt.longValue = System.currentTimeMillis()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putString(CONSUMED_SHARE, consumedShare)
+    }
+
+    private companion object {
+        const val CONSUMED_SHARE = "com.osint.unified.CONSUMED_SHARE"
     }
 
     /**
@@ -179,6 +227,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             WindowManager.LayoutParams.FLAG_SECURE
         )
         locked.value = (application as OsintApplication).settings.appLockEnabled
+        consumedShare = savedInstanceState?.getString(CONSUMED_SHARE)
         consume(intent)
         // Rather than overriding onNewIntent, whose signature has moved
         // between versions of androidx.activity.
@@ -308,6 +357,9 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                         sharedText.value = null
                         when {
                             sharedImage.value != null -> screen = "forensics"
+                            // Offered rather than taken. See pendingShare.
+                            text != null && godState.runningTools.isNotEmpty() ->
+                                pendingShare.value = targetIn(text)
                             text != null -> {
                                 // Prepared, not fired.
                                 //
@@ -413,6 +465,17 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                     // nine instead of where you had left it. Declared
                     // above, with `screen`, so the lock cannot take it.
                     Column(Modifier.fillMaxSize()) {
+                    pendingShare.value?.let { target ->
+                        SharedTargetOffer(
+                            target = target,
+                            onInvestigate = {
+                                pendingShare.value = null
+                                godEyeViewModel.onQueryChange(target)
+                                godEyeViewModel.onSearch(fanOut = false)
+                            },
+                            onDismiss = { pendingShare.value = null }
+                        )
+                    }
                     androidx.compose.foundation.layout.Box(Modifier.weight(1f)) {
                     tabState.SaveableStateProvider(screen) {
                     when (screen) {
@@ -523,6 +586,83 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                     }
                     }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * A target shared in from another app while a search was running.
+ *
+ * Shown rather than acted on. Any app on this device can hand this one
+ * a target, and acting on it immediately meant that app decided who
+ * this user investigated — and, worse, threw away whatever enquiry was
+ * already in progress to do it. One tap takes it; one tap discards it;
+ * doing nothing leaves the current search alone.
+ */
+@Composable
+private fun SharedTargetOffer(
+    target: String,
+    onInvestigate: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    androidx.compose.material3.Surface(
+        color = com.osint.unified.ui.theme.Intel.Elevated,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            Modifier
+                .windowInsetsPadding(
+                    androidx.compose.foundation.layout.WindowInsets.safeDrawing.only(
+                        androidx.compose.foundation.layout.WindowInsetsSides.Top +
+                            androidx.compose.foundation.layout.WindowInsetsSides.Horizontal
+                    )
+                )
+                .padding(horizontal = 14.dp, vertical = 10.dp)
+        ) {
+            androidx.compose.material3.Text(
+                "SHARED WHILE A SEARCH WAS RUNNING",
+                style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
+                color = com.osint.unified.ui.theme.Intel.TextLow
+            )
+            androidx.compose.material3.Text(
+                target,
+                style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
+                color = com.osint.unified.ui.theme.Intel.TextHi,
+                maxLines = 2,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 2.dp)
+            )
+            androidx.compose.material3.Text(
+                "Investigating it now would stop the search in progress and " +
+                    "close the open dossier.",
+                style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
+                color = com.osint.unified.ui.theme.Intel.TextLow,
+                modifier = Modifier.padding(top = 2.dp)
+            )
+            androidx.compose.foundation.layout.Row(
+                Modifier.padding(top = 8.dp),
+                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp)
+            ) {
+                androidx.compose.material3.Text(
+                    "INVESTIGATE",
+                    style = androidx.compose.material3.MaterialTheme.typography.labelMedium,
+                    color = com.osint.unified.ui.theme.Intel.Base,
+                    modifier = Modifier
+                        .clip(androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
+                        .background(com.osint.unified.ui.theme.Intel.Cyan)
+                        .clickable(onClick = onInvestigate)
+                        .padding(horizontal = 14.dp, vertical = 8.dp)
+                )
+                androidx.compose.material3.Text(
+                    "NOT NOW",
+                    style = androidx.compose.material3.MaterialTheme.typography.labelMedium,
+                    color = com.osint.unified.ui.theme.Intel.TextMid,
+                    modifier = Modifier
+                        .clip(androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
+                        .clickable(onClick = onDismiss)
+                        .padding(horizontal = 14.dp, vertical = 8.dp)
+                )
             }
         }
     }

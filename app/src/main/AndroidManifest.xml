@@ -21,10 +21,20 @@
         android:theme="@style/Theme.OsintUnified"
         android:extractNativeLibs="true">
 
+        <!-- launchMode is singleTask so that a share reaches the app
+             that is already running. With the default `standard` mode
+             onNewIntent is never delivered, so the listener MainActivity
+             registers for it was unreachable, and a share arriving while
+             the app was open pushed a SECOND MainActivity on top: a
+             second ViewModelStore, a second GodEyeViewModel and a second
+             set of twenty-six feed pollers - the duplicate data bill
+             that onStart/onStop exists to prevent - with the live
+             investigation buried underneath it. -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:label="@string/app_name"
+            android:launchMode="singleTask"
             android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.OsintUnified">
             <intent-filter>
