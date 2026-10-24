@@ -379,14 +379,21 @@ else keyed, if the person wants it.
 
 ## C. The globe audit, remaining items
 
-- **C1. G2 — vectors re-projected every frame.** With the sphere on
+- [done] **C1. G2 — vectors re-projected every frame.** With the sphere on
   the GPU this is the last per-frame trigonometry on the main thread.
   Level-of-detail by zoom, decimated once off-thread, not a cache
   keyed on a camera that changes every frame.
 - **C2. G4 — one Canvas repainted wholesale.** Bake the static layers
   into a cached layer keyed on the camera; redraw only markers.
-- **C3. G5 — pollers rebuild the whole point set.** Diff per layer.
-- **C4. L1 — 34 flat pills with a search box to find a pill.** One
+  Reconsidered 24 Oct and **not worth building as described**: with
+  the sphere on the GPU the static part left is the graticule and
+  the borders, and a cache keyed on the camera is re-baked on every
+  frame of a drag, which is the cost it was meant to remove. C1
+  took the allocation and the redundant trig out of that path
+  instead, which is where the cost actually was. Revisit only if a
+  profile on a real device says otherwise.
+- [done] **C3. G5 — pollers rebuild the whole point set.** Diff per layer.
+- [done] **C4. L1 — 34 flat pills with a search box to find a pill.** One
   Layers button, a grouped sheet, 3–5 pinned quick chips.
 - [done] **C5. L2 — presets.** Aviation, Maritime, Disaster, Conflict,
   Infrastructure, Space weather.
