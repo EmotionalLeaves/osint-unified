@@ -26,8 +26,9 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import java.io.File
 import java.io.FileOutputStream
-import java.text.SimpleDateFormat
-import java.util.Date
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 enum class ExportFormat(val ext: String, val mime: String) {
@@ -43,7 +44,31 @@ enum class ExportFormat(val ext: String, val mime: String) {
 class InvestigationExporter(private val appContext: Context) {
 
     private val prettyJson = Json { prettyPrint = true }
-    private val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US)
+
+    /**
+     * A name no other export can take.
+     *
+     * This was a shared SimpleDateFormat, which is mutable and not
+     * thread-safe, called from two suspend functions that can both
+     * be in flight — exporting a case while a dossier export is
+     * still writing is one tap each. The format object itself can
+     * produce a garbled string when two threads are inside it.
+     *
+     * The second half of the same bug was the resolution: seconds.
+     * Exporting the same case as text and then as a PDF within one
+     * second produced the same filename twice, so the second write
+     * landed on top of the first and the share sheet handed over
+     * whichever had won. DateTimeFormatter is immutable, and the
+     * name carries milliseconds and a counter.
+     */
+    private val stamp: DateTimeFormatter =
+        DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS", Locale.US)
+            .withZone(ZoneId.systemDefault())
+    private val exportSeq = java.util.concurrent.atomic.AtomicInteger(0)
+
+    private fun exportName(format: ExportFormat): String =
+        "osint-case-${stamp.format(Instant.now())}-" +
+            "${exportSeq.incrementAndGet()}.${format.ext}"
 
     suspend fun export(
         observable: Observable,
@@ -62,7 +87,7 @@ class InvestigationExporter(private val appContext: Context) {
         // target — so the share sheet, and every app that received one,
         // displayed the email address or phone number being investigated.
         purgeOldExports(dir)
-        val file = File(dir, "osint-case-${stamp.format(Date())}.${format.ext}")
+        val file = File(dir, exportName(format))
         when (format) {
             ExportFormat.JSON ->
                 file.writeText(toJson(observable, results, notes, dismissals))
@@ -109,7 +134,7 @@ class InvestigationExporter(private val appContext: Context) {
     ): File = withContext(Dispatchers.IO) {
         val dir = File(appContext.cacheDir, "exports").apply { mkdirs() }
         purgeOldExports(dir)
-        val file = File(dir, "osint-case-${stamp.format(Date())}.${format.ext}")
+        val file = File(dir, exportName(format))
         when (format) {
             ExportFormat.CSV -> file.writeText(toCaseCsv(targets))
             ExportFormat.JSON -> file.writeText(toCaseJson(caseName, summary, targets))
