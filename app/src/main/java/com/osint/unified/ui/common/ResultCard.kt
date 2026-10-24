@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -110,7 +111,9 @@ fun ResultCard(row: ResultRow, onPivot: ((String) -> Unit)? = null) {
                         if (copied) "COPIED" else "COPY",
                         style = MaterialTheme.typography.labelSmall,
                         color = if (copied) Intel.Success else Intel.TextLow,
+                        // 23dp on every result card in the app.
                         modifier = Modifier
+                            .minimumInteractiveComponentSize()
                             .clip(RoundedCornerShape(5.dp))
                             .clickable {
                                 clipboard.setText(AnnotatedString(plainText(row, summary)))
@@ -123,6 +126,7 @@ fun ResultCard(row: ResultRow, onPivot: ((String) -> Unit)? = null) {
                         style = MaterialTheme.typography.labelSmall,
                         color = Intel.TextLow,
                         modifier = Modifier
+                            .minimumInteractiveComponentSize()
                             .clip(RoundedCornerShape(5.dp))
                             .clickable { showRaw = !showRaw }
                             .padding(horizontal = 6.dp, vertical = 3.dp)

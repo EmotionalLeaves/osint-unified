@@ -21,6 +21,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
@@ -272,7 +273,10 @@ private fun LeafRow(
                 style = MaterialTheme.typography.labelMedium,
                 color = Intel.Amber,
                 fontFamily = FontFamily.Monospace,
+                // The only way to run anything from this screen,
+                // at about 28dp tall.
                 modifier = Modifier
+                    .minimumInteractiveComponentSize()
                     .clip(RoundedCornerShape(6.dp))
                     .background(Intel.Elevated)
                     .clickable(onClick = onRun)

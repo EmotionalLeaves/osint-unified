@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextFieldDefaults
@@ -464,7 +465,13 @@ private fun CaseAction(
         label,
         style = MaterialTheme.typography.labelMedium,
         color = tint,
+        // Every case chip on the screen — CREATE, REMOVE, the four
+        // export formats, SAVE TAGS, DELETE CASE — is this, and it
+        // was about 28dp tall against the 48dp a thumb needs. The
+        // minimum goes outermost, before clip and background, or it
+        // only pads the ripple.
         modifier = Modifier
+            .minimumInteractiveComponentSize()
             .clip(RoundedCornerShape(6.dp))
             .background(Intel.Elevated)
             .border(1.dp, Intel.Hairline, RoundedCornerShape(6.dp))

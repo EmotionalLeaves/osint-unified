@@ -25,6 +25,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -156,6 +157,7 @@ fun WatchScreen(
                         style = MaterialTheme.typography.labelSmall,
                         color = Intel.TextMid,
                         modifier = Modifier
+                            .minimumInteractiveComponentSize()
                             .clip(RoundedCornerShape(6.dp))
                             .clickable { scope.launch { repository.acknowledgeAll() } }
                             .padding(horizontal = 8.dp, vertical = 6.dp)
@@ -284,7 +286,9 @@ private fun WatchRow(
                 "REMOVE",
                 style = MaterialTheme.typography.labelSmall,
                 color = Intel.TextLow,
+                // 23dp, and it removes a watch.
                 modifier = Modifier
+                    .minimumInteractiveComponentSize()
                     .clip(RoundedCornerShape(6.dp))
                     .clickable(onClick = onRemove)
                     .padding(horizontal = 8.dp, vertical = 4.dp)
@@ -330,6 +334,7 @@ private fun WatchRow(
                 style = MaterialTheme.typography.labelSmall,
                 color = Intel.Cyan,
                 modifier = Modifier
+                    .minimumInteractiveComponentSize()
                     .clip(RoundedCornerShape(6.dp))
                     .clickable(onClick = onInvestigate)
                     .padding(horizontal = 8.dp, vertical = 4.dp)

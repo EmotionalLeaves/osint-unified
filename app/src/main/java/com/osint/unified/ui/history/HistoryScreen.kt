@@ -24,6 +24,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -343,7 +344,9 @@ private fun Action(label: String, tint: androidx.compose.ui.graphics.Color, onCl
         label,
         style = MaterialTheme.typography.labelMedium,
         color = tint,
+        // About 28dp tall before this.
         modifier = Modifier
+            .minimumInteractiveComponentSize()
             .clip(RoundedCornerShape(6.dp))
             .background(Intel.Elevated)
             .border(1.dp, Intel.Hairline, RoundedCornerShape(6.dp))
@@ -434,7 +437,9 @@ private fun InvestigationRow(
             if (confirming) "CONFIRM" else "DELETE",
             style = MaterialTheme.typography.labelSmall,
             color = if (confirming) Intel.Danger else Intel.TextLow,
+            // A 27dp target whose second tap deletes a case.
             modifier = Modifier
+                .minimumInteractiveComponentSize()
                 .clip(RoundedCornerShape(6.dp))
                 .clickable { if (confirming) onDelete() else confirming = true }
                 .padding(horizontal = 10.dp, vertical = 6.dp)
