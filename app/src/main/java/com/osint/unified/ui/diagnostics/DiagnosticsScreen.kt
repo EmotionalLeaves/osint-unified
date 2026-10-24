@@ -3,6 +3,9 @@ package com.osint.unified.ui.diagnostics
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -151,7 +154,7 @@ private fun BundleManifest() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun DiagnosticsScreen(executors: ExecutorFactory, feeds: List<FeedProbe>, onBack: () -> Unit) {
     val probes = remember(feeds) {
@@ -226,10 +229,20 @@ fun DiagnosticsScreen(executors: ExecutorFactory, feeds: List<FeedProbe>, onBack
             )
         }
     ) { pad ->
-        Column(modifier = Modifier.padding(pad).fillMaxSize().padding(horizontal = 12.dp)) {
+        // The manifest and the run button were siblings of a
+        // fillMaxSize LazyColumn. The manifest is one line per
+        // bundled dataset plus one per checksum and has no ceiling,
+        // so on a device with the full set it took the screen and
+        // the self-test results — the entire point of this page —
+        // were laid out at no height at all.
+        LazyColumn(modifier = Modifier.padding(pad).fillMaxSize().padding(horizontal = 12.dp)) {
+          item {
             BundleManifest()
             val ok = results.values.count { it.status == "ok" }
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+            FlowRow(
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+            ) {
                 Text(
                     if (results.isEmpty()) "${probes.size} sources — nothing run yet"
                     else "$ok / ${probes.size} sources returning data",
@@ -250,8 +263,8 @@ fun DiagnosticsScreen(executors: ExecutorFactory, feeds: List<FeedProbe>, onBack
                     )
                 }
             }
+          }
 
-            LazyColumn(Modifier.fillMaxSize()) {
                 itemsIndexed(probes) { index, p ->
                     if (index == 0 || probes[index - 1].group != p.group) {
                         Text(
@@ -263,7 +276,6 @@ fun DiagnosticsScreen(executors: ExecutorFactory, feeds: List<FeedProbe>, onBack
                     DiagRow(p.name, results[p.name])
                     Spacer(Modifier.size(6.dp))
                 }
-            }
         }
     }
 }

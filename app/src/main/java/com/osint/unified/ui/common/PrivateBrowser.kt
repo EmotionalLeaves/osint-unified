@@ -8,15 +8,17 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -110,6 +112,7 @@ object PrivateBrowserHost {
 }
 
 @SuppressLint("SetJavaScriptEnabled")
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun PrivateBrowserDialog(url: String, onDismiss: () -> Unit) {
     val context = LocalContext.current
@@ -163,7 +166,13 @@ fun PrivateBrowserDialog(url: String, onDismiss: () -> Unit) {
                             "CLOSE",
                             style = MaterialTheme.typography.labelMedium,
                             color = Intel.Cyan,
-                            modifier = Modifier.clickable(onClick = onDismiss)
+                            // Fifteen dp of unpadded text, and the only
+                            // way out of the browser once back has
+                            // started walking page history.
+                            modifier = Modifier
+                                .minimumInteractiveComponentSize()
+                                .clickable(onClick = onDismiss)
+                                .padding(horizontal = 10.dp, vertical = 6.dp)
                         )
                     }
                     Text(
@@ -173,14 +182,20 @@ fun PrivateBrowserDialog(url: String, onDismiss: () -> Unit) {
                         fontFamily = FontFamily.Monospace,
                         modifier = Modifier.padding(top = 2.dp)
                     )
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
+                    // Four labels and three spacers in a plain Row
+                    // measured about 296dp, against the 296dp a 320dp
+                    // phone has: MY BROWSER and INVESTIGATE were
+                    // measured at zero width and were simply not
+                    // there, and SNAPSHOT — the one feature that
+                    // preserves evidence before a target deletes it —
+                    // went next at the stock "large" font setting.
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
                         modifier = Modifier.padding(top = 6.dp)
                     ) {
                         Action("COPY LINK", Intel.TextMid) {
                             clipboard.setText(AnnotatedString(current))
                         }
-                        Spacer(Modifier.width(10.dp))
                         Action(if (saved) "SAVED" else "SNAPSHOT", if (saved) Intel.Success else Intel.Cyan) {
                             val web = view ?: return@Action
                             // The page as it is now, kept in the case. A
@@ -200,12 +215,10 @@ fun PrivateBrowserDialog(url: String, onDismiss: () -> Unit) {
                                 }
                             }
                         }
-                        Spacer(Modifier.width(10.dp))
                         Action("INVESTIGATE", Intel.Cyan) {
                             PrivateBrowserHost.close()
                             InAppNavigation.investigate(current)
                         }
-                        Spacer(Modifier.width(10.dp))
                         Action("MY BROWSER", Intel.Amber) {
                             LinkOpener.openInRealBrowser(context, current)
                             onDismiss()
@@ -326,7 +339,12 @@ private fun Action(label: String, tint: androidx.compose.ui.graphics.Color, onCl
         label,
         style = MaterialTheme.typography.labelSmall,
         color = tint,
-        modifier = Modifier.clickable(onClick = onClick)
+        // These were bare text with no padding at all: about 15dp
+        // tall, which is a third of what a thumb needs.
+        modifier = Modifier
+            .minimumInteractiveComponentSize()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 4.dp, vertical = 6.dp)
     )
 }
 

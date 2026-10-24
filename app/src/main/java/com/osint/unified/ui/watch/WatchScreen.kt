@@ -3,6 +3,9 @@ package com.osint.unified.ui.watch
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -54,7 +57,7 @@ import kotlinx.coroutines.launch
  * that keeps overwriting itself is a status, and a status does not answer
  * "when did this start".
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun WatchScreen(
     repository: WatchRepository,
@@ -111,7 +114,17 @@ fun WatchScreen(
             )
         }
     ) { pad ->
-        Column(Modifier.padding(pad).fillMaxSize().padding(horizontal = 12.dp)) {
+        // Everything above the list used to be siblings of a
+        // fillMaxSize LazyColumn, which is a Column measuring its
+        // unbounded children first and handing the list whatever is
+        // left. At a 2x font size the three-line intro is eight
+        // lines, and in landscape the watch list itself was measured
+        // at nothing. It is all one scroll now.
+        LazyColumn(
+            modifier = Modifier.padding(pad).fillMaxSize().padding(horizontal = 12.dp),
+            state = listState
+        ) {
+          item {
             Text(
                 "An investigation says what is true now. A watch says what " +
                     "changed. Each target is re-checked every few hours, and " +
@@ -121,7 +134,15 @@ fun WatchScreen(
                 modifier = Modifier.padding(vertical = 8.dp)
             )
 
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            // A Row measures its unweighted children first, so at a
+            // large font size MARK ALL SEEN and CHECK NOW took the
+            // whole width and the weighted "N watched · M unseen" —
+            // the only thing on the screen that says how many there
+            // are — was measured at zero and disappeared.
+            FlowRow(
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 val totalUnseen = unseen.values.sum()
                 Text(
                     "${list.size} watched" + if (totalUnseen > 0) " · $totalUnseen unseen" else "",
@@ -191,11 +212,11 @@ fun WatchScreen(
                     color = Intel.TextMid,
                     modifier = Modifier.padding(top = 20.dp)
                 )
-                return@Scaffold
+            } else {
+                Spacer(Modifier.height(10.dp))
             }
+          }
 
-            Spacer(Modifier.height(10.dp))
-            LazyColumn(Modifier.fillMaxSize(), state = listState) {
                 items(list, key = { it.id }) { watch ->
                     WatchRow(
                         watch = watch,
@@ -213,7 +234,6 @@ fun WatchScreen(
                     )
                     Spacer(Modifier.height(8.dp))
                 }
-            }
         }
     }
 }

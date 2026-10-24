@@ -1505,7 +1505,12 @@ fun GodEyeViewScreen(
                 )
             },
             text = {
-                Column {
+                // The sibling dialogs scroll; this one did not, and
+                // AlertDialog clips its text slot rather than
+                // scrolling it. In landscape that put OPEN SOURCE —
+                // the last line — off the bottom with no way to
+                // reach it.
+                Column(Modifier.verticalScroll(rememberScrollState())) {
                     Text(
                         obj.label, style = MaterialTheme.typography.bodyMedium,
                         color = Intel.CyanBright, fontFamily = FontFamily.Monospace
