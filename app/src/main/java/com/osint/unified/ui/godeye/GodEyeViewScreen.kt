@@ -38,6 +38,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -1466,8 +1468,8 @@ fun GodEyeViewScreen(
                         .background(Color(0xB30B0E11))
                 ) {
                     Icon(
-                        if (fullScreen) androidx.compose.material.icons.Icons.Filled.FullscreenExit
-                        else androidx.compose.material.icons.Icons.Filled.Fullscreen,
+                        if (fullScreen) Icons.Filled.FullscreenExit
+                        else Icons.Filled.Fullscreen,
                         contentDescription = if (fullScreen) "Leave full screen" else "Full screen",
                         tint = Intel.Cyan
                     )
