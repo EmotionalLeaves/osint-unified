@@ -227,10 +227,6 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
         } ?: emptyList()
     }.getOrNull()
 
-    /** The same, for callers that genuinely do not care which it was. */
-    private fun dohTxt(name: String, type: String): List<String> =
-        dohOrNull(name, type) ?: emptyList()
-
     /** Email-domain security posture: MX, SPF and DMARC via DoH (keyless). */
     fun mailSecurity(input: String): Result<String> = runCatching {
         val domain = input.substringAfter('@').trim().lowercase()

@@ -62,6 +62,19 @@ FAILURE_EMPTY = [
     re.compile(r"catch\s*\([^)]*\)\s*\{\s*(?:return@?\w*\s+)?" + NOTHING + r"\s*\}"),
     # runCatching { ... }.getOrElse { nothing }
     re.compile(r"getOrElse\s*\{\s*(?:\w+\s*->\s*)?(?:return@?\w*\s+)?" + NOTHING + r"\s*\}"),
+    # The same thing spelled with getOrNull, with or without a return:
+    # `runCatching { parse(body) }.getOrNull() ?: emptyList()`.
+    re.compile(r"getOrNull\(\)\s*\?:\s*(?:return@?\w*\s+)?" + NOTHING),
+    # A function whose name says it returns null when it fails, with
+    # the failure coalesced straight to nothing: `fooOrNull(x) ?:
+    # emptyList()`. A bare `?: emptyList()` after a missing JSON field
+    # is usually the field meaning "none" and is not matched; this is
+    # the shape where null can only mean "could not".
+    re.compile(r"\w+OrNull\((?:[^()]|\([^()]*\))*\)\s*\?:\s*(?:return@?\w*\s+)?" + NOTHING),
+    # A catch that does something first — logs, records the error —
+    # and then hands back nothing. The whole-body pattern above only
+    # saw a catch that was *only* the empty list.
+    re.compile(r"catch\s*\([^)]*\)\s*\{[^{}]{0,400}?(?:return@?\w*\s+)?" + NOTHING + r"\s*\}"),
 ]
 
 # `getOrDefault(emptyList())` is how a merged source shows what it

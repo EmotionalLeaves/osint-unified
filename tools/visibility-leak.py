@@ -89,30 +89,135 @@ def signature_at(code: str, start: int) -> str:
     return code[start:i]
 
 
-def hidden_spans(code: str) -> list[tuple[int, int]]:
-    """Character ranges belonging to a private or internal container.
+def strip_parens(text: str) -> str:
+    """Balanced (...) and [...] emptied, innermost first."""
+    prev = None
+    while prev != text:
+        prev = text
+        text = re.sub(r"\([^()]*\)", "()", text)
+        text = re.sub(r"\[[^\[\]]*\]", "[]", text)
+    return text
 
-    Anything inside one is already invisible from outside the module,
-    so a signature in there may name whatever it likes.
+
+HEADER_TOKEN = re.compile(
+    r"\b(class|interface|object|fun|init|get|set|constructor)\b|->|="
+)
+MODIFIERS_ON_LINE = re.compile(r"\b(?:private|internal|protected)\b")
+
+
+def scopes(code: str) -> list[tuple[int, int, bool, bool]]:
+    """Every brace block: (open, close, is_type_body, hidden).
+
+    A type body is the body of a named class, interface or object, or a
+    companion — the places a declaration is a member, visible wherever
+    its container is. Anything else (a function body, a lambda, an
+    initialiser, an anonymous object, an enum entry's body) makes what
+    is inside it local. Hidden means the type was declared private,
+    internal or protected, so nothing in it is public API.
+
+    Read from the braces, not the indent. The indent rule stopped one
+    level in, so a companion's members — two levels in, and as public
+    as the class — were never looked at.
     """
-    spans: list[tuple[int, int]] = []
-    for m in re.finditer(
-        r"^[ \t]*(?:private|internal)\s+(?:[a-z]+\s+)*(?:class|interface|object)\b",
-        code, re.M
-    ):
-        brace = code.find("{", m.end())
-        if brace < 0:
-            continue
-        depth = 0
-        for i in range(brace, len(code)):
-            if code[i] == "{":
-                depth += 1
-            elif code[i] == "}":
-                depth -= 1
-                if depth == 0:
-                    spans.append((m.start(), i))
-                    break
-    return spans
+    out: list[tuple[int, int, bool, bool]] = []
+    stack: list[tuple[int, bool, bool]] = []
+    paren = 0
+    for i, c in enumerate(code):
+        if c in "([":
+            paren += 1
+        elif c in ")]":
+            paren = max(0, paren - 1)
+        elif c == "{":
+            if paren > 0:
+                stack.append((i, False, False))
+                continue
+            # The statement this brace opens: back to the previous
+            # brace or semicolon, with bracketed text emptied so a
+            # default value in a constructor does not read as `=`.
+            j = max(code.rfind("{", 0, i), code.rfind("}", 0, i), code.rfind(";", 0, i))
+            header = strip_parens(code[j + 1:i])
+            tokens = list(HEADER_TOKEN.finditer(header))
+            is_type = False
+            hidden = False
+            if tokens:
+                last = tokens[-1]
+                word = last.group(1)
+                if word in ("class", "interface"):
+                    is_type = True
+                elif word == "object":
+                    before = header[:last.start()]
+                    after = header[last.end():]
+                    is_type = bool(
+                        re.search(r"\bcompanion\s*$", before)
+                        or re.match(r"\s+[A-Za-z_]", after)
+                    )
+                if is_type:
+                    line_start = header.rfind("\n", 0, last.start()) + 1
+                    hidden = bool(MODIFIERS_ON_LINE.search(header[line_start:last.start()]))
+            stack.append((i, is_type, hidden))
+        elif c == "}":
+            if stack:
+                start, is_type, hidden = stack.pop()
+                out.append((start, i, is_type, hidden))
+    return out
+
+
+def enclosing(blocks: list[tuple[int, int, bool, bool]], pos: int):
+    return [b for b in blocks if b[0] < pos < b[1]]
+
+
+def own_and_rest(kind: str, signature: str) -> tuple[str, str]:
+    """The declared name, and the signature with it taken out.
+
+    For an extension the receiver comes first — `fun Tiles.Ref.f()` —
+    and taking the first identifier as the name meant the receiver,
+    the very type that leaks, was the one thing never checked.
+    """
+    if kind in ("class", "interface", "object"):
+        m = re.match(r"\s*([A-Za-z_][A-Za-z0-9_]*)", signature)
+        if not m:
+            return "", signature
+        return m.group(1), signature[m.end():]
+    body = re.sub(r"^\s*<[^>]*>", "", signature)
+    stop = re.search(r"\(|:|=|\bby\b", body)
+    prefix = body[:stop.start()] if stop else body
+    names = list(re.finditer(r"[A-Za-z_][A-Za-z0-9_]*", prefix))
+    if not names:
+        return "", signature
+    last = names[-1]
+    return last.group(0), prefix[:last.start()] + body[len(prefix):]
+
+
+def inferred_from(code: str, end: int, kind: str, signature: str) -> str | None:
+    """The type a public val or expression-bodied fun takes from its
+    initialiser, when that is a plain constructor call.
+
+    `val store = TileStore(context)` has no type in its signature for
+    the check to read, and Kotlin still refuses it: the inferred type
+    is the declared one. Only constructor calls are read — anything
+    else needs the compiler to know what it returns.
+    """
+    if kind == "fun":
+        flat = strip_parens(signature)
+        if re.search(r"\)\s*:", flat):
+            return None
+    elif kind in ("val", "var"):
+        if ":" in strip_parens(signature).split("=")[0]:
+            return None
+    else:
+        return None
+    tail = code[end:end + 200]
+    m = re.match(
+        r"(?:=|\s*by\s+lazy\s*\{|\{)?\s*(?:lazy\s*\{\s*)?([A-Z][A-Za-z0-9_]*)\s*(?:<[^>]*>)?\s*\(",
+        tail,
+    )
+    if not m:
+        return None
+    if tail.startswith("{") and kind == "fun":
+        return None
+    if tail.startswith("{") and not re.search(r"\bby\s+lazy\s*$", signature):
+        return None
+    return m.group(1)
 
 
 def main() -> int:
@@ -129,30 +234,30 @@ def main() -> int:
         raw = path.read_text(errors="replace")
         code = without_prose(raw)
         raw_lines = raw.split("\n")
-        hidden = hidden_spans(code)
+        blocks = scopes(code)
         for m in DECL.finditer(code):
             if HIDDEN.search(m.group(2)):
                 continue
-            if any(a <= m.start() <= b for a, b in hidden):
+            around = enclosing(blocks, m.start())
+            # Inside a body that is not a type's, it is a local: naming
+            # an internal type there is ordinary.
+            if any(not is_type for _, _, is_type, _ in around):
                 continue
-            # Top level, or one level in — which is a member of a
-            # top-level class, object or interface, and public with
-            # it. Anything deeper is a local inside a body, where
-            # visibility is not a thing and naming an internal type
-            # is ordinary.
-            if len(m.group(1).expandtabs(4)) > 4:
+            if any(hidden for _, _, _, hidden in around):
                 continue
             line = code.count("\n", 0, m.start()) + 1
             if line >= 2 and "visibility-leak:" in raw_lines[line - 2]:
                 continue
+            kind = m.group(3)
             signature = signature_at(code, m.end())
-            # The declared name itself is not a use of a type.
-            own = re.match(r"\s*([A-Za-z_][A-Za-z0-9_]*)", signature)
-            own_name = own.group(1) if own else ""
+            own_name, checked = own_and_rest(kind, signature)
             named = {
                 ty for ty in internal
-                if ty != own_name and re.search(r"\b%s\b" % re.escape(ty), signature)
+                if ty != own_name and re.search(r"\b%s\b" % re.escape(ty), checked)
             }
+            inferred = inferred_from(code, m.end() + len(signature), kind, signature)
+            if inferred in internal and inferred != own_name:
+                named.add(inferred)
             if named:
                 bad.append(
                     f"{path.relative_to(ROOT)}:{line}: public declaration names the "

@@ -109,9 +109,9 @@ MEDIUM
 - [x] **P12.** (closed r20: kindOf reads an empty fragment (nothing after the marker line) as UNREACHABLE. Test added.) A PARTIAL with no content after the marker counts as a HIT.
 - [x] **P13.** (closed r20: workflow chain, geo pins and the intel summary use kindOf == HIT, the same test as the graph.) Two more `== "success"` sites miss PARTIAL: the workflow
   chain discards a partial subdomain step; partial rows make no geo pins.
-- [ ] **P14.** visibility-leak misses 5 of 6 shapes (companion members,
+- [x] **P14.** (closed r20: visibility-leak reads brace nesting (companion and nested members), the receiver of an extension, and a type inferred from a constructor initialiser. Seven injected shapes caught; kotlinc agrees on each.) visibility-leak misses 5 of 6 shapes (companion members,
   inferred-type properties, extension receivers). Reproduced.
-- [ ] **P15.** empty-is-an-answer misses `?: emptyList()` without return,
+- [x] **P15.** (closed r20: empty-is-an-answer catches getOrNull() ?: nothing, xOrNull(..) ?: nothing, and a catch that does something before returning nothing. Dead dohTxt (the shape itself) deleted.) empty-is-an-answer misses `?: emptyList()` without return,
   `getOrNull() ?: emptyList()`, and a catch that logs then returns.
   Reproduced.
 
