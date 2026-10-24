@@ -453,16 +453,18 @@ internal object WatchDigest {
         .replace(Regex("""\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2})?(\.\d+)?Z?"""), "")
         .replace(Regex("""\b\d+\s*(seconds?|minutes?|hours?|days?)\s*ago\b""", RegexOption.IGNORE_CASE), "")
         .replace(Regex("""\b1[0-9]{9,12}\b"""), "")
-        .replace(Regex("""\s+"""), " ")
-        .trim()
-        // And the lines sorted, because the order a source prints
-        // them in is not a fact about the target.
+        // Sorted BEFORE any whitespace collapse, which would
+        // otherwise eat the newlines this splits on.
         //
-        // crt.sh and the subdomain sweeps do not promise an order, so
-        // a reordered answer changed the fingerprint and raised an
-        // alert saying something had changed when nothing had. The
-        // first thing a watch must get right is not crying wolf.
-        .let { it.split('\n').map(String::trim).filter(String::isNotEmpty).sorted() }
+        // The order a source prints its answer in is not a fact
+        // about the target: crt.sh and the subdomain sweeps promise
+        // none, so a reordered answer changed the fingerprint and
+        // raised an alert about nothing. The first thing a watch
+        // must get right is not crying wolf.
+        .split('\n')
+        .map { it.replace(Regex("""[ \t]+"""), " ").trim() }
+        .filter { it.isNotEmpty() }
+        .sorted()
         .joinToString("\n")
 
     /**
