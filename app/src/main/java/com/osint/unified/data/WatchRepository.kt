@@ -16,6 +16,12 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -90,6 +96,43 @@ class WatchRepository(
     suspend fun checkAll(): List<Change> = withContext(Dispatchers.Default) {
         checkAllHere()
     }
+
+    /**
+     * CHECK NOW, run somewhere a tab switch cannot reach.
+     *
+     * The button launched into the screen's own
+     * rememberCoroutineScope, and the tab host swaps screens by taking
+     * them out of the composition — so starting a sweep of forty
+     * targets and then looking at the globe for a moment cancelled the
+     * whole thing silently, and coming back showed the button at rest
+     * as though nothing had been asked. This repository outlives every
+     * screen, which is where work the user started belongs.
+     */
+    fun checkAllDetached() {
+        if (_running.value) return
+        _running.value = true
+        _trouble.value = null
+        own.launch {
+            val outcome = runCatching { checkAllHere() }
+            _running.value = false
+            _trouble.value = outcome.exceptionOrNull()
+                ?.takeIf { it !is CancellationException }
+                ?.message?.take(120)
+        }
+    }
+
+    fun clearTrouble() { _trouble.value = null }
+
+    private val own = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val _running = MutableStateFlow(false)
+
+    /** Whether a sweep started from the button is still going. */
+    val running: StateFlow<Boolean> = _running.asStateFlow()
+
+    private val _trouble = MutableStateFlow<String?>(null)
+
+    /** Why the last sweep did not finish, if it did not. */
+    val trouble: StateFlow<String?> = _trouble.asStateFlow()
 
     /**
      * Its own dispatcher, rather than the caller's.

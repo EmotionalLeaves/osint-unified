@@ -242,16 +242,37 @@ fun FrameworkScreen(initialTarget: String = "", onBack: () -> Unit) {
                 // did all of it on the thread drawing the keystroke,
                 // and so did every unrelated recomposition of this
                 // screen.
-                val matches = remember(q, allLeaves) {
-                    allLeaves.filter {
-                        it.first.contains(q, true) || it.third.contains(q, true) ||
-                            it.second.contains(q, true)
-                    }.take(300)
+                // And off the composition thread entirely.
+                //
+                // remember(q, …) stopped unrelated recompositions from
+                // re-filtering, which was the larger half, but the
+                // filter still ran synchronously on the thread drawing
+                // the keystroke — twelve hundred directory leaves and
+                // several thousand templates, between the key going
+                // down and the letter appearing. produceState keyed on
+                // the query runs it on Default and cancels the previous
+                // one when the next letter arrives, so a fast typist
+                // pays for the last letter only.
+                val matches by produceState(
+                    initialValue = emptyList<Triple<String, String, String>>(),
+                    q, allLeaves
+                ) {
+                    value = withContext(Dispatchers.Default) {
+                        allLeaves.filter {
+                            it.first.contains(q, true) || it.third.contains(q, true) ||
+                                it.second.contains(q, true)
+                        }.take(300)
+                    }
                 }
-                val tmplMatches = remember(q, templates) {
-                    templates.filter {
-                        it.name.contains(q, true) || it.url.contains(q, true)
-                    }.take(300)
+                val tmplMatches by produceState(
+                    initialValue = emptyList<ToolTemplates.Template>(),
+                    q, templates
+                ) {
+                    value = withContext(Dispatchers.Default) {
+                        templates.filter {
+                            it.name.contains(q, true) || it.url.contains(q, true)
+                        }.take(300)
+                    }
                 }
                 Text(
                     "${matches.size} directory · ${tmplMatches.size} runnable",
@@ -259,7 +280,7 @@ fun FrameworkScreen(initialTarget: String = "", onBack: () -> Unit) {
                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp)
                 )
                 LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
-                    items(tmplMatches) { t ->
+                    items(tmplMatches, key = { it.url }) { t ->
                         val resolved = if (target.isBlank()) null
                         else ToolTemplates.resolve(t, target.trim())
                         LeafRow(
@@ -268,14 +289,14 @@ fun FrameworkScreen(initialTarget: String = "", onBack: () -> Unit) {
                             resolved?.let { r -> { open(r) } }
                         ) { open(resolved ?: t.url.replace("{}", "")) }
                     }
-                    items(matches) { (name, url, path) ->
+                    items(matches, key = { it.second }) { (name, url, path) ->
                         LeafRow(name, path, runnable(url)?.let { r -> { open(r) } }) { open(url) }
                     }
                 }
             } else {
                 val node = stack.last()
                 LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
-                    items(node.children) { child ->
+                    items(node.children, key = { it.name + "\u0000" + (it.url ?: "") }) { child ->
                         if (child.isFolder) FolderRow(child) { enter(child) }
                         else LeafRow(
                             child.name,

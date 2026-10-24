@@ -39,6 +39,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
@@ -73,8 +74,10 @@ fun WatchScreen(
     var events by remember { mutableStateOf<List<WatchEvent>>(emptyList()) }
     var expanded by remember { mutableStateOf(focusWatchId) }
     LaunchedEffect(focusWatchId) { if (focusWatchId != null) onFocusHandled() }
-    var checking by remember { mutableStateOf(false) }
-    var trouble by remember { mutableStateOf<String?>(null) }
+    // Held by the repository, not by this screen: the sweep outlives
+    // the tab it was started from. See checkAllDetached.
+    val checking by repository.running.collectAsStateWithLifecycle()
+    val trouble by repository.trouble.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
 
@@ -172,24 +175,7 @@ fun WatchScreen(
                     modifier = Modifier
                         .clip(RoundedCornerShape(7.dp))
                         .background(if (canCheck) Intel.Cyan else Intel.Elevated)
-                        .clickable(enabled = canCheck) {
-                            checking = true
-                            scope.launch {
-                                // The failure is said, not discarded.
-                                //
-                                // This was a bare runCatching whose
-                                // result and exception both went
-                                // nowhere, so a sweep that could not
-                                // reach anything returned the button
-                                // to CHECK NOW with nothing to show
-                                // that it had tried and failed.
-                                val run = runCatching { repository.checkAll() }
-                                checking = false
-                                trouble = run.exceptionOrNull()
-                                    ?.takeIf { it !is kotlinx.coroutines.CancellationException }
-                                    ?.message?.take(120)
-                            }
-                        }
+                        .clickable(enabled = canCheck) { repository.checkAllDetached() }
                         .padding(horizontal = 12.dp, vertical = 7.dp)
                 ) {
                     Text(
@@ -205,7 +191,9 @@ fun WatchScreen(
                     "The last check did not finish: $why",
                     style = MaterialTheme.typography.labelSmall,
                     color = Intel.Amber,
-                    modifier = Modifier.padding(top = 6.dp)
+                    modifier = Modifier
+                        .padding(top = 6.dp)
+                        .clickable { repository.clearTrouble() }
                 )
             }
 

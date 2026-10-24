@@ -220,9 +220,25 @@ fun InvestigationScreen(
         // having: what is there at this moment. The app is already tracking
         // the aircraft overhead and the vessels offshore; it simply was not
         // telling the dossier.
-        val liveNow = remember(observable.raw, state.aircraft, state.vessels, state.quakes) {
-            (observable as? Observable.Coordinate)?.let {
-                AreaReport.build(state, it.lat, it.lon, radiusKm = 50.0)
+        // Off the main thread, like the globe's copy of this.
+        //
+        // AreaReport.build runs a haversine over every point of every
+        // armed layer — aircraft, vessels, quakes and the rest — and it
+        // was in a plain remember keyed on three of those lists, so a
+        // coordinate dossier redid the whole sweep on the thread
+        // drawing it every time any feed polled. The globe's own call
+        // was moved to a produceState and this one was missed.
+        val liveNow by androidx.compose.runtime.produceState<AreaReport.Report?>(
+            initialValue = null,
+            observable.raw, state.aircraft, state.vessels, state.quakes
+        ) {
+            val here = observable as? Observable.Coordinate
+            value = if (here == null) {
+                null
+            } else {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                    AreaReport.build(state, here.lat, here.lon, radiusKm = 50.0)
+                }
             }
         }
 
@@ -631,9 +647,13 @@ fun InvestigationScreen(
             }
 
             // ---- What is there right now ----
-            if (liveNow != null && liveNow.total > 0) {
-                SectionHeader("RIGHT NOW WITHIN 50 KM — ${liveNow.total}", Intel.Amber)
-                liveNow.groups.forEach { group ->
+            // Read into a local, because a delegated property cannot be
+            // smart-cast: the value could change between the null check
+            // and the use.
+            val live = liveNow
+            if (live != null && live.total > 0) {
+                SectionHeader("RIGHT NOW WITHIN 50 KM — ${live.total}", Intel.Amber)
+                live.groups.forEach { group ->
                     Text(
                         "${group.kind} · ${group.total}",
                         style = MaterialTheme.typography.labelSmall,

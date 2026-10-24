@@ -31,11 +31,9 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,7 +48,15 @@ import com.osint.unified.domain.Tool
 import com.osint.unified.domain.ToolRegistry
 import com.osint.unified.domain.executor.ExecutorFactory
 import com.osint.unified.ui.theme.Intel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -193,28 +199,10 @@ fun DiagnosticsScreen(executors: ExecutorFactory, feeds: List<FeedProbe>, onBack
         toolProbes + feedProbes
     }
 
-    val results = remember { mutableStateMapOf<String, DiagResult>() }
-    var running by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
+    val results by SelfTest.results.collectAsStateWithLifecycle()
+    val running by SelfTest.running.collectAsStateWithLifecycle()
 
-    fun runAll() {
-        if (running) return
-        running = true
-        probes.forEach { results[it.name] = DiagResult("running", 0, "") }
-        scope.launch {
-            coroutineScope {
-                probes.forEach { p ->
-                    launch {
-                        val t0 = System.currentTimeMillis()
-                        val res = withTimeoutOrNull(35_000) { p.run() }
-                            ?: DiagResult("timeout", System.currentTimeMillis() - t0, "no response")
-                        results[p.name] = res
-                    }
-                }
-            }
-            running = false
-        }
-    }
+    fun runAll() = SelfTest.start(probes)
 
     // It used to run on open, and again on every rotation: about a hundred
     // requests, including lookups of real third-party accounts, fired
@@ -342,6 +330,68 @@ private fun DiagRow(name: String, res: DiagResult?) {
                 it, style = MaterialTheme.typography.bodySmall, color = Intel.TextMid,
                 fontFamily = FontFamily.Monospace, modifier = Modifier.padding(top = 4.dp)
             )
+        }
+    }
+}
+
+/**
+ * A self-test that survives looking at another screen.
+ *
+ * It was launched into the screen's own rememberCoroutineScope, and
+ * the tab host takes a screen out of the composition when you leave
+ * it — so a hundred probes, including every source this app knows,
+ * were cancelled and their results discarded because somebody glanced
+ * at the globe while it ran. On a metered phone that is a hundred
+ * requests' worth of data spent and thrown away, and the screen came
+ * back looking as though nothing had been asked.
+ *
+ * Process-wide, because a self-test is about the app rather than
+ * about anything on screen, and there is only ever one of it.
+ */
+private object SelfTest {
+
+    private val own = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    private val _results = MutableStateFlow<Map<String, DiagResult>>(emptyMap())
+    val results: StateFlow<Map<String, DiagResult>> = _results.asStateFlow()
+
+    private val _running = MutableStateFlow(false)
+    val running: StateFlow<Boolean> = _running.asStateFlow()
+
+    /**
+     * Twelve at a time, not all hundred.
+     *
+     * Every probe is a blocking call on a dispatcher, and the
+     * politeness interceptor may hold each one asleep for seconds —
+     * so an unbounded fan-out of a hundred was the one place in the
+     * app most likely to occupy every thread there is, while the rest
+     * of it waited.
+     */
+    private const val AT_ONCE = 12
+
+    fun start(probes: List<Probe>) {
+        if (_running.value) return
+        _running.value = true
+        _results.value = probes.associate { it.name to DiagResult("running", 0, "") }
+        own.launch {
+            val gate = Semaphore(AT_ONCE)
+            coroutineScope {
+                probes.forEach { p ->
+                    launch {
+                        gate.withPermit {
+                            val t0 = System.currentTimeMillis()
+                            val res = withTimeoutOrNull(35_000) { p.run() }
+                                ?: DiagResult(
+                                    "timeout",
+                                    System.currentTimeMillis() - t0,
+                                    "no response"
+                                )
+                            _results.value = _results.value + (p.name to res)
+                        }
+                    }
+                }
+            }
+            _running.value = false
         }
     }
 }
