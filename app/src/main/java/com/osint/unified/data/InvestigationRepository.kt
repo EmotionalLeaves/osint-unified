@@ -340,8 +340,38 @@ class InvestigationRepository(
                 }
             }
         )
-        resultDao.update(updated)
-        return updated
+        val kept = keepTheBetterAnswer(previous, updated)
+        resultDao.update(kept)
+        return kept
+    }
+
+    /**
+     * What a re-run that came back worse than before leaves in the case.
+     *
+     * The failure path already kept an earlier answer when the refresh
+     * threw. A refresh that *returned* — but returned "could not reach"
+     * in prose, or a fragment cut off at sixty seconds — went straight
+     * over it: a complete set of four hundred subdomains replaced by the
+     * forty a timed-out scan got through, or a sanctions "no match" by
+     * "service unavailable". The worse answer is not stored over the
+     * better one; the row says the refresh did not improve on it.
+     */
+    private fun keepTheBetterAnswer(previous: ResultRow?, fresh: ResultRow): ResultRow {
+        if (previous == null || !Findings.holdsAnAnswer(previous.status)) return fresh
+        val before = Findings.kindOf(previous)
+        val after = Findings.kindOf(fresh)
+        val why = when {
+            before != Findings.Kind.UNREACHABLE && after == Findings.Kind.UNREACHABLE ->
+                "came back unanswered"
+            previous.status != Findings.STATUS_PARTIAL &&
+                before != Findings.Kind.UNREACHABLE &&
+                fresh.status == Findings.STATUS_PARTIAL ->
+                "was cut off before it finished"
+            else -> return fresh
+        }
+        return previous.copy(
+            errorMessage = "a re-run $why; showing the complete answer from before"
+        )
     }
 
     /**

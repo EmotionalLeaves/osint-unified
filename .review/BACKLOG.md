@@ -104,10 +104,10 @@ MEDIUM
   escalates the back-off twice.
 - [x] **P10.** (closed r20: base and parent tiles are drawn under the current zoom, so a zoom change shows the previous tiles.) A tile-zoom change flashes to the mosaic / black instead of
   showing the previous zoom's tiles that are still in memory.
-- [ ] **P11.** A re-run that comes back UNREACHABLE in prose (or PARTIAL)
+- [x] **P11.** (closed r20: keepTheBetterAnswer: a re-run that returns unanswered, or a fragment over a complete answer, keeps the earlier row and says so.) A re-run that comes back UNREACHABLE in prose (or PARTIAL)
   still overwrites an earlier complete answer.
-- [ ] **P12.** A PARTIAL with no content after the marker counts as a HIT.
-- [ ] **P13.** Two more `== "success"` sites miss PARTIAL: the workflow
+- [x] **P12.** (closed r20: kindOf reads an empty fragment (nothing after the marker line) as UNREACHABLE. Test added.) A PARTIAL with no content after the marker counts as a HIT.
+- [x] **P13.** (closed r20: workflow chain, geo pins and the intel summary use kindOf == HIT, the same test as the graph.) Two more `== "success"` sites miss PARTIAL: the workflow
   chain discards a partial subdomain step; partial rows make no geo pins.
 - [ ] **P14.** visibility-leak misses 5 of 6 shapes (companion members,
   inferred-type properties, extension receivers). Reproduced.

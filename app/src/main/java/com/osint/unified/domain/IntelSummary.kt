@@ -32,7 +32,10 @@ object IntelSummary {
     fun synthesize(results: List<ResultRow>, seed: String = ""): List<Fact> {
         val seedInput = seed.trim().lowercase()
         val ok = results
-            .filter { it.status == "success" }
+            // What was found, fragments included — the same test the graph
+            // uses. A partial scan's forty hosts are facts; "success" alone
+            // dropped them, and kept rows whose prose said unreachable.
+            .filter { Findings.kindOf(it) == Findings.Kind.HIT }
             .filter { seedInput.isEmpty() || it.input.trim().lowercase() == seedInput }
         // Rows that speak for themselves, as opposed to rows that
         // quote somebody else's page. Defined here rather than fifty

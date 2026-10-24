@@ -62,6 +62,19 @@ object Findings {
         text.trimStart().startsWith(PARTIAL_MARKER, ignoreCase = true)
 
     /**
+     * What a fragment actually found: everything after the marker line.
+     *
+     * The backend's first line is the announcement ("PARTIAL: stopped
+     * after 60000 ms"), so that line is not content.
+     */
+    fun partialBody(text: String): String {
+        val body = text.trimStart()
+        if (!body.startsWith(PARTIAL_MARKER, ignoreCase = true)) return text
+        val newline = body.indexOf('\n')
+        return if (newline < 0) "" else body.substring(newline + 1).trim()
+    }
+
+    /**
      * Statuses whose row holds an answer that a failed re-run must not
      * destroy.
      *
@@ -268,7 +281,10 @@ object Findings {
         STATUS_ABSENT -> Kind.ABSENT
         // A fragment is still a finding. It is the completeness that is
         // gone, not the content.
-        STATUS_PARTIAL -> Kind.HIT
+        // Unless the fragment is empty: a scan stopped before it had found
+        // anything established nothing either way, and it was being
+        // counted, and corroborated, as a finding.
+        STATUS_PARTIAL -> if (partialBody(row.rawOutput).isBlank()) Kind.UNREACHABLE else Kind.HIT
         else -> Kind.UNREACHABLE
     }
 

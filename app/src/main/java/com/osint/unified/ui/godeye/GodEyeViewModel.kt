@@ -46,6 +46,7 @@ import com.osint.unified.data.InvestigationRepository
 import com.osint.unified.data.db.Result as ResultRow
 import java.io.File
 import com.osint.unified.domain.ExecutionMode
+import com.osint.unified.domain.Findings
 import com.osint.unified.domain.Observable
 import com.osint.unified.domain.ObservableRouter
 import com.osint.unified.domain.Tool
@@ -1547,7 +1548,11 @@ class GodEyeViewModel(
                         _state.update { it.copy(runningTools = it.runningTools.minusRunning(tool.id)) }
                         noteDataSpent()
                     }
-                    if (row.status == "success") {
+                    // A found answer, fragment or whole, not the literal
+                    // status: a subdomain scan cut off at sixty seconds
+                    // with forty hosts is "partial", and the chain threw
+                    // those forty away and reported the step as broken.
+                    if (Findings.kindOf(row) == Findings.Kind.HIT) {
                         previousHosts = Workflows.extractHosts(tool.id, row.rawOutput)
                         brokenAt = null
                     } else {
@@ -1923,7 +1928,11 @@ class GodEyeViewModel(
                 // Plot any result that carries a location, and focus the globe
                 // on the first one if the search didn't already set a focus.
                 val findings = rows.flatMap { r ->
-                    if (r.status != "success") emptyList()
+                    // Found, not merely "success": an absence that names
+                    // the place it looked ("no cameras within 25 km of
+                    // 51.5, -0.1") was pinned as though something was
+                    // there. And a fragment's locations are real.
+                    if (Findings.kindOf(r) != Findings.Kind.HIT) emptyList()
                     else GeoExtractor.allCoordinates(r.rawOutput)
                         .take(perToolPinCap(r.toolId))
                         .map { FindingPin(it.first, it.second, r.toolName) }

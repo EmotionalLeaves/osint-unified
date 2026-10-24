@@ -281,4 +281,28 @@ class FindingsTest {
             assertEquals(it, Findings.Kind.UNREACHABLE, Findings.kindOf(row("success", it)))
         }
     }
+
+    /**
+     * A scan stopped before it found anything established nothing, and
+     * was being counted — and corroborated — as a finding.
+     */
+    @Test
+    fun anEmptyFragmentIsNotAFinding() {
+        fun partial(body: String) = ResultRow(
+            investigationId = 1, toolId = "subdomains", toolName = "Subdomains",
+            input = "example.com", status = Findings.STATUS_PARTIAL, rawOutput = body, startedAt = 0
+        )
+        assertEquals(
+            Findings.Kind.UNREACHABLE,
+            Findings.kindOf(partial("PARTIAL: stopped after 60000 ms"))
+        )
+        assertEquals(
+            Findings.Kind.UNREACHABLE,
+            Findings.kindOf(partial("PARTIAL: stopped after 60000 ms\n\n  \n"))
+        )
+        assertEquals(
+            Findings.Kind.HIT,
+            Findings.kindOf(partial("PARTIAL: stopped after 60000 ms\nmail.example.com"))
+        )
+    }
 }
