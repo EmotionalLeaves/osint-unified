@@ -202,7 +202,13 @@ class UsernameChecker(private val appContext: Context) {
     // the politeness interceptor imposes are blocking.
     suspend fun check(username: String): String = withContext(com.osint.unified.network.Http.bulk) {
         val sites = loadRules()
-        if (sites.isEmpty()) return@withContext "Could not load any site ruleset (check network)."
+        if (sites.isEmpty()) {
+            // With the verdict field, like every other exit from this
+            // function. A prose fallback in the classifier reads the
+            // opening words today, which works and should not have to.
+            return@withContext "Could not load any site ruleset (check network).\n" +
+                "$VERDICT_FIELD$VERDICT_UNREACHABLE"
+        }
 
         // A username with characters a site's URL cannot carry was being
         // injected raw into thousands of templates; sites that reject the
@@ -249,9 +255,22 @@ class UsernameChecker(private val appContext: Context) {
         // Anything matched on page content is believed; anything matched on
         // a bare 200 is not, until a control proves the site can say no.
         val (byContent, byStatus) = raw.partition { !it.first.statusOnly }
-        val survived = controlFilter(byStatus)
+        val checked = controlFilter(byStatus)
+        val survived = checked.filter { it.control != Control.SAYS_YES_TO_ANYTHING }
         val discarded = byStatus.size - survived.size
-        val hits = (byContent + survived).sortedBy { it.first.name.lowercase() }
+        val hits = (byContent.map { Checked(it.first, it.second, Control.NOT_NEEDED) } + survived)
+            .sortedBy { it.site.name.lowercase() }
+        // Which hits were actually put to a control, as a set the output
+        // can consult. The mark used to be appended from site.statusOnly
+        // alone — a fact about how the site is tested, not about whether
+        // anything tested it — while controlFilter only probes the first
+        // CONTROL_PROBE_CAP candidates within CONTROL_BUDGET_MS. So a
+        // sweep with more than four hundred status-only hits, or one cut
+        // off by the budget, marked unprobed hits identically to probed
+        // ones and then told the investigator every mark meant
+        // "confirmed by a control username". Sites that say yes to any
+        // name were being presented as verified accounts for the person
+        // being looked at.
 
         // The verdict is worked out here, from the counts, and written as
         // a field rather than left to be guessed from the prose. The
@@ -268,7 +287,9 @@ class UsernameChecker(private val appContext: Context) {
         // out, the same avatar — so they are read, and the ones that
         // agree are reported as agreeing. That is the whole difference
         // between a list of possibilities and something to act on.
-        val clusters = if (hits.isEmpty()) emptyList() else verify(hits, username)
+        val clusters =
+            if (hits.isEmpty()) emptyList()
+            else verify(hits.map { it.site to it.url }, username)
 
         val reached = said.toDouble() / askable
         val verdict = when {
@@ -307,11 +328,11 @@ class UsernameChecker(private val appContext: Context) {
                 append("Coverage: $coverage of $askable sites")
                 append(if (completed) ":" else " — stopped at the time cap:")
                 append("\n")
-                hits.forEach { (site, url) ->
-                    append(site.name)
-                    if (site.statusOnly) append(" ~")
+                hits.forEach { hit ->
+                    append(hit.site.name)
+                    append(hit.control.mark)
                     append(" — ")
-                    append(url)
+                    append(hit.url)
                     append("\n")
                 }
             }
@@ -342,9 +363,19 @@ class UsernameChecker(private val appContext: Context) {
                 append(" dropped: the site returned the same answer for a username ")
                 append("that cannot exist, so it says yes to everything.")
             }
-            if (hits.any { it.first.statusOnly }) {
-                append("\n~ = confirmed only by the site answering differently for a ")
-                append("control username, not by anything on the page.")
+            if (hits.any { it.control == Control.SAYS_NO_TO_CONTROL }) {
+                append("\n~ = the page was not read; the site answered differently ")
+                append("for a username that cannot exist, so its yes means ")
+                append("something.")
+            }
+            val unchecked = hits.count { it.control == Control.NOT_ASKED }
+            if (unchecked > 0) {
+                append("\n? = the page was not read and no control username was ")
+                append("tried ($unchecked of them: the control pass stops at ")
+                append("$CONTROL_PROBE_CAP sites or ${CONTROL_BUDGET_MS / 1000} ")
+                append("seconds, whichever comes first). A site that says yes to ")
+                append("every name would look like this. Treat each as a lead to ")
+                append("open, not as an account.")
             }
         }
     }
@@ -403,8 +434,8 @@ class UsernameChecker(private val appContext: Context) {
      */
     private suspend fun controlFilter(
         candidates: List<Pair<SiteRule, String>>
-    ): List<Pair<SiteRule, String>> {
-        if (candidates.isEmpty()) return candidates
+    ): List<Checked> {
+        if (candidates.isEmpty()) return emptyList()
         val control = "zq" + java.util.UUID.randomUUID().toString().replace("-", "").take(16)
         val semaphore = Semaphore(48)
         // A verdict per candidate, by position: 0 never asked, 1 the
@@ -441,7 +472,35 @@ class UsernameChecker(private val appContext: Context) {
         // Past the cap, cut off by the budget, or unreachable: kept,
         // because an unverified hit is still a lead and it carries the
         // ~ mark.
-        return candidates.filterIndexed { index, _ -> verdict.get(index) != 1 }
+        return candidates.mapIndexed { index, pair ->
+            Checked(
+                pair.first,
+                pair.second,
+                when (verdict.get(index)) {
+                    1 -> Control.SAYS_YES_TO_ANYTHING
+                    2 -> Control.SAYS_NO_TO_CONTROL
+                    else -> Control.NOT_ASKED
+                }
+            )
+        }
+    }
+
+    /** A hit, and what if anything was done to check it. */
+    private data class Checked(val site: SiteRule, val url: String, val control: Control)
+
+    /** How much a hit's yes is worth. */
+    private enum class Control(val mark: String) {
+        /** The page itself said so, so no control was needed. */
+        NOT_NEEDED(""),
+
+        /** Status only, and the control username came back absent. */
+        SAYS_NO_TO_CONTROL(" ~"),
+
+        /** Status only, and nothing was tried: past the cap or the budget. */
+        NOT_ASKED(" ?"),
+
+        /** Status only, and the control came back found. Dropped. */
+        SAYS_YES_TO_ANYTHING(" !"),
     }
 
     /**

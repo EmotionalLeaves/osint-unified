@@ -3,6 +3,7 @@ package com.osint.unified.domain.executor
 import com.google.i18n.phonenumbers.PhoneNumberUtil
 import com.osint.unified.data.AppSettings
 import com.osint.unified.data.Overpass
+import com.osint.unified.domain.andMore
 import com.osint.unified.domain.orStop
 import com.osint.unified.domain.ExecutionMode
 import com.osint.unified.domain.Findings
@@ -1543,6 +1544,8 @@ class DirectToolExecutor(
                     append(if (mapped.size == 1) "" else "s")
                     append(" mapped within 1 km — position only, no feed:\n")
                     mapped.take(25).forEach { append("\n$it") }
+                    append("\n")
+                    andMore(mapped.size, 25)
                 }
             }
         }
@@ -1657,6 +1660,7 @@ class DirectToolExecutor(
                     grouped.forEach { (label, items) ->
                         append("\n${label.uppercase()} (${items.size}):\n")
                         items.take(40).forEach { append(it).append("\n") }
+                        andMore(items.size, 40)
                     }
                     append("\nOSM coverage varies by area; absence here is not evidence of absence.")
                 }

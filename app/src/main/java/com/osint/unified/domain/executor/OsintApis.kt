@@ -1,5 +1,6 @@
 package com.osint.unified.domain.executor
 
+import com.osint.unified.domain.andMore
 import com.osint.unified.domain.orStop
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.async
@@ -355,7 +356,14 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
                 val sans = runCatching {
                     cert.subjectAlternativeNames?.mapNotNull { (it as? List<*>)?.getOrNull(1) as? String }
                 }.getOrNull().orEmpty()
-                if (sans.isNotEmpty()) append("Covers ${sans.size} hostnames: ${sans.take(40).joinToString(", ")}\n")
+                if (sans.isNotEmpty()) {
+                    append("Covers ${sans.size} hostnames: ")
+                    append(sans.take(40).joinToString(", "))
+                    append("\n")
+                    // A count followed by a shorter list is a reader
+                    // concluding the certificate covers forty names.
+                    andMore(sans.size, 40)
+                }
             }
         }
     }
@@ -717,6 +725,7 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
                     val date = (so["date_compromised"] as? JsonPrimitive)?.contentOrNull?.take(10) ?: ""
                     append("• $fam $date\n")
                 }
+                andMore(n, 6)
             } else {
                 append("No infostealer records found for this email.\n")
             }

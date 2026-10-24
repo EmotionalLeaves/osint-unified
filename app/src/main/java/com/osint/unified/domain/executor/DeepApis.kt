@@ -918,6 +918,7 @@ class DeepApis(
                 val external = links.filterNot { sameSite(it, t) }.distinct()
                 sb.append("\nOutbound links (${external.size} external):\n")
                 external.take(40).forEach { sb.append("• $it\n") }
+                sb.andMore(external.size, 40)
             }
         }
         if (sb.length > headerOnly) sb.toString()
@@ -1438,8 +1439,10 @@ class DeepApis(
             }.distinct()
             append("Hosts seen: ${hosts.size}\n")
             hosts.take(40).forEach { append("• $it\n") }
+            andMore(hosts.size, 40)
             append("\nSample URLs:\n")
             urls.take(60).forEach { append("$it\n") }
+            andMore(urls.size, 60)
         }
     }
 
@@ -1449,8 +1452,18 @@ class DeepApis(
         val (lat, lon) = parseCoord(input) ?: return@runCatching "Not a coordinate: $input"
         val sb = StringBuilder("Imagery near %.5f, %.5f\n".format(Locale.US, lat, lon))
         val headerOnly = sb.length
+        // Which of the three were actually asked.
+        //
+        // All three were in bare runCatching blocks, so on a flaky
+        // connection — or with all three hosts slow — the buffer stayed
+        // empty and the far end of this function rewrote it to "No
+        // geotagged imagery found near 51.50735, -0.12776" for a London
+        // street corner with thousands of photographs of it. A stated
+        // clean sheet produced entirely by the user's own network, and
+        // counted as a source that answered.
+        val reached = Reached()
 
-        runCatching {
+        reached.of {
             val pages = (json.parseToJsonElement(
                 get("https://commons.wikimedia.org/w/api.php?action=query&generator=geosearch" +
                     "&ggscoord=$lat%7C$lon&ggsradius=3000&ggslimit=40&prop=imageinfo" +
@@ -1469,7 +1482,7 @@ class DeepApis(
             }
         }
 
-        runCatching {
+        reached.of {
             val data = ((json.parseToJsonElement(
                 // api.kartaview.org, not the openstreetcam.org alias it
                 // used to be called. Both answer with the same bytes, but
@@ -1503,6 +1516,7 @@ class DeepApis(
                     photoUrl(o.str("fileurl"))?.let { sb.append("\n  $it") }
                     sb.append("\n")
                 }
+                sb.andMore(data.size, 25)
             }
         }
 
@@ -1512,11 +1526,11 @@ class DeepApis(
         // name was a link to a WebGL application that needs a key to
         // query and most of a minute to paint on a phone — a source
         // you cannot read is not a source.
-        runCatching {
+        reached.of {
             // A degree of latitude is 111 km everywhere; a degree of
             // longitude is that times the cosine of the latitude, so a
             // square box in metres is not a square box in degrees.
-            val dLat = 0.0036
+            val dLat = PANORAMAX_RADIUS_M / 111_320.0
             val dLon = dLat / kotlin.math.max(
                 kotlin.math.cos(Math.toRadians(lat)), 0.02
             )
@@ -1524,12 +1538,34 @@ class DeepApis(
                 Locale.US, lon - dLon, lat - dLat, lon + dLon, lat + dLat
             )
             val feats = json.parseToJsonElement(
-                get("https://api.panoramax.xyz/api/search?bbox=$bbox&limit=30")
+                get("https://api.panoramax.xyz/api/search?bbox=$bbox&limit=$PANORAMAX_LIMIT")
             ).jsonObject["features"] as? JsonArray
-            val rows = feats?.mapNotNull { it as? JsonObject }.orEmpty()
+            // Filtered to a circle, because the query is a box.
+            //
+            // A box of 400 m on each axis has corners 566 m from the
+            // point, and the line below called every photo in it
+            // "within 400 m" — a photograph of the next street but one,
+            // described to the reader as being at this corner. There is
+            // no radius parameter, so the box is asked for and the
+            // distance checked here.
+            val rows = feats?.mapNotNull { it as? JsonObject }
+                .orEmpty()
+                .filter { f ->
+                    val c = (f["geometry"] as? JsonObject)?.get("coordinates") as? JsonArray
+                    val plon = (c?.getOrNull(0) as? JsonPrimitive)?.contentOrNull?.toDoubleOrNull()
+                    val plat = (c?.getOrNull(1) as? JsonPrimitive)?.contentOrNull?.toDoubleOrNull()
+                    plat == null || plon == null ||
+                        metresBetween(lat, lon, plat, plon) <= PANORAMAX_RADIUS_M
+                }
             if (rows.isNotEmpty()) {
-                sb.append("\nPanoramax street-level — ${rows.size} photos within ")
-                sb.append("400 m, newest first:\n")
+                // "At least", because limit=30 is this app's page size
+                // and not a count of what is there. It was printed as a
+                // total.
+                val capped = rows.size >= PANORAMAX_LIMIT
+                sb.append("\nPanoramax street-level — ")
+                sb.append(if (capped) "at least " else "")
+                sb.append("${rows.size} photos within ")
+                sb.append("${PANORAMAX_RADIUS_M.toInt()} m, newest first:\n")
                 rows.sortedByDescending {
                     (it["properties"] as? JsonObject).str("datetime").orEmpty()
                 }.take(20).forEach { f ->
@@ -1548,7 +1584,19 @@ class DeepApis(
                     href?.let { sb.append("\n  $it") }
                     sb.append("\n")
                 }
+                sb.andMore(rows.size, 20)
             }
+        }
+
+        if (sb.length <= headerOnly && !reached.any) {
+            // Not one of the three answered, which is not the same as
+            // all three answering with nothing.
+            sb.setLength(0)
+            sb.append("None of the imagery sources could be reached for ")
+            sb.append("%.5f, %.5f ".format(Locale.US, lat, lon))
+            sb.append("(Wikimedia Commons, KartaView, Panoramax), so nothing ")
+            sb.append("is claimed about what has been photographed there.\n")
+            return@runCatching sb.toString()
         }
 
         if (sb.length <= headerOnly) {
@@ -2432,4 +2480,25 @@ class DeepApis(
         }
         throw last ?: IOException("request failed")
     }
+    /** Metres between two places, for turning a bounding box into a circle. */
+    private fun metresBetween(
+        aLat: Double, aLon: Double, bLat: Double, bLon: Double
+    ): Double {
+        val r = 6_371_000.0
+        val dLat = Math.toRadians(bLat - aLat)
+        val dLon = Math.toRadians(bLon - aLon)
+        val h = kotlin.math.sin(dLat / 2) * kotlin.math.sin(dLat / 2) +
+            kotlin.math.cos(Math.toRadians(aLat)) * kotlin.math.cos(Math.toRadians(bLat)) *
+            kotlin.math.sin(dLon / 2) * kotlin.math.sin(dLon / 2)
+        return 2 * r * kotlin.math.asin(kotlin.math.sqrt(h).coerceAtMost(1.0))
+    }
+
+    private companion object {
+        /** The circle photosNear asks Panoramax about, in metres. */
+        const val PANORAMAX_RADIUS_M = 400.0
+
+        /** This app's page size there, which is not a count of what exists. */
+        const val PANORAMAX_LIMIT = 30
+    }
+
 }
