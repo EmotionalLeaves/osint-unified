@@ -26,6 +26,9 @@ class BundledPointsDataSource(
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
     @Volatile private var cache: List<GeoBlip>? = null
 
+    /** Set once if the asset is absent, which is not a transient state. */
+    @Volatile private var missing: java.io.IOException? = null
+
     /**
      * Throws when the dataset is not there, rather than reporting an
      * empty world.
@@ -49,12 +52,17 @@ class BundledPointsDataSource(
      */
     suspend fun fetch(): List<GeoBlip> = withContext(Dispatchers.IO) {
         cache?.let { return@withContext it }
+        // A missing asset will never start existing, so the answer
+        // is remembered rather than re-read at the poll interval for
+        // the life of the process. The layer still reports the
+        // trouble every time it is asked; it just stops opening the
+        // asset manager to find out.
+        missing?.let { throw it }
         val text = try {
             appContext.assets.open(assetName).bufferedReader().use { it.readText() }
         } catch (e: Exception) {
-            throw java.io.IOException(
-                "$assetName is not bundled in this build", e
-            )
+            java.io.IOException("$assetName is not bundled in this build", e)
+                .also { missing = it; throw it }
         }
         val parsed = try {
             json.parseToJsonElement(text).jsonArray.mapNotNull { el ->

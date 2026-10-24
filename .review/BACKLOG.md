@@ -27,12 +27,14 @@ closed; their headings say so.
   URL the code can emit is public; without the actual link this is
   guesswork.
 
-### Verification of r460–r470, data and domain half (r14, 24 Oct)
+### Verification of r460–r470, data and domain half (r14, 24 Oct) — CLOSED, 26 for 26
 
 A read-only pass over the eleven commits above, by an agent that did
 not make them. Twenty-six findings. **Two are criticals and one of
 them was introduced by this morning's own fix**, which is the third
 day running that a same-day change has reintroduced something.
+
+**All thirty-three are fixed and green on CI (r478 onward.)**
 
 Two new rules fall out of it, both added to the list at the top:
 - A new honesty mechanism must not be made unreachable by a throw
@@ -40,7 +42,7 @@ Two new rules fall out of it, both added to the list at the top:
 - Bumping `AppDatabase.SCHEMA_VERSION` means editing
   `DatabaseEncryption.repairVersion`'s ladder in the same change.
 
-- **R1. Schema went to 8; the repair ladder still tops out at 7.**
+- [x] **R1. Schema went to 8; the repair ladder still tops out at 7.**
   `DatabaseEncryption.kt:325-334` detects the real schema by
   inspecting tables, and has no arm for `watches.lastAnswered`. A
   database at 8 whose `user_version` is wrong — a restore, an
@@ -50,7 +52,7 @@ Two new rules fall out of it, both added to the list at the top:
   opens an empty database beside the real one. This is the exact
   failure that function exists to prevent, reintroduced by the
   version bump. **Data loss. First.**
-- **R2. The new throw in Cyclone and Tsunami makes `feedPartial`
+- [x] **R2. The new throw in Cyclone and Tsunami makes `feedPartial`
   unreachable in the one case it was built for.** The poller reads
   `lastGaps` only on the success path, so "throw when anything
   failed and nothing was found" and "report the gap" are mutually
@@ -63,28 +65,28 @@ Two new rules fall out of it, both added to the list at the top:
   one of the five failing throws. Strictly less information than
   before, delivered as a false alarm. Also: the comment says "all
   five JTWC advisories" and there are two.
-- **R3. `CctvDataSource.cached()` still tests `isNotEmpty()`**, ten
+- [x] **R3. `CctvDataSource.cached()` still tests `isNotEmpty()`**, ten
   lines below the fix that stopped `fetch()` doing exactly that. New
   York, London and Fintraffic re-fire on every settled pan when they
   answer empty. Same file, next function.
-- **R4. `Cctv.near` and `Airspace.near` use `all { isFailure }`.**
+- [x] **R4. `Cctv.near` and `Airspace.near` use `all { isFailure }`.**
   Overpass answering an honest empty while the FAA or Caltrans
   refuses is reported as an established zero: `MIL GROUND 0` with a
   loaded tick over the Nellis range, with the only source that
   covers it refused.
-- **R5. The empty-cache backdating is inert.** Both `fetch()`
+- [x] **R5. The empty-cache backdating is inert.** Both `fetch()`
   methods now cache an empty answer and backdate `fetchedAt`, but
   the early return is still `if (cache.isNotEmpty() && age < TTL)`,
   so an empty cache is never served and the backdating is never
   consulted. The pan storm is genuinely fixed — by the
   `*KeyAnswered` change, not by this.
-- **R6. `Airspace.page()` and `Cctv.district()` swallow a refusal
+- [x] **R6. `Airspace.page()` and `Cctv.district()` swallow a refusal
   into `emptyList()`**, which is where R4's false zero actually
   comes from. `MetarDataSource.fetchBox` and
   `AirQualityDataSource.fetchBatch` both carry a comment saying
   "thrown, not returned: a quiet return counts as an answer"; these
   two do the opposite.
-- **R7. `DeepApis.wikidata` has the identical MediaWiki
+- [x] **R7. `DeepApis.wikidata` has the identical MediaWiki
   200-with-`error` shape** that was fixed in `wikiNearby` this
   morning, on the same API, two files away. Same for
   `DeepApis` usercontribs (:547) — which the platform sweep reads as
@@ -92,12 +94,12 @@ Two new rules fall out of it, both added to the list at the top:
   exact "No geotagged imagery found near" sentence its own comment
   says was the bug. `OsintApis` Wikipedia search (:806) is the mild
   one.
-- **R8. `PeopleApis` collapses "refused" and "found nothing"
+- [x] **R8. `PeopleApis` collapses "refused" and "found nothing"
   twice.** `jsonObjectOrNull()` is `as? JsonObject`, so a Crossref
   validation failure (whose `message` is an array) and an HTML
   interstitial both become "No published work by X in Crossref".
   Same at :382 for Open Library.
-- **R9. The shortest username control is 65,536 possibilities**, and
+- [x] **R9. The shortest username control is 65,536 possibilities**, and
   a collision silently deletes a real hit. `lettersOnly` has a
   16-letter alphabet, so `"zq" + take(4)` is 16⁴. A site capping
   names at six characters accepts only that shape; if `zq????` is
@@ -106,19 +108,19 @@ Two new rules fall out of it, both added to the list at the top:
   the output with no trace. A false absence produced by the
   machinery added to prevent false presences. The adjacent comment's
   "four billion to one" matches none of the five shapes.
-- **R10. `CaseLinks.summary` was made honest and the two paragraphs
+- [x] **R10. `CaseLinks.summary` was made honest and the two paragraphs
   eleven lines below it were not.** `InvestigationExporter:193` and
   `CasesScreen:230` still print "Nothing was found under more than
   one of these targets. That is a result, not a gap" immediately
   after the header correctly says only one of them has been run.
   Both sentences, in the same card, in the same export.
-- **R11. `lastGaps` is shared mutable state and the self-test shares
+- [x] **R11. `lastGaps` is shared mutable state and the self-test shares
   the singletons with the poller.** `MainActivity:597-624` calls
   `fetch()` on the same five objects the globe is polling, so the
   two writes race and the pill can show a gap that belongs to the
   other caller's fetch. `@Volatile` gives visibility, not atomicity
   of fetch-then-read.
-- **R12. `Connectivity.walledGarden` contradicts its own doc.**
+- [x] **R12. `Connectivity.walledGarden` contradicts its own doc.**
   `!VALIDATED` is true both when validation failed and when it has
   not run yet, so walking from Wi-Fi onto cellular shows a red "this
   network is not reaching the internet" for the one to five seconds
@@ -127,48 +129,48 @@ Two new rules fall out of it, both added to the list at the top:
   is the capability that means what the doc says.
   `activeNetwork == null` during a default-network switch flashes
   "No network" the same way.
-- **R13. `SpaceWeatherDataSource`, `FiresDataSource` and
+- [x] **R13. `SpaceWeatherDataSource`, `FiresDataSource` and
   `AisDataSource` are merged feeds with one boolean each** and
   should carry `PartlyAnswered`. Losing MODIS or VIIRS is half the
   fire detections, silently. `SpaceWeather` also sets `answered` on
   a body that parsed to a non-array.
-- **R14. `Corroboration.exclusiveBest` reads the catalogue grade**,
+- [x] **R14. `Corroboration.exclusiveBest` reads the catalogue grade**,
   so a source this case has caught out twice contradicts at full
   strength while its own claims are graded a step lower. `CaseLinks`
   was changed this morning for precisely this reason; the fix went
   to `CaseLinks` and not to the function `CaseLinks` gets its grades
   from. Rule 1, again, inside the fix for rule 1.
-- **R15. D contradicted by D now grades clean.** The new gate
+- [x] **R15. D contradicted by D now grades clean.** The new gate
   requires the dissenter to be C or better, so two
   not-usually-reliable sources asserting mutually exclusive
   countries both come out D4 with nothing marking the conflict. At
   least one of them is definitely wrong.
-- **R16. `compared` counts dossiers, not runs, against a
+- [x] **R16. `compared` counts dossiers, not runs, against a
   differently-keyed total.** `byTarget` is deduplicated by seed and
   `targetCount` is the row count, so two investigations of one
   email, both run, read "2 targets · only 1 has been run". And a
   target that *was* run and legitimately found nothing has an empty
   dossier, so it is reported as never run — the could-not-ask
   conflation, inside the function added to fix an instance of it.
-- **R17. `AreaReport` double-counts a layer that is both troubled
+- [x] **R17. `AreaReport` double-counts a layer that is both troubled
   and partial.** `feedPartial` is not cleared on the failure branch,
   so a layer that failed after a partial answer appears twice and
   the headline counts two. `WorldBrief` gets this right by ordering;
   `AreaReport` runs both loops unconditionally.
-- **R18. `narrowedBy()` is attached only to the ABSENT verdict.**
+- [x] **R18. `narrowedBy()` is attached only to the ABSENT verdict.**
   A shortened list is just as misleading under PARTIAL and under the
   hit branch's "Coverage: N of M sites".
-- **R19. `sharedMissingRulesets` is unset when all three rulesets
+- [x] **R19. `sharedMissingRulesets` is unset when all three rulesets
   are missing**, and `narrowedBy()` then calls `loadRules()`, which
   re-reads three assets and makes a blocking network request every
   time because nothing is ever cached. The two companion fields are
   also written in the wrong order for a concurrent reader.
-- **R20. `ContentCredentials` still matches a capitalised ordinary
+- [x] **R20. `ContentCredentials` still matches a capitalised ordinary
   word.** "Imagen tomada en el puerto de Valencia" — a Spanish
   sentence beginning with the word — still prints "names Google
   Imagen". The new test only exercises the lowercase form, so it
   passes while the case its own comment names is live.
-- **R21. `WorldWarningsDataSource.parse` returns an empty list for
+- [x] **R21. `WorldWarningsDataSource.parse` returns an empty list for
   an unparseable body**, i.e. "no severe-weather warning anywhere in
   the world". `VolcanoDataSource` throws "answered in an unexpected
   shape" for the same situation. Lesser instances of the same shape:
@@ -177,22 +179,22 @@ Two new rules fall out of it, both added to the list at the top:
   rate-limit looks like `status != "OK"`), `HandleApis:432` (a 400
   from the Wayback CDX becomes "has never captured this image"), and
   `Ais:98` (no AIS URL configured returns an empty success).
-- **R22. Nothing pins `MigrationSql.chain` to `SCHEMA_VERSION`**, and
+- [x] **R22. Nothing pins `MigrationSql.chain` to `SCHEMA_VERSION`**, and
   the 7→8 step is executed by `MigrationChainTest` without being
   asserted. One line would have caught R1's whole class.
-- **R23.** `WatchRepository.check` returns at two points without
+- [x] **R23.** `WatchRepository.check` returns at two points without
   updating `lastAnswered`/`lastAsked`, so the pair can outlive the
   check it describes. Internally consistent today because
   `lastCheckedAt` is not advanced either.
-- **R24.** `summary(compared = 0)` reads "only 0 has been run".
-- **R25.** `Connectivity.snapshot` claims `metered = false` when it
+- [x] **R24.** `summary(compared = 0)` reads "only 0 has been run".
+- [x] **R25.** `Connectivity.snapshot` claims `metered = false` when it
   has no ConnectivityManager to ask, and a failed callback
   registration leaves the flow silent for ever with no signal.
-- **R26.** `BundledPointsDataSource` retrying "holds no usable
+- [x] **R26.** `BundledPointsDataSource` retrying "holds no usable
   points" at the poll interval for ever, for an asset that will
   never start existing.
 
-### Verification of r460–r470, UI and rendering half (r15, 24 Oct)
+### Verification of r460–r470, UI and rendering half (r15, 24 Oct) — CLOSED, 7 for 7
 
 The other half of the same pass. Two highs, the first of them a
 regression introduced this morning, and a long tail of smaller
@@ -200,7 +202,7 @@ things. Its own closing note is the best summary of the day:
 **when a cache or "already asked" key is introduced, grep for every
 place that wipes the data that key vouches for.**
 
-- **U1. An on-demand layer switched off and on in the same place
+- [x] **U1. An on-demand layer switched off and on in the same place
   never refetches.** This morning's guard rewrite dropped the
   `isNotEmpty()` term, and that term was the only thing invalidating
   the guard when `clear()` wiped the layer's data.
@@ -215,7 +217,7 @@ place that wipes the data that key vouches for.**
   centre; the other three have none, and that asymmetry is the bug.
   **The fix belongs in `clear()`, not in the guards** — re-adding
   `isNotEmpty()` would restore the pan storm.
-- **U2. The commit title said there were two background loops and
+- [x] **U2. The commit title said there were two background loops and
   there are three.** `ui/about/SourcesScreen.kt:521` wakes every two
   seconds to recompute the data-usage panel, more often than the
   four-minute subsolar loop that was judged worth fixing, and keeps
@@ -223,7 +225,7 @@ place that wipes the data that key vouches for.**
   the rest of the category and there is nothing else: the remaining
   loops are an `awaitPointerEventScope` and three one-shot
   debounces.
-- **U3. `areaWanted` surviving process death pops an unbidden empty
+- [x] **U3. `areaWanted` surviving process death pops an unbidden empty
   dialog on cold start.** Saveable state restores, the view model
   does not, and `state` was dropped from the effect's keys — so on
   relaunch from Recents the effect fires once against an empty
@@ -231,22 +233,22 @@ place that wipes the data that key vouches for.**
   saying nothing is anywhere. Rotation, which is the case the change
   was for, is fine. (The dismiss paths and the long-press-the-same-
   point-again case were both checked and are correct.)
-- **U4. `loadCpuFallback` ends up holding both texture forms**,
+- [x] **U4. `loadCpuFallback` ends up holding both texture forms**,
   which the file's own comment says is the one thing it never does —
   ~32 MB of Bitmap plus ~32 MB of IntArray on a roomy device, on
   exactly the path where headroom is worst, because the shader bind
   has just failed. It should recycle the Bitmaps first.
-- **U5. `armedForGlobe` was made saveable and its two companion
+- [x] **U5. `armedForGlobe` was made saveable and its two companion
   guards were not.** `arrivedOnMap` resets to 0 on rotation, which
   makes the settle test immediately true, so two of the three
   guards on the snap-back-to-globe gate are pre-satisfied after a
   rotation. `MAP_SETTLE_MS` exists precisely because "simply
   arriving sent you straight back and the toggle looked broken".
-- **U6. Six settings text fields are still thrown away on
+- [x] **U6. Six settings text fields are still thrown away on
   rotation.** `showSettings` is saveable so the dialog survives; the
   fields inside it are plain `remember`, so unsaved typing is lost.
   A stronger case for saveability than `mapCentre` or `zoomNow`.
-- **U7. Small, in rough order of visibility:**
+- [x] **U7. Small, in rough order of visibility:**
   `thinGlobe` and `planGlobe` lost their documentation — the new
   `GlobePlan` KDoc was inserted between the old doc block and the
   declaration, so the first block now dangles and is dropped.

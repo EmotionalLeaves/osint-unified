@@ -124,7 +124,19 @@ class HandleApis(
             "https://codeforces.com/api/user.info?handles=" + enc(handle)
         ) ?: return@runCatching "No Codeforces account named \"$handle\"."
         val root = json.parseToJsonElement(body).jsonObject
-        if (root.str("status") != "OK") {
+        // `status != "OK"` is also what a rate limit and a malformed
+        // request look like, and printing the absence sentence for
+        // those states that no such account exists on the strength of
+        // the service declining to answer. Codeforces puts the reason
+        // in `comment`; "not found" in it is the real absence.
+        val status = root.str("status")
+        if (status != "OK") {
+            val why = root.str("comment").orEmpty()
+            if (!why.contains("not found", ignoreCase = true)) {
+                throw IOException(
+                    "Codeforces did not answer" + if (why.isBlank()) "" else ": $why"
+                )
+            }
             return@runCatching "No Codeforces account named \"$handle\"."
         }
         val o = (root["result"] as? JsonArray)?.firstOrNull()?.jsonObject
@@ -426,12 +438,25 @@ class HandleApis(
     fun imageHistory(url: String): Result<String> = runCatching {
         val target = url.trim().removePrefix("https://").removePrefix("http://")
         if (target.isBlank()) return@runCatching "Give the image's URL."
-        val body = getOrNull(
+        // `getOrNull` returns null for a 400 as well as a 404, and
+        // the CDX endpoint answers 400 for a URL it will not parse —
+        // which was being printed as "never captured", an assertion
+        // about the archive rather than about the request. A 404
+        // from CDX is a genuine "no captures".
+        val body = cdx(
             "https://web.archive.org/cdx/search/cdx?url=" + enc(target) +
                 "&output=json&fl=timestamp,statuscode,digest&limit=40"
         ) ?: return@runCatching "The Wayback Machine has never captured this image."
         val rows = runCatching { json.parseToJsonElement(body).jsonArray }.getOrNull()
-        if (rows == null || rows.size <= 1) {
+            // An empty body is how CDX says "nothing"; a body that is
+            // not JSON at all is the service misbehaving.
+            ?: if (body.isBlank()) {
+                return@runCatching "The Wayback Machine has never captured this image, " +
+                    "which says nothing about its age — most images are never archived."
+            } else {
+                throw IOException("the Wayback CDX index answered in an unexpected shape")
+            }
+        if (rows.size <= 1) {
             return@runCatching "The Wayback Machine has never captured this image, " +
                 "which says nothing about its age — most images are never archived."
         }
@@ -509,6 +534,26 @@ class HandleApis(
             if (resp.code == 404 || resp.code == 410 || resp.code == 400) return null
             if (!resp.isSuccessful) throw IOException("HTTP ${resp.code}")
             return body
+        }
+    }
+
+    /**
+     * Like [getOrNull], but a 400 is a refusal rather than an
+     * absence.
+     *
+     * The CDX index answers 400 for a URL it cannot parse, and
+     * folding that into the same null as a 404 made "the Wayback
+     * Machine has never captured this image" a statement the archive
+     * had never made.
+     */
+    private fun cdx(url: String): String? {
+        val request = Request.Builder().url(url)
+            .header("User-Agent", Http.defaultUserAgent)
+            .build()
+        client.newCall(request).execute().use { resp ->
+            if (resp.code == 404 || resp.code == 410) return null
+            if (!resp.isSuccessful) throw IOException("Wayback CDX HTTP ${resp.code}")
+            return resp.body?.bodyText().orEmpty()
         }
     }
 

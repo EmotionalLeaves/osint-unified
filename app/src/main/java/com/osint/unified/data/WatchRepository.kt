@@ -175,7 +175,17 @@ class WatchRepository(
         val tools = router.suggestTools(observable)
             .filter { it.executionMode == ExecutionMode.DIRECT && !it.touchesTarget }
             .take(TOOLS_PER_CHECK)
-        if (tools.isEmpty()) return null
+        // Recorded, not just returned from. Leaving the row
+        // untouched means `lastAnswered` and `lastAsked` keep a
+        // previous check's values and so can outlive the check they
+        // describe. Nothing reads them as current today because
+        // `lastCheckedAt` is not advanced either, but two fields
+        // that mean "the last check" must not be able to disagree
+        // with the one beside them about which check that was.
+        if (tools.isEmpty()) {
+            dao.update(watch.copy(lastAnswered = 0, lastAsked = 0))
+            return null
+        }
 
         val outcome = fingerprint(observable, tools)
         val fresh = outcome.found

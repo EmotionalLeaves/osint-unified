@@ -2302,7 +2302,15 @@ class DeepApis(
         val (lat, lon) = parseCoord(input) ?: return@runCatching "Not a coordinate: $input"
         val arr = json.parseToJsonElement(
             get("https://data.police.uk/api/crimes-street/all-crime?lat=$lat&lng=$lon")
-        ) as? JsonArray ?: return@runCatching "No UK crime data for that point (UK only)."
+        ) as? JsonArray
+            // A body that is not an array is data.police.uk declining
+            // — it answers an object with a `status` and a message
+            // for a rate limit or a bad month — and that was being
+            // printed as "no crime data for that point", which reads
+            // as a fact about the place.
+            ?: throw java.io.IOException(
+                "data.police.uk answered in an unexpected shape"
+            )
         if (arr.isEmpty()) return@runCatching "UK crime data: nothing reported near %.4f, %.4f (or outside the UK).".format(Locale.US, lat, lon)
         val byCat = LinkedHashMap<String, Int>()
         val byStreet = LinkedHashMap<String, Int>()
@@ -2366,7 +2374,12 @@ class DeepApis(
         val vendor = parts.getOrNull(0) ?: return@runCatching "Give a CVE id or 'vendor product'."
         val product = parts.getOrNull(1) ?: vendor
         val results = (json.parseToJsonElement(get("https://cve.circl.lu/api/search/$vendor/$product"))
-            .jsonObject["results"] as? JsonObject) ?: return@runCatching "No CVEs found for $vendor $product."
+            .jsonObject["results"] as? JsonObject)
+            // Missing is not empty. The comment below is right that
+            // an empty `results` is a real absence; a `results` that
+            // is not there at all is the index answering something
+            // this code does not understand.
+            ?: throw java.io.IOException("the CVE index returned no results block")
         val sb = StringBuilder("CVEs for $vendor $product\n")
         // No Reached() here: the request above is not wrapped, so
         // reaching this line means the index answered and an empty

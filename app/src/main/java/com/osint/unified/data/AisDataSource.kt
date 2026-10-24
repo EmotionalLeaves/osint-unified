@@ -99,7 +99,16 @@ class AisDataSource(
         withContext(Dispatchers.IO) {
             val urls = settings.aisUrl.split(',', '\n').map { it.trim() }
                 .filter { it.isNotBlank() }
-            if (urls.isEmpty()) return@withContext emptyList()
+            // "Nothing is configured" is not "there are no ships".
+            // An empty list here is read as the second, and the
+            // default is never empty, so reaching this means the
+            // person cleared the field.
+            if (urls.isEmpty()) {
+                throw IOException(
+                    "no AIS feed is configured — add one in LIVE FEEDS, or " +
+                        "restore the default"
+                )
+            }
             val now = System.currentTimeMillis()
             val merged = LinkedHashMap<String, Vessel>()
             // Whether any feed told us anything at all — freshly or
