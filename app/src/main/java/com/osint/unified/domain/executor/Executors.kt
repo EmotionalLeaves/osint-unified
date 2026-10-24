@@ -293,9 +293,20 @@ class DirectToolExecutor(
 
         return when (tool.id) {
             "sanctions" -> when {
-                starts("The OFAC list could not be read") -> Findings.Kind.UNREACHABLE
+                starts("The OFAC list could not be read",
+                    "The OFAC check could not be completed") -> Findings.Kind.UNREACHABLE
                 starts("OFAC SDN: no sanctioned entity") -> Findings.Kind.ABSENT
-                starts("Give at least three") -> Findings.Kind.UNREACHABLE
+                // Neither of these is an absence. One is a question
+                // the tool could not act on; the other is a name the
+                // romanised list cannot represent, which says
+                // nothing either way about whether the person is on
+                // it. Both were falling through to the prose reader.
+                starts("Give a name to search", "Give at least three",
+                    "The bundled OFAC list is romanised") -> Findings.Kind.UNREACHABLE
+                // The cap filled on the primary list, so the alias
+                // list was never opened: too many matches to be a
+                // match, and an untested half.
+                starts("OFAC SDN — more than") -> Findings.Kind.UNREACHABLE
                 starts("OFAC Specially Designated") -> Findings.Kind.HIT
                 else -> null
             }
@@ -303,6 +314,11 @@ class DirectToolExecutor(
                 starts("The UN consolidated list is not bundled") -> Findings.Kind.UNREACHABLE
                 starts("UN consolidated list: no") -> Findings.Kind.ABSENT
                 starts("Give at least three") -> Findings.Kind.UNREACHABLE
+                // There was no HIT case at all, so a name found on
+                // the UN consolidated list fell through to the prose
+                // reader — the one place in the app where guessing
+                // from English is least acceptable.
+                starts("UN Security Council consolidated sanctions") -> Findings.Kind.HIT
                 else -> null
             }
             "breachcat" -> when {

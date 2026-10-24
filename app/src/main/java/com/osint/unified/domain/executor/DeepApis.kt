@@ -368,7 +368,9 @@ class DeepApis(
     /** Telegram public channel preview — subscriber count and recent posts. */
     fun telegram(handle: String): Result<String> = runCatching {
         val name = handle.trim().removePrefix("@").substringAfterLast("/")
-        val html = get("https://t.me/s/$name", browserUa)
+        // The fetch is encoded, like the link printed at the end of
+        // this function already was.
+        val html = get("https://t.me/s/${seg(name)}", browserUa)
         // Only the channel marker counts.
         //
         // t.me serves a generic preview page for a username that does

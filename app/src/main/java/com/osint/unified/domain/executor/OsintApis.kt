@@ -797,7 +797,13 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
         // does not exist.
         val isIpv4 = Regex("""^(?:\d{1,3}\.){3}\d{1,3}$""").matches(v)
         val isPhone = !isIpv4 && Regex("""^\+?[\d][\d\s\-().]{6,}$""").matches(v)
-        val isDomain = !isEmail && v.contains('.') && !v.contains(' ')
+        // An address has dots in it and no spaces, which is the whole
+        // of the domain test — so the phone branch was taught to
+        // stand aside for an IPv4 and the domain branch, three lines
+        // below it, caught it instead: site:8.8.8.8, a wildcard
+        // subdomain search, and a certificate-transparency query for
+        // an address that cannot appear on a certificate as a name.
+        val isDomain = !isEmail && !isIpv4 && v.contains('.') && !v.contains(' ')
         val isName = v.contains(' ')
         val handle = v.substringBefore('@').replace(" ", "").lowercase()
 
@@ -815,6 +821,14 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
                 add("Digits", g("\"$digits\""))
                 add("Reverse lookup", g("$digits (site:truecaller.com OR site:whitepages.com OR site:spydialer.com)"))
                 add("Social mentions", g("\"$v\" (site:facebook.com OR site:linkedin.com)"))
+            }
+            isIpv4 -> {
+                add("Mentions", g("\"$v\""))
+                add("Reverse DNS / routing", "https://bgp.he.net/ip/$v")
+                add("Network and owner", "https://ipinfo.io/$v")
+                add("Exposed services", "https://www.shodan.io/host/$v")
+                add("Abuse reports", "https://www.abuseipdb.com/check/$v")
+                add("Hosted names", g("\"$v\" (site:viewdns.info OR site:securitytrails.com)"))
             }
             isDomain -> {
                 add("Site contents", g("site:$v"))
@@ -848,8 +862,12 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
                 add("Reddit", "https://www.reddit.com/user/${seg(handle)}")
                 add("TikTok", "https://www.tiktok.com/@${seg(handle)}")
                 add("YouTube", "https://www.youtube.com/@${seg(handle)}")
-                add("Twitch", "https://www.twitch.tv/$handle")
-                add("Telegram", "https://t.me/$handle")
+                // Encoded like the six above it. These two were
+                // raw interpolation, so a handle with a slash or a
+                // query character in it built a different URL from
+                // the one the label claimed.
+                add("Twitch", "https://www.twitch.tv/${seg(handle)}")
+                add("Telegram", "https://t.me/${seg(handle)}")
                 add("Mentions", g("\"$handle\""))
                 add("Paste / code", g("\"$handle\" (site:pastebin.com OR site:github.com)"))
             }
