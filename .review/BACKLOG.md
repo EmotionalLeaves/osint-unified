@@ -27,6 +27,165 @@ closed; their headings say so.
   URL the code can emit is public; without the actual link this is
   guesswork.
 
+### The three big API files, read whole (r16, 24 Oct)
+
+`DeepApis.kt` (2,742 lines), `PeopleApis.kt` and `HandleApis.kt` had
+never been read — only scanned for one pattern. Read end to end by
+an agent that made none of the changes. Forty findings, and **two of
+them are this session's own fixes landing in some of the places they
+needed to and not the rest**, which is rule 1 for the third time in
+a day.
+
+Its own closing observation is the one worth keeping: two mechanisms
+in this codebase are counted wrong at the root, and fixing either
+would retire a whole class rather than a row —
+
+- `Reached.of` counts an HTTP success, not an answer. Any source
+  with a 200-level refusal defeats it.
+- `Findings` has no verdict for "the tool was not asked a valid
+  question", and the phrase `could not be asked` is not in
+  `UNREACHABLE` while five other phrasings of it are.
+
+- **S1. `courtRecords` prints "no federal court docket" with results
+  in hand.** `count` and `results` are OR'd, and a `count` that is
+  absent or not an integer coalesces to zero — so a populated
+  `results` array is thrown away on the strength of a separate
+  field. Likely worse than that: CourtListener's v4 search returns
+  `count` as a URL string unless `&count=on` is passed, which would
+  make `intOrNull` null on every call and this tool print an
+  established absence about **every person searched**. And the
+  sentence does not match `NOTHING_SHAPE`, so it is classified HIT —
+  a litigation claim about a named individual, counted as a source
+  that returned something.
+- **S2. A spent hackertarget quota counts as "reached".**
+  hackertarget answers 200 with `API count exceeded` when the free
+  tier is gone; `hackertargetAnswered()` was written to catch that
+  and does, but `Reached.of` marks the source answered on HTTP
+  success regardless. All three of `hostIntel`'s probes are
+  hackertarget, so a spent quota prints `Host intel: no data
+  returned for example.com` — classified ABSENT. `subdomainSweep`
+  has the same arm.
+- **S3. The PeopleApis fix went to two of six.** `publications` and
+  `authorWorks` were hardened this session; ORCID, GitHub-by-name,
+  Bluesky-by-name and non-profits still turn an unexpected shape
+  into "No ORCID record for Jane Doe". ORCID first: the file's own
+  doc calls it the strongest keyless people source there is.
+- **S4. `getOrNull` folds HTTP 400 into "no such account" — and that
+  makes this session's Codeforces fix dead code.** The honesty check
+  parses `comment` to tell a rate limit from a missing account, and
+  it can only run on a 2xx, where `status` is always OK. The body
+  carrying `comment` is discarded before it is parsed. Rule 5, with
+  both halves in the same file, hours apart. `cdx()` three hundred
+  lines below is the pattern that does it right. Also affects
+  codeberg, huggingFace and chess.
+- **S5. `wikimediaUser` does not go through `MediaWiki`**, whose own
+  doc says every caller does. Worse, the sentence it falls back to —
+  "Wikimedia could not be asked about X" — is not in
+  `Findings.UNREACHABLE`, so a refusal is classified **HIT**. Same
+  hole for `The host answered HTTP 503 for this image` and
+  `Libravatar answered HTTP 500`: failures filed as findings.
+- **S6. Three more 200-with-an-error-body sources read as
+  absences.** Keybase never reads `status.code` → "no account named
+  jsmith". XposedOrNot signals service errors with an `Error` field
+  at 200 and the field is never inspected → **"not found in any
+  indexed public breach", which is a statement to a person that
+  their address is clean**. IODA v2 wraps errors in the same
+  envelope → "no internet outage alerts in the last 24 hours".
+- **S7. `secEdgar` prints "no registrant matched" for any 200 that
+  is not the Atom feed.** EDGAR serves throttle notices as HTML. One
+  `<feed` guard closes it.
+- **S8. The in-app browser can go direct while the screen says
+  Tor.** `useProxy` returns Unit, swallows a `PROXY_OVERRIDE`
+  failure, and has no state anyone can read, while `Http.useProxy`
+  succeeds independently and the settings row reads as on. The
+  class's own doc names this exact outcome as the thing it exists to
+  prevent: "the one screen that loads a target's own pages would be
+  the one screen going direct while the person believed everything
+  was going through Tor."
+- **S9. `ResultCard`'s "the refresh failed, this answer is stale"
+  warning is unreachable.** `finished` includes `"success"`, so the
+  branch below it can never run. The comment above describes the bug
+  it was written to fix, and that is still the behaviour.
+- **S10. A page size printed as a total, in eight places.** Rule 4
+  verbatim. `photosNear`'s Panoramax arm was fixed with an explicit
+  "at least"; its two siblings in the same function were not. Worst
+  is `No public activity for X in GitHub's last 300 events` — one
+  page of 100 was read, and the claim is about 300.
+  `NVD — 412 records:` then lists 25 with no "and more".
+- **S11. `aircraft` prints `Registration: null` and `Type: null null
+  (null)` and counts it as a finding.** Unconditional interpolation
+  of nullables plus `learned = true` regardless, which also
+  suppresses the honest "no registration found" path. The sibling in
+  `HandleApis` does it correctly.
+- **S12. `aircraft` reports a genuine hexdb 404 as "could not be
+  reached"** — the mirror image of the main defect class, and it
+  costs the user a true negative.
+- **S13. `chess`, `codeberg` and `huggingFace` assert the account
+  exists** on any 2xx body that parses as an object. `lichess` next
+  to them checks the record first. A false presence is the one error
+  the absence machinery cannot catch.
+- **S14. `cveLookup`:** both sources failing yields the id and two
+  links, classified HIT — "a tool that returns a list of places to
+  look is not a source", which is the standing frame at the top of
+  this file. One-word input searches `vendor/vendor` and prints "No
+  CVEs found for openssl openssl". An unparsable EPSS score prints
+  `0.00% chance of exploitation`.
+- **S15. Stack Overflow absence from a truncated fuzzy page.**
+  `pagesize=10` then an exact display-name match: the eleventh
+  result is reported as "No account found on: Stack Overflow".
+- **S16. `imageHistory` describes the earliest forty captures as the
+  whole history** — "the latest" is the fortieth, and "the bytes
+  under this URL have not changed since 2011" is a claim about the
+  present made from the oldest rows. The `statuscode` column is
+  requested and never read, so archived 404s count as captures.
+- **S17. The browser's address line shows a page-supplied title.**
+  `document.title` is attacker-controlled; a page titled
+  `https://accounts.google.com/signin` displays as that in the one
+  place a user checks where they are.
+- **S18. The browser's WebView is destroyed and not rebuilt** if the
+  host URL changes while the dialog is open. One new caller away
+  from routine.
+- **S19. `ubuntuKeyserver` never reads the key status field**, so a
+  revoked key is listed without qualification; and `URLDecoder` on
+  an HKP UID turns a literal `+` into a space, so
+  `jane+keys@example.com` is printed as `jane keys@example.com` — a
+  corrupted identifier presented as an observation.
+- **S20. Input-validation and skip messages are classified at
+  random.** "Give an email address", "Not a coordinate", "Give a CVE
+  id" and eleven others count as **findings**; "Not a Bitcoin
+  address" counts as an **established absence**. A tool deliberately
+  skipped because the subject is an organisation counts as a
+  finding. None of the three is true.
+- **S21. Small:** the two `wbgetentities` calls bypass `MediaWiki`,
+  so a refusal silently drops Employer/Citizenship/Occupation.
+  `${it / 1024} KB` is integer division and KiB labelled KB, so any
+  file under a kibibyte reads `0 KB`. The Bluesky probe's
+  `getOrElse` catches `CancellationException` and then issues a
+  second request, so STOP does not stop there. "is not a known Tor
+  relay" is stronger than Onionoo's current directory supports.
+  "None of the obvious lookalikes resolve — good news for this one"
+  prints even when most of the 160 could not be looked up. A
+  no-filter outage query prints `No outage alerts matching ''`.
+  `GraphDialog` truncates a label at 36 characters with no ellipsis,
+  which `ResultCard` carries a comment about not doing.
+
+Read and found sound, recorded so it is not re-read: the whole of
+`PeopleApis` apart from the above; `lichess`, `libravatar`, `cdx()`,
+`btcSecondOpinion` and `imageHead` in `HandleApis`; and in
+`DeepApis` — `reddit`, `githubActivity`'s three-way split,
+`socialSweep`'s verdict accounting, `osmUser`, `ipReputation`,
+`asnIntel`, `threatExchange`, `pgpKey`, `commonCrawl`, `ethWallet`,
+`btcWallet`, `emailPermutations`, `typosquat`, `ukCrime`,
+`parseWhen`/`solarPosition`, `historicalWeather`, `sameSite`, and
+`Http.bodyText`'s hard byte cap. **Cost and safety came back clean**:
+no unbounded fan-out, no unbounded body read, the SEC contact
+address reaches sec.gov only, the identifying user agent goes only
+to the six hosts whose policy asks for it, and no tool registered
+`touchesTarget = false` touches the target.
+
+Not covered: `ui/about/SourcesScreen.kt`, most of `MoreScreen.kt`,
+`FirstRunScreen.kt`, `ui/theme/`.
+
 ### Verification of r460–r470, data and domain half (r14, 24 Oct) — CLOSED, 26 for 26
 
 A read-only pass over the eleven commits above, by an agent that did
