@@ -649,7 +649,13 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                     FeedProbe("Airports (bundled)") { app.airportDataSource.fetch().size },
                                     FeedProbe("Power plants (bundled)") { app.powerPlantDataSource.fetch().size },
                                     FeedProbe("Cameras (OpenStreetMap + Caltrans)") { probeCctv.fetch().size },
-                                    FeedProbe("Airspace (FAA \u00b7 US + OSM military)") { probeAirspace.fetch().size },
+                                    FeedProbe("Airspace (FAA \u00b7 US)") { probeAirspace.fetch().size },
+                                    // The other half of MIL GROUND. fetch() above is the
+                                    // US-only path and never reached Overpass, so a phone
+                                    // that cannot reach any Overpass server showed this
+                                    // layer as healthy here and empty everywhere outside
+                                    // the United States.
+                                    FeedProbe("Military areas (OSM, around Berlin)") { probeAirspace.near(52.52, 13.40).size },
                                     FeedProbe("Space weather (SWPC)") { app.spaceWeatherDataSource.fetch().alerts.size + 1 },
                                     FeedProbe("Cable landings") { app.cableLandingDataSource.fetch().size },
                                     FeedProbe("Tropical cyclones (NHC + JTWC)") { probeCyclone.fetch().size },

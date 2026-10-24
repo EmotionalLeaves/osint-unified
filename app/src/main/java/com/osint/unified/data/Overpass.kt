@@ -62,7 +62,12 @@ internal object Overpass {
     private val MIRRORS = listOf(
         "https://overpass-api.de/api/interpreter",
         "https://overpass.kumi.systems/api/interpreter",
-        "https://overpass.private.coffee/api/interpreter"
+        "https://overpass.private.coffee/api/interpreter",
+        // A fourth operator. Probed 24 Oct from a cloud network where every
+        // instance failed; this one at least answered (a 504 at capacity)
+        // rather than refusing the connection, and a phone is not a cloud
+        // address.
+        "https://maps.mail.ru/osm/tools/overpass/api/interpreter"
     )
 
     /**

@@ -118,7 +118,6 @@ class MilitaryAreasDataSource(private val client: OkHttpClient = Http.feedClient
     }
 
     private companion object {
-        const val ENDPOINT = "https://overpass-api.de/api/interpreter"
         const val MAX_RESULTS = 600
         const val CACHE_TTL_MS = 30 * 60 * 1000L
     }

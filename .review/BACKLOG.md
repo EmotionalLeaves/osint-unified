@@ -90,6 +90,18 @@ closed; their headings say so.
   the radio and the resolver. Sweeps now start when the quick tools are
   done, or after a 20 s hold. Not reproducible from here; the next real
   email case is the test.
+- [x] **L1. Every layer's feed, probed at once.** 44 feeds from the
+  source code (the checked-in probe list had 30 and was stale; it is now
+  the full set). 40 answer; IODA's 400 was the probe's missing window
+  (fine with the app's own parameters). **Overpass is the open one:**
+  six public instances from four operators all failed from GitHub's
+  network — 504s and refused connections — which looks like cloud
+  addresses being turned away rather than an outage, but cannot be
+  told apart from here. MIL GROUND outside the US and SITES depend on
+  it. A fourth mirror is added; the diagnostics screen now probes the
+  Overpass half of MIL GROUND (its airspace probe only ever called the
+  US path). **Needs the tester:** open diagnostics and read the two
+  OSM lines.
 - [ ] **U6. Breach values.** No keyless/accountless source returns the
   leaked name/address themselves; decide with the user whether a paid
   key for one service is worth it, or rest on the browser-handoff
