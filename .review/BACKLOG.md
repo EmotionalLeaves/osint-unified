@@ -27,6 +27,171 @@ closed; their headings say so.
   URL the code can emit is public; without the actual link this is
   guesswork.
 
+### Verification of r460–r470, data and domain half (r14, 24 Oct)
+
+A read-only pass over the eleven commits above, by an agent that did
+not make them. Twenty-six findings. **Two are criticals and one of
+them was introduced by this morning's own fix**, which is the third
+day running that a same-day change has reintroduced something.
+
+Two new rules fall out of it, both added to the list at the top:
+- A new honesty mechanism must not be made unreachable by a throw
+  added in the same commit.
+- Bumping `AppDatabase.SCHEMA_VERSION` means editing
+  `DatabaseEncryption.repairVersion`'s ladder in the same change.
+
+- **R1. Schema went to 8; the repair ladder still tops out at 7.**
+  `DatabaseEncryption.kt:325-334` detects the real schema by
+  inspecting tables, and has no arm for `watches.lastAnswered`. A
+  database at 8 whose `user_version` is wrong — a restore, an
+  interrupted encrypt-in-place, the `copyInto` path — is set to 7,
+  Room then runs `MIGRATION_7_8`, `ALTER TABLE` hits
+  `duplicate column name`, the migration throws and the fallback
+  opens an empty database beside the real one. This is the exact
+  failure that function exists to prevent, reintroduced by the
+  version bump. **Data loss. First.**
+- **R2. The new throw in Cyclone and Tsunami makes `feedPartial`
+  unreachable in the one case it was built for.** The poller reads
+  `lastGaps` only on the success path, so "throw when anything
+  failed and nothing was found" and "report the gap" are mutually
+  exclusive, and the throw wins. JTWC 403s for a non-browser agent
+  are, by the file's own comment, ordinary on some networks — so for
+  the eight months a year the Atlantic is quiet the cyclone layer
+  now reads "not reporting" **every ten minutes, permanently**,
+  where it used to show a true Atlantic zero. Tsunami is worse:
+  five feeds, an empty bulletin list is the normal state, and any
+  one of the five failing throws. Strictly less information than
+  before, delivered as a false alarm. Also: the comment says "all
+  five JTWC advisories" and there are two.
+- **R3. `CctvDataSource.cached()` still tests `isNotEmpty()`**, ten
+  lines below the fix that stopped `fetch()` doing exactly that. New
+  York, London and Fintraffic re-fire on every settled pan when they
+  answer empty. Same file, next function.
+- **R4. `Cctv.near` and `Airspace.near` use `all { isFailure }`.**
+  Overpass answering an honest empty while the FAA or Caltrans
+  refuses is reported as an established zero: `MIL GROUND 0` with a
+  loaded tick over the Nellis range, with the only source that
+  covers it refused.
+- **R5. The empty-cache backdating is inert.** Both `fetch()`
+  methods now cache an empty answer and backdate `fetchedAt`, but
+  the early return is still `if (cache.isNotEmpty() && age < TTL)`,
+  so an empty cache is never served and the backdating is never
+  consulted. The pan storm is genuinely fixed — by the
+  `*KeyAnswered` change, not by this.
+- **R6. `Airspace.page()` and `Cctv.district()` swallow a refusal
+  into `emptyList()`**, which is where R4's false zero actually
+  comes from. `MetarDataSource.fetchBox` and
+  `AirQualityDataSource.fetchBatch` both carry a comment saying
+  "thrown, not returned: a quiet return counts as an answer"; these
+  two do the opposite.
+- **R7. `DeepApis.wikidata` has the identical MediaWiki
+  200-with-`error` shape** that was fixed in `wikiNearby` this
+  morning, on the same API, two files away. Same for
+  `DeepApis` usercontribs (:547) — which the platform sweep reads as
+  "no account" — and Commons geosearch (:1473), which prints the
+  exact "No geotagged imagery found near" sentence its own comment
+  says was the bug. `OsintApis` Wikipedia search (:806) is the mild
+  one.
+- **R8. `PeopleApis` collapses "refused" and "found nothing"
+  twice.** `jsonObjectOrNull()` is `as? JsonObject`, so a Crossref
+  validation failure (whose `message` is an array) and an HTML
+  interstitial both become "No published work by X in Crossref".
+  Same at :382 for Open Library.
+- **R9. The shortest username control is 65,536 possibilities**, and
+  a collision silently deletes a real hit. `lettersOnly` has a
+  16-letter alphabet, so `"zq" + take(4)` is 16⁴. A site capping
+  names at six characters accepts only that shape; if `zq????` is
+  registered, the site is marked "says yes to anything" and the
+  genuine account for the person being investigated is dropped from
+  the output with no trace. A false absence produced by the
+  machinery added to prevent false presences. The adjacent comment's
+  "four billion to one" matches none of the five shapes.
+- **R10. `CaseLinks.summary` was made honest and the two paragraphs
+  eleven lines below it were not.** `InvestigationExporter:193` and
+  `CasesScreen:230` still print "Nothing was found under more than
+  one of these targets. That is a result, not a gap" immediately
+  after the header correctly says only one of them has been run.
+  Both sentences, in the same card, in the same export.
+- **R11. `lastGaps` is shared mutable state and the self-test shares
+  the singletons with the poller.** `MainActivity:597-624` calls
+  `fetch()` on the same five objects the globe is polling, so the
+  two writes race and the pill can show a gap that belongs to the
+  other caller's fetch. `@Volatile` gives visibility, not atomicity
+  of fetch-then-read.
+- **R12. `Connectivity.walledGarden` contradicts its own doc.**
+  `!VALIDATED` is true both when validation failed and when it has
+  not run yet, so walking from Wi-Fi onto cellular shows a red "this
+  network is not reaching the internet" for the one to five seconds
+  before validation lands. On a commute that is an alarm every few
+  minutes on a working connection. `NET_CAPABILITY_CAPTIVE_PORTAL`
+  is the capability that means what the doc says.
+  `activeNetwork == null` during a default-network switch flashes
+  "No network" the same way.
+- **R13. `SpaceWeatherDataSource`, `FiresDataSource` and
+  `AisDataSource` are merged feeds with one boolean each** and
+  should carry `PartlyAnswered`. Losing MODIS or VIIRS is half the
+  fire detections, silently. `SpaceWeather` also sets `answered` on
+  a body that parsed to a non-array.
+- **R14. `Corroboration.exclusiveBest` reads the catalogue grade**,
+  so a source this case has caught out twice contradicts at full
+  strength while its own claims are graded a step lower. `CaseLinks`
+  was changed this morning for precisely this reason; the fix went
+  to `CaseLinks` and not to the function `CaseLinks` gets its grades
+  from. Rule 1, again, inside the fix for rule 1.
+- **R15. D contradicted by D now grades clean.** The new gate
+  requires the dissenter to be C or better, so two
+  not-usually-reliable sources asserting mutually exclusive
+  countries both come out D4 with nothing marking the conflict. At
+  least one of them is definitely wrong.
+- **R16. `compared` counts dossiers, not runs, against a
+  differently-keyed total.** `byTarget` is deduplicated by seed and
+  `targetCount` is the row count, so two investigations of one
+  email, both run, read "2 targets · only 1 has been run". And a
+  target that *was* run and legitimately found nothing has an empty
+  dossier, so it is reported as never run — the could-not-ask
+  conflation, inside the function added to fix an instance of it.
+- **R17. `AreaReport` double-counts a layer that is both troubled
+  and partial.** `feedPartial` is not cleared on the failure branch,
+  so a layer that failed after a partial answer appears twice and
+  the headline counts two. `WorldBrief` gets this right by ordering;
+  `AreaReport` runs both loops unconditionally.
+- **R18. `narrowedBy()` is attached only to the ABSENT verdict.**
+  A shortened list is just as misleading under PARTIAL and under the
+  hit branch's "Coverage: N of M sites".
+- **R19. `sharedMissingRulesets` is unset when all three rulesets
+  are missing**, and `narrowedBy()` then calls `loadRules()`, which
+  re-reads three assets and makes a blocking network request every
+  time because nothing is ever cached. The two companion fields are
+  also written in the wrong order for a concurrent reader.
+- **R20. `ContentCredentials` still matches a capitalised ordinary
+  word.** "Imagen tomada en el puerto de Valencia" — a Spanish
+  sentence beginning with the word — still prints "names Google
+  Imagen". The new test only exercises the lowercase form, so it
+  passes while the case its own comment names is live.
+- **R21. `WorldWarningsDataSource.parse` returns an empty list for
+  an unparseable body**, i.e. "no severe-weather warning anywhere in
+  the world". `VolcanoDataSource` throws "answered in an unexpected
+  shape" for the same situation. Lesser instances of the same shape:
+  `Sites:92`, `Launch:71`, `SeaLevel:81`, `Outage:93`, `Fires:82,91`,
+  `DeepApis:2277, 2341, 2233`, `HandleApis:128` (a Codeforces
+  rate-limit looks like `status != "OK"`), `HandleApis:432` (a 400
+  from the Wayback CDX becomes "has never captured this image"), and
+  `Ais:98` (no AIS URL configured returns an empty success).
+- **R22. Nothing pins `MigrationSql.chain` to `SCHEMA_VERSION`**, and
+  the 7→8 step is executed by `MigrationChainTest` without being
+  asserted. One line would have caught R1's whole class.
+- **R23.** `WatchRepository.check` returns at two points without
+  updating `lastAnswered`/`lastAsked`, so the pair can outlive the
+  check it describes. Internally consistent today because
+  `lastCheckedAt` is not advanced either.
+- **R24.** `summary(compared = 0)` reads "only 0 has been run".
+- **R25.** `Connectivity.snapshot` claims `metered = false` when it
+  has no ConnectivityManager to ask, and a failed callback
+  registration leaves the flow silent for ever with no signal.
+- **R26.** `BundledPointsDataSource` retrying "holds no usable
+  points" at the poll interval for ever, for an asset that will
+  never start existing.
+
 ### Third-pass defects (r13, 24 Oct) — CLOSED, 26 for 26
 
 A fresh sweep over what the day's two verification passes did not
@@ -292,7 +457,16 @@ whole of the view-model's search bookkeeping.
    found" and "could not ask" support opposite conclusions, and this
    app exists to keep them apart.
 4. **A header that states a total must not then list fewer.**
-5. **Write first, assert after.** Twice today a script asserted after
+5. **A new honesty mechanism must not be made unreachable by a
+   throw added in the same commit.** `feedPartial` was built so a
+   feed could say "NHC answered, JTWC did not", and the same commit
+   added a throw that fires in exactly that case, so the pill went
+   from a true zero to a permanent false alarm.
+6. **Bumping `AppDatabase.SCHEMA_VERSION` means editing
+   `DatabaseEncryption.repairVersion`'s ladder in the same change.**
+   Nothing enforces it and the consequence is a database that cannot
+   be opened.
+7. **Write first, assert after.** Twice today a script asserted after
    its replace and threw before its write, so an edit believed to be
    on disk was not — a quieter failure than a compile error.
 
