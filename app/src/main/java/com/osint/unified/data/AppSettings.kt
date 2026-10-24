@@ -122,6 +122,49 @@ class AppSettings(context: Context) {
         get() = prefs.getString(KEY_OVERLAY, "").orEmpty()
         set(value) = prefs.edit().putString(KEY_OVERLAY, value.trim()).apply()
 
+    /**
+     * What a search of each observable type has cost, on this phone.
+     *
+     * Mobile data is the budget that matters here, and the app knew
+     * what it had spent only in a diagnostics panel, after the fact,
+     * for the whole process. A dossier that fires forty tools and then
+     * eleven pivots at six tools each never said what it would cost
+     * before, or what it had cost after — the header printed a tool
+     * count and nothing about bytes.
+     *
+     * A running mean per type, not per tool: tools run concurrently,
+     * so a delta measured around one of them includes the other
+     * thirty-nine. A whole search is the unit that can honestly be
+     * measured, and the type is what decides how big it is.
+     */
+    fun searchCost(type: String): Pair<Long, Int>? = costs()[type.lowercase()]
+
+    fun recordSearchCost(type: String, bytes: Long) {
+        if (bytes <= 0) return
+        val key = type.lowercase()
+        val all = HashMap(costs())
+        val previous = all[key]
+        val samples = minOf((previous?.second ?: 0) + 1, COST_SAMPLE_CAP)
+        val mean = previous?.first ?: 0L
+        all[key] = ((mean * (samples - 1) + bytes) / samples) to samples
+        val encoded = all.entries.take(32).joinToString(",") {
+            "${it.key}=${it.value.first}:${it.value.second}"
+        }
+        prefs.edit().putString(KEY_SEARCH_COSTS, encoded).apply()
+    }
+
+    private fun costs(): Map<String, Pair<Long, Int>> =
+        prefs.getString(KEY_SEARCH_COSTS, "").orEmpty()
+            .split(',')
+            .mapNotNull { entry ->
+                val name = entry.substringBefore('=', "").trim()
+                val mean = entry.substringAfter('=', "").substringBefore(':').toLongOrNull()
+                val n = entry.substringAfterLast(':', "").toIntOrNull()
+                if (name.isBlank() || mean == null || n == null || n <= 0) null
+                else name to (mean to n)
+            }
+            .toMap()
+
     private companion object {
         const val KEY_BACKEND = "backend_base_url"
         const val KEY_TAR1090 = "tar1090_url"

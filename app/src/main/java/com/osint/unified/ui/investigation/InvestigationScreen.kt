@@ -69,6 +69,7 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.osint.unified.data.ExportFormat
 import com.osint.unified.data.WatchRepository
+import com.osint.unified.network.DataMeter
 import com.osint.unified.domain.Corroboration
 import com.osint.unified.domain.EntityExtractor
 import com.osint.unified.domain.Findings
@@ -406,6 +407,42 @@ fun InvestigationScreen(
                     color = Intel.TextMid,
                     modifier = Modifier.padding(top = 6.dp)
                 )
+                // What it cost, or what it is likely to.
+                //
+                // Mobile data is the budget that matters on a phone,
+                // and the header counted tools. Forty sources and
+                // then eleven pivots at six each is not a figure
+                // anybody turns into megabytes in their head, and the
+                // meter the app already keeps was visible only in a
+                // diagnostics panel, after the fact, for the whole
+                // process rather than for this dossier.
+                val costLine = when {
+                    state.dataSpent > 0 -> buildString {
+                        append("This dossier has cost ")
+                        append(DataMeter.human(state.dataSpent))
+                        state.dataTypical?.let { (mean, n) ->
+                            if (n >= 2) {
+                                append(" · a ")
+                                append(observable.typeLabel.lowercase())
+                                append(" search usually costs ")
+                                append(DataMeter.human(mean))
+                            }
+                        }
+                    }
+                    state.dataTypical != null && state.dataTypical!!.second >= 2 ->
+                        "A ${observable.typeLabel.lowercase()} search has cost about " +
+                            "${DataMeter.human(state.dataTypical!!.first)} on this " +
+                            "phone, over ${state.dataTypical!!.second} of them"
+                    else -> null
+                }
+                costLine?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Intel.TextLow,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                }
                 if (state.enriching.isNotEmpty()) {
                     Text(
                         state.enriching.joinToString("  ·  "),

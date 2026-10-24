@@ -37,6 +37,7 @@ import com.osint.unified.data.SeaLevelDataSource
 import com.osint.unified.data.SitesDataSource
 import com.osint.unified.data.WorldWarningsDataSource
 import com.osint.unified.data.WeatherDataSource
+import com.osint.unified.network.DataMeter
 import com.osint.unified.domain.EntityExtractor
 import com.osint.unified.domain.GeoExtractor
 import com.osint.unified.data.ExportFormat
@@ -176,6 +177,17 @@ data class GodEyeUiState(
      */
     val layerVersion: Int = 0,
     /** The second pass is chasing what the first pass turned up. */
+    /**
+     * Bytes off the wire since this search began.
+     *
+     * Mobile data is the one budget this app's user named as real,
+     * and the dossier header counted tools. Forty sources and then
+     * eleven pivots at six each is not a number anybody can turn into
+     * megabytes in their head.
+     */
+    val dataSpent: Long = 0,
+    /** What a search of this type has cost before, and over how many. */
+    val dataTypical: Pair<Long, Int>? = null,
     val enrichmentRunning: Boolean = false,
     /** Identifiers the first pass discovered and the second pass is looking
      *  up in their own right — shown so the derivation is never a mystery. */
@@ -278,6 +290,20 @@ class GodEyeViewModel(
      * decrement from an older one is ignored.
      */
     private var searchRun = 0
+
+    /**
+     * The meter reading when this search started, so the dossier can
+     * say what it cost rather than what the whole process has.
+     */
+    private var dataBaseline = DataMeter.bytes()
+
+    /** Recorded once per search, so the next one of this type can be estimated. */
+    private var costRecorded = false
+
+    private fun noteDataSpent() {
+        val spent = (DataMeter.bytes() - dataBaseline).coerceAtLeast(0)
+        _state.update { it.copy(dataSpent = spent) }
+    }
 
     /** Everything the current search has in flight, so a new search can
      *  stop it rather than letting two searches write to one dossier. */
@@ -1145,6 +1171,12 @@ class GodEyeViewModel(
         // so the header would say the new target while the intel below it
         // was the old one.
         currentInvestigationId = null
+        // What this search costs, counted from here. Every wave —
+        // the first pass, the host of a URL, enrichment, a tool run
+        // by hand — adds to the same bill, so the baseline belongs
+        // where the search begins and nowhere else.
+        dataBaseline = DataMeter.bytes()
+        costRecorded = false
         // Anything still unwinding from the last search belongs to
         // the last search, including its counter decrements.
         searchRun++
@@ -1191,6 +1223,9 @@ class GodEyeViewModel(
                 runningTools = emptyMap(),
                 plannedTools = 0,
                 plannedLinkLists = 0,
+                dataSpent = 0,
+                dataTypical = settings.searchCost(observable.typeLabel),
+
                 enrichmentRunning = false,
                 enriching = emptyList(),
                 breadcrumb = emptyList(),
@@ -1361,6 +1396,7 @@ class GodEyeViewModel(
                     val row = repository.runTool(investigationId, tool, input)
                     if (run == searchRun) {
                         _state.update { it.copy(runningTools = it.runningTools.minusRunning(tool.id)) }
+                        noteDataSpent()
                     }
                     if (row.status == "success") {
                         previousHosts = Workflows.extractHosts(tool.id, row.rawOutput)
@@ -1399,6 +1435,7 @@ class GodEyeViewModel(
             } finally {
                 if (run == searchRun) {
                     _state.update { it.copy(runningTools = it.runningTools.minusRunning(tool.id)) }
+                    noteDataSpent()
                 }
             }
         }
@@ -1503,12 +1540,23 @@ class GodEyeViewModel(
                                 _state.update {
                                     it.copy(runningTools = it.runningTools.minusRunning(tool.id))
                                 }
+                                noteDataSpent()
                             }
                         }
                     }
                 }.map { it.await() }
             }
             if (thenEnrich) enrich(observable, produced.filterNotNull())
+            // Recorded once, after the pass that carries the follow-up.
+            //
+            // The estimate shown before the next search of this type
+            // is only worth having if it covers the whole bill, and
+            // the second pass is most of it.
+            if (run == searchRun && !costRecorded) {
+                costRecorded = true
+                val spent = (DataMeter.bytes() - dataBaseline).coerceAtLeast(0)
+                if (spent > 0) settings.recordSearchCost(observable.typeLabel, spent)
+            }
         }
     }
 
@@ -1609,6 +1657,7 @@ class GodEyeViewModel(
                                     _state.update { st ->
                                         st.copy(runningTools = st.runningTools.minusRunning(tool.id))
                                     }
+                                    noteDataSpent()
                                 }
                             }
                         }
