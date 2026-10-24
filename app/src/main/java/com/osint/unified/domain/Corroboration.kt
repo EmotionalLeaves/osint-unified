@@ -176,6 +176,29 @@ object Corroboration {
         "unpkg", "cdnjs", "gravatar", "wp.com", "shopifycdn", "squarespace"
     )
 
+    /**
+     * Whether a host belongs to the machinery rather than to anybody.
+     *
+     * Exposed because EntityExtractor needs the same answer and had
+     * its own five-entry version of this list, which is how a CDN
+     * host could be refused as a corroborated entity and accepted as
+     * a discovered identifier in the same dossier.
+     */
+    internal fun isInfrastructure(host: String): Boolean {
+        val v = host.lowercase()
+        return INFRASTRUCTURE.any { v.contains(it) }
+    }
+
+    /**
+     * Tools whose output is candidates they invented, not observations.
+     *
+     * They stay in the dossier as their own result — a list of
+     * addresses worth trying is useful — but nothing they print is
+     * evidence that the thing exists, so none of it enters the pool
+     * that grades what the case found.
+     */
+    private val GENERATED = setOf("emailperm")
+
     /** Why this identifier is machinery rather than a lead, or null. */
     internal fun noise(kind: String, value: String): String? {
         val v = value.lowercase()
@@ -215,6 +238,17 @@ object Corroboration {
 
         results.forEach { row ->
             if (Findings.kindOf(row) != Findings.Kind.HIT) return@forEach
+            // Generated strings are not assertions.
+            //
+            // emailperm prints fifteen to eighteen candidate
+            // addresses it made up from the seed, and says so on its
+            // last line where nothing reads it. Extracted, they
+            // became EMAIL entities with a source — and although E4
+            // alone is tolerable, one of them matching something a
+            // real source found made the pair "confirmed by other
+            // sources", where one of the two witnesses had invented
+            // the string from the thing being investigated.
+            if (row.toolId in GENERATED) return@forEach
             EntityExtractor.extract(
                 listOf(row), seed, limitPerKind = 40, seedIsPlace = seedIsPlace
             ).forEach { pivot ->

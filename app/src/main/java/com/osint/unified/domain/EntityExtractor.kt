@@ -48,19 +48,25 @@ object EntityExtractor {
         "keybase.io", "ycombinator.com", "reddit.com", "t.me", "telegram.org",
         "nist.gov", "exploit-db.com", "osintframework.com", "openstreetmap.org",
         "openstreetcam.org", "kartaview.org", "mapillary.com", "insecam.org",
-        "panoramax.xyz", "panoramax.openstreetmap.fr",
+        // registrable() keeps two labels outside its short list of
+        // two-part suffixes, so an entry with three can never match
+        // anything: "panoramax.openstreetmap.fr" arrives here as
+        // "openstreetmap.fr" and "dot.ca.gov" as "ca.gov". Both are
+        // this app's own source domains and were being emitted as
+        // pivots. "nhc.noaa.gov" was redundant with noaa.gov.
+        "panoramax.xyz", "openstreetmap.fr", "ca.gov",
         "earthcam.com", "crt.sh", "certspotter.com", "urlscan.io", "shodan.io",
         "hackertarget.com", "rapiddns.io", "blockchain.com", "blockchain.info",
         "etherscan.io", "ethplorer.io", "oxt.me", "jetphotos.com", "adsb.lol",
         "adsbexchange.com", "flightaware.com", "sec.gov", "fbi.gov",
         "gleif.org", "xposedornot.com", "haveibeenpwned.com", "suncalc.org",
         "open-meteo.com", "police.uk", "hexdb.io", "gravatar.com",
-        "example.com", "dns.google", "dot.ca.gov", "first.org", "circl.lu",
+        "example.com", "dns.google", "first.org", "circl.lu",
         "securitytxt.org", "owasp.org", "treas.gov", "torproject.org",
         "alienvault.com", "ripe.net", "bgpview.io", "rdap.org", "ipwho.is",
         "stackexchange.com", "stackoverflow.com", "npmjs.com", "docker.com",
         "gitlab.com", "bitbucket.org", "mastodon.social", "bsky.app",
-        "nhc.noaa.gov", "noaa.gov", "tsunami.gov", "faa.gov", "safecast.org",
+        "noaa.gov", "tsunami.gov", "faa.gov", "safecast.org",
         "nasa.gov", "usgs.gov", "gdacs.org", "gdeltproject.org",
         "commoncrawl.org", "hudsonrock.com", "openpgp.org", "ubuntu.com",
         "w3.org", "schema.org", "creativecommons.org", "gstatic.com",
@@ -141,6 +147,17 @@ object EntityExtractor {
                 val v = m.value.lowercase()
                 when {
                     registrable(v) in noiseDomains -> null
+                    // The same list Corroboration grades against.
+                    //
+                    // Corroboration knows twenty-six CDN and cloud
+                    // families and this knew five, and the exporter
+                    // calls extract() directly — so IDENTIFIERS
+                    // DISCOVERED carried cdn.jsdelivr.net,
+                    // lh3.googleusercontent.com, *.fastly.net and
+                    // *.b-cdn.net as things found out about the
+                    // target, off the back of any page that loads
+                    // Bootstrap.
+                    Corroboration.isInfrastructure(v) -> null
                     v.endsWith(".png") || v.endsWith(".jpg") -> null
                     else -> v
                 }

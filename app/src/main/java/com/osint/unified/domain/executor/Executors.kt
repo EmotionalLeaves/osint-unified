@@ -268,6 +268,9 @@ class DirectToolExecutor(
     private val apis: OsintApis = OsintApis(),
     private val deep: DeepApis = DeepApis({ settings.secContactEmail }),
     private val people: PeopleApis = PeopleApis(),
+    /** Held, not rebuilt: it owns a six-hour inventory cache. */
+    private val cctv: com.osint.unified.data.CctvDataSource =
+        com.osint.unified.data.CctvDataSource(),
     private val client: OkHttpClient = Http.client
 ) : ToolExecutor {
 
@@ -963,7 +966,17 @@ class DirectToolExecutor(
         }
         val lat = parts[0]!!
         val lon = parts[1]!!
-        val cams = com.osint.unified.data.CctvDataSource(client).fetch()
+        // The shared instance, through the cached client.
+        //
+        // This built a new CctvDataSource on every call and handed it
+        // `client`, which defeated two caches at once: the source
+        // keeps its six-hour inventory in instance fields, so a fresh
+        // instance is always cold, and the explicit client overrode
+        // the feed client — the only one with a disk cache — so there
+        // was no conditional request either. Every invocation pulled
+        // nine Caltrans district inventories in full. The largest
+        // avoidable mobile-data cost in the app.
+        val cams = cctv.fetch()
         if (cams.isEmpty()) return@runCatching "Public camera inventories could not be reached right now."
         val near = cams.map { it to haversineKm(lat, lon, it.lat, it.lon) }
             .filter { it.second <= 50 }
