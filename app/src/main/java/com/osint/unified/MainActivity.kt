@@ -206,6 +206,47 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                     val tabState = androidx.compose.runtime.saveable
                         .rememberSaveableStateHolder()
 
+                    // And every marker that says a signal has already been
+                    // acted on, for the same reason and more urgently.
+                    //
+                    // These were below the gate. rememberSaveable only
+                    // survives onSaveInstanceState; plain disposal takes it,
+                    // and the lock's return@Surface is plain disposal. So on
+                    // every unlock all five were back at zero while the
+                    // signals themselves were still non-zero, because they
+                    // live in the view model or in process-wide singletons
+                    // that outlast any composition. navSignal is a counter
+                    // and is >= 1 after any search at all, so unlocking
+                    // dumped you into the dossier whatever tab you had been
+                    // on; the browser's request and snapshot were never
+                    // cleared, so unlocking re-ran a forty-source fan-out on
+                    // the last page browsed and filed its snapshot again;
+                    // sharedAt is a field on this activity and survives
+                    // onStop, so the last share re-ran too. Every background
+                    // cycle, for exactly the people who turned the lock on.
+                    var handledNav by rememberSaveable { mutableLongStateOf(0L) }
+                    var handledShare by rememberSaveable { mutableLongStateOf(0L) }
+                    var handledWatch by rememberSaveable { mutableLongStateOf(0L) }
+                    var handledBrowserNav by rememberSaveable { mutableLongStateOf(0L) }
+                    var handledSnapshot by rememberSaveable { mutableLongStateOf(0L) }
+
+                    // And the photo picker, for the same reason again.
+                    //
+                    // Registered inside Forensics it was disposed the
+                    // instant it was used: launching it stops this
+                    // activity, onStop re-locks, the lock gate tears down
+                    // the subtree, and the launcher unregisters while the
+                    // system is still holding the result. The user picked a
+                    // photograph, unlocked, and nothing had happened.
+                    val pickedImage = androidx.compose.runtime.remember {
+                        androidx.compose.runtime.mutableStateOf<Pair<android.net.Uri, Long>?>(null)
+                    }
+                    val photoPicker = androidx.activity.compose.rememberLauncherForActivityResult(
+                        androidx.activity.result.contract.ActivityResultContracts.GetContent()
+                    ) { uri ->
+                        if (uri != null) pickedImage.value = uri to System.currentTimeMillis()
+                    }
+
                     if (locked.value) {
                         com.osint.unified.ui.common.AppLockScreen(this@MainActivity) {
                             locked.value = false
@@ -252,7 +293,6 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                     // non-zero signal and forced the dossier open again, so
                     // once you had searched you could not rotate the phone
                     // anywhere else in the app.
-                    var handledNav by rememberSaveable { mutableLongStateOf(0L) }
                     LaunchedEffect(godState.navSignal) {
                         if (godState.navSignal > handledNav) {
                             handledNav = godState.navSignal
@@ -260,12 +300,12 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                         }
                     }
 
-                    var handledShare by rememberSaveable { mutableLongStateOf(0L) }
                     val shareSignal = sharedAt.longValue
                     LaunchedEffect(shareSignal) {
                         if (shareSignal <= handledShare) return@LaunchedEffect
                         handledShare = shareSignal
                         val text = sharedText.value
+                        sharedText.value = null
                         when {
                             sharedImage.value != null -> screen = "forensics"
                             text != null -> {
@@ -289,7 +329,6 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                         }
                     }
 
-                    var handledWatch by rememberSaveable { mutableLongStateOf(0L) }
                     val watchSignal = openWatchAt.longValue
                     LaunchedEffect(watchSignal) {
                         if (watchSignal > handledWatch) {
@@ -336,22 +375,22 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                     // is drawn above the navigation and has no other way to.
                     val investigateFromBrowser by com.osint.unified.ui.common
                         .InAppNavigation.investigateTarget.collectAsStateWithLifecycle()
-                    var handledBrowserNav by rememberSaveable { mutableLongStateOf(0L) }
                     LaunchedEffect(investigateFromBrowser) {
                         val request = investigateFromBrowser ?: return@LaunchedEffect
                         if (request.second <= handledBrowserNav) return@LaunchedEffect
                         handledBrowserNav = request.second
+                        com.osint.unified.ui.common.InAppNavigation.clearInvestigate()
                         godEyeViewModel.onQueryChange(request.first)
                         godEyeViewModel.onSearch()
                     }
 
                     val snapshot by com.osint.unified.ui.common.InAppNavigation
                         .snapshotTaken.collectAsStateWithLifecycle()
-                    var handledSnapshot by rememberSaveable { mutableLongStateOf(0L) }
                     LaunchedEffect(snapshot) {
                         val taken = snapshot ?: return@LaunchedEffect
                         if (taken.at <= handledSnapshot) return@LaunchedEffect
                         handledSnapshot = taken.at
+                        com.osint.unified.ui.common.InAppNavigation.clearSnapshot()
                         godEyeViewModel.onSnapshot(taken.url, taken.title, taken.html)
                     }
 
@@ -401,7 +440,16 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                         )
                         "forensics" -> ForensicsScreen(
                             (application as OsintApplication).exifReader,
-                            sharedImage = sharedImage.value,
+                            // Whichever arrived last. A share carries the
+                            // moment it was shared; a pick carries the
+                            // moment it was picked.
+                            incomingImage = pickedImage.value
+                                ?: sharedImage.value?.let { it to sharedAt.longValue },
+                            onPickImage = { runCatching { photoPicker.launch("image/*") } },
+                            onImageHandled = {
+                                pickedImage.value = null
+                                sharedImage.value = null
+                            },
                             onBack = { screen = "more" }
                         )
                         "diagnostics" -> {

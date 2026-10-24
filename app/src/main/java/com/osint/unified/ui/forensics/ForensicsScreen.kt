@@ -53,8 +53,29 @@ import kotlinx.coroutines.launch
 @Composable
 fun ForensicsScreen(
     exifReader: ExifReader,
-    /** An image shared into the app from somewhere else, read on arrival. */
-    sharedImage: android.net.Uri? = null,
+    /**
+     * An image on its way in — shared from another app, or chosen in the
+     * picker — with the moment it arrived, so the same photograph picked
+     * twice is two arrivals.
+     *
+     * The picker is not registered here. Launching it stops this
+     * activity, which re-locks when the app lock is on, which disposes
+     * everything under the lock gate — including a launcher registered
+     * in this composition, so the photograph came back to nobody and
+     * the user returned to an unchanged screen. Every time, for anyone
+     * with the lock on. It is registered above the gate now and reaches
+     * this screen as an arrival like any other.
+     */
+    incomingImage: Pair<android.net.Uri, Long>? = null,
+    onPickImage: () -> Unit = {},
+    /**
+     * Said once the arrival has been read, because nothing else clears
+     * it. Left set, it was re-read on every return to this screen —
+     * overwriting a decode the user had just run, and usually with
+     * "Could not read that image", because by then the grant on a
+     * shared URI has lapsed.
+     */
+    onImageHandled: () -> Unit = {},
     onBack: () -> Unit
 ) {
     // Kept across a rotation. A decoder screen whose input box
@@ -76,11 +97,11 @@ fun ForensicsScreen(
     // A photograph on the phone, read here rather than uploaded somewhere
     // to be read. The picker needs no storage permission: the system hands
     // back one image and nothing else.
-    val picker = androidx.activity.compose.rememberLauncherForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.GetContent()
-    ) { uri -> if (uri != null) scope.launch { readPhoto(uri) } }
-
-    LaunchedEffect(sharedImage) { sharedImage?.let { readPhoto(it) } }
+    LaunchedEffect(incomingImage) {
+        val arrival = incomingImage ?: return@LaunchedEffect
+        onImageHandled()
+        readPhoto(arrival.first)
+    }
 
     Column(
         modifier = Modifier
@@ -219,7 +240,7 @@ fun ForensicsScreen(
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
             )
             Button(
-                onClick = { picker.launch("image/*") },
+                onClick = onPickImage,
                 enabled = !exifBusy,
                 modifier = Modifier.padding(top = 8.dp)
             ) {

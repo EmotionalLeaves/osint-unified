@@ -377,4 +377,24 @@ object InAppNavigation {
     fun snapshot(url: String, title: String, html: String) {
         snapshotTaken.value = Snapshot(url, title, html)
     }
+
+    /**
+     * Said by whoever acted on a request, because nothing else will.
+     *
+     * These are process-wide and were never cleared, so the last
+     * request stayed here for the life of the app. That is harmless
+     * while the collector remembers having handled it and ruinous the
+     * moment it does not: the privacy lock disposes the content
+     * subtree, the de-duplication marker goes with it, and the next
+     * composition sees a request that is still sitting here and acts
+     * on it again. A full fan-out on the last page browsed, and the
+     * last snapshot filed a second time, on every unlock.
+     */
+    fun clearInvestigate() {
+        investigateTarget.value = null
+    }
+
+    fun clearSnapshot() {
+        snapshotTaken.value = null
+    }
 }
