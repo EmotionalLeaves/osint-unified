@@ -62,9 +62,16 @@ object ForceLayout {
             xs[i] = width / 2 + r * kotlin.math.cos(angle) + random.nextFloat()
             ys[i] = height / 2 + r * kotlin.math.sin(angle) + random.nextFloat()
         }
-        val seedIndex = index["seed"] ?: 0
-        xs[seedIndex] = width / 2
-        ys[seedIndex] = height / 2
+        // Only when there is a seed to pin.
+        //
+        // `?: 0` nailed an arbitrary node to the centre for any
+        // graph that does not carry one — harmless today, because
+        // GraphBuilder always inserts "seed" first, and a silent
+        // wrong answer for the next producer.
+        index["seed"]?.let { seedIndex ->
+            xs[seedIndex] = width / 2
+            ys[seedIndex] = height / 2
+        }
 
         val area = width * height
         val k = sqrt(area / n)

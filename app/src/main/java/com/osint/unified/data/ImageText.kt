@@ -55,9 +55,41 @@ class ImageText(
         val isEmpty: Boolean get() = lines.isEmpty()
     }
 
-    /** Reads a picture already on the phone. Nothing touches the network. */
+    /**
+     * Reads a picture already on the phone. Nothing touches the
+     * network.
+     *
+     * Sampled down to the same ceiling [fromUrl] uses, and for the
+     * same reason its comment gives: a forty-megapixel photograph
+     * is four hundred and eighty megabytes as a bitmap, which is
+     * the process on most phones. `InputImage.fromFilePath` decodes
+     * at full resolution, and a gallery picture is exactly where a
+     * forty-megapixel file comes from.
+     */
     suspend fun fromUri(uri: Uri): Read = withContext(Dispatchers.IO) {
-        recognise(InputImage.fromFilePath(appContext, uri))
+        val bitmap = runCatching { sampled(uri) }.getOrNull()
+            ?: return@withContext recognise(InputImage.fromFilePath(appContext, uri))
+        recognise(InputImage.fromBitmap(bitmap, 0))
+    }
+
+    /** The picture, decoded no larger than [MAX_PIXELS]. */
+    private fun sampled(uri: Uri): android.graphics.Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        appContext.contentResolver.openInputStream(uri)?.use {
+            BitmapFactory.decodeStream(it, null, bounds)
+        } ?: return null
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        var sample = 1
+        while ((bounds.outWidth / sample) * (bounds.outHeight / sample) > MAX_PIXELS) {
+            sample *= 2
+        }
+        return appContext.contentResolver.openInputStream(uri)?.use {
+            BitmapFactory.decodeStream(
+                it,
+                null,
+                BitmapFactory.Options().apply { inSampleSize = sample }
+            )
+        }
     }
 
     /**

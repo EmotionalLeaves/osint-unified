@@ -132,6 +132,30 @@ class OrbitPropagatorTest {
         assertEquals(90.0, OrbitPropagator.geodetic(0.0, 6_756.0).first, 1e-9)
     }
 
+    /**
+     * And the altitude at the pole, which this test used to feed in
+     * and then look away from.
+     *
+     * It destructured the pair and asserted only `.first`, so a
+     * height of −6,399 km — minus the radius of curvature, from a
+     * division by cos(90°) — sat in the second element with a green
+     * test over it. 6,756 km from the centre along the polar axis is
+     * about 399 km up, which is a low orbit.
+     */
+    @Test
+    fun theHeightAtThePoleIsNotMinusTheEarth() {
+        val (lat, height) = OrbitPropagator.geodetic(0.0, 6_756.0)
+        assertEquals(90.0, lat, 1e-9)
+        assertEquals(399.25, height, 0.5)
+        // And it agrees with a point a metre off the axis, which
+        // took the other branch all along.
+        assertEquals(
+            OrbitPropagator.geodetic(0.001, 6_756.0).second,
+            height,
+            0.01
+        )
+    }
+
     @Test
     fun siderealTimeAdvancesABitMoreThanADayPerDay() {
         // GMST gains about four minutes a day on solar time; if this drifts

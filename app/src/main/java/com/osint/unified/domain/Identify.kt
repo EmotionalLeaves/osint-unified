@@ -75,7 +75,13 @@ object Identify {
     private val MAC = Regex("^(?:[0-9a-fA-F]{2}[:-]){5}[0-9a-fA-F]{2}$")
     private val UUID = Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
     private val PHONE = Regex("^\\+\\d[\\d\\s().-]{6,20}$")
-    private val MGRS = Regex("^\\d{1,2}[C-HJ-NP-X]\\s*[A-HJ-NP-Z]{2}\\s*\\d{2,10}$", RegexOption.IGNORE_CASE)
+    // An even number of digits, because the numeric part is an
+    // easting and a northing of equal length: 2, 4, 6, 8 or 10.
+    // `{2,10}` accepted 33UXP12345 and called it a grid reference.
+    private val MGRS = Regex(
+        "^\\d{1,2}[C-HJ-NP-X]\\s*[A-HJ-NP-Z]{2}\\s*(?:\\d{2}|\\d{4}|\\d{6}|\\d{8}|\\d{10})$",
+        RegexOption.IGNORE_CASE
+    )
     private val PEM = Regex("-----BEGIN ([A-Z ]+)-----")
 
     /** Hashes are told apart by length alone, which is all their hex gives. */
@@ -298,6 +304,13 @@ object Identify {
             val sha = java.security.MessageDigest.getInstance("SHA-256")
             val digest = sha.digest(sha.digest(payload))
             checksum.contentEquals(digest.copyOfRange(0, 4))
-        }.getOrDefault(false)
+        }.getOrElse {
+            // Null, not false. `false` is rendered to the person as
+            // "this is a typo or an invented address", and a
+            // MessageDigest that could not be obtained establishes
+            // nothing of the kind. The type already has a third
+            // value for exactly this, used for bech32.
+            null
+        }
     }
 }

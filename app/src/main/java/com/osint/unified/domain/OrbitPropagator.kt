@@ -90,7 +90,16 @@ object OrbitPropagator {
         repeat(24) {
             val f = ea - ecc * sin(ea) - m
             val fPrime = 1 - ecc * cos(ea)
-            if (abs(fPrime) < 1e-12) return@repeat
+            // A derivative at zero means Newton cannot step, and
+            // `return@repeat` is continue, not break — so the loop
+            // span out and the honesty gate below was then tested
+            // against a residual from an earlier iteration. The
+            // comment above this block explains that the same
+            // construct once made the convergence test do nothing;
+            // it was still here as the divergence guard. Marked
+            // unconverged and left.
+            // `repeat` is inline, so this leaves propagate.
+            if (abs(fPrime) < 1e-12) return null
             val delta = f / fPrime
             ea -= delta
             residual = abs(delta)
@@ -137,7 +146,23 @@ object OrbitPropagator {
             val s = sin(lat)
             val curvature = EARTH_RADIUS_KM / sqrt(1.0 - E2 * s * s)
             lat = atan2(z + curvature * E2 * s, hyp)
-            height = hyp / cos(lat) - curvature
+            // Divided by cos(lat), which is zero at the pole.
+            //
+            // At hyp == 0 the latitude is exactly 90°, cos is 6e-17,
+            // and `hyp / cos(lat)` is 0 — so the height came out as
+            // minus the radius of curvature: 6,799 km wrong, for a
+            // satellite directly over the pole. The test that feeds
+            // this function that exact input destructures the pair
+            // and asserts only the latitude, so it was green.
+            //
+            // Near the pole the standard form uses the other
+            // component: h = z/sin(lat) − N(1 − e²).
+            val c = cos(lat)
+            height = if (abs(c) > 1e-6) {
+                hyp / c - curvature
+            } else {
+                z / sin(lat) - curvature * (1.0 - E2)
+            }
         }
         return Math.toDegrees(lat) to height
     }
