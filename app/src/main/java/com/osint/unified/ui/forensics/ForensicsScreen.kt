@@ -37,6 +37,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -56,9 +57,12 @@ fun ForensicsScreen(
     sharedImage: android.net.Uri? = null,
     onBack: () -> Unit
 ) {
-    var input by remember { mutableStateOf("") }
-    var output by remember { mutableStateOf("") }
-    var imageUrl by remember { mutableStateOf("") }
+    // Kept across a rotation. A decoder screen whose input box
+    // empties when the phone turns is a screen you cannot use in
+    // two hands, and the output went with it.
+    var input by rememberSaveable { mutableStateOf("") }
+    var output by rememberSaveable { mutableStateOf("") }
+    var imageUrl by rememberSaveable { mutableStateOf("") }
     var exifBusy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
