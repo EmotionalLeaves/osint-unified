@@ -694,13 +694,27 @@ class DirectToolExecutor(
         if (query.length < 3) {
             return@runCatching "Give at least three characters to search the SDN list."
         }
-        // Three letters, not two. At two, "al x" reduced to ["al"]
-        // and matched every al-something on the list — forty of them,
-        // capped, and reported as a hit against a real person's name.
-        // A two-letter particle is not a search.
-        val tokens = normaliseName(query).split(" ").filter { it.length >= 3 }
+        // Through SanctionsNames, not a copy of it.
+        //
+        // This had its own three-letter floor, which is right about
+        // the Arabic particle "al" and wrong about most of the world:
+        // Korean, Chinese and Vietnamese names are mostly two-letter
+        // syllables, so "Ri Yong Ho" reduced to ["yong"] and matched
+        // every entry containing that syllable, and "Li Na" reduced
+        // to nothing and was refused as too short. The shared version
+        // uses a particle stop-list instead, and the UN path already
+        // used it — so the two lists were answering the same question
+        // differently.
+        val tokens = com.osint.unified.domain.SanctionsNames.tokens(query)
         if (tokens.isEmpty()) {
-            return@runCatching "Give at least three characters to search the SDN list."
+            return@runCatching if (com.osint.unified.domain.SanctionsNames.isUnromanised(query)) {
+                "The bundled OFAC list is romanised, and \"$query\" has no " +
+                    "Latin letters to match against — so this says nothing " +
+                    "either way. Try the name as it is transliterated in " +
+                    "English-language reporting."
+            } else {
+                "Give a name to search the SDN list."
+            }
         }
 
         val asOf = runCatching {
@@ -759,6 +773,22 @@ class DirectToolExecutor(
         // *combined* having read something, so a build missing the
         // alias file reported a clean result having never looked at
         // it.
+        // The cap is checked before each line in both scans, so a
+        // primary list that fills it leaves the alias scan breaking
+        // on its first line — having read nothing, while still
+        // returning success. The aliases are where most real matches
+        // live, so saying nothing about that is the one thing this
+        // must not do.
+        if (truncated) {
+            return@runCatching buildString {
+                append("OFAC SDN — more than ${hits.size} entries match '$query', ")
+                append("which is too many to be a match for anybody.\n")
+                append("The alias list was not searched, because the primary ")
+                append("list filled the cap first — so this says nothing either ")
+                append("way about aliases. Give more of the name.\n\n")
+                hits.values.take(10).forEach { append(it).append("\n") }
+            }
+        }
         if (!readMain || !readAlt) {
             val missing = listOfNotNull(
                 if (!readMain) "the primary list" else null,
