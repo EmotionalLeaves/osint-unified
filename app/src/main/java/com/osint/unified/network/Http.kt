@@ -267,6 +267,21 @@ object Http {
                         sleep(after)
                         cooldowns.remove(host)
                         response = chain.proceed(request)
+                        // And the retry's answer is an answer too.
+                        //
+                        // The cooldown was cleared above and nothing
+                        // put it back, so a host that had now refused
+                        // twice in a row was left with no cooldown at
+                        // all and the next request went straight at
+                        // it — the exact opposite of what this
+                        // interceptor is for, against precisely the
+                        // services this file's header says to be
+                        // polite to.
+                        if (response.code == 429 || response.code == 503) {
+                            val again = retryAfterMillis(response.header("Retry-After"))
+                            cooldowns[host] = System.currentTimeMillis() +
+                                (again ?: DEFAULT_COOLDOWN_MS)
+                        }
                     }
                 }
                 return response
@@ -278,7 +293,19 @@ object Http {
         }
 
         private fun sleep(millis: Long) {
-            runCatching { Thread.sleep(millis) }
+            try {
+                Thread.sleep(millis)
+            } catch (interrupted: InterruptedException) {
+                // Re-asserted, not swallowed.
+                //
+                // runCatching caught this, cleared the thread's
+                // interrupt flag as InterruptedException always does,
+                // and carried on as though the wait had completed. The
+                // thread had been asked to stop; everything after this
+                // point ran anyway, and the next blocking call on it
+                // had no idea it had been asked.
+                Thread.currentThread().interrupt()
+            }
         }
     }
 
@@ -334,6 +361,33 @@ object Http {
             return response.newBuilder().body(counted).build()
         }
     }
+
+    /**
+     * Where network work that comes in bulk is run.
+     *
+     * Every request in this app is a blocking OkHttp call inside
+     * `withContext(Dispatchers.IO)`, and the interceptor above may hold
+     * that thread asleep for seconds at a time: up to five waiting out
+     * a cooldown, up to six behind a paced host's monitor, up to four
+     * on an inline retry. Dispatchers.IO's default parallelism on a
+     * phone is 64 — and the username sweep alone runs a Semaphore(64)
+     * of exactly these calls. A run of hosts in cooldown could
+     * therefore put every thread in the shared pool to sleep at once,
+     * and everything else that uses it queued behind them: the feed
+     * pollers, and the export, whose button then appeared to do
+     * nothing for several seconds.
+     *
+     * A bounded slice of the same pool keeps the rest of the app
+     * moving. It does not slow a sweep that is network-bound rather
+     * than thread-bound, because the work is waiting either way.
+     */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val bulk: kotlinx.coroutines.CoroutineDispatcher by lazy {
+        kotlinx.coroutines.Dispatchers.IO.limitedParallelism(BULK_PARALLELISM)
+    }
+
+    /** Half the shared pool, leaving the other half for everything else. */
+    private const val BULK_PARALLELISM = 32
 
     val client: OkHttpClient by lazy {
         OkHttpClient.Builder()

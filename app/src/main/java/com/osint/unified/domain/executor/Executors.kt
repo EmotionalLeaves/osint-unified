@@ -588,8 +588,13 @@ class DirectToolExecutor(
         }
     }
 
+    // Http.bulk, not Dispatchers.IO. Every direct tool is a blocking
+    // OkHttp call, the fan-out starts forty of them at once, and the
+    // politeness interceptor may hold each thread asleep for seconds.
+    // On the shared pool that starved the exporter and the feed
+    // pollers of the threads they also need.
     override suspend fun execute(tool: Tool, input: String): Result<String> =
-        withContext(Dispatchers.IO) {
+        withContext(Http.bulk) {
             when (tool.id) {
                 "overpass_turbo" -> overpass(input)
                 "milsites" -> militarySites(input)

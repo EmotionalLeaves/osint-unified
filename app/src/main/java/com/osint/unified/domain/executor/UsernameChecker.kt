@@ -197,7 +197,10 @@ class UsernameChecker(private val appContext: Context) {
         const val VERIFY_CAP = 30
     }
 
-    suspend fun check(username: String): String = withContext(Dispatchers.IO) {
+    // Http.bulk rather than Dispatchers.IO: this is the one caller
+    // that can occupy the whole shared pool on its own, and the waits
+    // the politeness interceptor imposes are blocking.
+    suspend fun check(username: String): String = withContext(com.osint.unified.network.Http.bulk) {
         val sites = loadRules()
         if (sites.isEmpty()) return@withContext "Could not load any site ruleset (check network)."
 
