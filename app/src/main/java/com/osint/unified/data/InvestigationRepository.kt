@@ -182,6 +182,10 @@ class InvestigationRepository(
     /** One case, for a screen that has only its id. */
     suspend fun byId(id: Long): Investigation? = investigationDao.getById(id)
 
+    /** The same row, watched, so filing and tagging it show up. */
+    fun observeById(id: Long): Flow<Investigation?> =
+        investigationDao.observeById(id)
+
     fun observeResults(investigationId: Long): Flow<List<ResultRow>> =
         resultDao.observeForInvestigation(investigationId)
 

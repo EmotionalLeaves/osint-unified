@@ -52,11 +52,16 @@ class HistoryViewModel(
     /** The case being looked at, for its notes and its heading. */
     val selected: StateFlow<Investigation?> =
         _selectedId
+            // A real Flow over the row, not a one-shot read dressed as
+            // one. `flatMapLatest { flowOf(id).map { byId(it) } }` has
+            // the shape of a query that watches the table and is a
+            // single suspend call: it re-emitted when the id changed
+            // and never again, so every control that writes to this row
+            // — filing it under a case, saving its tags, its notes —
+            // left the header above showing what the row used to say
+            // while the list below showed what it now says.
             .flatMapLatest { id ->
-                flowOf(id).map { wanted ->
-                    if (wanted == null) null
-                    else repository.byId(wanted)
-                }
+                if (id == null) flowOf(null) else repository.observeById(id)
             }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
@@ -115,38 +120,84 @@ class HistoryViewModel(
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /**
-     * What the targets of the open case have in common.
+     * The links the pass has finished, tagged with the case they were
+     * worked out for.
+     */
+    private val computedLinks: StateFlow<Pair<Long, List<CaseLinks.Link>>?> =
+        _openCaseId
+            .flatMapLatest { id ->
+                if (id == null) {
+                    flowOf<Pair<Long, List<CaseLinks.Link>>?>(null)
+                } else {
+                    repository.observeTargets(id)
+                        // Keyed on the targets' identity, not on the
+                        // table. observeTargets is a Room Flow over
+                        // `investigations`, and Room invalidates per
+                        // table — so setNotes on an unrelated target,
+                        // setTags, fileUnder, or the updatedAt touch
+                        // that every tool run causes, all re-emitted
+                        // here. Each re-emission re-read every result
+                        // row of every target and ran the whole
+                        // corroboration pass again.
+                        .distinctUntilChanged { old, new ->
+                            old.map { it.id } == new.map { it.id }
+                        }
+                        .mapLatest { targets -> id to CaseLinks.find(entitiesByTarget(targets)) }
+                        // And off the main thread. mapLatest runs in
+                        // the stateIn scope, which is viewModelScope —
+                        // Dispatchers.Main.immediate — so the regex
+                        // extraction over every row of every target in
+                        // the case ran on the thread drawing the screen
+                        // that was waiting for it.
+                        .flowOn(Dispatchers.Default)
+                }
+            }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /**
+     * What the targets of the open case have in common, or null while
+     * that is still being worked out.
      *
      * The one piece of analysis nobody can do by reading the dossiers
      * one at a time, because the identifier that matters is
      * unremarkable in each of them.
+     *
+     * Paired with the case it was computed for, and discarded if that
+     * is not the case now open. The heading swaps synchronously —
+     * openCase is a plain combine over a list already in memory —
+     * while this goes through flatMapLatest, mapLatest, a dispatcher
+     * hop and a re-read of every result row of every target, and
+     * stateIn holds the previous value throughout. So for as long as
+     * the pass took, case A's shared identifiers were drawn under case
+     * B's name, naming case A's targets in "shared by", with nothing
+     * to tell the reader this was the wrong case rather than the
+     * answer. Null is "not worked out yet", which is a different thing
+     * from an empty list, and the screen says so.
      */
-    val caseLinks: StateFlow<List<CaseLinks.Link>> =
-        caseTargets
-            // Keyed on the targets' identity, not on the table.
-            //
-            // caseTargets is a Room Flow over `investigations`, and
-            // Room invalidates per table — so setNotes on an
-            // unrelated target, setTags, fileUnder, or the updatedAt
-            // touch that every tool run causes, all re-emitted here.
-            // Each re-emission re-read every result row of every
-            // target and ran the whole corroboration pass again.
-            .distinctUntilChanged { old, new ->
-                old.map { it.id } == new.map { it.id }
+    val caseLinks: StateFlow<List<CaseLinks.Link>?> =
+        combine(_openCaseId, computedLinks) { id, computed ->
+            when {
+                id == null -> emptyList()
+                computed != null && computed.first == id -> computed.second
+                else -> null
             }
-            .mapLatest { targets -> CaseLinks.find(entitiesByTarget(targets)) }
-            // And off the main thread. mapLatest runs in the stateIn
-            // scope, which is viewModelScope — Dispatchers.Main.
-            // immediate — so the regex extraction over every row of
-            // every target in the case ran on the thread drawing the
-            // screen that was waiting for it.
-            .flowOn(Dispatchers.Default)
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     private suspend fun entitiesByTarget(
         targets: List<Investigation>
     ): Map<String, List<com.osint.unified.domain.Corroboration.Entity>> =
-        targets.associate { t ->
+        // Keyed by id and then pooled by observable, which is what the
+        // exporter does and what this did not.
+        //
+        // associate keeps the last value for a repeated key, and the
+        // key was the seed observable — so two investigations of the
+        // same thing filed in one case (the exporter's own comments
+        // say that is ordinary) left only the later one feeding the
+        // corroboration pass. A link that only the earlier one
+        // supported was absent from the screen and present in the
+        // exported report, and the two disagreed with no way to tell
+        // which was right.
+        targets.map { t ->
             val rows = runCatching { repository.resultsFor(t.id) }.getOrDefault(emptyList())
             val marked = runCatching { repository.dismissalsFor(t.id) }.getOrDefault(emptyMap())
             val observable = router.classify(t.seedObservable)
@@ -156,7 +207,7 @@ class HistoryViewModel(
                 seedIsPlace = observable is com.osint.unified.domain.Observable.Coordinate,
                 dismissed = marked
             )
-        }
+        }.groupBy({ it.first }, { it.second }).mapValues { (_, lists) -> lists.flatten() }
 
     fun openCase(id: Long?) { _openCaseId.value = id }
 

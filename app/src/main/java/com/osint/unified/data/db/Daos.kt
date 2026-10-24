@@ -16,6 +16,20 @@ interface InvestigationDao {
     @Query("SELECT * FROM investigations WHERE id = :id")
     suspend fun getById(id: Long): Investigation?
 
+    /**
+     * The same row, watched.
+     *
+     * The one-shot read above was wrapped in a flatMapLatest and
+     * treated as a flow, so it re-emitted only when the selected id
+     * changed. File the open target in a case, or save tags on it, and
+     * the list updated while the screen above it did not: the case chip
+     * never moved and the tags button said SAVE TAGS forever, because
+     * the comparison it makes against the stored value could never
+     * become equal.
+     */
+    @Query("SELECT * FROM investigations WHERE id = :id")
+    fun observeById(id: Long): Flow<Investigation?>
+
     @Insert
     suspend fun insert(investigation: Investigation): Long
 

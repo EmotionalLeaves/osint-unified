@@ -141,7 +141,8 @@ private fun NewCaseField(onNew: (String) -> Unit) {
 fun CaseDetail(
     case: Case,
     targets: List<Investigation>,
-    links: List<CaseLinks.Link>,
+    /** Null while the corroboration pass for this case is still running. */
+    links: List<CaseLinks.Link>?,
     onOpenTarget: (Long) -> Unit,
     onUnfile: (Long) -> Unit,
     onSummary: (String) -> Unit,
@@ -180,14 +181,18 @@ fun CaseDetail(
         }
 
         Text(
-            CaseLinks.summary(links, targets.size),
+            if (links == null) {
+                "${targets.size} targets \u00b7 working out what they share\u2026"
+            } else {
+                CaseLinks.summary(links, targets.size)
+            },
             style = MaterialTheme.typography.bodyMedium,
             color = Intel.CyanBright,
             modifier = Modifier.padding(top = 8.dp)
         )
 
         // ---- What holds the case together ----
-        if (links.isNotEmpty()) {
+        if (links != null && links.isNotEmpty()) {
             Text(
                 "SHARED BETWEEN TARGETS",
                 style = MaterialTheme.typography.labelMedium,
@@ -204,7 +209,7 @@ fun CaseDetail(
                 modifier = Modifier.padding(top = 2.dp, bottom = 4.dp)
             )
             links.take(40).forEach { link -> LinkRow(link) }
-        } else if (targets.size >= 2) {
+        } else if (links != null && targets.size >= 2) {
             Text(
                 "Nothing was found under more than one of these targets. That " +
                     "is a result, not a gap — they may simply not be connected " +
