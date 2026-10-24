@@ -172,6 +172,102 @@ def main() -> int:
                     f"Kotlin refuses that"
                 )
 
+    # A top-level `private fun` called from another file.
+    #
+    # Kotlin scopes a file-private declaration to its file, and the
+    # local check cannot see the difference: `jsonObjectOrNull()` is
+    # declared private in PeopleApis.kt, was called from DeepApis.kt,
+    # compiled here and died in CI with "Unresolved reference". That
+    # is r512, and it is the same shape as the private companion
+    # above — the pre-flight asks whether a name exists in the
+    # project, not whether it is in scope where it is written.
+    # Every file that declares it privately, not just the first.
+    #
+    # Two classes may each have their own `private fun shape()` and
+    # each call it at home, which is correct; flagging the second
+    # one because the first was recorded would be a false positive
+    # in a check whose whole value is that it is trusted.
+    file_private: dict[str, set[Path]] = {}
+    public_names: set[str] = set()
+    PRIVATE_DECL = re.compile(
+        r"(?:^|\n)[ \t]*private\s+(?:suspend\s+|inline\s+|tailrec\s+|operator\s+|infix\s+)*"
+        r"fun\s+(?:<[^>]*>\s*)?"
+        r"(?:[A-Za-z_][A-Za-z0-9_.<>?]*\.)?([A-Za-z_][A-Za-z0-9_]*)\s*\("
+    )
+    # Anything declared without `private` in front of it, at any
+    # indent, could be what a call site is reaching.
+    OPEN_DECL = re.compile(
+        r"(?:^|\n)[ \t]*(?!private\b)(?:[a-z]+\s+)*"
+        r"fun\s+(?:<[^>]*>\s*)?"
+        r"(?:[A-Za-z_][A-Za-z0-9_.<>?]*\.)?([A-Za-z_][A-Za-z0-9_]*)\s*\("
+    )
+    # A type name is a constructor call, and `Entry(...)` on a data
+    # class reads exactly like a function call to this check. So every
+    # declared type is a callable name, whatever its visibility — a
+    # private data class used inside its own file is fine, and the
+    # same-file guard below covers it. Without this, WorldBrief's own
+    # `data class Entry` was reported because MoreScreen happens to
+    # have a `private fun Entry`.
+    TYPE_DECL = re.compile(
+        r"(?:^|\n)[ \t]*(?:[a-z]+\s+)*"
+        r"(?:class|interface|object)\s+([A-Z][A-Za-z0-9_]*)"
+    )
+    # Blanked once per file, not once per file per name: the inner
+    # loop below is over every private name, and recomputing the
+    # prose-blanking each time turned a quarter-second check into a
+    # two-minute one.
+    blanked = {path: code(path) for path in files}
+    # What each file imports: the leaf names it brought in explicitly,
+    # and whether it has a wildcard import.
+    #
+    # A private fun in one file and an imported library function in
+    # another can share a name — `launch` is a coroutine builder and
+    # also a `private fun launch` in a test — and the call resolves to
+    # the import, not the project's private one. Without this the check
+    # reported kotlinx.coroutines.launch as out of scope. A wildcard
+    # import could supply anything, so a file that has one is left
+    # alone rather than guessed about: precision matters more than
+    # recall in a check that is only worth having if it is trusted.
+    imported: dict[Path, set[str]] = {}
+    wildcard: set[Path] = set()
+    IMPORT = re.compile(r"(?m)^\s*import\s+([A-Za-z0-9_.]+)(\.\*)?")
+    for path, text in blanked.items():
+        names: set[str] = set()
+        for m in IMPORT.finditer(text):
+            if m.group(2):
+                wildcard.add(path)
+            else:
+                names.add(m.group(1).rsplit(".", 1)[-1])
+        imported[path] = names
+    for path, text in blanked.items():
+        for m in PRIVATE_DECL.finditer(text):
+            file_private.setdefault(m.group(1), set()).add(path)
+        for m in OPEN_DECL.finditer(text):
+            public_names.add(m.group(1))
+        for m in TYPE_DECL.finditer(text):
+            public_names.add(m.group(1))
+    for name, homes in file_private.items():
+        if name in public_names:
+            continue
+        # Nothing outside the declaring files even mentions the
+        # name: the common case, settled with one substring test
+        # before any regex runs.
+        needle = name + "("
+        for path, text in blanked.items():
+            if path in homes or needle not in text.replace(" ", ""):
+                continue
+            # Resolved by an import here, not by the project's
+            # private declaration.
+            if name in imported[path] or path in wildcard:
+                continue
+            for use in re.finditer(r"(?<![A-Za-z0-9_.])%s\s*\(" % re.escape(name), text):
+                line = text.count("\n", 0, use.start()) + 1
+                where = ", ".join(sorted(h.name for h in homes))
+                bad.append(
+                    f"{path.relative_to(ROOT)}:{line}: {name}() is private to "
+                    f"{where}, so it is not in scope here"
+                )
+
     if bad:
         print("Members that will not resolve where they are used:")
         for b in sorted(set(bad)):

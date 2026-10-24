@@ -890,9 +890,15 @@ class DeepApis(
                     "https://api.github.com/search/commits?q=author-email:$e" +
                         "&sort=author-date&order=desc&per_page=$COMMIT_PAGE"
                 )
-            ).jsonObjectOrNull()
+            ) as? JsonObject
                 // Missing is not zero. A shape this code does not
                 // understand must not be read as "no commits".
+                //
+                // `as? JsonObject` rather than PeopleApis's
+                // `jsonObjectOrNull()`, which is private to that
+                // file — it compiled locally because the pre-flight
+                // asks whether a name exists in the project, not
+                // whether it is in scope here.
                 ?: throw IOException("GitHub's commit search answered in an unexpected shape")
             commits = (found["total_count"] as? JsonPrimitive)?.intOrNull
                 ?: throw IOException("GitHub's commit search gave no total")

@@ -67,8 +67,23 @@ class ImageText(
      * forty-megapixel file comes from.
      */
     suspend fun fromUri(uri: Uri): Read = withContext(Dispatchers.IO) {
-        val bitmap = runCatching { sampled(uri) }.getOrNull()
-            ?: return@withContext recognise(InputImage.fromFilePath(appContext, uri))
+        // The fallback is a full-resolution decode, so it must not
+        // be what an out-of-memory falls through to.
+        //
+        // `runCatching` catches Throwable, OutOfMemoryError
+        // included, and `fromFilePath` then decodes the same
+        // picture at its full size — reaching for more memory than
+        // the attempt that just ran out of it, in the handler for
+        // running out of it.
+        val bitmap = try {
+            sampled(uri)
+        } catch (oom: OutOfMemoryError) {
+            throw java.io.IOException("that image is too large to read on this phone", oom)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        } ?: return@withContext recognise(InputImage.fromFilePath(appContext, uri))
         recognise(InputImage.fromBitmap(bitmap, 0))
     }
 
@@ -80,7 +95,16 @@ class ImageText(
         } ?: return null
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
         var sample = 1
-        while ((bounds.outWidth / sample) * (bounds.outHeight / sample) > MAX_PIXELS) {
+        // toLong on one side.
+        //
+        // The product is Int, and an image declaring 65535 by 65535
+        // overflows it to a negative number — so the loop never
+        // runs, inSampleSize stays 1, and the decode asks for
+        // seventeen gigabytes: exactly the out-of-memory this
+        // function exists to prevent, triggered by the header of a
+        // file somebody else chose. The dimensions are read before
+        // any pixels are, so a lying header costs nothing to write.
+        while (bounds.outWidth.toLong() * bounds.outHeight / (sample.toLong() * sample) > MAX_PIXELS) {
             sample *= 2
         }
         return appContext.contentResolver.openInputStream(uri)?.use {
@@ -135,8 +159,13 @@ class ImageText(
                 val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 BitmapFactory.decodeFile(file.absolutePath, bounds)
                 var sample = 1
+                // The same Int overflow as the sibling above: a
+                // header claiming 65535 by 65535 makes the product
+                // negative, the loop never runs, and the decode asks
+                // for seventeen gigabytes.
                 while (
-                    (bounds.outWidth / sample) * (bounds.outHeight / sample) > MAX_PIXELS
+                    bounds.outWidth.toLong() * bounds.outHeight /
+                        (sample.toLong() * sample) > MAX_PIXELS
                 ) {
                     sample *= 2
                 }
