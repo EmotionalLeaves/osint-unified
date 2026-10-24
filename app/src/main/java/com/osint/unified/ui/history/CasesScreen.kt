@@ -155,9 +155,21 @@ fun CaseDetail(
     onExport: (com.osint.unified.data.ExportFormat) -> Unit
 ) {
     Column(Modifier.fillMaxWidth()) {
-        var renaming by rememberSaveable(case.id) { mutableStateOf(false) }
+        // key =, not just the input.
+        //
+        // rememberSaveable's first vararg decides when to RESET the
+        // value; the registry key stays the positional composite
+        // hash. These are one-per-case values inside a screen that
+        // draws one case at a time today and could draw several
+        // tomorrow, and the cost of getting it wrong is a half-typed
+        // summary or a rename box opening on the wrong case.
+        var renaming by rememberSaveable(case.id, key = "renaming-${case.id}") {
+            mutableStateOf(false)
+        }
         if (renaming) {
-            var name by rememberSaveable(case.id) { mutableStateOf(case.name) }
+            var name by rememberSaveable(case.id, key = "rename-${case.id}") {
+                mutableStateOf(case.name)
+            }
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
@@ -224,7 +236,9 @@ fun CaseDetail(
         }
 
         // ---- The analyst's own conclusion about the case ----
-        var summary by rememberSaveable(case.id) { mutableStateOf(case.summary) }
+        var summary by rememberSaveable(case.id, key = "summary-${case.id}") {
+            mutableStateOf(case.summary)
+        }
         Text(
             "CASE SUMMARY",
             style = MaterialTheme.typography.labelMedium,
@@ -438,7 +452,10 @@ fun FilingControls(
         }
         NewCaseField(investigation.id) { name -> onNewCase(name) }
 
-        var tags by rememberSaveable(investigation.id) { mutableStateOf(investigation.tags) }
+        var tags by rememberSaveable(
+            investigation.id,
+            key = "tags-${investigation.id}"
+        ) { mutableStateOf(investigation.tags) }
         OutlinedTextField(
             value = tags,
             onValueChange = { tags = it },

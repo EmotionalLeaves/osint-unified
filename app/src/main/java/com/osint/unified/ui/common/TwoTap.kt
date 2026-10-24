@@ -74,7 +74,7 @@ fun rememberTwoTap(key: Any?, onConfirm: () -> Unit): TwoTap {
     // POSITIONALLY: arm REMOVE on the third target, rotate while the
     // list has shifted by one, and the armed row is a different
     // target whose next tap unfiles it.
-    val armedAt = rememberSaveable(key, key = key?.toString()) { mutableStateOf(0L) }
+    val armedAt = rememberSaveable(key, key = "two-tap-$key") { mutableStateOf(0L) }
     // The latest lambda, not the one captured when this was keyed.
     val latest = rememberUpdatedState(onConfirm)
     val action = remember(key, armedAt) {
