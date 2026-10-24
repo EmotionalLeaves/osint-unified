@@ -2549,6 +2549,12 @@ private fun SettingsDialog(
                     .verticalScroll(rememberScrollState())
             ) {
                 FeedNote(
+                    "Nothing here needs filling in. Every layer and every " +
+                        "source works with all of these blank; they are for " +
+                        "widening a feed that only covers one region, or for " +
+                        "the two sources that need something from you."
+                )
+                FeedNote(
                     "Several layers cover a region rather than the world, and " +
                         "the pill says which. Add your own feed to widen one."
                 )
@@ -2586,20 +2592,48 @@ private fun SettingsDialog(
                 FeedHeader("CUSTOM OVERLAY  ·  any GeoJSON points")
                 SettingsField(overlay, { overlay = it }, "GeoJSON points URL", "https://host/points.geojson")
 
-                FeedHeader("CLOUD BACKEND  ·  optional tools")
-                FeedNote(
-                    "Your backend refuses unauthenticated requests, so it needs " +
-                        "the same token you set as OSINT_BACKEND_TOKEN there. " +
-                        "Without that, anyone who found its URL could run scans " +
-                        "from your account."
+                // Folded away, because almost nobody has one.
+                //
+                // A fresh install opened this screen on six empty
+                // boxes, two of which are a server URL and a bearer
+                // token for a backend the user would have had to
+                // deploy themselves. Everything above works with
+                // nothing typed into it; this does not exist unless
+                // you built it, and presenting it as setup makes a
+                // working app look unconfigured.
+                var advanced by rememberSaveable { mutableStateOf(backend.isNotBlank()) }
+                Text(
+                    if (advanced) "ADVANCED ▾" else "ADVANCED ▸",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Intel.Cyan,
+                    modifier = Modifier
+                        .padding(top = 18.dp)
+                        .minimumInteractiveComponentSize()
+                        .clickable { advanced = !advanced }
                 )
-                SettingsField(backend, { backend = it }, "Backend URL", "https://your-api.onrender.com")
-                // A bearer token in plain text on a screen somebody may
-                // be showing to a colleague, or screenshotting.
-                SettingsField(
-                    token, { token = it }, "Backend token",
-                    "the value of OSINT_BACKEND_TOKEN", secret = true
-                )
+                if (advanced) {
+                    FeedHeader("CLOUD BACKEND  ·  optional tools")
+                    FeedNote(
+                        "Only if you have deployed the companion backend " +
+                            "yourself. Nothing on this screen above here needs " +
+                            "it, and the tools that use it stay hidden while it " +
+                            "is blank."
+                    )
+                    FeedNote(
+                        "Your backend refuses unauthenticated requests, so it " +
+                            "needs the same token you set as " +
+                            "OSINT_BACKEND_TOKEN there. Without that, anyone " +
+                            "who found its URL could run scans from your " +
+                            "account."
+                    )
+                    SettingsField(backend, { backend = it }, "Backend URL", "https://your-api.onrender.com")
+                    // A bearer token in plain text on a screen somebody may
+                    // be showing to a colleague, or screenshotting.
+                    SettingsField(
+                        token, { token = it }, "Backend token",
+                        "the value of OSINT_BACKEND_TOKEN", secret = true
+                    )
+                }
             }
         },
         confirmButton = {
