@@ -509,7 +509,15 @@ class HandleApis(
         buildString {
             append("This image has been online since at least ${stamp(first.first)}.\n")
             if (capped) {
-                append("The first $CDX_LIMIT captures were read, the last of them ")
+                // $CDX_LIMIT is the number of index rows asked for,
+                // not the number of captures: `captures` is the
+                // subset that answered 2xx. Said as what is true —
+                // successful captures among the first N records —
+                // rather than "the first 40 captures", which counts
+                // the errors as captures.
+                append("${captures.size} successful capture")
+                append(if (captures.size == 1) "" else "s")
+                append(" among the first $CDX_LIMIT records read, the latest ")
                 append("${stamp(last.first)} — the archive may hold more since.\n")
             } else {
                 append("${captures.size} captures, the latest ${stamp(last.first)}.\n")
@@ -554,11 +562,14 @@ class HandleApis(
         }
         while (i < v.length) {
             val c = v[i]
-            val hex = if (c == '%' && i + 2 < v.length) {
-                v.substring(i + 1, i + 3).toIntOrNull(16)
-            } else {
-                null
-            }
+            val pair = if (c == '%' && i + 2 < v.length) v.substring(i + 1, i + 3) else null
+            // Both characters must be hex digits. `toIntOrNull(16)`
+            // accepts a leading sign, so "%-1" parsed as -1 and wrote
+            // 0xFF, and "%+a" as 10 — a byte nobody encoded, from two
+            // characters that were not an escape at all.
+            val hex = pair
+                ?.takeIf { it.all { ch -> ch in "0123456789abcdefABCDEF" } }
+                ?.toIntOrNull(16)
             if (hex != null) {
                 bytes.write(hex)
                 i += 3

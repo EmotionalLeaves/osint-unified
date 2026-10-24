@@ -84,7 +84,7 @@ closed; their headings say so.
   URL the code can emit is public; without the actual link this is
   guesswork.
 
-### Verification of the second batch, 9125be2..HEAD (r18, 24 Oct) — 19 of 22 closed
+### Verification of the second batch, 9125be2..HEAD (r18, 24 Oct) — all 22 closed
 
 A fourth pass, over the nineteen commits that fixed r13–r17. It
 found the same thing the three before it found: **rule 1 recurs
@@ -181,12 +181,12 @@ LOW
   (`ImageText:83` and `:139`). Also `runCatching` catches the
   resulting `OutOfMemoryError` and falls back to a full-resolution
   decode.
-- [ ] **V16.** `ExifReader.imageKind`: a single `read` is not
+- [x] **V16.** `ExifReader.imageKind`: a single `read` is not
   guaranteed to fill twelve bytes, and the magic set rejects Olympus
   ORF and Panasonic RW2, which `ExifInterface` supports.
-- [ ] **V17.** `HandleApis.percentDecode` accepts a signed escape —
+- [x] **V17.** `HandleApis.percentDecode` accepts a signed escape —
   `toIntOrNull(16)` takes a leading sign, so `%-1` writes `0xFF`.
-- [ ] **V18.** `imageHistory`'s capped sentence says "the first 40
+- [x] **V18.** `imageHistory`'s capped sentence says "the first 40
   captures were read"; 40 *records* were read and `captures` is the
   2xx subset, so neither the count nor "the last of them" is exact.
 - [x] **V19.** `ObservableExtractor.NOT_HOSTS` lists `"lock"` twice.

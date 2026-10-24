@@ -361,8 +361,20 @@ class ExifReader(
      */
     private fun imageKind(file: File): String? = runCatching {
         val head = ByteArray(12)
-        val n = file.inputStream().use { it.read(head) }
-        if (n < 12) return@runCatching null
+        // Filled, not single-read. `InputStream.read(b)` may return
+        // fewer bytes than asked for whenever it likes — rare for a
+        // local file, but "rare" in a magic-number check means a
+        // real image occasionally read as not-an-image. Reads until
+        // the buffer is full or the stream ends.
+        var got = 0
+        file.inputStream().use { s ->
+            while (got < head.size) {
+                val r = s.read(head, got, head.size - got)
+                if (r < 0) break
+                got += r
+            }
+        }
+        if (got < 12) return@runCatching null
         fun at(i: Int, vararg b: Int) = b.withIndex().all { (k, v) ->
             head[i + k].toInt() and 0xFF == v
         }
@@ -371,7 +383,15 @@ class ExifReader(
             at(0, 0x89, 0x50, 0x4E, 0x47) -> "PNG"
             at(0, 0x47, 0x49, 0x46, 0x38) -> "GIF"
             at(0, 0x52, 0x49, 0x46, 0x46) && at(8, 0x57, 0x45, 0x42, 0x50) -> "WEBP"
+            // The TIFF family, which is also every raw that
+            // ExifInterface reads: standard II*\0 / MM\0*, plus
+            // Olympus ORF (IIRO / MMOR) and Panasonic RW2 (IIU\0),
+            // which carry their own second word and so missed the
+            // standard test. CR2, NEF, ARW and DNG are plain TIFF
+            // headed and already matched.
             at(0, 0x49, 0x49, 0x2A, 0x00) || at(0, 0x4D, 0x4D, 0x00, 0x2A) -> "TIFF"
+            at(0, 0x49, 0x49, 0x52, 0x4F) || at(0, 0x4D, 0x4D, 0x4F, 0x52) -> "ORF"
+            at(0, 0x49, 0x49, 0x55, 0x00) -> "RW2"
             at(4, 0x66, 0x74, 0x79, 0x70) -> "HEIF or AVIF"
             else -> null
         }
