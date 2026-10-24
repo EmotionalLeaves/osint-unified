@@ -2271,7 +2271,7 @@ private val LocalShowAllLayers = compositionLocalOf { false }
  * while looking at the map, and anything that replaces the map makes
  * you forget what you were looking for.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun LayerPicker(
     filter: String,
