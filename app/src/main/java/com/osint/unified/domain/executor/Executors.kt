@@ -274,7 +274,38 @@ class DirectToolExecutor(
     private val client: OkHttpClient = Http.client
 ) : ToolExecutor {
 
+    /** One endpoint directoryRun tried, and what came of it. */
+    private data class Ran(
+        val name: String,
+        val url: String,
+        val body: String?,
+        /** Non-null when it was never asked, or asked and refused. */
+        val why: String?
+    )
+
+    /**
+     * Whether a response actually said anything.
+     *
+     * The test was "more than twenty bytes", which calls
+     * {"data":{"items":[]}} a result because it is twenty-one
+     * characters long, and calls a fifteen-character real answer
+     * nothing. Structural punctuation is not content, so it is
+     * stripped before the length is counted.
+     */
+    private fun hasContent(body: String?): Boolean {
+        if (body.isNullOrBlank()) return false
+        val meat = body.filterNot { it.isWhitespace() || it in "{}[]\",:" }
+        if (meat.length < 8) return false
+        // An envelope whose only words are its own field names.
+        return !EMPTY_ENVELOPE.matches(body.trim())
+    }
+
     /** The line directoryRun writes under its own header. */
+    /** {"results":[]}, {"data":{"items":[]}}, and the rest of the
+     *  shapes that mean "nothing" in more than twenty bytes. */
+    private val EMPTY_ENVELOPE =
+        Regex("""^[\[{]\s*(?:"[\w.]+"\s*:\s*(?:\[\s*\]|\{\s*\}|null|0|false)\s*,?\s*)*[\]}]$""")
+
     private val DIRECTORY_TALLY =
         Regex("""^(\d+) of \d+ executable endpoints returned data""", RegexOption.MULTILINE)
 
@@ -387,6 +418,31 @@ class DirectToolExecutor(
             // absence or an unreachable shape — so they were filed
             // as findings and counted in "returned intel", three
             // cards whose content is that they did not run.
+            // The Overpass-backed place tools, graded from the
+            // sentences they write rather than from prose matching.
+            //
+            // Two of these were the oldest open report in the file:
+            // "infrastructure scan, overpass and military sites have
+            // never worked". The layers were fixed and the tools were
+            // not, and on top of that an empty answer was read as a
+            // finding, because "No military-tagged sites within 25 km"
+            // begins with "No" but is not any of the phrases the
+            // absence list holds, and "0 mapped features" is not the
+            // word no at all.
+            "milsites", "osmrecon", "overpass_turbo", "cctvnear" -> when {
+                starts(
+                    "Overpass could not be reached",
+                    "Public camera inventories could not be reached",
+                    "OpenStreetMap could not be asked"
+                ) -> Findings.Kind.UNREACHABLE
+                starts(
+                    "No military-tagged sites",
+                    "No mapped infrastructure",
+                    "No mapped places or structures",
+                    "No public traffic-camera feed"
+                ) -> Findings.Kind.ABSENT
+                else -> null
+            }
             "phoneinfoga" -> when {
                 head.contains("is a valid") -> Findings.Kind.HIT
                 head.contains("is not a valid number") -> Findings.Kind.ABSENT
@@ -648,12 +704,26 @@ class DirectToolExecutor(
             fetchable.map { t ->
                 async {
                     val url = com.osint.unified.domain.ToolTemplates.resolve(t, target)
+                    var skipped: String? = null
                     val body = runCatching {
                         // The SEC rejects generic agents outright, and asks
                         // for a descriptive one with contact details.
                         val agent = if (url.contains("sec.gov")) {
-                            SecAgent.userAgent(settings.secContactEmail)
-                                ?: return@runCatching null
+                            SecAgent.userAgent(settings.secContactEmail) ?: run {
+                                // It was not asked, and that is not the
+                                // same as it having nothing to say.
+                                //
+                                // Without a contact email this returned
+                                // null, and null joined the "No data
+                                // from" list beside endpoints that were
+                                // asked and answered with nothing —
+                                // EDGAR reported as empty when it had
+                                // never been consulted, and the one
+                                // thing the user had to do to fix it
+                                // said nowhere.
+                                skipped = "needs a contact email in Settings"
+                                return@runCatching null
+                            }
                         } else {
                             "OSINT-Unified/1.0 (research)"
                         }
@@ -662,16 +732,25 @@ class DirectToolExecutor(
                             .header("Accept", "application/json, text/plain, */*")
                             .build()
                         client.newCall(request).execute().use { resp ->
-                            if (!resp.isSuccessful) null else resp.body?.string()
+                            if (!resp.isSuccessful) {
+                                skipped = "HTTP ${resp.code}"
+                                null
+                            } else {
+                                resp.body?.string()
+                            }
                         }
-                    }.getOrNull()
-                    Triple(t.name, url, body)
+                    }.getOrElse {
+                        skipped = it.message?.take(60) ?: "did not answer"
+                        null
+                    }
+                    Ran(t.name, url, body, skipped)
                 }
             }.map { it.await() }
         }
 
-        val hits = executed.filter { !it.third.isNullOrBlank() && it.third!!.length > 20 }
-        val empty = executed.filter { it.third.isNullOrBlank() || it.third!!.length <= 20 }
+        val hits = executed.filter { hasContent(it.body) }
+        val answeredEmpty = executed.filter { it.why == null && !hasContent(it.body) }
+        val notAsked = executed.filter { it.why != null }
 
         // The wider directory, pointed at this target.
         val derived = runCatching {
@@ -685,17 +764,25 @@ class DirectToolExecutor(
             append("Tool directory run — $target (${observable.typeLabel})\n")
             append("${hits.size} of ${fetchable.size} executable endpoints returned data.\n")
 
-            hits.forEach { (name, url, body) ->
-                append("\n▸ $name\n")
-                val text = body!!.trim()
+            hits.forEach { ran ->
+                append("\n▸ ${ran.name}\n")
+                val text = ran.body!!.trim()
                 val preview = text.lineSequence().filter { it.isNotBlank() }.take(6)
                     .joinToString("\n") { "  " + it.trim().take(180) }
                 append(preview)
-                append("\n  $url\n")
+                append("\n  ${ran.url}\n")
             }
 
-            if (empty.isNotEmpty()) {
-                append("\nNo data from: ${empty.joinToString(", ") { it.first }}\n")
+            // Asked and empty, and not asked at all, kept apart.
+            if (answeredEmpty.isNotEmpty()) {
+                append("\nAsked and had nothing: ")
+                append(answeredEmpty.joinToString(", ") { it.name })
+                append("\n")
+            }
+            if (notAsked.isNotEmpty()) {
+                append("\nNot asked: ")
+                append(notAsked.joinToString(", ") { "${it.name} (${it.why})" })
+                append("\n")
             }
 
             if (openable.isNotEmpty()) {
@@ -1197,26 +1284,31 @@ class DirectToolExecutor(
             "nwr(around:$r,$lat,$lon)[\"$k\"=\"$v\"];"
         }
         val q = "[out:json][timeout:40];($clauses);out center 300;"
-        return try {
-            val body = ("data=" + java.net.URLEncoder.encode(q, "UTF-8")).toRequestBody(formUrlEncoded)
-            val request = Request.Builder()
-                .url("https://overpass-api.de/api/interpreter")
-                .header("User-Agent", "OSINT-Unified/1.0 (research)")
-                .header("Accept", "application/json")
-                .post(body).build()
-            client.newCall(request).execute().use { resp ->
-                val text = resp.body?.string().orEmpty()
-                if (!resp.isSuccessful) return Result.failure(IOException("HTTP ${resp.code}"))
-                val els = runCatching {
-                    kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
-                        .parseToJsonElement(text).jsonObject["elements"]?.jsonArray
-                }.getOrNull()
-                if (els.isNullOrEmpty()) {
+        // Through the shared client, with the mirrors and the
+        // 200-with-non-JSON check.
+        //
+        // This posted straight at overpass-api.de and read the body
+        // with a runCatching that turned null into "No mapped
+        // infrastructure within 2000m". A timed-out Overpass answers
+        // 200 with a plain-text "runtime error: Query timed out",
+        // which is exactly that path — so under load the
+        // infrastructure scan reported an empty street as fact, and
+        // overpass-api.de was the mirror failing while two others
+        // answered. This is the last of the six call sites that was
+        // still doing it by hand.
+        return when (val answer = Overpass.query(q, client)) {
+            is Overpass.Answer.Unreachable -> Result.success(
+                "Overpass could not be reached for $lat, $lon, so nothing is " +
+                    "claimed about what is mapped there (${answer.why})."
+            )
+            is Overpass.Answer.Ok -> {
+                val els = answer.elements
+                if (els.isEmpty()) {
                     return Result.success("No mapped infrastructure within ${r}m of $lat, $lon.")
                 }
                 val grouped = LinkedHashMap<String, MutableList<String>>()
                 els.forEach { e ->
-                    val o = e.jsonObject
+                    val o = e as? JsonObject ?: return@forEach
                     val tags = o["tags"] as? JsonObject
                     fun t(k: String) = (tags?.get(k) as? JsonPrimitive)?.contentOrNull
                     val label = categories.firstOrNull { (tag, _) ->
@@ -1244,7 +1336,8 @@ class DirectToolExecutor(
                 }
                 val out = buildString {
                     append("Infrastructure within ${r}m of %.5f, %.5f\n".format(Locale.US, lat, lon))
-                    append("${grouped.values.sumOf { it.size }} mapped features, from OpenStreetMap.\n")
+                    append("${grouped.values.sumOf { it.size }} mapped features, ")
+                    append("from OpenStreetMap via ${answer.from}.\n")
                     grouped.forEach { (label, items) ->
                         append("\n${label.uppercase()} (${items.size}):\n")
                         items.take(40).forEach { append(it).append("\n") }
@@ -1253,8 +1346,6 @@ class DirectToolExecutor(
                 }
                 Result.success(out)
             }
-        } catch (e: Exception) {
-            Result.failure(e)
         }
     }
 
