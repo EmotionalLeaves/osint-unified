@@ -650,6 +650,17 @@ class GodEyeViewModel(
             needsAView("sites")
             return
         }
+        // The job is checked before the key is recorded.
+        //
+        // It was the other way round, and onDemand returns without
+        // doing anything if a fetch is already running — so moving
+        // the view while an Overpass query was in flight recorded the
+        // new region's key against the old region's data, and every
+        // later call then saw a key hit and returned too. The layer
+        // froze on where you had been, with no request outstanding
+        // and nothing said. Cameras and airspace both check the job
+        // first; this was the one with the order wrong.
+        if (sitesJob?.isActive == true) return
         val key = "%.1f,%.1f".format(java.util.Locale.US, where.first, where.second)
         if (key == sitesKey && _state.value.sites.isNotEmpty()) return
         sitesKey = key

@@ -103,6 +103,62 @@ outranks everything I found by reading.
   to a window that is correct but holds data fetched for a far wider
   one; the handoff arming at high zoom. Reproduce from the code
   before changing anything.
+
+  Traced 23 Oct. It is the globe, not the flat map, and the
+  cap-before-cull ordering I suspected is real — just not where I
+  expected it.
+
+  - **2b-1. The globe's 2500-marker budget is spread over the whole
+    Earth and never recomputed for the camera.** `produceState` for
+    the globe points is keyed on the layers only, and `thinGlobe`
+    takes no window at all: it samples every layer down to
+    GLOBE_BUDGET across the entire planet, and the only view test is
+    per-frame, at draw time, dropping the far hemisphere. So the
+    survivors are scattered world-wide and zooming in shrinks the
+    share of them that lands on screen. The visible fraction of a
+    sphere is (1 - cos(span/2))/2: at 180 deg of span that is half
+    the budget on screen, at the 22 deg where the globe hands over to
+    tiles it is 0.92% — a 54x drop with no change in the data. The
+    budget is split evenly across ~30 armed layers, so each gets
+    about 83 points world-wide and under one on screen at 22 deg.
+    Every layer dies at once, which is the report word for word. Cull
+    to the camera before thinning, the way the flat map already does.
+  - **2b-2. Marker labels on the globe never render at any zoom.**
+    The 30-label cap is tested against all 2500 thinned points
+    instead of the ones actually on screen, so with any real layer
+    set the count is in the hundreds and the branch never runs.
+  - **2b-3. `ensureSites` records its cache key before the fetch is
+    launched.** `onDemand` returns early if a job is still running,
+    so the new region's key gets recorded against the old region's
+    data and the next call sees a hit and returns too. The layer
+    freezes on the previous region with no outstanding request and no
+    error. Cameras and airspace both check the job first; sites is
+    the only one with the order wrong.
+  - **2b-4. Three layers are gated by a fourth layer's freshness
+    test.** `movedBeyond` compares against `radiationCentre` and
+    radiation's radius-for-zoom, and cameras (25 km), sites (120 km)
+    and military ground (150 km) all fetch fixed radii that have
+    nothing to do with it. At zoom 5 the gate's limit is 200 km, so a
+    100 km pan leaves the 25 km camera circle entirely and does not
+    re-ask. Only bites with RADIATION armed — with it off,
+    `radiationCentre` is null and the gate passes everything, which
+    is the opposite waste.
+  - **2b-5. The map window is only re-read on a listener event or
+    when it is null.** 250 ms debounce, and no fallback comparing the
+    live zoom against the zoom the window was captured at. If any
+    zoom path emits no event the window stays stale indefinitely.
+  - **2b-6. Latent: a window under 0.001 deg turns the cull off**
+    rather than emptying it, and then reports "showing 2500 of N"
+    over an empty map. Needs a map under ~373 px wide, so not
+    reachable on a phone.
+
+  Confirmed correct, not to be re-checked: the flat map's
+  cull-then-cap order, `MapWindow.contains` including the
+  antimeridian, the map window being live rather than cached,
+  `onViewportChanged` wiring for a pure zoom, marker add/remove
+  bookkeeping, GlobeHandoff holding no layer state, and
+  `wideView` (it reaches exactly one fetch, aircraft, whose narrow
+  box is far larger than any viewport at zoom >= 5).
 - **2c. "None of the search features really worked."** The single
   most serious item in this document. Search is the spine of the app
   and it is the thing he says did not work. Needs: what the search

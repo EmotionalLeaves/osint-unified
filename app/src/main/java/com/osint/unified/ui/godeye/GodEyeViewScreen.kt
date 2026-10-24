@@ -1085,12 +1085,45 @@ fun GodEyeViewScreen(
                     // projects every point it is handed on every frame,
                     // and the fire detections alone are now six figures
                     // — a number that cannot be turned into trigonometry
-                    // sixty times a second. Done off the main thread and
-                    // only when the layers change, not when the camera
-                    // moves: the far hemisphere is culled at draw time
-                    // for the cost of one comparison per point.
-                    val globePoints by produceState(emptyList<GlobePoint>(), layers) {
-                        value = withContext(Dispatchers.Default) { thinGlobe(layers.points()) }
+                    // sixty times a second.
+                    //
+                    // It used to be thinned for the whole Earth and
+                    // never again, on the reasoning that the far
+                    // hemisphere is culled at draw time anyway. That
+                    // reasoning is right about correctness and wrong
+                    // about what you see: the budget was being spent
+                    // on the whole planet while the camera was looking
+                    // at a country. The visible fraction of a sphere
+                    // is (1 - cos(span/2))/2, so at the 22 degrees
+                    // where the globe hands over to tiles, 0.9% of the
+                    // survivors are on screen — about twenty markers
+                    // shared between thirty layers, which is under one
+                    // each. Every layer emptied together as the user
+                    // zoomed in, with the pills still reporting full
+                    // counts. Reported as "zooming into the map stops
+                    // every layer working", and it is the globe, which
+                    // is the view that opens.
+                    //
+                    // So the budget follows the camera. The keys are
+                    // quantised to a quarter of the current span and
+                    // the cull keeps a little more than is visible, so
+                    // this runs on a real move rather than on a frame.
+                    val span = GlobeHandoff.spanDegrees(
+                        globeSize.first, globeSize.second, globeCamera.zoom
+                    )
+                    val step = (span / 4.0).coerceAtLeast(1.0)
+                    val keyLat = kotlin.math.round(globeCamera.lat / step)
+                    val keyLon = kotlin.math.round(globeCamera.lon / step)
+                    val globePoints by produceState(
+                        emptyList<GlobePoint>(), layers, keyLat, keyLon, step
+                    ) {
+                        value = withContext(Dispatchers.Default) {
+                            thinGlobe(
+                                layers.points(),
+                                centre = globeCamera.lat.toDouble() to globeCamera.lon.toDouble(),
+                                keepWithinDegrees = span / 2.0 + step
+                            )
+                        }
                     }
                     GlobeView(
                         points = globePoints,

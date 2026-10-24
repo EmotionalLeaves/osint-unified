@@ -586,7 +586,27 @@ fun GlobeView(
         // Labels on the markers too, once there are few enough that
         // labelling them is reading rather than overprinting.
         if (!drifting) {
-            val named = points.filter { it.clickable && !it.title.isNullOrBlank() }
+            // Counted among the ones on screen, not among everything
+            // the sphere was handed.
+            //
+            // The cap was tested against the whole thinned list, which
+            // with any real set of layers is in the hundreds — so the
+            // branch never ran and markers were never named at any
+            // zoom, which is the one time you would want them. The
+            // test is the same one the label draw already applies:
+            // on the near hemisphere and inside the disc.
+            val named = ArrayList<GlobePoint>(MAX_MARKER_LABELS + 1)
+            val edge = (radius * 0.94f) * (radius * 0.94f)
+            for (point in points) {
+                if (!point.clickable || point.title.isNullOrBlank()) continue
+                val p = Orthographic.project(point.lat, point.lon, shownLat, shownLon, radius, cx, cy)
+                if (!p.visible) continue
+                val dx = p.x - cx
+                val dy = p.y - cy
+                if (dx * dx + dy * dy > edge) continue
+                named.add(point)
+                if (named.size > MAX_MARKER_LABELS) break
+            }
             if (named.size <= MAX_MARKER_LABELS) {
                 drawMarkerLabels(named, cx, cy, radius, shownLat, shownLon, ink, halo)
             }

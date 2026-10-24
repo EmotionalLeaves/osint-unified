@@ -1,6 +1,8 @@
 package com.osint.unified.ui.godeye
 
+import kotlin.math.cos
 import kotlin.math.floor
+import kotlin.math.sin
 
 /**
  * Deciding which markers belong on the map, with nothing Android in it.
@@ -134,8 +136,35 @@ private fun thin(pending: List<PendingMarker>): List<PendingMarker> =
  * layers change rather than on every pan, and because the globe can
  * usefully show more at once — it is the view for seeing everything.
  */
-internal fun thinGlobe(points: List<GlobePoint>, budget: Int = GLOBE_BUDGET): List<GlobePoint> =
-    thinBy(points, budget, { it.kind }, { globeBucket(it) }, { it.identity })
+internal fun thinGlobe(
+    points: List<GlobePoint>,
+    budget: Int = GLOBE_BUDGET,
+    /** Where the globe is pointed, or null to thin the whole Earth. */
+    centre: Pair<Double, Double>? = null,
+    /** How far from that point is worth keeping, as a great-circle
+     *  angle. Half the visible span plus a margin, so the camera can
+     *  move a little before this has to be computed again. */
+    keepWithinDegrees: Double = 180.0
+): List<GlobePoint> {
+    val near = if (centre == null || keepWithinDegrees >= 180.0) points
+    else points.filter { withinDegrees(centre.first, centre.second, it.lat, it.lon, keepWithinDegrees) }
+    return thinBy(near, budget, { it.kind }, { globeBucket(it) }, { it.identity })
+}
+
+/** Great-circle separation, as an angle, without the distance. */
+internal fun withinDegrees(
+    lat0: Double,
+    lon0: Double,
+    lat: Double,
+    lon: Double,
+    limit: Double
+): Boolean {
+    val a = Math.toRadians(lat0)
+    val b = Math.toRadians(lat)
+    val d = Math.toRadians(lon - lon0)
+    val cosine = sin(a) * sin(b) + cos(a) * cos(b) * cos(d)
+    return cosine >= cos(Math.toRadians(limit.coerceIn(0.0, 180.0)))
+}
 
 /**
  * Thinning that is fair between layers.
