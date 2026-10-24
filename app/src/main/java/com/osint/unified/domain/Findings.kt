@@ -104,10 +104,27 @@ object Findings {
     private val NOT_ASKED = listOf(
         "give a", "give an", "give the", "give at least", "give me",
         "not a coordinate", "not a bitcoin address",
-        "not a recognised btc", "needs an ipv4", "needs a ",
+        "not a recognised btc", "domain too short"
+    )
+
+    /**
+     * The same idea, where the clause is not at the start.
+     *
+     * "IP reputation needs an IPv4 address." opens with the tool's
+     * own name, so a prefix test misses it — and it then falls
+     * through to HIT, because no noun in the shape list follows a
+     * "no" or a "not". Matched as a phrase instead, with the word
+     * boundaries [hasPhrase] applies.
+     */
+    private val NOT_ASKED_PHRASES = listOf(
+        "needs an ipv4", "needs an ip address", "needs a coordinate",
         "too short to permute", "holds researchers, not organisations",
         "no author search was run", "reads as an organisation"
     )
+
+    private fun saysNotAsked(head: String): Boolean =
+        NOT_ASKED.any { head.startsWith(it) } ||
+            NOT_ASKED_PHRASES.any { hasPhrase(head, it) }
 
     /**
      * Whether [phrase] appears in [head] as a phrase, not as the start of a
@@ -135,7 +152,7 @@ object Findings {
         val head = output.trimStart().lineSequence()
             .firstOrNull { it.isNotBlank() }?.lowercase().orEmpty()
         if (UNREACHABLE.any { hasPhrase(head, it) }) return true
-        if (NOT_ASKED.any { head.startsWith(it) }) return true
+        if (saysNotAsked(head)) return true
         // A sweep that reached a fraction of its list is closer to "could
         // not ask" than to "looked and found nothing".
         return output.contains("This is not a clean sheet", ignoreCase = true)
@@ -152,7 +169,7 @@ object Findings {
         // silence.
         if (head.isBlank()) return false
         if (UNREACHABLE.any { hasPhrase(head, it) }) return false
-        if (NOT_ASKED.any { head.startsWith(it) }) return false
+        if (saysNotAsked(head)) return false
         // A sweep that says in its own words that it is not a clean sheet
         // is not reporting an absence; it is reporting partial coverage.
         if (output.contains("This is not a clean sheet", ignoreCase = true)) return false
