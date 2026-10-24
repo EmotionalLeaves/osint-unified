@@ -59,6 +59,11 @@ jobs:
             # is a quarter of a megabyte and the layer name is somewhere
             # in the middle of it.
             GREP=""
+            # URL##regex~~N widens the snippet to N characters, for
+            # reading the shape of one table row rather than whether a
+            # word appears.
+            WIDTH=500
+            case "$U" in *'~~'*) WIDTH="${U##*~~}"; U="${U%%~~*}";; esac
             case "$U" in *'##'*) GREP="${U##*##}"; U="${U%%##*}";; esac
             CODE=$(curl -sSL -o /tmp/body -w '%{http_code}' -m 25 \
               -H "User-Agent: $UA" \
@@ -68,7 +73,7 @@ jobs:
             SIZE=$(wc -c < /tmp/body 2>/dev/null || echo 0)
             if [ -n "$GREP" ]; then
               SNIP=$(grep -oE "$GREP" /tmp/body 2>/dev/null | sort -u | head -12 \
-                | tr '\n' ' ' | tr -d '\r' | head -c 500 | sed 's/%/pct/g')
+                | tr '\n' ' ' | tr -d '\r' | head -c "$WIDTH" | sed 's/%/pct/g')
               [ -z "$SNIP" ] && SNIP="(no line matched)"
             else
               SNIP=$(tail -c +$SKIP /tmp/body | head -c 300 | tr -d '\r' | tr '\n' ' ' | sed 's/%/pct/g')
