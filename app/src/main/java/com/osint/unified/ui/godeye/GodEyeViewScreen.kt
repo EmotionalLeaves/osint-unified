@@ -500,7 +500,12 @@ fun GodEyeViewScreen(
                     // One line, truncated rather than wrapped — the counts
                     // used to wrap over three lines and push the map down.
                     Text(
-                        "AIR ${state.aircraft.size} · SEA ${state.vessels.size} · " +
+                        // visibleAircraft, not the raw feed: with a
+                        // callsign filter on, the header read AIR 11234
+                        // over a pill reading 42 and a map holding 42,
+                        // which is the screen disagreeing with itself in
+                        // two places at once.
+                        "AIR ${visibleAircraft.size} · SEA ${state.vessels.size} · " +
                             "SAT ${state.satellites.size} · SEIS ${state.quakes.size}" +
                             (state.spaceWeather?.kp?.let { " · Kp %.1f".format(Locale.US, it) } ?: ""),
                         style = MaterialTheme.typography.labelSmall,

@@ -294,6 +294,13 @@ object WorldBrief {
             }
             return "nothing loaded yet"
         }
-        return top.entries.firstOrNull()?.text?.take(70) ?: top.title
+        // The "feed down" mark lives on the section title, and this
+        // returned the entry's own text — so the always-visible amber
+        // line at the top of the screen presented a stale entry from a
+        // dead feed as current, which is the exact failure the section
+        // title was given that mark to prevent.
+        val stale = top.title.contains("FEED DOWN")
+        val text = top.entries.firstOrNull()?.text?.take(if (stale) 55 else 70) ?: top.title
+        return if (stale) "$text · LAST KNOWN" else text
     }
 }
