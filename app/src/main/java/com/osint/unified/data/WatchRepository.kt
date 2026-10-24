@@ -226,10 +226,23 @@ class WatchRepository(
         val lost = LinkedHashSet<String>()
         altered.forEach { id ->
             val before = previous[id]?.entities.orEmpty()
+            // Nothing is "new" against a baseline that was never
+            // taken.
+            //
+            // A row stored before this app remembered identifiers has
+            // an empty set, and the first check after the upgrade
+            // both fills it in and diffs against it — so a domain
+            // where crt.sh had gained exactly one name reported
+            // twenty-four of them as new. An empty baseline means the
+            // detail is not known yet, which is a different thing
+            // from everything being new.
+            if (before.isEmpty()) return@forEach
             val after = fresh[id]?.entities.orEmpty()
             gained += after - before
             lost += before - after
         }
+        // A source that was not finding this target and now is: every
+        // identifier under it really is new.
         appeared.forEach { id -> gained += fresh[id]?.entities.orEmpty() }
 
         // A source that could not be reached keeps its previous
@@ -389,7 +402,22 @@ class WatchRepository(
                 ),
                 seed,
                 limitPerKind = 10
-            ).map { "${it.kind}:${it.value}" }.take(ENTITY_CAP).toSet()
+            )
+                .map { "${it.kind}:${it.value}" }
+                // Sorted before the cap, not taken in the order the
+                // text happened to be written.
+                //
+                // Every host in a certificate log is mentioned once,
+                // so the extractor's count sort is a tie across all
+                // of them and the order is whatever order the source
+                // printed. crt.sh does not promise one — so a
+                // reordered answer changed which two dozen were
+                // remembered and the next check named hosts as new
+                // and gone that had been there throughout. A vague
+                // alert became a false specific one, which is worse.
+                .sorted()
+                .take(ENTITY_CAP)
+                .toSet()
         }.getOrDefault(emptySet())
 
     private fun sha1(s: String): String =
@@ -427,6 +455,15 @@ internal object WatchDigest {
         .replace(Regex("""\b1[0-9]{9,12}\b"""), "")
         .replace(Regex("""\s+"""), " ")
         .trim()
+        // And the lines sorted, because the order a source prints
+        // them in is not a fact about the target.
+        //
+        // crt.sh and the subdomain sweeps do not promise an order, so
+        // a reordered answer changed the fingerprint and raised an
+        // alert saying something had changed when nothing had. The
+        // first thing a watch must get right is not crying wolf.
+        .let { it.split('\n').map(String::trim).filter(String::isNotEmpty).sorted() }
+        .joinToString("\n")
 
     /**
      * What changed, in words — or null, which means nothing did and the

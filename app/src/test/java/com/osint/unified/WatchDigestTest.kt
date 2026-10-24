@@ -119,4 +119,30 @@ class WatchDigestTest {
         assertTrue(d, d.contains("now found by"))
     }
 
+    /**
+     * The order a source prints its answer in is not a fact about
+     * the target.
+     *
+     * crt.sh and the subdomain sweeps do not promise one, so a
+     * reordered answer used to change the fingerprint and raise an
+     * alert saying something had changed when nothing had — and,
+     * once the check remembered identifiers, it named hosts as new
+     * and gone that had been there throughout.
+     */
+    @Test
+    fun aReorderedAnswerIsNotAChange() {
+        assertEquals(
+            WatchDigest.normalise("a.example.com\nb.example.com\nc.example.com"),
+            WatchDigest.normalise("c.example.com\na.example.com\nb.example.com")
+        )
+    }
+
+    @Test
+    fun arealChangeIsStillAChange() {
+        assertNotEquals(
+            WatchDigest.normalise("a.example.com\nb.example.com"),
+            WatchDigest.normalise("a.example.com\nb.example.com\nc.example.com")
+        )
+    }
+
 }
