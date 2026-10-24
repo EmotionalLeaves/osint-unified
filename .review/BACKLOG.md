@@ -15,6 +15,27 @@ Everything below this section is a record of work already done, kept
 for the lessons in it. **This is the list.** Sections A to H are
 closed; their headings say so.
 
+### From the person using it, 24 Oct — the queue jumps for these
+
+- [ ] **U1. One globe, no map.** "get rid of map and just make it a
+  high quality globe with the ability to zoom in as far as the map
+  with the same detail." This is O7 promoted and then some: not one
+  engine behind two views, one view. The sphere paints itself with
+  the same Esri satellite tiles the map was showing, fading them in
+  where the bundled mosaic runs out of pixels, and osmdroid, the
+  second camera, the handoff hysteresis and the MAP button all go.
+  In that order, so no commit leaves the globe unable to do what the
+  map could.
+- [ ] **U2. The military layer does not work.** Reported, not yet
+  reproduced. Find out whether it fetches, whether it parses, and
+  whether anything reaches the screen.
+- [ ] **U3. The news layer does not work.** Same.
+- [ ] **U4. Conflict showed an event from 2017.** Either the feed is
+  being asked for everything and not for recent, or the date is not
+  being read, or it is being read and not filtered. A nine-year-old
+  event presented beside live ones is the kind of wrong this app is
+  supposed to be incapable of.
+
 ### Blocked on the tester
 - [x] **T1.** Did their APK come from the CI artifact or a local build?
   `assets/` and `jniLibs/` are empty in the tree and filled by the
