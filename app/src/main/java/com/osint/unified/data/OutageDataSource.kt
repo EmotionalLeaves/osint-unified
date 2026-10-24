@@ -90,7 +90,8 @@ internal object OutageAlerts {
             ?: runCatching {
                 json.parseToJsonElement(body).jsonObject["data"]?.jsonArray
             }.getOrNull()
-            ?: return emptyList()
+            // Not "no country has its connectivity down".
+            ?: throw java.io.IOException("IODA answered in an unexpected shape")
 
         data class Seen(
             var place: CountryCentroids.Place,

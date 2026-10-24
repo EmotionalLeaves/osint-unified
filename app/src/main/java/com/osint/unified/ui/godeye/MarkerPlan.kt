@@ -125,18 +125,6 @@ private fun thin(pending: List<PendingMarker>): List<PendingMarker> =
     thinBy(pending, MARKER_BUDGET, { it.kind }, { markerBucket(it) }, { it.identity })
 
 /**
- * The same fairness, for the globe.
- *
- * The sphere projects every marker it is given on every frame, so the
- * list it is handed has to be a list worth projecting. Culling to the
- * near hemisphere happens at draw time and is one comparison per
- * point; this is the part that cannot be done per frame.
- *
- * A looser budget than the flat map's, because this runs once when the
- * layers change rather than on every pan, and because the globe can
- * usefully show more at once — it is the view for seeing everything.
- */
-/**
  * What the globe is drawing, and what the armed layers hold.
  *
  * The flat map has carried this pair since the second tester
@@ -154,6 +142,7 @@ internal data class GlobePlan(
     val total: Int
 )
 
+/** [thinGlobe], with the total it thinned from. */
 internal fun planGlobe(
     points: List<GlobePoint>,
     budget: Int = GLOBE_BUDGET,
@@ -164,6 +153,18 @@ internal fun planGlobe(
     points.size
 )
 
+/**
+ * The same fairness as the flat map's, for the globe.
+ *
+ * The sphere projects every marker it is given on every frame, so the
+ * list it is handed has to be a list worth projecting. Culling to the
+ * near hemisphere happens at draw time and is one comparison per
+ * point; this is the part that cannot be done per frame.
+ *
+ * A looser budget than the flat map's, because this runs once when the
+ * layers change rather than on every pan, and because the globe can
+ * usefully show more at once — it is the view for seeing everything.
+ */
 internal fun thinGlobe(
     points: List<GlobePoint>,
     budget: Int = GLOBE_BUDGET,

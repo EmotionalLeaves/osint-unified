@@ -327,7 +327,6 @@ class UsernameChecker(private val appContext: Context) {
                 }
                 if (verdict == VERDICT_ABSENT) {
                     append("\nEvery site that was asked said no.")
-                    narrowedBy()?.let { append(" ").append(it) }
                 } else {
                     append("\nThis is not a clean sheet: only the $said sites that ")
                     append("answered said no.")
@@ -345,6 +344,14 @@ class UsernameChecker(private val appContext: Context) {
                     append("\n")
                 }
             }
+            // On every outcome, not only on the clean sheet.
+            //
+            // "Coverage: 412 answered of 500 sites" presents a
+            // shortened list as though it were the whole one, and a
+            // build missing two of its three rulesets is sweeping a
+            // list two thirds shorter. That is as misleading under a
+            // hit as it is under an absence.
+            narrowedBy()?.let { append("\n").append(it) }
             if (clusters.isNotEmpty()) {
                 append("\nTHESE AGREE WITH EACH OTHER\n")
                 append("A name being taken somewhere is a fact about the name. ")
@@ -763,6 +770,17 @@ class UsernameChecker(private val appContext: Context) {
         if (maigret.isNullOrBlank()) missing.add("Maigret")
         add(parseMaigret(maigret))
         val all = merged.values.toList()
+        // The gaps first, then the rules.
+        //
+        // Written the other way round, a second thread could see
+        // `sharedRules` set and `sharedMissingRulesets` still empty,
+        // and silently omit the caveat. And both sat inside
+        // `if (all.isNotEmpty())`, so the one case where the caveat
+        // matters most — every ruleset missing — set neither, which
+        // also left `loadRules` uncached and made `narrowedBy()`
+        // re-read three assets and fire a blocking download on every
+        // call.
+        sharedMissingRulesets = missing.toList()
         if (all.isNotEmpty()) {
             sharedRules = all
             // Which rulesets this build is actually sweeping with.
@@ -775,7 +793,6 @@ class UsernameChecker(private val appContext: Context) {
             // naming what had not been asked. rulesetSummary() has
             // held this all along and was only ever shown in the
             // self-test.
-            sharedMissingRulesets = missing.toList()
         }
         return all
     }
@@ -785,7 +802,11 @@ class UsernameChecker(private val appContext: Context) {
      * null when it had everything.
      */
     private fun narrowedBy(): String? {
-        loadRules()
+        // Not loadRules(): by the time any output is being written
+        // the rules have already been loaded, and on the path where
+        // none of them exist `loadRules` caches nothing, so calling
+        // it here re-read three assets and made a blocking network
+        // request for every line of output.
         val missing = sharedMissingRulesets
         if (missing.isEmpty()) return null
         return "This build is missing the " + missing.joinToString(" and ") +

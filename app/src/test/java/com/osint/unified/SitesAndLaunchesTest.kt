@@ -3,8 +3,10 @@ package com.osint.unified
 import com.osint.unified.data.LaunchDataSource
 import com.osint.unified.data.SitesDataSource
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.IOException
 
 /**
  * Two layers that answer "what is here" and "what is about to
@@ -84,11 +86,24 @@ class SitesAndLaunchesTest {
         assertTrue(blips.isEmpty())
     }
 
+    /**
+     * Rubbish is a raised failure; an empty answer is an answer.
+     *
+     * An empty list from `parse` is read out loud as "no border
+     * crossing, embassy or prison within 120 km of here", so a body
+     * that fetched and then did not parse must not produce one. The
+     * `{"version":0.6}` case is the interesting one: Overpass sends
+     * exactly that when it refuses.
+     */
     @Test
-    fun rubbishFromOverpassIsNothingRatherThanACrash() {
-        assertTrue(sites.parse("not json").isEmpty())
+    fun rubbishFromOverpassIsAFailureRatherThanAnAbsence() {
+        assertThrows(IOException::class.java) { sites.parse("not json") }
+        assertThrows(IOException::class.java) { sites.parse("""{"version":0.6}""") }
+    }
+
+    @Test
+    fun anEmptyOverpassAnswerIsAnAnswer() {
         assertTrue(sites.parse("""{"elements":[]}""").isEmpty())
-        assertTrue(sites.parse("""{"version":0.6}""").isEmpty())
     }
 
     // ---- Launches ------------------------------------------------------
@@ -180,9 +195,9 @@ class SitesAndLaunchesTest {
     }
 
     @Test
-    fun anEmptyOrBrokenScheduleIsNotACrash() {
-        assertTrue(launches.parse("not json", now).isEmpty())
+    fun aBrokenScheduleIsAFailureAndAnEmptyOneIsAnAnswer() {
+        assertThrows(IOException::class.java) { launches.parse("not json", now) }
+        assertThrows(IOException::class.java) { launches.parse("""{"count":0}""", now) }
         assertTrue(launches.parse("""{"results":[]}""", now).isEmpty())
-        assertTrue(launches.parse("""{"count":0}""", now).isEmpty())
     }
 }

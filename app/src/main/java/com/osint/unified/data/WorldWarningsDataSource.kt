@@ -132,11 +132,18 @@ class WorldWarningsDataSource(
         membersBody: String,
         nowMs: Long
     ): List<GeoBlip> {
+        // A body that fetched and then did not parse is not "no
+        // severe-weather warning anywhere in the world", which is
+        // what an empty list from here is read out loud as.
+        // VolcanoDataSource gets this right for the same situation
+        // and says "answered in an unexpected shape".
         val members = members(membersBody)
-        if (members.isEmpty()) return emptyList()
+        if (members.isEmpty()) {
+            throw IOException("the WMO member list answered in an unexpected shape")
+        }
         val items = runCatching {
             json.parseToJsonElement(warningsBody).jsonObject["items"]?.jsonArray
-        }.getOrNull() ?: return emptyList()
+        }.getOrNull() ?: throw IOException("WMO SWIC answered in an unexpected shape")
 
         val byMember = LinkedHashMap<String, MutableList<Warning>>()
         items.forEach { element ->

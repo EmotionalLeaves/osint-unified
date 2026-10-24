@@ -87,9 +87,13 @@ class SitesDataSource(private val client: OkHttpClient = Http.feedClient) {
      * of five kinds of place the kind is the thing being looked for.
      */
     internal fun parse(body: String): List<GeoBlip> {
+        // A body that fetched and then did not parse is not "no
+        // border crossing, embassy or prison within 120 km". Same
+        // reasoning as VolcanoDataSource, which says so.
         val elements = runCatching {
             json.parseToJsonElement(body).jsonObject["elements"]?.jsonArray
-        }.getOrNull() ?: return emptyList()
+        }.getOrNull()
+            ?: throw java.io.IOException("Overpass answered in an unexpected shape")
 
         val seen = HashSet<String>()
         return elements.mapNotNull { element ->

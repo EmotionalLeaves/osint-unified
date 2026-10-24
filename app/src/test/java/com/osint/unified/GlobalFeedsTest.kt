@@ -6,8 +6,10 @@ import com.osint.unified.data.OutageAlerts
 import com.osint.unified.data.SeaLevelDataSource
 import com.osint.unified.ui.godeye.Quake
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.IOException
 
 /**
  * The feeds added to make this map cover the planet rather than the
@@ -130,8 +132,8 @@ class GlobalFeedsTest {
     }
 
     @Test
-    fun rubbishIsNothingRatherThanACrash() {
-        assertTrue(tides.parse("not json", now).isEmpty())
+    fun rubbishIsAFailureAndAnEmptyListIsAnAnswer() {
+        assertThrows(IOException::class.java) { tides.parse("not json", now) }
         assertTrue(tides.parse("[]", now).isEmpty())
     }
 

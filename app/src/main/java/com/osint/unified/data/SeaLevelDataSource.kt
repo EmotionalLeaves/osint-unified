@@ -77,8 +77,9 @@ class SeaLevelDataSource(
      * itself and the explanation would not be read.
      */
     internal fun parse(body: String, nowMs: Long): List<GeoBlip> {
+        // Not "no tide gauge on Earth is reporting".
         val rows = runCatching { json.parseToJsonElement(body).jsonArray }.getOrNull()
-            ?: return emptyList()
+            ?: throw java.io.IOException("the IOC gauge list answered in an unexpected shape")
         val cutoff = nowMs - LIVE_WINDOW_MS
         return rows.mapNotNull { element ->
             val o = element as? JsonObject ?: return@mapNotNull null

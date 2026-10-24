@@ -104,6 +104,18 @@ object EarthTexture {
     fun loadCpuFallback(context: Context) {
         if (day != null || cpuAttempted) return
         cpuAttempted = true
+        // The Bitmaps go first.
+        //
+        // This file's own comment says only one form is ever held,
+        // because the large mosaic is the one thing in this app
+        // measured in tens of megabytes and keeping both doubles it.
+        // Reaching here means the shader bind failed, so the Bitmap
+        // form is dead weight — and this is exactly the hardware
+        // where the headroom is worst, which is why the bind failed.
+        dayMap?.recycle()
+        dayMap = null
+        nightMap?.recycle()
+        nightMap = null
         if (roomy(context)) day = decode(context, HI_DAY)
         if (day == null) day = decode(context, DAY)
         if (night == null) night = decode(context, NIGHT)

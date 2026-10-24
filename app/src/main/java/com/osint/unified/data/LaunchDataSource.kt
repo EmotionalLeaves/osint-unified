@@ -67,9 +67,12 @@ class LaunchDataSource(
      * not anywhere a map marker could follow.
      */
     internal fun parse(body: String, nowMs: Long): List<GeoBlip> {
+        // Not "no rocket is launching anywhere in the next three
+        // months", which is what an empty list from here says.
         val root = runCatching { json.parseToJsonElement(body).jsonObject }.getOrNull()
-            ?: return emptyList()
-        val results = root["results"]?.jsonArray ?: return emptyList()
+            ?: throw java.io.IOException("the launch API answered in an unexpected shape")
+        val results = root["results"]?.jsonArray
+            ?: throw java.io.IOException("the launch API returned no results block")
         val horizon = nowMs + WINDOW_MS
 
         data class Pad(val lat: Double, val lon: Double, val place: String) {

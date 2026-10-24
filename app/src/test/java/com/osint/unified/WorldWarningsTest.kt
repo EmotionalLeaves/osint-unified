@@ -2,8 +2,10 @@ package com.osint.unified
 
 import com.osint.unified.data.WorldWarningsDataSource
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.IOException
 
 /**
  * Every official severe-weather warning on Earth.
@@ -148,10 +150,23 @@ class WorldWarningsTest {
         assertEquals(null, source.instantOf(null))
     }
 
+    /**
+     * Rubbish in is a raised failure, not an empty list.
+     *
+     * An empty list from here is printed as "no severe-weather
+     * warning anywhere in the world", so a body that fetched and
+     * then did not parse must not produce one. This test used to
+     * assert the opposite, which is how the behaviour survived.
+     */
     @Test
-    fun rubbishInIsNothingOutRatherThanACrash() {
-        assertTrue(source.parse("not json", members, now).isEmpty())
-        assertTrue(source.parse(feed(), "not json", now).isEmpty())
+    fun rubbishInIsAFailureRatherThanAnAllClear() {
+        assertThrows(IOException::class.java) { source.parse("not json", members, now) }
+        assertThrows(IOException::class.java) { source.parse(feed(), "not json", now) }
+    }
+
+    /** An empty but well-formed feed is a real all-clear. */
+    @Test
+    fun anEmptyFeedIsAnAnswer() {
         assertTrue(source.parse("""{"items": []}""", members, now).isEmpty())
     }
 }

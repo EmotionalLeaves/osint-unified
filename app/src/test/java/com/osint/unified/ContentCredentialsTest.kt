@@ -89,6 +89,14 @@ class ContentCredentialsTest {
             "Portrait of Kendall Fisher",
             "Randall Park at sunset",
             "una imagen del puerto de Valencia",
+            // Sentence start, so case-sensitivity alone does not
+            // save it: these are the cases the previous fix's own
+            // comment named and its test did not cover.
+            "Imagen tomada en el puerto",
+            "Imagen de Valencia",
+            "Firefly season on the lake",
+            "Flux density survey",
+            "Gemini birthday party",
             "Lens profile: flux correction v2",
             "Shot on the firefly trail"
         ).forEach { caption ->
@@ -107,7 +115,10 @@ class ContentCredentialsTest {
             "Software: DALL-E 3" to "DALL",
             "parameters: Stable Diffusion v1.5" to "Stable Diffusion",
             "Created with Midjourney" to "Midjourney",
-            "Adobe Firefly" to "Firefly"
+            "Adobe Firefly" to "Firefly",
+            // A short field value, which is what a generator writes.
+            "Software: Firefly" to "Firefly",
+            "CreatorTool: Imagen 3" to "Imagen"
         ).forEach { (text, _) ->
             val read = ContentCredentials.read(("\u0000" + text).toByteArray())
             assertTrue(

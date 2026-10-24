@@ -106,15 +106,48 @@ object ContentCredentials {
      * Rule 1 — the fix went where the bug was noticed and not where
      * it lives.
      */
-    private val GENERATOR_PATTERNS: List<Pair<Regex, String>> by lazy {
+    private class Pattern(
+        val regex: Regex,
+        val name: String,
+        /** The ones that are ordinary words in some language. */
+        val ambiguous: Boolean,
+        val needleLength: Int
+    )
+
+    private val GENERATOR_PATTERNS: List<Pattern> by lazy {
         GENERATORS.map { (needle, name, cased) ->
             val options = if (cased) emptySet() else setOf(RegexOption.IGNORE_CASE)
-            Regex(
-                "(?<![A-Za-z0-9])" + Regex.escape(needle) + "(?![A-Za-z0-9])",
-                options
-            ) to name
+            Pattern(
+                Regex(
+                    "(?<![A-Za-z0-9])" + Regex.escape(needle) + "(?![A-Za-z0-9])",
+                    options
+                ),
+                name,
+                // The ones that needed case-sensitivity are exactly
+                // the ones that need the surroundings test too.
+                cased,
+                needle.length
+            )
         }
     }
+
+    /**
+     * How much longer than the name itself a run may be and still be
+     * a field value rather than a sentence.
+     *
+     * A generator writes "Firefly", "Imagen 3", "DALL-E 3" — the name
+     * and a version. "Imagen de Valencia" is prose about a city, and
+     * a length cap generous enough to be comfortable was generous
+     * enough to let that through.
+     */
+    private const val FIELD_SLACK_CHARS = 8
+
+    /** Keys a generator's own name tends to sit beside. */
+    private val METADATA_KEYS = listOf(
+        "Software", "CreatorTool", "Creator", "Generator", "Model",
+        "parameters", "prompt", "Prompt", "xmp", "XMP", "Xmp",
+        "dc:", "exif", "Exif", "photoshop:", "stEvt:", "c2pa"
+    )
 
     /** PNG text chunks a generator fills with its own settings. */
     private val PROMPT_KEYS = listOf("parameters", "prompt", "workflow", "Comment", "Dream")
@@ -147,15 +180,45 @@ object ContentCredentials {
             findings.add(Finding(meaning, "C2PA manifest"))
             if (meansGenerated) generated = true
         }
+        // Run by run, because where a word sits decides what it is.
+        //
+        // Case-sensitivity and a word boundary were not enough on
+        // their own. "Imagen tomada en el puerto de Valencia" is a
+        // Spanish sentence that begins with the word, so the
+        // capitalised form matched and the dossier printed "names
+        // Google Imagen"; the test written alongside that fix only
+        // exercised the lowercase form, so it passed while the exact
+        // case its own comment described was still live. Same for a
+        // caption containing "Firefly" or "Flux" at the start of a
+        // sentence.
+        //
+        // What distinguishes a metadata value from prose is its
+        // surroundings: a generator writes its name into a short
+        // field of its own, or next to the key that names the field.
+        // A caption is a sentence. So an ambiguous name counts only
+        // in a run short enough to be a field value, or in a run
+        // that also carries a metadata key. The unambiguous ones —
+        // "Stable Diffusion", "Midjourney", "ComfyUI" — are not words
+        // in any language and need none of this.
         val named = LinkedHashSet<String>()
-        GENERATOR_PATTERNS.forEach { (pattern, name) ->
-            if (name !in named && pattern.containsMatchIn(text)) {
-                named.add(name)
+        val runs = text.split('\n', '\u0000')
+        GENERATOR_PATTERNS.forEach { p ->
+            if (p.name in named) return@forEach
+            val hit = runs.any { run ->
+                if (!p.regex.containsMatchIn(run)) return@any false
+                if (!p.ambiguous) return@any true
+                // Either the run names the field it belongs to, or
+                // the run is barely longer than the name itself.
+                METADATA_KEYS.any { run.contains(it) } ||
+                    run.trim().length <= p.needleLength + FIELD_SLACK_CHARS
+            }
+            if (hit) {
+                named.add(p.name)
                 // "a name in the file's text", not "metadata written
                 // by the tool": the second is an assertion about who
                 // wrote it, and all this knows is that the name is in
                 // there.
-                findings.add(Finding("names $name", "a name found in the file's text"))
+                findings.add(Finding("names ${p.name}", "a name found in the file's text"))
             }
         }
         PROMPT_KEYS.forEach { key ->

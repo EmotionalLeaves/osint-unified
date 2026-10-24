@@ -243,8 +243,20 @@ fun GodEyeViewScreen(
     // every armed layer on every poll for as long as the dialog is
     // open. A report is a snapshot of a moment, and this is that
     // moment.
-    LaunchedEffect(areaWanted) {
+    LaunchedEffect(areaWanted, state.loaded.isEmpty()) {
         val want = areaWanted ?: return@LaunchedEffect
+        // Not against a state that has not loaded anything yet.
+        //
+        // `areaWanted` is saveable so the report survives a
+        // rotation, where the view model survives with it. It also
+        // survives the process being killed, where the view model
+        // does not — and the effect then fired once against the
+        // empty initial state and, with `state` no longer a key,
+        // never rebuilt. Relaunching from Recents opened a modal
+        // report, unasked, saying nothing was anywhere. The second
+        // key is a one-shot: it flips once when the first feed
+        // answers and never flips back.
+        if (state.loaded.isEmpty() && state.results.isEmpty()) return@LaunchedEffect
         val built = withContext(Dispatchers.Default) {
             AreaReport.build(state, want.first, want.second, want.third)
         }
@@ -392,8 +404,16 @@ fun GodEyeViewScreen(
     // bounced straight back to the globe and the toggle looked broken.
     // It now takes a deliberate zoom *out*, and not in the first
     // moment after arriving.
-    var lastMapZoom by remember { mutableDoubleStateOf(Double.NaN) }
-    var arrivedOnMap by remember { mutableLongStateOf(0L) }
+    // Saveable alongside `armedForGlobe`, which is the whole of
+    // the snap-back-to-globe gate. Making one of the three
+    // survive a rotation and not the others left two of the
+    // guards pre-satisfied afterwards: `arrivedOnMap` reset to
+    // zero, which makes the settle test true at once, so a
+    // single zoom-out report was enough to throw the user back
+    // to the globe. MAP_SETTLE_MS exists because arriving used
+    // to do exactly that.
+    var lastMapZoom by rememberSaveable { mutableDoubleStateOf(Double.NaN) }
+    var arrivedOnMap by rememberSaveable { mutableLongStateOf(0L) }
     // Whether zooming out is allowed to turn the map back into a globe.
     //
     // It is not, until the map has actually been zoomed in close. The
@@ -906,6 +926,14 @@ fun GodEyeViewScreen(
             }
 
             val clearLayers = {
+                // Including the dossier's own markers. They are not a
+                // feed, so ALL LAYERS has no business arming them —
+                // but CLEAR says "everything off, in one gesture",
+                // and leaving a lit FINDINGS pill above a line
+                // reading "no layers on, so nothing is being fetched"
+                // is the kind of disagreement this screen keeps
+                // having with itself.
+                showFindings = false
                 // First, because everything below is read as
                 // `showX || god` and without this line not one of the
                 // thirty-three assignments reaches the map.
@@ -1026,7 +1054,7 @@ fun GodEyeViewScreen(
             // only appear in the picker — in the panel above the
             // map the row shows what is on, and a heading over a
             // group with nothing in it is worse than no heading.
-            val layerGroups: List<Pair<String, @Composable () -> Unit>> = listOf(
+            val feedGroups: List<Pair<String, @Composable () -> Unit>> = listOf(
                 "IN THE AIR" to {
                 LayerPill("AIR·GLOBAL", visibleAircraft.size, Intel.NetCyan, showAircraft || god, full = "Aircraft", loaded = "aircraft" in state.loaded, trouble = "aircraft" in state.feedTrouble) { settleGod(); showAircraft = !showAircraft }
                 LayerPill("MIL", state.milAircraft.size, Color(0xFFFFD23F), showMil || god, full = "Military aircraft", loaded = "milAircraft" in state.loaded, trouble = "milAircraft" in state.feedTrouble) { settleGod(); showMil = !showMil }
@@ -1099,14 +1127,6 @@ fun GodEyeViewScreen(
                 LayerPill("LAUNCH·GLOBAL", state.launches.size, Color(0xFFFFF066), showLaunches || god, full = "Rocket launches", loaded = "launches" in state.loaded, trouble = "launches" in state.feedTrouble) { settleGod(); showLaunches = !showLaunches }
                 LayerPill("AURORA", state.aurora.size, Color(0xFF66FFB2), showAurora || god, full = "Aurora", loaded = "aurora" in state.loaded, trouble = "aurora" in state.feedTrouble) { settleGod(); showAurora = !showAurora }
                 },
-                "THIS INVESTIGATION" to {
-                if (state.findings.isNotEmpty()) {
-                LayerPill(
-                "FINDINGS", state.findings.size, Color(0xFFE24FD6), showFindings,
-                full = "Coordinates from this dossier"
-                ) { showFindings = !showFindings }
-                }
-                },
                 "BEING REPORTED" to {
                 LayerPill("CONFLICT", state.conflicts.size, Color(0xFFFF2E2E), showConflict || god, full = "Armed conflict", loaded = "conflicts" in state.loaded, trouble = "conflicts" in state.feedTrouble) { settleGod(); showConflict = !showConflict }
                 LayerPill("NEWS", state.news.size, Color(0xFFFF79C6), showNews || god, full = "News", loaded = "news" in state.loaded, trouble = "news" in state.feedTrouble) { settleGod(); showNews = !showNews }
@@ -1115,6 +1135,24 @@ fun GodEyeViewScreen(
                 }
                 },
             )
+
+            // Appended rather than declared in the list, because the
+            // picker draws every heading it is given and this group
+            // has one pill that is not always there — so on a fresh
+            // install it showed a bare "THIS INVESTIGATION" with
+            // nothing under it, which the comment on the pill row
+            // above calls worse than no heading.
+            val layerGroups: List<Pair<String, @Composable () -> Unit>> =
+                if (state.findings.isEmpty()) {
+                    feedGroups
+                } else {
+                    feedGroups + ("THIS INVESTIGATION" to @Composable {
+                        LayerPill(
+                            "FINDINGS", state.findings.size, Color(0xFFE24FD6),
+                            showFindings, full = "Coordinates from this dossier"
+                        ) { showFindings = !showFindings }
+                    })
+                }
 
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -1333,7 +1371,7 @@ fun GodEyeViewScreen(
                     .onSizeChanged { globeSize = it.width to it.height }
             ) {
                 val layers = MapLayers(
-                    aircraft = vis(showAircraft || god, visibleAircraft),
+                    aircraft = vis(showAircraft, visibleAircraft),
                     vessels = vis(showVessels, state.vessels),
                     quakes = vis(showQuakes, state.quakes),
                     events = vis(showEvents, state.naturalEvents),
@@ -2893,12 +2931,18 @@ private fun SettingsDialog(
     onSave: (String, String, String, String, String, String) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var backend by remember { mutableStateOf(backendUrl) }
-    var tar by remember { mutableStateOf(tar1090Url) }
-    var ais by remember { mutableStateOf(aisUrl) }
-    var overlay by remember { mutableStateOf(overlayUrl) }
-    var sec by remember { mutableStateOf(secEmail) }
-    var token by remember { mutableStateOf(backendToken) }
+    // Saveable, because the dialog that holds them is.
+    //
+    // `showSettings` survives a rotation, so the dialog came back
+    // and every field in it snapped to the persisted value, losing
+    // whatever had been typed. In-progress text is a stronger case
+    // for this than anything else on the screen.
+    var backend by rememberSaveable { mutableStateOf(backendUrl) }
+    var tar by rememberSaveable { mutableStateOf(tar1090Url) }
+    var ais by rememberSaveable { mutableStateOf(aisUrl) }
+    var overlay by rememberSaveable { mutableStateOf(overlayUrl) }
+    var sec by rememberSaveable { mutableStateOf(secEmail) }
+    var token by rememberSaveable { mutableStateOf(backendToken) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
