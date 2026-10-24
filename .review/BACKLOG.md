@@ -72,6 +72,65 @@ closed; their headings say so.
   than a hop from the seed no longer corroborates its own input (which
   is how a wiki came out A1 "confirmed").
 
+### Fifth pass, over today's globe and dossier work (r19, 24 Oct) — OPEN
+
+HIGH
+- [ ] **P1.** Search fly-to stops ~5x short: `globeZoom` still clamps to
+  0.6..8, so tile zoom 9 lands at a 15.6° span, inside the fade band.
+  Reproduced.
+- [ ] **P2.** Every tab return / rotation snaps the camera to the last
+  search: `appliedFocus` is `remember`, not saveable. The deleted map had
+  this exact fix (rule 1, lost in the move).
+- [ ] **P3.** At deep zoom the viewport is only reported on a 2° grid, so
+  on-demand layers (cameras 0.1° cells, sites, airspace, radiation) never
+  re-fetch while panning at street level — and the area report then
+  asserts an absence it never established.
+- [ ] **P4.** `emailToGithub` states both absences when either search
+  answered; each clause must depend on its own search.
+- [ ] **P5.** Tile requests are issued during gestures and never
+  cancelled: a pinch from z5 to z18 queues ~800 fetches ahead of the
+  final view, all downloaded, continuing after the screen is left.
+- [ ] **P6.** object-members' cross-file check misses `.name()` with a
+  receiver — the exact r512 case — and skips any private name that also
+  exists as a public fun anywhere. Reproduced.
+
+MEDIUM
+- [ ] **P7.** Float camera quantises at max zoom: 100 drags of 1 px move
+  0 px. Reproduced.
+- [ ] **P8.** Tile cover misses top corners away from the equator (uses
+  cos of centre latitude); they draw black once tiles are opaque.
+  Reproduced, 4–27%.
+- [ ] **P9.** Cooldown checked before the pacing sleep, so one collision
+  escalates the back-off twice.
+- [ ] **P10.** A tile-zoom change flashes to the mosaic / black instead of
+  showing the previous zoom's tiles that are still in memory.
+- [ ] **P11.** A re-run that comes back UNREACHABLE in prose (or PARTIAL)
+  still overwrites an earlier complete answer.
+- [ ] **P12.** A PARTIAL with no content after the marker counts as a HIT.
+- [ ] **P13.** Two more `== "success"` sites miss PARTIAL: the workflow
+  chain discards a partial subdomain step; partial rows make no geo pins.
+- [ ] **P14.** visibility-leak misses 5 of 6 shapes (companion members,
+  inferred-type properties, extension receivers). Reproduced.
+- [ ] **P15.** empty-is-an-answer misses `?: emptyList()` without return,
+  `getOrNull() ?: emptyList()`, and a catch that logs then returns.
+  Reproduced.
+
+LOW
+- [ ] **P16.** The tile cap still drops a zoom level on 3–10% of zooms.
+- [ ] **P17.** Flings die above ~zoom 600 (SPIN_FLOOR in degrees).
+- [ ] **P18.** Deep-zoom marker thinning covers ≥1° though the screen is
+  ~1 km, so dense layers drop on-screen markers.
+- [ ] **P19.** Tiles share the feeds' 48 MB HTTP cache and the escalating
+  host cooldown.
+- [ ] **P20.** The orphaned osmdroid cache (up to 300 MB) and prefs are
+  never deleted.
+- [ ] **P21.** downloadWmn's DiskCache trouble flow is unobserved.
+- [ ] **P22.** The named 429 message shows only on the first refusal.
+- [ ] **P23.** isChallenge may drop a real profile with an early
+  `<noscript>` notice.
+- [ ] **P24.** OngoingConflicts takes only plain-text links; a wrapped name
+  falls through to the phase link.
+
 ### Still open after today
 
 - [ ] **U5. A conflict source that records activity** (ACLED or UCDP),
