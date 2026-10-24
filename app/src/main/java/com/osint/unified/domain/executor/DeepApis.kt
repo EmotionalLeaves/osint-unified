@@ -812,17 +812,21 @@ class DeepApis(
             val belongs = h == d || h.endsWith(".$d")
             if (belongs && h.isNotEmpty()) found.getOrPut(h) { LinkedHashSet() }.add(src)
         }
-        asked.of {
-            // Same quota notice as the host-intel path. Here it would
-            // be filed as a subdomain — except that the belongs test
-            // above throws it out, which is luck rather than design.
+        asked.answering {
+            // Same quota notice as the host-intel path. Here it
+            // would be filed as a subdomain — except that the
+            // belongs test above throws it out, which is luck rather
+            // than design. And a spent quota used to count as a
+            // source that had looked, which is what turned
+            // "hackertarget refused" into "Subdomain sweep: nothing
+            // found for example.com".
             val body = get("https://api.hackertarget.com/hostsearch/?q=$d")
-            if (hackertargetAnswered(body)) {
-                body.lineSequence().forEach {
-                    val host = it.substringBefore(",").trim()
-                    if (host.isNotEmpty()) record(host, "hackertarget")
-                }
+            if (!hackertargetAnswered(body)) return@answering false
+            body.lineSequence().forEach {
+                val host = it.substringBefore(",").trim()
+                if (host.isNotEmpty()) record(host, "hackertarget")
             }
+            true
         }
         asked.of {
             // RapidDNS publishes an HTML table; each row's first cell is a host.
@@ -912,36 +916,38 @@ class DeepApis(
         val headerOnly = sb.length
         val q = java.net.URLEncoder.encode(t, "UTF-8")
         val reached = Reached()
-        reached.of {
+        reached.answering {
             val r = get("https://api.hackertarget.com/reverseiplookup/?q=$q").trim()
-            if (hackertargetAnswered(r)) {
-                val hosts = r.lines().filter { it.isNotBlank() }
-                sb.append("\nOther sites on this IP (${hosts.size}):\n")
-                hosts.take(60).forEach { sb.append("• $it\n") }
-                sb.andMore(hosts.size, 60)
-            }
+            if (!hackertargetAnswered(r)) return@answering false
+            val hosts = r.lines().filter { it.isNotBlank() }
+            sb.append("\nOther sites on this IP (${hosts.size}):\n")
+            hosts.take(60).forEach { sb.append("• $it\n") }
+            sb.andMore(hosts.size, 60)
+            true
         }
-        reached.of {
+        reached.answering {
             val a = get("https://api.hackertarget.com/aslookup/?q=$q").trim()
-            if (hackertargetAnswered(a)) sb.append("\nAS: $a\n")
+            if (!hackertargetAnswered(a)) return@answering false
+            sb.append("\nAS: $a\n")
+            true
         }
-        reached.of {
+        reached.answering {
             val l = get("https://api.hackertarget.com/pagelinks/?q=http%3A%2F%2F$q").trim()
-            if (hackertargetAnswered(l)) {
-                val links = l.lines().filter { it.isNotBlank() }
-                // The host, not a substring of the whole link.
-                //
-                // `contains` calls a link to notexample.com internal
-                // when the target is ample.com, and calls
-                // evil.com/?ref=ample.com internal too — so outbound
-                // links to other people's sites were dropped from
-                // the count, which is the one number this section
-                // exists to give.
-                val external = links.filterNot { sameSite(it, t) }.distinct()
-                sb.append("\nOutbound links (${external.size} external):\n")
-                external.take(40).forEach { sb.append("• $it\n") }
-                sb.andMore(external.size, 40)
-            }
+            if (!hackertargetAnswered(l)) return@answering false
+            val links = l.lines().filter { it.isNotBlank() }
+            // The host, not a substring of the whole link.
+            //
+            // `contains` calls a link to notexample.com internal
+            // when the target is ample.com, and calls
+            // evil.com/?ref=ample.com internal too — so outbound
+            // links to other people's sites were dropped from
+            // the count, which is the one number this section
+            // exists to give.
+            val external = links.filterNot { sameSite(it, t) }.distinct()
+            sb.append("\nOutbound links (${external.size} external):\n")
+            external.take(40).forEach { sb.append("• $it\n") }
+            sb.andMore(external.size, 40)
+            true
         }
         if (sb.length > headerOnly) sb.toString()
         else if (reached.any) "Host intel: no data returned for $t."
@@ -2641,6 +2647,30 @@ class DeepApis(
             attempt.exceptionOrNull()?.let { if (it is CancellationException) throw it }
             if (attempt.isSuccess) any = true
             return attempt.getOrNull()
+        }
+
+        /**
+         * For a source that can refuse with an HTTP 200.
+         *
+         * [of] counts a request that did not throw, which is not the
+         * same as a question that was answered. hackertarget replies
+         * 200 with "API count exceeded - Increase Quota with
+         * Membership" when the free daily tier is spent;
+         * `hackertargetAnswered` was written to catch exactly that
+         * and does, and then the surrounding `of` marked the source
+         * as having answered anyway. All three of `hostIntel`'s
+         * probes are hackertarget, so a spent quota — routine on a
+         * tier shared across an IP — printed "Host intel: no data
+         * returned for example.com", which `Findings` reads as an
+         * established absence.
+         *
+         * So the block says whether it got an answer, and only that
+         * counts.
+         */
+        fun answering(block: () -> Boolean) {
+            val attempt = runCatching(block)
+            attempt.exceptionOrNull()?.let { if (it is CancellationException) throw it }
+            if (attempt.getOrDefault(false)) any = true
         }
     }
 

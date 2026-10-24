@@ -127,8 +127,22 @@ class ExifReader(
                                 if (n < 0) break
                                 written += n
                                 if (written > MAX_IMAGE_BYTES) {
-                                    return@withContext "Refusing to read more than " +
-                                        "${MAX_IMAGE_BYTES / (1024 * 1024)} MB from this URL."
+                                    // Thrown, like the HTTP branch
+                                    // thirteen lines above and for
+                                    // the same reason. Returned, it
+                                    // was a successful result whose
+                                    // text matches no phrase in
+                                    // Findings, so it was classified
+                                    // as a HIT: a refusal counted
+                                    // among "N of M sources returned
+                                    // something", graded, drawn as a
+                                    // finding on the graph and
+                                    // written into the export.
+                                    throw IOException(
+                                        "the image is larger than " +
+                                            "${MAX_IMAGE_BYTES / (1024 * 1024)} MB, " +
+                                            "so it was not read"
+                                    )
                                 }
                                 output.write(buf, 0, n)
                             }
@@ -227,7 +241,13 @@ class ExifReader(
             appContext.contentResolver.openInputStream(uri)
                 ?.use { readAtMost(it, CREDENTIAL_BYTES) }
         }.getOrNull()
-            ?: return@withContext "Could not read that image."
+            // Thrown. "Could not read that image." was a success
+            // whose first line matches nothing in Findings —
+            // UNREACHABLE holds "could not be read" and not "could
+            // not read" — so an image that could not be opened was
+            // filed as a Content Credentials finding, and the
+            // caller's runCatching could never fire.
+            ?: throw IOException("the image could not be read from that location")
         ContentCredentials.describe(ContentCredentials.read(bytes))
     }
 
@@ -236,7 +256,7 @@ class ExifReader(
         if (!target.startsWith("http://", true) && !target.startsWith("https://", true)) {
             return@withContext "Give the image's URL."
         }
-        try {
+        run {
             // Range, so the host sends the front of the file and not
             // all of it. A host that ignores the header costs the read
             // below its cap instead, which is the same bound.
@@ -252,9 +272,14 @@ class ExifReader(
                 if (bytes.isEmpty()) throw IOException("the server sent an empty image")
                 ContentCredentials.describe(ContentCredentials.read(bytes))
             }
-        } catch (e: IOException) {
-            "Could not read $target: ${e.message}"
         }
+        // No catch: the caller is `runCatching { … }.orStop()`, which
+        // was written to file a failure and was handed a string
+        // instead. "Could not read https://x/y.jpg: timeout" is
+        // classified HIT, because NOTHING_SHAPE's window reaches the
+        // colon in "https:" before it reaches a noun — so a fetch
+        // that timed out appeared in the dossier as a finding about
+        // the picture.
     }
 
     /**

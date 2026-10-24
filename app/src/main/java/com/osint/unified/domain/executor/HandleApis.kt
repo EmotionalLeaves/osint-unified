@@ -64,7 +64,7 @@ class HandleApis(
         val handle = clean(username)
         val body = getOrNull("https://api.chess.com/pub/player/$handle")
             ?: return@runCatching "No Chess.com account named \"$handle\"."
-        val o = json.parseToJsonElement(body).jsonObject
+        val o = profile(body, "Chess.com", "username")
         buildString {
             append("Chess.com account \"$handle\" exists.\n")
             o.str("name")?.let { append("Declared name: $it\n") }
@@ -120,7 +120,7 @@ class HandleApis(
      */
     fun codeforces(username: String): Result<String> = runCatching {
         val handle = clean(username)
-        val body = getOrNull(
+        val body = getOrBody(
             "https://codeforces.com/api/user.info?handles=" + enc(handle)
         ) ?: return@runCatching "No Codeforces account named \"$handle\"."
         val root = json.parseToJsonElement(body).jsonObject
@@ -174,10 +174,14 @@ class HandleApis(
             "https://meta.wikimedia.org/w/api.php?action=query&meta=globaluserinfo" +
                 "&guiuser=" + enc(handle) +
                 "&guiprop=merged%7Ceditcount%7Cgroups&format=json"
-        ) ?: return@runCatching "Wikimedia could not be asked about \"$handle\"."
-        val info = json.parseToJsonElement(body).jsonObject["query"]
-            ?.jsonObject?.get("globaluserinfo")?.jsonObject
-            ?: return@runCatching "Wikimedia could not be asked about \"$handle\"."
+        ) ?: return@runCatching "No Wikimedia account named \"$handle\"."
+        // Through MediaWiki, whose own doc says every caller does —
+        // this one hand-rolled it and, worse, the sentence it fell
+        // back to was classified as a FINDING, because "could not be
+        // asked" was the one phrasing of that idea missing from
+        // Findings.UNREACHABLE.
+        val info = MediaWiki.query(body, "Wikimedia global user")["globaluserinfo"]?.jsonObject
+            ?: throw IOException("Wikimedia returned no global user record")
         if (info["missing"] != null) {
             return@runCatching "No Wikimedia account named \"$handle\" " +
                 "(checked the global account register, which covers every " +
@@ -219,7 +223,7 @@ class HandleApis(
         val handle = clean(username)
         val body = getOrNull("https://codeberg.org/api/v1/users/" + enc(handle))
             ?: return@runCatching "No Codeberg account named \"$handle\"."
-        val o = json.parseToJsonElement(body).jsonObject
+        val o = profile(body, "Codeberg", "login")
         buildString {
             append("Codeberg account \"$handle\" exists.\n")
             o.str("full_name")?.let { append("Declared name: $it\n") }
@@ -248,7 +252,7 @@ class HandleApis(
         val handle = clean(username)
         val body = getOrNull("https://huggingface.co/api/users/" + enc(handle) + "/overview")
             ?: return@runCatching "No Hugging Face account named \"$handle\"."
-        val o = json.parseToJsonElement(body).jsonObject
+        val o = profile(body, "Hugging Face", "user")
         buildString {
             append("Hugging Face account \"$handle\" exists.\n")
             o.str("fullname")?.let { append("Declared name: $it\n") }
@@ -531,7 +535,60 @@ class HandleApis(
             .build()
         client.newCall(request).execute().use { resp ->
             val body = resp.body?.bodyText().orEmpty()
-            if (resp.code == 404 || resp.code == 410 || resp.code == 400) return null
+            if (resp.code == 404 || resp.code == 410) return null
+            if (!resp.isSuccessful) throw IOException("HTTP ${resp.code}")
+            return body
+        }
+    }
+
+    /**
+     * The profile object, or a raised failure.
+     *
+     * Three of these tools parsed the body and immediately printed
+     * `<Service> account "x" exists.` — so any 2xx that happens to
+     * parse as a JSON object, an error envelope included, produced
+     * a stated existence claim about a person's account with no
+     * fields under it. `lichess` next to them checks its record
+     * first, which is the right shape. A false presence is the one
+     * error this app's absence machinery cannot catch, because it
+     * classifies as a finding correctly.
+     */
+    private fun profile(body: String, service: String, key: String): JsonObject {
+        val o = runCatching { json.parseToJsonElement(body).jsonObject }.getOrNull()
+            ?: throw IOException("$service answered in an unexpected shape")
+        if (o[key] == null) {
+            throw IOException("$service answered without a $key, so the record was not read")
+        }
+        return o
+    }
+
+    /**
+     * Like [getOrNull], but a 400 comes back with its body.
+     *
+     * 400 used to be folded into the same null as a 404, "because
+     * of Codeforces: it answers an unknown handle with 400". It
+     * does — and it also answers 400 for every other FAILED status,
+     * including `"comment": "Call limit exceeded"`. `codeforces()`
+     * has a block written specifically to tell those apart by
+     * reading `comment`, and that block could only ever run on a
+     * 2xx, where the status is always OK: the body carrying the
+     * reason was thrown away three hundred lines earlier, before
+     * anything parsed it. A rate-limited Codeforces therefore
+     * printed "No Codeforces account named jsmith", which is an
+     * established absence about a person.
+     *
+     * Rule 5, with the mechanism and the thing that defeats it in
+     * one file. `cdx()` below was written for the same reason.
+     */
+    private fun getOrBody(url: String): String? {
+        val request = Request.Builder().url(url)
+            .header("User-Agent", Http.defaultUserAgent)
+            .header("Accept", "application/json")
+            .build()
+        client.newCall(request).execute().use { resp ->
+            val body = resp.body?.bodyText().orEmpty()
+            if (resp.code == 404 || resp.code == 410) return null
+            if (resp.code == 400) return body
             if (!resp.isSuccessful) throw IOException("HTTP ${resp.code}")
             return body
         }

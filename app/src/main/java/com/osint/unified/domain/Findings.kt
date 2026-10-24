@@ -73,7 +73,40 @@ object Findings {
         // a certificate that is absent.
         "unreachable", "rate limiting", "no tls handshake",
         "no certificate presented", "could not be completed",
-        "did not answer", "nothing reachable", "inventory reachable"
+        "did not answer", "nothing reachable", "inventory reachable",
+        // Five phrasings of "could not be read" were here and the
+        // sixth, which three tools actually print, was not — so
+        // "Could not read https://x/y.jpg: timeout" and "Wikimedia
+        // could not be asked about jsmith" were classified as
+        // FINDINGS. A list of exact phrases loses this way every
+        // time; the shape below is the answer, and these are the
+        // stragglers it does not cover.
+        "could not read", "could not be asked", "could not be opened",
+        "answered http", "refused the", "was not read",
+        "answered in an unexpected shape", "not reaching the internet"
+    )
+
+    /**
+     * Openings that mean the tool was never asked a valid question.
+     *
+     * Nothing was established, so these are neither a finding nor an
+     * absence — and they were being counted as both, at random. "Not
+     * a coordinate: SW1A 1AA" was a FINDING because no noun in the
+     * shape list follows; "Not a Bitcoin address: 3xyz" was an
+     * ABSENT because "address" is in it. "Give an email address." was
+     * a finding. A tool deliberately skipped because the subject is
+     * an organisation was a finding.
+     *
+     * `Executors` already treats one of these — "Give at least
+     * three" — as UNREACHABLE, which is the right answer and the
+     * precedent: the tool could not be asked.
+     */
+    private val NOT_ASKED = listOf(
+        "give a", "give an", "give the", "give at least", "give me",
+        "not a coordinate", "not a bitcoin address",
+        "not a recognised btc", "needs an ipv4", "needs a ",
+        "too short to permute", "holds researchers, not organisations",
+        "no author search was run", "reads as an organisation"
     )
 
     /**
@@ -102,6 +135,7 @@ object Findings {
         val head = output.trimStart().lineSequence()
             .firstOrNull { it.isNotBlank() }?.lowercase().orEmpty()
         if (UNREACHABLE.any { hasPhrase(head, it) }) return true
+        if (NOT_ASKED.any { head.startsWith(it) }) return true
         // A sweep that reached a fraction of its list is closer to "could
         // not ask" than to "looked and found nothing".
         return output.contains("This is not a clean sheet", ignoreCase = true)
@@ -118,6 +152,7 @@ object Findings {
         // silence.
         if (head.isBlank()) return false
         if (UNREACHABLE.any { hasPhrase(head, it) }) return false
+        if (NOT_ASKED.any { head.startsWith(it) }) return false
         // A sweep that says in its own words that it is not a clean sheet
         // is not reporting an absence; it is reporting partial coverage.
         if (output.contains("This is not a clean sheet", ignoreCase = true)) return false

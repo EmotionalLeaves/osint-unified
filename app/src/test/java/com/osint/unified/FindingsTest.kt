@@ -226,4 +226,50 @@ class FindingsTest {
             assertEquals(it, Findings.Kind.UNREACHABLE, Findings.kindOf(row("success", it)))
         }
     }
+
+    /**
+     * A refusal is not a finding, however it is worded.
+     *
+     * Each of these was classified HIT and counted in "N of M
+     * sources returned something". The first two are the ones that
+     * mattered: a C2PA fetch that timed out appeared in the dossier
+     * as a Content Credentials finding about the picture.
+     */
+    @Test
+    fun theSixthWordingOfCouldNotReadIsAlsoAFailure() {
+        listOf(
+            "Could not read https://example.com/a.jpg: timeout",
+            "Wikimedia could not be asked about \"jsmith\".",
+            "The host answered HTTP 503 for this image, so nothing was read from it.",
+            "Libravatar answered HTTP 500, so nothing is claimed either way.",
+            "Wikipedia nearby: refused the query (maxlag)",
+            "data.police.uk answered in an unexpected shape"
+        ).forEach {
+            assertEquals(it, Findings.Kind.UNREACHABLE, Findings.kindOf(row("success", it)))
+        }
+    }
+
+    /**
+     * And neither is a tool that was never asked a valid question.
+     *
+     * These were split between the two wrong answers by accident:
+     * "Not a coordinate" came out a finding because no noun follows
+     * it, "Not a Bitcoin address" came out an absence because
+     * "address" does.
+     */
+    @Test
+    fun aToolThatWasNotAskedAValidQuestionIsNeitherAHitNorAnAbsence() {
+        listOf(
+            "Give an email address.",
+            "Give the image's URL.",
+            "Give a CVE id or 'vendor product'.",
+            "Not a coordinate: SW1A 1AA",
+            "Not a Bitcoin address: hello",
+            "IP reputation needs an IPv4 address.",
+            "Domain too short to permute.",
+            "ORCID holds researchers, not organisations — skipped."
+        ).forEach {
+            assertEquals(it, Findings.Kind.UNREACHABLE, Findings.kindOf(row("success", it)))
+        }
+    }
 }
