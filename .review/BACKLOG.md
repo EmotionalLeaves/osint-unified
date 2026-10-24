@@ -327,7 +327,7 @@ else keyed, if the person wants it.
 - [done] **B2. Count what actually runs, per observable type**, and publish
   the number in the app. If a username search runs eleven tools and
   four of them are link lists, the person should be able to see that.
-- **B3. More sources that fetch.** People landed seven; phone got
+- [part done] **B3. More sources that fetch.** People landed seven; phone got
   two on 23 Oct. Audited for the rest, same day. Candidates below,
   all keyless and all **unverified until the probe run answers** —
   the research pass could not reach any of them from the sandbox.
@@ -497,7 +497,7 @@ observable types (B3).
 
 ## G. Asked for on 23 Oct
 
-- **G3. Live public webcams, worldwide — YES. Unsecured private
+- [part done] **G3. Live public webcams, worldwide — YES. Unsecured private
   cameras — NO, and the line is firm.**
   The request was for "live feed of anywhere in the world using cctv
   and unsecured video devices", à la Shodan/Insecam. Split it:
@@ -527,7 +527,7 @@ observable types (B3).
     webcam layer plus the street-level imagery (KartaView, Panoramax)
     that is already here.
 
-- **G1. Image geolocation — GeoSpy, GeoInfer, Picarta.**
+- [done] **G1. Image geolocation — GeoSpy, GeoInfer, Picarta.**
   All three are keyed: GeoSpy is commercial, Picarta's free tier
   still issues a key, GeoInfer likewise. The standing rule for this
   app is no keys and no accounts, so they cannot be wired in as they
@@ -548,7 +548,7 @@ observable types (B3).
       off by default, that says exactly what it sends and where.
       Ask the user which they want before building either.
 
-- **G2. Taranis AI.** Open-source, self-hosted, and its useful idea
+- [part done] **G2. Taranis AI.** Open-source, self-hosted, and its useful idea
   is portable without running their server: collect from open feeds
   on a schedule, pull entities out of what arrives, cluster the
   stories that are about the same thing, and produce a briefing with
@@ -593,6 +593,33 @@ observable types (B3).
   worked around. What is keyless is the government and official-feed
   layer, which is most of what "live feed of anywhere" actually
   wants and all of what can be done within the app's rules.
+
+## G-progress, 24 Oct
+
+- **G1 done.** Keyless image geolocation: on-device OCR via a
+  bundled ML Kit model, the words sorted into coordinates,
+  domains, addresses, phone numbers, street names, plate-shaped
+  strings and names, each with the tool here that takes it; the
+  scripts present, which exclude most of the planet before a word
+  is read; and the visual checklist no model does for you. Nothing
+  uploaded, nothing claimed. **Still open:** C2PA / Content
+  Credentials, which needs a JUMBF reader or the c2pa-rs JNI path
+  and is the strongest remaining image question — was this
+  AI-generated, what made it, and is that claim signed.
+- **G2 part done.** News is clustered by shared headline terms and
+  ordered by independent publishers, with a date range and a
+  country count per story. **Still open:** the subscribe-to-a-topic
+  half — scheduled collection into the watch worker, clustering
+  across collections rather than within one query, RSS alongside
+  GDELT, and a dated briefing with the analyst's notes attached.
+- **G3 part done.** Four keyless public camera networks, fetched by
+  where the view is. **Still open:** more of them — the US state
+  511 systems, the European national feeds, tourism and weather
+  cams — and a tap that opens the stream rather than a link.
+- **B3 part done.** Six handle sources, two for addresses, three
+  for images, two for phone. **Still open:** the bundled
+  disposable-domain list, GitHub commit search by author-email
+  (rate-limit fragile), GBIF, and Open-Meteo air quality.
 
 ## E2. Verified, 24 Oct
 
