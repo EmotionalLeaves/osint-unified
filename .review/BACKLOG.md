@@ -885,6 +885,160 @@ Two things worth keeping from the batch:
   heading. Each one would make a reasonable person do the wrong
   thing.
 
-## G. Then
+## G. Improvements, 24 Oct
 
-Every improvement, listed and fixed. Then round again.
+A pass over the whole instrument, asked not for defects but for what
+would make it a better tool. Worked in this order. Everything here
+is keyless, and the request cost of each is stated because mobile
+data is the one budget that matters.
+
+- [ ] **G-1. The corroboration engine cannot see a name, an employer
+  or a place.** `EntityExtractor.extract` collects ten kinds and all
+  ten are machine identifiers — email, handle, host, ip, phone,
+  wallet, tail number, coordinate, sha256, md5. But the sources
+  added in the last two rounds return labelled soft attributes:
+  chess, lichess, codeforces, codeberg, huggingface, github, ghname,
+  orcid and nonprofits all emit `Declared name:`, `Declared
+  location:`, `Company:`, `Institutions:`, city and state. So the
+  single most valuable thing a username search can produce — five
+  platforms independently saying Vienna — never reaches the engine
+  built to say exactly that, and for a person's name, which routes
+  to fourteen fetching tools, the corroborated section is near-empty
+  by construction. The analyst reads six cards and does the merge in
+  their head. Needs: a reader for `Label: value` lines (these are
+  already structured, so a parse rather than any guessing at prose),
+  three new kinds — PERSON, ORG, PLACE — and a bundled place-alias
+  table so Wien, Vienna and AT merge rather than becoming three
+  findings. **Zero new requests.** The existing machinery — the
+  independence families, the grade, CaseLinks — does the rest.
+  `ProfileSignals.cluster` already does this shape of work and is
+  called from exactly one place inside the username sweep; it never
+  sees any of the nine sources above.
+- [ ] **G-2. The grading scheme can agree and cannot disagree.**
+  `Grading.credibility` takes a `contradicting` parameter and has an
+  IMPROBABLE verdict for it. No caller passes it: both call sites
+  pass `agreeing` only, so IMPROBABLE is unreachable in the shipped
+  app. ipinfo says Germany and rdap says Netherlands, and the two
+  sit side by side each graded "probably true" — the disagreement,
+  which is the finding, is left for the reader to notice.
+  `Grading.Kind` (OBSERVED / REPORTED / INFERRED / OPEN) is
+  referenced nowhere at all: the model has an axis for "the app
+  worked this out" and nothing has ever been put on it. Needs: a
+  list of which attributes are single-valued per subject, the
+  opposition count passed into the call that already accepts it, a
+  section of its own for disagreement, and INFERRED stamped on
+  anything derived so a conclusion never reads as an observation. A
+  useful subset — coordinates, PTR, registration country — works
+  without G-1.
+- [ ] **G-3. A URL runs two sources and never looks at the host.**
+  `Observable.Url` routes to six tools, of which two are link lists
+  and two are `touchesTarget` and so do not fire on the passive
+  default. Searching a URL asks whether it is in the Wayback index
+  and what the latest capture is. The host is not investigated at
+  all: none of the eighteen a bare domain gets. This is the most
+  common entry point on a phone — a link shared in from another app
+  lands exactly here. And `snapshot`, the one tool that preserves a
+  page as evidence, is registered under type url with nothing
+  routing to it. Needs: decompose the URL — host to the domain list,
+  exact URL to wayback, commoncrawl, urlscan and archive on the
+  path — and route snapshot from the url type. **This multiplies
+  requests: roughly 2 passive fetches to roughly 20.** That is the
+  bill a domain search already pays, and the dossier prints the
+  planned count before it fires.
+- [ ] **G-4. A watch can tell you something changed and can never
+  tell you what.** Each check reduces a tool's whole answer to a
+  sha1 of its normalised text, so an event can only say "changed at
+  Shodan". And `runTool` replaces the previous row, so the previous
+  answer is gone from the database too: a target watched for three
+  months has a hundred events saying a source changed and not one
+  byte of what it said. Needs: store the extracted entity set per
+  check rather than the text — a few hundred bytes a target, not the
+  growing archive the current design was avoiding — and diff sets
+  instead of hashes. The event then reads "new host
+  mail2.example.com; declared location changed Vienna to Berlin".
+  **Zero new requests:** the check already has the answer in hand
+  before it throws it away. Also gives a case re-run a diff.
+- [ ] **G-5. The analysis does not know the target from something one
+  hop away.** The screen and the exporter both separate first-pass
+  rows from rows looked up because the first pass named them.
+  `Corroboration.merge` has `row.input` and drops it, and `Entity`
+  has no field for it — so a host found only in a pivoted IP's
+  results is listed, graded and exported exactly like a host found
+  in the seed's own crt.sh, and IntelSummary can take a pivot's
+  hosting city as the dossier's headline LOCATION. Needs: a `hops`
+  field, shown, and hop-1 rows barred from setting a headline fact.
+  Small, and it gets worse rather than better once G-1 enlarges the
+  entity pool — so do it with G-1.
+- [ ] **G-6. The chronolocation tools cannot be given the date.**
+  `sunAndTerrain` computes the solar position for now;
+  `historicalWeather` hardcodes the last 31 days. Both exist to test
+  whether a photograph matches a claimed time and place, and neither
+  can be told the time — while the same dossier routinely holds the
+  EXIF capture timestamp and often the GPS. The analyst reads a date
+  off one card and compares it with a sun position for the moment
+  they happen to be reading. Needs: an optional date on both, a
+  parser over the EXIF output, and one Open-Meteo archive call for
+  that specific day — then state the result: "shadow azimuth 112
+  degrees, length ratio 1.6, consistent with 14:30 on 2 March", or
+  "the sun was below the horizon". Pure arithmetic over data already
+  fetched, and no keyless competitor offers it.
+- [ ] **G-7. The timeline is a list of dates and every interval is
+  computed by hand.** `Timeline.build` returns a flat chronological
+  list and the only aggregation is by year. The finding in a
+  timeline is almost never a date; it is a gap — the domain
+  registered three days before the account, six accounts created in
+  one fortnight, a certificate issued the week of the breach. Every
+  one is a subtraction the app has both operands for. Same shape:
+  the commit-hour peak is printed as a string and never turned into
+  a candidate UTC offset, nor checked against the declared location
+  the same dossier holds. All derived, no requests, and everything
+  it concludes must be stamped INFERRED (see G-2).
+- [ ] **G-8. The dossier never says what it cost.** `DataMeter` is
+  process-wide, unpersisted, and surfaced only in the diagnostics
+  panel. A search that fires forty tools and then eleven pivots at
+  six tools each never reports its own bill, before or after — the
+  header prints the planned tool count and nothing about bytes. On a
+  metered phone that is the number the person actually needs. Needs:
+  attribute bytes to the in-flight search (the interceptor already
+  has the host and the count), print what the dossier cost, and keep
+  a per-tool running average so the pre-flight can say "about 8 MB"
+  before RUN ALL.
+- [ ] **G-9. `websearch` is classified as a bookmark and is not
+  one.** B1 swept it into LINK_LISTS with `dorks` and `framework`,
+  force-classified ABSENT and graded F. It fetches the DuckDuckGo
+  instant-answer abstract and up to eight Wikipedia articles with
+  snippets, and emits no search-engine links at all. It appears in
+  the email, username, phone, wallet, aircraft and name lists, so in
+  six of twelve types a real source is excluded from the findings.
+  Grade it C and let it into the pool. `dorks`, `framework` and
+  `reverseimage` are correctly classified and stay.
+- [ ] **G-10. Wallet and aircraft are 1:3.** Both have a second
+  source already written as a curated template and not wired: a
+  second block explorer would give wallet a real independence pair,
+  and the second registry would do the same for a tail number.
+
+### The recount, as actually fired
+
+Fetch-and-parse to link-only, with tools that cannot run (cloud with
+no backend, local with no binary) and `toolrun` (never in an
+automatic set) excluded: domain 18:2 · username 16:3 · name 14:2 ·
+ip 11:2 · email 11:3 · coordinate 10:1 · organisation 8:2 · image
+5:2 · phone 3:3 · **url 2:2** · **wallet 1:3** · **aircraft 1:3**.
+Phone and image were fixed on 23 Oct and are no longer the worst;
+the three types that have got worse relative to the rest are the
+three that gained a chip after the last count.
+
+### Keyless camera networks, probed 24 Oct
+
+The CARS/511 platform answers without a key, but only to its own
+query shape: `/List/GetData/Cameras?query=<url-encoded DataTables
+JSON>&lang=en`. Without the query parameter it returns
+`recordsTotal` and an empty `data` array, which is what made it look
+dead. Confirmed with real records: **Idaho (457), Alaska (128),
+Wisconsin (491), Ohio (491)**. Nebraska, Iowa and Minnesota serve
+HTML on that path and need their own shape; New Jersey 403s;
+api.511.org, Trafikverket, DriveBC and Ontario all want a key.
+
+## H. Then
+
+Round again.
