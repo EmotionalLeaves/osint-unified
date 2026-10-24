@@ -690,7 +690,10 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                     // thumb — on every screen, including the tool
                     // directory. Hiding it there left that tab with no way
                     // out but a system back that closed the app.
-                    OsintNavBar(screen, unseenWatches) { target ->
+                    // Out of the way while the globe is full screen, which
+                    // has its own button back.
+                    val globeFull by godEyeViewModel.fullScreen.collectAsStateWithLifecycle()
+                    if (!(globeFull && screen == "godeye")) OsintNavBar(screen, unseenWatches) { target ->
                         // Tapping the tab you are already on returns it
                         // to its own root, which is the only way back to
                         // the CASES list once a target has been opened

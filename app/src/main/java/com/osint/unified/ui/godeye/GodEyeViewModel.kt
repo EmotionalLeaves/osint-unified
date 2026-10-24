@@ -528,6 +528,13 @@ class GodEyeViewModel(
     )
     val state: StateFlow<GodEyeUiState> = _state.asStateFlow()
 
+    private val _fullScreen = MutableStateFlow(false)
+
+    /** The globe alone on the screen: the app's bottom bar steps aside for it. */
+    val fullScreen: StateFlow<Boolean> = _fullScreen.asStateFlow()
+
+    fun setFullScreen(on: Boolean) { _fullScreen.value = on }
+
     /**
      * The last few targets searched, newest first, for the pills under
      * an empty search box.

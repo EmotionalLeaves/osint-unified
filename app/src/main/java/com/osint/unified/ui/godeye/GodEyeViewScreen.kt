@@ -310,6 +310,29 @@ fun GodEyeViewScreen(
     // phone has: the front door was a wall of buttons with a sliver of map
     // underneath.
     var panelOpen by rememberSaveable { mutableStateOf(false) }
+    // The globe and nothing else: no header, search, layer rows, bottom
+    // bar or phone status bar — room to explore. The layers that are on
+    // stay on, and a tap still offers WHAT'S HERE.
+    var fullScreen by rememberSaveable { mutableStateOf(false) }
+    val hostView = androidx.compose.ui.platform.LocalView.current
+    DisposableEffect(fullScreen) {
+        viewModel.setFullScreen(fullScreen)
+        val window = generateSequence(hostView.context) { (it as? android.content.ContextWrapper)?.baseContext }
+            .filterIsInstance<android.app.Activity>().firstOrNull()?.window
+        val bars = window?.let { androidx.core.view.WindowCompat.getInsetsController(it, hostView) }
+        if (fullScreen) {
+            bars?.systemBarsBehavior =
+                androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            bars?.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+        }
+        onDispose {
+            // Leaving the screen, or leaving full screen: the bars come back.
+            bars?.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            viewModel.setFullScreen(false)
+        }
+    }
+    // The system back gesture leaves full screen before it leaves anything else.
+    androidx.activity.compose.BackHandler(enabled = fullScreen) { fullScreen = false }
     // What is left of the screen after everything above the map.
     //
     // Measured, not guessed. PANEL_MAX_HEIGHT was 300dp on every
@@ -570,6 +593,7 @@ fun GodEyeViewScreen(
             }
             // Classification banner (tactical console convention; green = UNCLASS).
 
+            if (!fullScreen) {
             // ---- Console header + live telemetry ----
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -752,9 +776,12 @@ fun GodEyeViewScreen(
                 }
             }
 
+            }
+
             // The panel and the map share what is left, in one of the
             // two arrangements decided above.
             Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
+            if (!fullScreen) {
             Column(
                 modifier = Modifier
                     .align(Alignment.TopStart)
@@ -1248,11 +1275,14 @@ fun GodEyeViewScreen(
             }
             }
 
+            }
+
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(
-                        top = if (overlay) 2.dp
+                        top = if (fullScreen) 0.dp
+                        else if (overlay) 2.dp
                         else with(density) { panelPx.toDp() } + 2.dp
                     )
                     .clipToBounds()
@@ -1423,6 +1453,23 @@ fun GodEyeViewScreen(
                                 lat, lon, AreaReport.radiusForZoom(zoom)
                             )
                         }
+                    )
+                }
+                // In and out of full screen. Over the globe, top right,
+                // where neither the attribution nor a tap's card sits.
+                IconButton(
+                    onClick = { fullScreen = !fullScreen },
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(8.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xB30B0E11))
+                ) {
+                    Icon(
+                        if (fullScreen) androidx.compose.material.icons.Icons.Filled.FullscreenExit
+                        else androidx.compose.material.icons.Icons.Filled.Fullscreen,
+                        contentDescription = if (fullScreen) "Leave full screen" else "Full screen",
+                        tint = Intel.Cyan
                     )
                 }
                 // What a tap offers, instead of what it used to do.
