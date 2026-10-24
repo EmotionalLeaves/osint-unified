@@ -334,6 +334,8 @@ fun GlobeView(
     // `drifting` drops the size to a quarter and starts a small render
     // into the middle of a two-megapixel one.
     val painter = remember { Mutex() }
+    // Buffers the draw path reuses between frames. See GlobeScratch.
+    val drawScratch = remember { GlobeScratch() }
     // Built only if the CPU path is the one being used.
     //
     // `textured` is true as soon as the shader path has its Bitmaps,
@@ -561,7 +563,7 @@ fun GlobeView(
             // full-size rect keeps the fragment coordinates in the
             // canvas's own space, which is what the uniforms are in.
             drawRect(brush = gpuSphere.brush, size = size)
-            drawGraticule(cx, cy, radius, lat0, lon0, faint = true)
+            drawGraticule(drawScratch, cx, cy, radius, lat0, lon0, faint = true)
             drawLines(
                 borders, cx, cy, radius, lat0, lon0,
                 BORDER_OVER_IMAGERY, stride = if (drifting) 2 else 1
@@ -580,14 +582,14 @@ fun GlobeView(
             // No terminator line over the imagery: the shading already
             // is the terminator, and a stroke on top of a soft one
             // looks like a crack.
-            drawGraticule(cx, cy, radius, shownLat, shownLon, faint = true)
+            drawGraticule(drawScratch, cx, cy, radius, shownLat, shownLon, faint = true)
             drawLines(
                 borders, cx, cy, radius, shownLat, shownLon,
                 BORDER_OVER_IMAGERY, stride = if (drifting) 2 else 1
             )
         } else {
             drawOcean(cx, cy, radius)
-            drawGraticule(cx, cy, radius, lat0, lon0)
+            drawGraticule(drawScratch, cx, cy, radius, lat0, lon0)
             drawLand(rings, cx, cy, radius, lat0, lon0)
             drawLines(
                 borders, cx, cy, radius, lat0, lon0,
@@ -604,7 +606,7 @@ fun GlobeView(
                 cx, cy, radius, shownLat, shownLon, ink, halo
             )
         }
-        drawMarkers(points, cx, cy, radius, shownLat, shownLon, sun, halos = !drifting)
+        drawMarkers(drawScratch, points, cx, cy, radius, shownLat, shownLon, sun, halos = !drifting)
         // Labels on the markers too, once there are few enough that
         // labelling them is reading rather than overprinting.
         if (!drifting) {
@@ -822,31 +824,106 @@ private fun DrawScope.drawLimb(cx: Float, cy: Float, r: Float, textured: Boolean
     )
 }
 
+/**
+ * Buffers the globe's draw path reuses between frames.
+ *
+ * The coastlines had this done for them, with a comment explaining
+ * why — one hoisted Path and one projection array instead of tens of
+ * thousands of short-lived objects a second. The markers and the
+ * graticule are drawn from the same DrawScope on the same thread and
+ * did not: drawMarkers allocated three HashMaps, an ArrayList per
+ * colour group, and per visible point an Orthographic.Point, an
+ * Offset, a boxed Long, a boxed Color and a boxed Float — about ten
+ * thousand objects a frame over a full budget, which during a drag is
+ * most of a megabyte a second of garbage. strokeArcOfPoints allocated
+ * a Path per arc and a Pair per sample, another four or five thousand
+ * a frame for a grid of straight lines.
+ *
+ * Held by the composable and handed to the draw lambda, so its
+ * lifetime is the composition's and nothing here has to be a global.
+ * Compose draws on one thread, which is what makes a shared buffer
+ * safe.
+ */
+internal class GlobeScratch {
+    /** One arc at a time, reset rather than rebuilt. */
+    val arc = Path()
+
+    /** Two floats, written by Orthographic.projectInto. */
+    val xy = FloatArray(2)
+
+    /** Colour-and-size buckets for the markers, reused each frame. */
+    var keys = LongArray(128)
+    var colours = IntArray(128)
+    var widths = FloatArray(128)
+    var nights = BooleanArray(128)
+    val buckets = ArrayList<ArrayList<Offset>>(128)
+    var used = 0
+        private set
+
+    fun reset() {
+        for (i in 0 until used) buckets[i].clear()
+        used = 0
+    }
+
+    fun add(key: Long, colour: Int, width: Float, night: Boolean, x: Float, y: Float) {
+        var at = -1
+        for (i in 0 until used) {
+            if (keys[i] == key) { at = i; break }
+        }
+        if (at < 0) {
+            if (used == keys.size) grow()
+            at = used++
+            keys[at] = key
+            colours[at] = colour
+            widths[at] = width
+            nights[at] = night
+            if (buckets.size <= at) buckets.add(ArrayList(64))
+        }
+        buckets[at].add(Offset(x, y))
+    }
+
+    private fun grow() {
+        val n = keys.size * 2
+        keys = keys.copyOf(n)
+        colours = colours.copyOf(n)
+        widths = widths.copyOf(n)
+        nights = nights.copyOf(n)
+    }
+}
+
 private fun DrawScope.drawGraticule(
+    scratch: GlobeScratch,
     cx: Float, cy: Float, r: Float, lat0: Double, lon0: Double, faint: Boolean = false
 ) {
+    // Hoisted: the camera's own trig is the same for every sample of
+    // every arc, and projecting through Orthographic.project
+    // recomputed it 181 times per arc, twenty-six arcs per frame.
+    val sinLat0 = kotlin.math.sin(Math.toRadians(lat0))
+    val cosLat0 = kotlin.math.cos(Math.toRadians(lat0))
     // Over photography the grid is orientation, not decoration, and at
     // full strength it draws more attention than the continents under
     // it.
     val colour = Intel.Hairline.copy(alpha = if (faint) 0.22f else 0.7f)
     // Parallels every thirty degrees, meridians every thirty.
     for (lat in -60..60 step 30) {
-        strokeArcOfPoints(colour, cx, cy, r, lat0, lon0) { step ->
-            lat.toDouble() to (-180.0 + step * 2.0)
-        }
+        strokeArcOfPoints(
+            scratch, colour, cx, cy, r, sinLat0, cosLat0, lon0,
+            { lat.toDouble() }, { step -> -180.0 + step * 2.0 }
+        )
     }
     for (lon in -180..150 step 30) {
-        strokeArcOfPoints(colour, cx, cy, r, lat0, lon0) { step ->
-            (-90.0 + step) to lon.toDouble()
-        }
+        strokeArcOfPoints(
+            scratch, colour, cx, cy, r, sinLat0, cosLat0, lon0,
+            { step -> -90.0 + step }, { lon.toDouble() }
+        )
     }
     // The equator, slightly brighter, because it is the one line people
     // orient by.
     strokeArcOfPoints(
-        Intel.Hairline.copy(alpha = if (faint) 0.34f else 1f), cx, cy, r, lat0, lon0
-    ) { step ->
-        0.0 to (-180.0 + step * 2.0)
-    }
+        scratch, Intel.Hairline.copy(alpha = if (faint) 0.34f else 1f),
+        cx, cy, r, sinLat0, cosLat0, lon0,
+        { 0.0 }, { step -> -180.0 + step * 2.0 }
+    )
 }
 
 /**
@@ -932,23 +1009,31 @@ private const val STAR_BANDS = 5
  * was three or four thousand canvas calls a frame on its own.
  */
 private inline fun DrawScope.strokeArcOfPoints(
+    scratch: GlobeScratch,
     colour: Color,
     cx: Float, cy: Float, r: Float,
-    lat0: Double, lon0: Double,
-    place: (Int) -> Pair<Double, Double>
+    sinLat0: Double, cosLat0: Double, lon0: Double,
+    latOf: (Int) -> Double,
+    lonOf: (Int) -> Double
 ) {
-    val path = Path()
-    var previous: Orthographic.Point? = null
+    // Two lambdas rather than one returning a Pair: this is inline,
+    // but inlining does not remove the Pair, and that was one
+    // allocation per sample — 181 of them per arc, twenty-six arcs a
+    // frame, on top of an Orthographic.Point each.
+    val path = scratch.arc
+    path.reset()
+    val xy = scratch.xy
+    var wasVisible = false
     var any = false
     for (step in 0..180) {
-        val (lat, lon) = place(step)
-        val p = Orthographic.project(lat, lon, lat0, lon0, r, cx, cy)
-        val last = previous
-        if (p.visible) {
-            if (last != null && last.visible) path.lineTo(p.x, p.y) else path.moveTo(p.x, p.y)
+        val visible = Orthographic.projectInto(
+            latOf(step), lonOf(step), sinLat0, cosLat0, lon0, r, cx, cy, xy
+        )
+        if (visible) {
+            if (wasVisible) path.lineTo(xy[0], xy[1]) else path.moveTo(xy[0], xy[1])
             any = true
         }
-        previous = p
+        wasVisible = visible
     }
     if (any) drawPath(path, colour, style = Stroke(width = 1f))
 }
@@ -1106,6 +1191,7 @@ private fun DrawScope.drawTerminator(
  * when you are reading the thing and not when it is sliding.
  */
 private fun DrawScope.drawMarkers(
+    scratch: GlobeScratch,
     points: List<GlobePoint>,
     cx: Float, cy: Float, r: Float,
     lat0: Double, lon0: Double,
@@ -1113,43 +1199,47 @@ private fun DrawScope.drawMarkers(
     halos: Boolean
 ) {
     if (points.isEmpty()) return
-    // Keyed on what makes two markers drawable together: the colour
-    // they end up, and the size they are drawn at.
-    val groups = HashMap<Long, MutableList<Offset>>(64)
-    val colours = HashMap<Long, Color>(64)
-    val widths = HashMap<Long, Float>(64)
+    // Bucketed by what makes two markers drawable together: the
+    // colour they end up and the size they are drawn at. Three
+    // HashMaps keyed on a boxed Long, rebuilt every frame over up to
+    // GLOBE_BUDGET points, was most of the garbage this path made.
+    scratch.reset()
+    val xy = scratch.xy
+    val sinLat0 = kotlin.math.sin(Math.toRadians(lat0))
+    val cosLat0 = kotlin.math.cos(Math.toRadians(lat0))
     points.forEach { point ->
-        val p = Orthographic.project(point.lat, point.lon, lat0, lon0, r, cx, cy)
-        if (!p.visible) return@forEach
+        val visible = Orthographic.projectInto(
+            point.lat, point.lon, sinLat0, cosLat0, lon0, r, cx, cy, xy
+        )
+        if (!visible) return@forEach
         val night = Orthographic.isNight(point.lat, point.lon, sun.first, sun.second)
-        // Dimmed less than before: the night side of a photograph is
-        // genuinely dark, and the old fade took markers there from
-        // "quieter" to "invisible".
-        val colour = Color(point.color).let { if (night) it.copy(alpha = 0.78f) else it }
         val size = point.sizeDp.coerceIn(5, 16)
         val key = (point.color.toLong() shl 8) or
             (size.toLong() shl 1) or (if (night) 1L else 0L)
-        groups.getOrPut(key) { ArrayList(64) }.add(Offset(p.x, p.y))
-        colours[key] = colour
-        widths[key] = size * density
+        scratch.add(key, point.color, size * density, night, xy[0], xy[1])
     }
     if (halos) {
-        groups.forEach { (key, offsets) ->
+        for (i in 0 until scratch.used) {
             drawPoints(
-                points = offsets,
+                points = scratch.buckets[i],
                 pointMode = PointMode.Points,
                 color = HALO,
-                strokeWidth = (widths[key] ?: 8f) + 2.4f * density,
+                strokeWidth = scratch.widths[i] + 2.4f * density,
                 cap = StrokeCap.Round
             )
         }
     }
-    groups.forEach { (key, offsets) ->
+    for (i in 0 until scratch.used) {
+        // Dimmed less than before: the night side of a photograph is
+        // genuinely dark, and the old fade took markers there from
+        // "quieter" to "invisible". Built once per bucket now rather
+        // than once per point.
+        val base = Color(scratch.colours[i])
         drawPoints(
-            points = offsets,
+            points = scratch.buckets[i],
             pointMode = PointMode.Points,
-            color = colours[key] ?: Color.White,
-            strokeWidth = widths[key] ?: 8f,
+            color = if (scratch.nights[i]) base.copy(alpha = 0.78f) else base,
+            strokeWidth = scratch.widths[i],
             cap = StrokeCap.Round
         )
     }
