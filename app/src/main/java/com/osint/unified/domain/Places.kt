@@ -170,6 +170,19 @@ object Places {
      * Endonyms, the common abbreviations, and the spellings that differ
      * only by a diacritic once the diacritics are gone anyway.
      */
+    /** The two-letter city shorthands, which collide most. */
+    private val SHORT_CITY_CODES = setOf("la", "ny", "sf", "dc", "hk")
+
+    /** Short codes with more than one plausible meaning in this table. */
+    private val AMBIGUOUS: Set<String> = buildSet {
+        val subdivisionCodes = SUBDIVISIONS.map { it.first }.toSet()
+        addAll(COUNTRY_CODES.filter { it.length <= 3 && it in subdivisionCodes })
+        // And the city abbreviations that collide with a subdivision:
+        // LA is Los Angeles and Louisiana.
+        addAll(SHORT_CITY_CODES.filter { it in subdivisionCodes || it in COUNTRY_CODES })
+    }
+
+
     private val ALIASES: Map<String, String> = buildMap {
         // Cities whose English name differs from the local one. These
         // are the ones that actually turn up in a profile's location
@@ -240,24 +253,26 @@ object Places {
         OTHER_COUNTRY_NAMES.forEach { (from, to) -> put(from, to) }
 
         // US states and Canadian provinces, because "Austin, TX" and
-        // "Austin, Texas" are one place — but only the codes that mean
-        // one thing.
+        // "Austin, Texas" are one place.
+        SUBDIVISIONS.forEach { (code, name) -> put(code, name) }
+        SUBDIVISION_NAMES.forEach { put(it, it) }
+
+        // And then every short code that could mean two things is put
+        // back to meaning itself.
         //
         // Half the subdivision codes are also country codes: CA is
-        // California and Canada, DE is Delaware and Germany, IN is
-        // Indiana and India, MD, PA, SC, VA and a dozen more. Guessing
+        // California and Canada, DE is Delaware and Germany, AL, AR,
+        // ID, IL, MA, MD, MN, PA, SK, TN and a dozen more. Guessing
         // between them by position works until it does not — "Toronto,
         // CA" would become California — and a wrong merge is the one
         // failure this table must not produce, because two entries
-        // where there should be one is a reader noticing while one
-        // entry that merged two places is a reader misled. The
-        // ambiguous ones resolve to themselves and merge only with
-        // another copy of themselves.
-        SUBDIVISIONS.forEach { (code, name) ->
-            if (code !in COUNTRY_CODES) put(code, name)
-        }
-        SUBDIVISION_NAMES.forEach { put(it, it) }
+        // where there should be one is a reader noticing, while one
+        // entry that merged two different places is a reader misled.
+        // An ambiguous code therefore merges only with another copy of
+        // itself, which is exactly as much as is actually known.
+        AMBIGUOUS.forEach { put(it, it) }
     }
+
 
 
     /**

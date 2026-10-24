@@ -477,6 +477,29 @@ fun InvestigationScreen(
                 val why: (Corroboration.Entity, String) -> Unit = { e, reason ->
                     viewModel.setDismissalReason(e.kind, e.value, reason)
                 }
+                // The disagreements first, because they are the one
+                // thing in this section that needs a decision rather
+                // than a reading.
+                val disputed = leads.filter { it.competing.isNotEmpty() }
+                if (disputed.isNotEmpty()) {
+                    SectionHeader(
+                        "SOURCES DISAGREE — ${disputed.map { it.kind }.distinct().size} " +
+                            "question" +
+                            (if (disputed.map { it.kind }.distinct().size == 1) "" else "s"),
+                        Intel.Amber
+                    )
+                    Text(
+                        "These are claims where only one answer can be right and " +
+                            "more than one was given. Everything below this is " +
+                            "listed again in its own section.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Intel.TextLow,
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    )
+                    disputed.forEach { entity ->
+                        EntityRow(entity, mark, onReason = why)
+                    }
+                }
                 leads.groupBy { it.kind }.forEach { (kind, group) ->
                     SectionHeader("$kind — ${group.size}", Intel.Cyan)
                     group.take(20).forEach { entity ->
@@ -1353,6 +1376,33 @@ private fun EntityRow(
                 style = MaterialTheme.typography.labelSmall,
                 color = Intel.TextLow
             )
+            // The disagreement, said rather than left to be noticed.
+            //
+            // Two sources giving different answers to a question that
+            // has one answer is a finding in its own right, and it
+            // used to be two rows side by side each reading "probably
+            // true".
+            if (entity.competing.isNotEmpty()) {
+                Text(
+                    buildString {
+                        append("Disagrees with ")
+                        append(entity.competing.take(3).joinToString(", "))
+                        if (entity.competing.size > 3) {
+                            append(" and ${entity.competing.size - 3} more")
+                        }
+                        append(" — ")
+                        append(entity.contradicted)
+                        append(
+                            if (entity.contradicted == 1) " independent source says"
+                            else " independent sources say"
+                        )
+                        append(" otherwise. Only one of these can be right.")
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Intel.Amber,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+            }
             // Why it was wrong, offered after the fact rather than in
             // the way of it. "We looked at this and it was not him"
             // tells the next reader almost nothing; the because is the

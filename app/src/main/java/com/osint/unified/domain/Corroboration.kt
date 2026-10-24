@@ -44,7 +44,23 @@ object Corroboration {
          * The source's grade was lowered for this case because it has
          * been wrong here more often than it has been right.
          */
-        val demoted: Boolean = false
+        val demoted: Boolean = false,
+        /**
+         * Independent sources asserting something else in this
+         * entity's place, where only one answer can be right.
+         *
+         * Grading.credibility has taken a `contradicting` count since
+         * it was written and has an IMPROBABLE verdict for it, and no
+         * caller ever passed it — so IMPROBABLE was unreachable in the
+         * shipped app and the scheme could agree but never disagree.
+         * ipinfo saying Germany and rdap saying the Netherlands became
+         * two entities side by side, each graded "probably true", and
+         * the disagreement — which is the finding — was left for the
+         * reader to notice.
+         */
+        val contradicted: Int = 0,
+        /** What those sources said instead. */
+        val competing: List<String> = emptyList()
     ) {
         val grade: String get() = Grading.code(reliability, credibility)
 
@@ -222,6 +238,22 @@ object Corroboration {
     }
 
     /**
+     * The set an assertion competes within, or null if it competes
+     * with nothing.
+     *
+     * A subject has one country, one position and one name. It has
+     * many hosts, many addresses, many handles — and a city is not a
+     * rival of the country it sits in, so only country-level places
+     * are grouped.
+     */
+    internal fun exclusiveGroup(kind: String, value: String): String? = when {
+        kind == "COORD" -> "COORD"
+        kind == "PERSON" -> "PERSON"
+        kind == "PLACE" && Places.isCountry(value) -> "COUNTRY"
+        else -> null
+    }
+
+    /**
      * Merges every result into the things it asserts.
      *
      * [seed] is what was searched, which is never reported back as a
@@ -259,6 +291,29 @@ object Corroboration {
 
         val unreliableHere = caughtOut(assertions, dismissed)
 
+        // Where only one answer can be right, what else was said.
+        //
+        // Deliberately a short list. Most kinds are legitimately
+        // many-valued — a domain has many hosts, a person has several
+        // addresses — and calling those a contradiction would make
+        // IMPROBABLE meaningless faster than leaving it unreachable
+        // did. These three are the ones where two different answers
+        // mean one of the sources is wrong:
+        //
+        //  - two different countries, when a country is being
+        //    asserted about one subject;
+        //  - two different coordinates for one thing;
+        //  - two different declared names for one account.
+        //
+        // A city and the country it is in are not a contradiction, so
+        // only country-level places compete with each other.
+        val exclusive = HashMap<String, MutableMap<String, Int>>()
+        assertions.forEach { (key, claims) ->
+            val group = exclusiveGroup(key.first, key.second) ?: return@forEach
+            val independent = independentCount(claims.map { it.first }.distinct())
+            exclusive.getOrPut(group) { HashMap() }[key.second] = independent
+        }
+
         return assertions.map { (key, claims) ->
             val (kind, value) = key
             val sources = claims.map { it.first }.distinct()
@@ -285,6 +340,11 @@ object Corroboration {
             // number from the best witness and the one the credibility
             // lift should depend on.
             val corroborator = grades.getOrNull(1) ?: reliability
+            val group = exclusiveGroup(kind, value)
+            val rivals = group?.let { exclusive[it] }
+                ?.filterKeys { it != value }
+                .orEmpty()
+            val contradicted = rivals.values.sum()
             val wrong = dismissed[key]
             val caveat = when {
                 wrong != null -> "you marked this wrong"
@@ -300,13 +360,16 @@ object Corroboration {
                 else Grading.credibility(
                     reliability,
                     agreeing = independent - 1,
+                    contradicting = contradicted,
                     agreeingSource = corroborator
                 ),
                 mentions = claims.sumOf { it.second },
                 caveat = caveat,
                 dismissed = wrong != null,
                 dismissalReason = wrong.orEmpty(),
-                demoted = demoted && wrong == null
+                demoted = demoted && wrong == null,
+                contradicted = contradicted,
+                competing = rivals.keys.sorted()
             )
         }.sortedWith(
             compareBy<Entity> { it.dismissed }
