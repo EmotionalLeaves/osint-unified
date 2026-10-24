@@ -142,8 +142,25 @@ object Http {
      * and gives away exactly what the proxy was meant to hide.
      */
     fun useProxy(host: String?, port: Int) {
+        // Unresolved, because resolving is a network call.
+        //
+        // InetSocketAddress(host, port) performs a DNS lookup on the
+        // calling thread, and the settings screen calls this from a
+        // text field's onValueChange — the main thread. On Android
+        // that throws NetworkOnMainThreadException, which the
+        // runCatching swallowed, leaving `relay` null: the switch read
+        // ON, the setting was persisted as enabled, the system
+        // selector was restored, and every request went direct. A
+        // proxy that silently is not a proxy is the worst possible
+        // outcome for the person who turned it on.
+        //
+        // createUnresolved never touches the network. OkHttp and the
+        // JVM's own selector both resolve a proxy address when they
+        // connect, which is off the main thread by then and is also
+        // the right time to do it — a proxy whose name resolves
+        // differently later is a proxy that still works.
         relay = if (host.isNullOrBlank() || port !in 1..65535) null
-        else runCatching { InetSocketAddress(host, port) }.getOrNull()
+        else runCatching { InetSocketAddress.createUnresolved(host.trim(), port) }.getOrNull()
         // The map's tile loader is not OkHttp — osmdroid uses
         // HttpURLConnection, which consults the JVM's default selector. A
         // proxy that covered everything except the thing drawing the

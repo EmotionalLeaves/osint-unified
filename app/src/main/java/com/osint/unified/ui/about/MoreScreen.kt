@@ -35,6 +35,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.osint.unified.BuildConfig
 import com.osint.unified.data.AppSettings
@@ -269,24 +274,40 @@ private fun PrivacyControls(settings: AppSettings, lockAvailable: Boolean) {
             Row(Modifier.fillMaxWidth().padding(top = 8.dp)) {
                 OutlinedTextField(
                     value = host,
-                    onValueChange = { host = it; applyProxy() },
+                    // Applied when the field is done, not per keystroke.
+                    //
+                    // Typing a port wrote and applied 9, then 90, then
+                    // 905, then 9050 — four proxy configurations, three
+                    // of them wrong, each persisted. The host field was
+                    // worse: every intermediate string was saved as the
+                    // proxy host.
+                    onValueChange = { host = it },
                     singleLine = true,
                     label = { Text("host", style = M3.typography.labelSmall) },
                     textStyle = M3.typography.bodySmall,
                     shape = RoundedCornerShape(8.dp),
                     colors = fieldColours(),
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier
+                        .weight(1f)
+                        .onFocusChanged { if (!it.isFocused) applyProxy() }
                 )
                 Spacer(Modifier.width(8.dp))
                 OutlinedTextField(
                     value = port,
-                    onValueChange = { port = it.filter { c -> c.isDigit() }.take(5); applyProxy() },
+                    onValueChange = { port = it.filter { c -> c.isDigit() }.take(5) },
                     singleLine = true,
                     label = { Text("port", style = M3.typography.labelSmall) },
                     textStyle = M3.typography.bodySmall,
                     shape = RoundedCornerShape(8.dp),
                     colors = fieldColours(),
-                    modifier = Modifier.width(110.dp)
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Number,
+                        imeAction = ImeAction.Done
+                    ),
+                    keyboardActions = KeyboardActions(onDone = { applyProxy() }),
+                    modifier = Modifier
+                        .width(110.dp)
+                        .onFocusChanged { if (!it.isFocused) applyProxy() }
                 )
             }
             Text(

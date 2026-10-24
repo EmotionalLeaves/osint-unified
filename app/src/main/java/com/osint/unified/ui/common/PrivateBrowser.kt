@@ -77,11 +77,26 @@ object PrivateBrowserHost {
      * target's own pages would be the one screen going direct while the
      * person believed everything was going through Tor.
      */
+    /**
+     * One executor, not one per call.
+     *
+     * This built a `newSingleThreadExecutor()` on every invocation
+     * and never shut it down, and its core thread is non-daemon and
+     * never times out — so each call parked a thread for the life of
+     * the process. The settings screen called this from the
+     * onValueChange of both proxy fields, so typing 127.0.0.1 and
+     * then 9050 leaked about thirteen threads.
+     */
+    private val proxyCallbacks: java.util.concurrent.Executor =
+        java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+            Thread(r, "webview-proxy").apply { isDaemon = true }
+        }
+
     fun useProxy(host: String?, port: Int) {
         if (!WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE)) return
         runCatching {
             val proxies = ProxyController.getInstance()
-            val executor = java.util.concurrent.Executors.newSingleThreadExecutor()
+            val executor = proxyCallbacks
             if (host.isNullOrBlank() || port !in 1..65535) {
                 proxies.clearProxyOverride(executor) { }
             } else {
@@ -106,18 +121,29 @@ fun PrivateBrowserDialog(url: String, onDismiss: () -> Unit) {
     var view by remember { mutableStateOf<WebView?>(null) }
     var saved by remember(url) { mutableStateOf(false) }
 
-    // Back goes back through the page's own history first. Closing the
-    // whole browser because somebody followed one link is the behaviour
-    // that makes an in-app browser feel like a trap.
-    androidx.activity.compose.BackHandler(enabled = true) {
-        val web = view
-        if (web != null && web.canGoBack()) web.goBack() else onDismiss()
-    }
-
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
+        // Inside the Dialog, not outside it.
+        //
+        // Declared out here the handler registers against the
+        // Activity's dispatcher, and the dialog window has focus and
+        // consumes the press itself — straight to onDismissRequest.
+        // So following two links into a site and pressing back closed
+        // the whole browser, which is exactly the trap the comment
+        // below says this exists to prevent. A Dialog hosts its own
+        // back dispatcher, and a handler declared in its content is
+        // the one that gets asked first.
+        //
+        // Back goes back through the page's own history first.
+        // Closing the whole browser because somebody followed one
+        // link is the behaviour that makes an in-app browser feel
+        // like a trap.
+        androidx.activity.compose.BackHandler(enabled = true) {
+            val web = view
+            if (web != null && web.canGoBack()) web.goBack() else onDismiss()
+        }
         Surface(Modifier.fillMaxSize(), color = Intel.Base) {
             Column(Modifier.fillMaxSize()) {
                 Column(
