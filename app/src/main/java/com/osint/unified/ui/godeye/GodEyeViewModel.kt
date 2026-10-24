@@ -766,7 +766,23 @@ class GodEyeViewModel(
                         )
                     } else {
                         apply(
-                            st.copy(loaded = st.loaded + key, feedTrouble = st.feedTrouble - key),
+                            st.copy(
+                                loaded = st.loaded + key,
+                                feedTrouble = st.feedTrouble - key,
+                                // The marker plans are keyed on this.
+                                //
+                                // The thirty polled feeds bump it when
+                                // their contents move; these four wrote
+                                // their results and did not, so a layer
+                                // armed on its own loaded its data, lit
+                                // its pill with a count and a tick, and
+                                // was never drawn — on the flat map
+                                // until the next pan, and on the globe,
+                                // which is the default view, until
+                                // something unrelated happened to
+                                // change.
+                                layerVersion = st.layerVersion + 1
+                            ),
                             v
                         )
                     }
@@ -971,7 +987,10 @@ class GodEyeViewModel(
                     st.copy(
                         radiation = v,
                         loaded = st.loaded + "radiation",
-                        feedTrouble = st.feedTrouble - "radiation"
+                        feedTrouble = st.feedTrouble - "radiation",
+                        // As in `onDemand`: without this the markers
+                        // are held and never planned.
+                        layerVersion = st.layerVersion + 1
                     )
                 }
             }

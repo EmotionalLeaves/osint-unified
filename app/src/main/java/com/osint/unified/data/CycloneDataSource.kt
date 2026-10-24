@@ -34,9 +34,9 @@ import java.util.Locale
  * it as plain message text, which [JtwcAdvisory] reads.
  *
  * Both keyless. Either one failing leaves the other's storms on the map,
- * because half the world's cyclones is better than none; only a total
- * failure raises, since an empty list here is read out loud as "no named
- * storms anywhere".
+ * because half the world's cyclones is better than none — but silence
+ * with a centre missing is not an all-clear, so an empty result raises
+ * unless every centre answered.
  */
 class CycloneDataSource(private val client: OkHttpClient = Http.feedClient) {
 
@@ -64,16 +64,32 @@ class CycloneDataSource(private val client: OkHttpClient = Http.feedClient) {
     suspend fun fetch(): List<GeoBlip> = withContext(Dispatchers.IO) {
         val atlantic = runCatching { nhc() }
         val elsewhere = JTWC_ADVISORIES.map { url -> runCatching { jtwc(url) } }
-        // A failure is only a failure if nothing answered. One centre
-        // being unreachable must not blank the other's storms, and must
-        // not let the brief announce an all-clear either.
-        if (atlantic.isFailure && elsewhere.all { it.isFailure }) {
-            throw atlantic.exceptionOrNull()
-                ?: elsewhere.firstNotNullOfOrNull { it.exceptionOrNull() }
-                ?: IOException("No cyclone centre could be reached")
-        }
-        atlantic.getOrDefault(emptyList()) +
+        val answers = listOf(atlantic) + elsewhere
+        val found = atlantic.getOrDefault(emptyList()) +
             elsewhere.flatMap { it.getOrDefault(emptyList()) }
+        // Partial data is shown: a storm an answering centre reported
+        // is real whatever the others did. It is only the ABSENCE that
+        // needs everyone, because an empty list here is read out loud
+        // by the world brief as "no tropical cyclones anywhere in the
+        // world".
+        //
+        // "Every centre failed" was the old test, and it was the same
+        // mistake TsunamiDataSource had already found and written a
+        // comment about. The Atlantic is quiet for most of the year,
+        // so NHC answering `activeStorms: []` while all five JTWC
+        // advisories 403 — the ordinary outcome for a non-browser
+        // agent on some networks — satisfied it and printed the
+        // all-clear through a West Pacific typhoon.
+        if (found.isEmpty() && answers.any { it.isFailure }) {
+            throw IOException(
+                "not every cyclone centre answered, so silence is not " +
+                    "an all-clear: " +
+                    answers.mapNotNull { it.exceptionOrNull()?.message }
+                        .distinct().joinToString("; ")
+                        .ifBlank { "no centre could be reached" }
+            )
+        }
+        found
     }
 
     /** One JTWC advisory, as plain military message text. */

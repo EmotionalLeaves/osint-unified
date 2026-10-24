@@ -26,10 +26,37 @@ class BundledPointsDataSource(
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
     @Volatile private var cache: List<GeoBlip>? = null
 
+    /**
+     * Throws when the dataset is not there, rather than reporting an
+     * empty world.
+     *
+     * These three assets are fetched in CI with `|| true` and
+     * `verify-assets.py` deletes one that fails its floor, on the
+     * stated grounds that the app "handles an absent dataset and says
+     * so". It did not say so: any failure — asset missing, JSON
+     * truncated, out of memory on a sixty-thousand-entry parse —
+     * became an empty list, which the poll reads as a clean answer and
+     * the pill prints as `PORTS·GLOBAL 0` with a loaded tick. An area
+     * report then found no ports in a harbour.
+     *
+     * The bundled-list executors already draw this line — "the breach
+     * catalogue is not bundled in this build" is a different sentence
+     * from "not found" — and this is the same distinction one layer
+     * down.
+     *
+     * Only a successful parse is cached, so a transient failure is
+     * retried instead of being frozen in for the life of the process.
+     */
     suspend fun fetch(): List<GeoBlip> = withContext(Dispatchers.IO) {
         cache?.let { return@withContext it }
+        val text = try {
+            appContext.assets.open(assetName).bufferedReader().use { it.readText() }
+        } catch (e: Exception) {
+            throw java.io.IOException(
+                "$assetName is not bundled in this build", e
+            )
+        }
         val parsed = try {
-            val text = appContext.assets.open(assetName).bufferedReader().use { it.readText() }
             json.parseToJsonElement(text).jsonArray.mapNotNull { el ->
                 val o = el as? JsonObject ?: return@mapNotNull null
                 val lat = (o["lat"] as? JsonPrimitive)?.doubleOrNull ?: return@mapNotNull null
@@ -37,7 +64,14 @@ class BundledPointsDataSource(
                 GeoBlip(lat, lon, label(o), link(o))
             }.take(limit)
         } catch (e: Exception) {
-            emptyList()
+            throw java.io.IOException(
+                "$assetName could not be read: ${e.message ?: e::class.simpleName}", e
+            )
+        }
+        // A dataset that parses to nothing is a broken dataset, not a
+        // world with no airports in it.
+        if (parsed.isEmpty()) {
+            throw java.io.IOException("$assetName holds no usable points")
         }
         cache = parsed
         parsed

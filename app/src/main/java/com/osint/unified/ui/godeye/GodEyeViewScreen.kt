@@ -814,7 +814,49 @@ fun GodEyeViewScreen(
             // Everything off, in one gesture. Turning thirty-three
             // switches back one at a time to get a clean map is the
             // kind of chore that makes people stop using a feature.
+            // ALL LAYERS is a shortcut, not a mode that outranks the
+            // switches.
+            //
+            // Every armed test reads `showX || god`, so while it was on
+            // a tap on a pill flipped a flag nothing read, CLEAR reset
+            // thirty-three flags nothing read, and the six presets were
+            // all the same preset: press ALL LAYERS then CLEAR and
+            // nothing at all happened, with every feed still polling
+            // under a row that still said 34 ON. And `god` is saveable,
+            // so that state survived a restart.
+            //
+            // The shortcut collapses into the switches the moment
+            // anything else touches them. Turning it on means "all of
+            // them on", and that is a sentence the thirty-three flags
+            // can say by themselves.
+            val settleGod = {
+                if (god) {
+                    showAircraft = true; showAirportStatus = true
+                    showAirports = true; showAirspace = true
+                    showAqi = true; showAurora = true
+                    showBuoys = true; showCables = true
+                    showCameras = true; showConflict = true
+                    showCyclones = true; showEvents = true
+                    showFires = true; showGdacs = true
+                    showLaunches = true; showMetar = true
+                    showMil = true; showNews = true
+                    showOutages = true; showOverlay = true
+                    showPorts = true; showPower = true
+                    showQuakes = true; showRadiation = true
+                    showSats = true; showSeaLevel = true
+                    showSites = true; showStations = true
+                    showTsunami = true; showVessels = true
+                    showVolcanoes = true; showWeather = true
+                    showWorldWarnings = true
+                    god = false
+                }
+            }
+
             val clearLayers = {
+                // First, because everything below is read as
+                // `showX || god` and without this line not one of the
+                // thirty-three assignments reaches the map.
+                god = false
                 showAircraft = false
                 showAirportStatus = false
                 showAirports = false
@@ -933,48 +975,50 @@ fun GodEyeViewScreen(
             // group with nothing in it is worse than no heading.
             val layerGroups: List<Pair<String, @Composable () -> Unit>> = listOf(
                 "IN THE AIR" to {
-                LayerPill("AIR·GLOBAL", visibleAircraft.size, Intel.NetCyan, showAircraft || god, full = "Aircraft", loaded = "aircraft" in state.loaded, trouble = "aircraft" in state.feedTrouble) { showAircraft = !showAircraft }
-                LayerPill("MIL", state.milAircraft.size, Color(0xFFFFD23F), showMil || god, full = "Military aircraft", loaded = "milAircraft" in state.loaded, trouble = "milAircraft" in state.feedTrouble) { showMil = !showMil }
-                LayerPill("APT", state.airports.size, Color(0xFF8FD3FF), showAirports || god, full = "Airports", loaded = "airports" in state.loaded, trouble = "airports" in state.feedTrouble) { showAirports = !showAirports }
-                LayerPill("ATC·US", state.airportStatus.size, Color(0xFFFFA64D), showAirportStatus || god, full = "Airport delays (US)", loaded = "airportStatus" in state.loaded, trouble = "airportStatus" in state.feedTrouble) { showAirportStatus = !showAirportStatus }
-                LayerPill("METAR", state.metar.size, Color(0xFF9FE8FF), showMetar || god, full = "Airport weather", loaded = "metar" in state.loaded, trouble = "metar" in state.feedTrouble) { showMetar = !showMetar }
+                LayerPill("AIR·GLOBAL", visibleAircraft.size, Intel.NetCyan, showAircraft || god, full = "Aircraft", loaded = "aircraft" in state.loaded, trouble = "aircraft" in state.feedTrouble) { settleGod(); showAircraft = !showAircraft }
+                LayerPill("MIL", state.milAircraft.size, Color(0xFFFFD23F), showMil || god, full = "Military aircraft", loaded = "milAircraft" in state.loaded, trouble = "milAircraft" in state.feedTrouble) { settleGod(); showMil = !showMil }
+                LayerPill("APT", state.airports.size, Color(0xFF8FD3FF), showAirports || god, full = "Airports", loaded = "airports" in state.loaded, trouble = "airports" in state.feedTrouble) { settleGod(); showAirports = !showAirports }
+                LayerPill("ATC·US", state.airportStatus.size, Color(0xFFFFA64D), showAirportStatus || god, full = "Airport delays (US)", loaded = "airportStatus" in state.loaded, trouble = "airportStatus" in state.feedTrouble) { settleGod(); showAirportStatus = !showAirportStatus }
+                LayerPill("METAR", state.metar.size, Color(0xFF9FE8FF), showMetar || god, full = "Airport weather", loaded = "metar" in state.loaded, trouble = "metar" in state.feedTrouble) { settleGod(); showMetar = !showMetar }
                 LayerPill(
                 "MIL GROUND", state.airspace.size, Color(0xFFFF5370), showAirspace || god, full = "Military areas", loadsOnDemand = true, loaded = "airspace" in state.loaded,
                 trouble = "airspace" in state.feedTrouble
                 ) {
+                settleGod()
                 showAirspace = !showAirspace
                 if (showAirspace) viewModel.ensureAirspace()
                 }
                 },
                 "AT SEA" to {
-                LayerPill("SEA·N.EUROPE", state.vessels.size, Intel.Teal, showVessels || god, full = "Vessels (AIS)", loaded = "vessels" in state.loaded, trouble = "vessels" in state.feedTrouble) { showVessels = !showVessels }
-                LayerPill("PORTS·GLOBAL", state.ports.size, Color(0xFF7FD4FF), showPorts || god, full = "Ports", loaded = "ports" in state.loaded, trouble = "ports" in state.feedTrouble) { showPorts = !showPorts }
-                LayerPill("BUOY", state.buoys.size, Color(0xFF4DD0E1), showBuoys || god, full = "Ocean buoys", loaded = "buoys" in state.loaded, trouble = "buoys" in state.feedTrouble) { showBuoys = !showBuoys }
-                LayerPill("TIDE·GLOBAL", state.seaLevel.size, Color(0xFF4DD0E1), showSeaLevel || god, full = "Sea level gauges", loaded = "seaLevel" in state.loaded, trouble = "seaLevel" in state.feedTrouble) { showSeaLevel = !showSeaLevel }
-                LayerPill("CABLE", state.cables.size, Color(0xFF7FFFD4), showCables || god, full = "Submarine cables", loaded = "cables" in state.loaded, trouble = "cables" in state.feedTrouble) { showCables = !showCables }
+                LayerPill("SEA·N.EUROPE", state.vessels.size, Intel.Teal, showVessels || god, full = "Vessels (AIS)", loaded = "vessels" in state.loaded, trouble = "vessels" in state.feedTrouble) { settleGod(); showVessels = !showVessels }
+                LayerPill("PORTS·GLOBAL", state.ports.size, Color(0xFF7FD4FF), showPorts || god, full = "Ports", loaded = "ports" in state.loaded, trouble = "ports" in state.feedTrouble) { settleGod(); showPorts = !showPorts }
+                LayerPill("BUOY", state.buoys.size, Color(0xFF4DD0E1), showBuoys || god, full = "Ocean buoys", loaded = "buoys" in state.loaded, trouble = "buoys" in state.feedTrouble) { settleGod(); showBuoys = !showBuoys }
+                LayerPill("TIDE·GLOBAL", state.seaLevel.size, Color(0xFF4DD0E1), showSeaLevel || god, full = "Sea level gauges", loaded = "seaLevel" in state.loaded, trouble = "seaLevel" in state.feedTrouble) { settleGod(); showSeaLevel = !showSeaLevel }
+                LayerPill("CABLE", state.cables.size, Color(0xFF7FFFD4), showCables || god, full = "Submarine cables", loaded = "cables" in state.loaded, trouble = "cables" in state.feedTrouble) { settleGod(); showCables = !showCables }
                 },
                 "THE GROUND MOVING" to {
-                LayerPill("SEIS", state.quakes.size, Intel.Coral, showQuakes || god, full = "Earthquakes", loaded = "quakes" in state.loaded, trouble = "quakes" in state.feedTrouble) { showQuakes = !showQuakes }
-                LayerPill("VOLC·GLOBAL", state.volcanoes.size, Color(0xFFFF4D4D), showVolcanoes || god, full = "Volcanoes", loaded = "volcanoes" in state.loaded, trouble = "volcanoes" in state.feedTrouble) { showVolcanoes = !showVolcanoes }
-                LayerPill("STATIONS", state.stations.size, Color(0xFF9AB0C0), showStations || god, full = "Seismic stations", loaded = "stations" in state.loaded, trouble = "stations" in state.feedTrouble) { showStations = !showStations }
-                LayerPill("EVT", state.naturalEvents.size, Intel.Amber, showEvents || god, full = "Natural events", loaded = "naturalEvents" in state.loaded, trouble = "naturalEvents" in state.feedTrouble) { showEvents = !showEvents }
-                LayerPill("FIRE·GLOBAL", state.fires.size, Color(0xFFFF5A4D), showFires || god, full = "Wildfires", loaded = "fires" in state.loaded, trouble = "fires" in state.feedTrouble) { showFires = !showFires }
+                LayerPill("SEIS", state.quakes.size, Intel.Coral, showQuakes || god, full = "Earthquakes", loaded = "quakes" in state.loaded, trouble = "quakes" in state.feedTrouble) { settleGod(); showQuakes = !showQuakes }
+                LayerPill("VOLC·GLOBAL", state.volcanoes.size, Color(0xFFFF4D4D), showVolcanoes || god, full = "Volcanoes", loaded = "volcanoes" in state.loaded, trouble = "volcanoes" in state.feedTrouble) { settleGod(); showVolcanoes = !showVolcanoes }
+                LayerPill("STATIONS", state.stations.size, Color(0xFF9AB0C0), showStations || god, full = "Seismic stations", loaded = "stations" in state.loaded, trouble = "stations" in state.feedTrouble) { settleGod(); showStations = !showStations }
+                LayerPill("EVT", state.naturalEvents.size, Intel.Amber, showEvents || god, full = "Natural events", loaded = "naturalEvents" in state.loaded, trouble = "naturalEvents" in state.feedTrouble) { settleGod(); showEvents = !showEvents }
+                LayerPill("FIRE·GLOBAL", state.fires.size, Color(0xFFFF5A4D), showFires || god, full = "Wildfires", loaded = "fires" in state.loaded, trouble = "fires" in state.feedTrouble) { settleGod(); showFires = !showFires }
                 },
                 "WEATHER AND HAZARD" to {
-                LayerPill("WX·US", state.weather.size, Color(0xFF7FB2FF), showWeather || god, full = "Weather alerts (US)", loaded = "weather" in state.loaded, trouble = "weather" in state.feedTrouble) { showWeather = !showWeather }
-                LayerPill("WARN·GLOBAL", state.worldWarnings.size, Color(0xFFFFD166), showWorldWarnings || god, full = "Severe weather warnings", loaded = "worldWarnings" in state.loaded, trouble = "worldWarnings" in state.feedTrouble) { showWorldWarnings = !showWorldWarnings }
-                LayerPill("CYCLONE·GLOBAL", state.cyclones.size, Color(0xFFFF7AC6), showCyclones || god, full = "Tropical cyclones", loaded = "cyclones" in state.loaded, trouble = "cyclones" in state.feedTrouble) { showCyclones = !showCyclones }
-                LayerPill("TSUNAMI", state.tsunamis.size, Color(0xFF4DF0FF), showTsunami || god, full = "Tsunami bulletins (Pacific, Caribbean, Indonesia)", loaded = "tsunamis" in state.loaded, trouble = "tsunamis" in state.feedTrouble) { showTsunami = !showTsunami }
-                LayerPill("HAZARD", state.gdacs.size, Color(0xFFFF8A3D), showGdacs || god, full = "Disaster alerts", loaded = "gdacs" in state.loaded, trouble = "gdacs" in state.feedTrouble) { showGdacs = !showGdacs }
-                LayerPill("AQI", state.airQuality.size, Color(0xFFB4E66B), showAqi || god, full = "Air quality", loaded = "airQuality" in state.loaded, trouble = "airQuality" in state.feedTrouble) { showAqi = !showAqi }
+                LayerPill("WX·US", state.weather.size, Color(0xFF7FB2FF), showWeather || god, full = "Weather alerts (US)", loaded = "weather" in state.loaded, trouble = "weather" in state.feedTrouble) { settleGod(); showWeather = !showWeather }
+                LayerPill("WARN·GLOBAL", state.worldWarnings.size, Color(0xFFFFD166), showWorldWarnings || god, full = "Severe weather warnings", loaded = "worldWarnings" in state.loaded, trouble = "worldWarnings" in state.feedTrouble) { settleGod(); showWorldWarnings = !showWorldWarnings }
+                LayerPill("CYCLONE·GLOBAL", state.cyclones.size, Color(0xFFFF7AC6), showCyclones || god, full = "Tropical cyclones", loaded = "cyclones" in state.loaded, trouble = "cyclones" in state.feedTrouble) { settleGod(); showCyclones = !showCyclones }
+                LayerPill("TSUNAMI", state.tsunamis.size, Color(0xFF4DF0FF), showTsunami || god, full = "Tsunami bulletins (Pacific, Caribbean, Indonesia)", loaded = "tsunamis" in state.loaded, trouble = "tsunamis" in state.feedTrouble) { settleGod(); showTsunami = !showTsunami }
+                LayerPill("HAZARD", state.gdacs.size, Color(0xFFFF8A3D), showGdacs || god, full = "Disaster alerts", loaded = "gdacs" in state.loaded, trouble = "gdacs" in state.feedTrouble) { settleGod(); showGdacs = !showGdacs }
+                LayerPill("AQI", state.airQuality.size, Color(0xFFB4E66B), showAqi || god, full = "Air quality", loaded = "airQuality" in state.loaded, trouble = "airQuality" in state.feedTrouble) { settleGod(); showAqi = !showAqi }
                 },
                 "BUILT AND WATCHED" to {
-                LayerPill("POWER", state.powerPlants.size, Color(0xFFFFC14D), showPower || god, full = "Power plants", loaded = "powerPlants" in state.loaded, trouble = "powerPlants" in state.feedTrouble) { showPower = !showPower }
-                LayerPill("OUTAGE·GLOBAL", state.outages.size, Color(0xFFFF6B6B), showOutages || god, full = "Internet outages", loaded = "outages" in state.loaded, trouble = "outages" in state.feedTrouble) { showOutages = !showOutages }
+                LayerPill("POWER", state.powerPlants.size, Color(0xFFFFC14D), showPower || god, full = "Power plants", loaded = "powerPlants" in state.loaded, trouble = "powerPlants" in state.feedTrouble) { settleGod(); showPower = !showPower }
+                LayerPill("OUTAGE·GLOBAL", state.outages.size, Color(0xFFFF6B6B), showOutages || god, full = "Internet outages", loaded = "outages" in state.loaded, trouble = "outages" in state.feedTrouble) { settleGod(); showOutages = !showOutages }
                 LayerPill(
                 "CAMERAS", state.cameras.size, Color(0xFFB388FF), showCameras || god, full = "Public cameras", loadsOnDemand = true, loaded = "cameras" in state.loaded,
                 trouble = "cameras" in state.feedTrouble
                 ) {
+                settleGod()
                 showCameras = !showCameras
                 if (showCameras) viewModel.ensureCameras()
                 }
@@ -982,6 +1026,7 @@ fun GodEyeViewScreen(
                 "SITES", state.sites.size, Color(0xFFD98BFF), showSites || god, full = "Borders, embassies, prisons", loadsOnDemand = true, loaded = "sites" in state.loaded,
                 trouble = "sites" in state.feedTrouble
                 ) {
+                settleGod()
                 showSites = !showSites
                 if (showSites) viewModel.ensureSites()
                 }
@@ -989,20 +1034,21 @@ fun GodEyeViewScreen(
                 "RAD", state.radiation.size, Color(0xFFD4FF4D), showRadiation || god, full = "Radiation monitors", loadsOnDemand = true, loaded = "radiation" in state.loaded,
                 trouble = "radiation" in state.feedTrouble
                 ) {
+                settleGod()
                 showRadiation = !showRadiation
                 viewModel.ensureRadiation(showRadiation)
                 }
                 },
                 "ABOVE THE WEATHER" to {
-                LayerPill("SAT", state.satellites.size, Color(0xFFC0A8FF), showSats || god, full = "Satellites overhead", loaded = "satellites" in state.loaded, trouble = "satellites" in state.feedTrouble) { showSats = !showSats }
-                LayerPill("LAUNCH·GLOBAL", state.launches.size, Color(0xFFFFF066), showLaunches || god, full = "Rocket launches", loaded = "launches" in state.loaded, trouble = "launches" in state.feedTrouble) { showLaunches = !showLaunches }
-                LayerPill("AURORA", state.aurora.size, Color(0xFF66FFB2), showAurora || god, full = "Aurora", loaded = "aurora" in state.loaded, trouble = "aurora" in state.feedTrouble) { showAurora = !showAurora }
+                LayerPill("SAT", state.satellites.size, Color(0xFFC0A8FF), showSats || god, full = "Satellites overhead", loaded = "satellites" in state.loaded, trouble = "satellites" in state.feedTrouble) { settleGod(); showSats = !showSats }
+                LayerPill("LAUNCH·GLOBAL", state.launches.size, Color(0xFFFFF066), showLaunches || god, full = "Rocket launches", loaded = "launches" in state.loaded, trouble = "launches" in state.feedTrouble) { settleGod(); showLaunches = !showLaunches }
+                LayerPill("AURORA", state.aurora.size, Color(0xFF66FFB2), showAurora || god, full = "Aurora", loaded = "aurora" in state.loaded, trouble = "aurora" in state.feedTrouble) { settleGod(); showAurora = !showAurora }
                 },
                 "BEING REPORTED" to {
-                LayerPill("CONFLICT", state.conflicts.size, Color(0xFFFF2E2E), showConflict || god, full = "Armed conflict", loaded = "conflicts" in state.loaded, trouble = "conflicts" in state.feedTrouble) { showConflict = !showConflict }
-                LayerPill("NEWS", state.news.size, Color(0xFFFF79C6), showNews || god, full = "News", loaded = "news" in state.loaded, trouble = "news" in state.feedTrouble) { showNews = !showNews }
+                LayerPill("CONFLICT", state.conflicts.size, Color(0xFFFF2E2E), showConflict || god, full = "Armed conflict", loaded = "conflicts" in state.loaded, trouble = "conflicts" in state.feedTrouble) { settleGod(); showConflict = !showConflict }
+                LayerPill("NEWS", state.news.size, Color(0xFFFF79C6), showNews || god, full = "News", loaded = "news" in state.loaded, trouble = "news" in state.feedTrouble) { settleGod(); showNews = !showNews }
                 if (state.overlayPoints.isNotEmpty()) {
-                LayerPill("OVLY", state.overlayPoints.size, Intel.CyanBright, showOverlay || god, full = "Your own overlay", loaded = "overlayPoints" in state.loaded, trouble = "overlayPoints" in state.feedTrouble) { showOverlay = !showOverlay }
+                LayerPill("OVLY", state.overlayPoints.size, Intel.CyanBright, showOverlay || god, full = "Your own overlay", loaded = "overlayPoints" in state.loaded, trouble = "overlayPoints" in state.feedTrouble) { settleGod(); showOverlay = !showOverlay }
                 }
                 },
             )

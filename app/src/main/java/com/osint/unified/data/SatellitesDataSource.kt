@@ -69,7 +69,17 @@ class SatellitesDataSource(
             }
         }
         val snapshot = catalogue
-        if (snapshot.isEmpty()) return@withContext emptyList()
+        // Not an empty sky. `SAT 0` is a sentence about what is
+        // overhead, and on a first run with no network and no disk
+        // cache the catalogue is empty because nothing could be read,
+        // not because low Earth orbit is clear. Every sibling feed
+        // throws here; this one returned the all-clear.
+        if (snapshot.isEmpty()) {
+            throw java.io.IOException(
+                "the satellite catalogue could not be loaded, so nothing " +
+                    "can be said about what is overhead"
+            )
+        }
         snapshot.mapNotNull { propagate(it, now) }
     }
 
