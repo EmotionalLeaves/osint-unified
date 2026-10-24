@@ -1041,18 +1041,29 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
             return@runCatching "No news coverage for \"$query\" in the last three days."
         }
         val byCountry = LinkedHashMap<String, Int>()
-        val lines = articles.take(50).mapNotNull { a ->
+        val parsedArticles = articles.mapNotNull { a ->
             val o = a as? JsonObject ?: return@mapNotNull null
             fun f(k: String) = (o[k] as? JsonPrimitive)?.contentOrNull
-            val title = f("title")?.trim() ?: return@mapNotNull null
+            val title = f("title")?.trim()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
             f("sourcecountry")?.takeIf { it.isNotBlank() }?.let { byCountry[it] = (byCountry[it] ?: 0) + 1 }
-            buildString {
-                append("• $title")
-                f("domain")?.let { append("\n  $it") }
-                f("seendate")?.let { append("  ${it.take(8)}") }
-                f("url")?.let { append("\n  $it") }
-            }
+            com.osint.unified.domain.StoryClusters.Article(
+                title = title,
+                domain = f("domain")?.takeIf { it.isNotBlank() },
+                url = f("url"),
+                seen = f("seendate"),
+                country = f("sourcecountry")
+            )
         }
+        // Grouped, not listed.
+        //
+        // Seventy-five headlines is not a briefing: most of them are
+        // the same three stories rewritten, and the thing worth
+        // knowing — that one is carried by thirty outlets and
+        // another by one — cannot be seen in a flat list sorted by
+        // time. Ordered by how many independent publishers carry a
+        // story, which is the same reasoning the corroboration pass
+        // uses everywhere else in this app.
+        val clusters = com.osint.unified.domain.StoryClusters.cluster(parsedArticles)
         buildString {
             // "at least", when the request's own cap is what the
             // count reflects. maxrecords=75 is the ceiling, and
@@ -1060,7 +1071,8 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
             // exactly seventy-five.
             val more = if (articles.size >= 75) "at least " else ""
             append("News coverage for \"$query\" — $more${articles.size} articles")
-            if (articles.size > 50) append(" (50 listed)")
+            append(" in ${clusters.size} ")
+            append(if (clusters.size == 1) "story" else "distinct stories")
             append(", last 3 days\n")
             if (byCountry.isNotEmpty()) {
                 append("\nReporting countries: ")
@@ -1070,8 +1082,40 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
                 )
                 append("\n")
             }
-            append("\n")
-            append(lines.joinToString("\n"))
+            clusters.take(20).forEach { c ->
+                append("\n▸ ${c.headline}\n")
+                append("  ${c.publishers} ")
+                append(if (c.publishers == 1) "publisher" else "publishers")
+                val from = com.osint.unified.domain.StoryClusters.day(c.first)
+                val to = com.osint.unified.domain.StoryClusters.day(c.last)
+                if (from != null) {
+                    if (to != null && to != from) append(", $from to $to")
+                    else append(", $from")
+                }
+                if (c.countries.size > 1) {
+                    append(", ${c.countries.size} countries")
+                }
+                append("\n")
+                // One line per publisher, not per article: the same
+                // outlet running a story four times is one outlet,
+                // and printing it four times reads as four sources.
+                c.articles.distinctBy { it.domain ?: it.url }.take(6).forEach { a ->
+                    append("  · ${a.domain ?: "?"}")
+                    com.osint.unified.domain.StoryClusters.day(a.seen)?.let { append("  $it") }
+                    a.url?.let { append("\n    $it") }
+                    append("\n")
+                }
+                val outlets = c.articles.distinctBy { it.domain ?: it.url }.size
+                if (outlets > 6) append("  …and ${outlets - 6} more publishers.\n")
+            }
+            if (clusters.size > 20) {
+                append("\n…and ${clusters.size - 20} smaller stories.\n")
+            }
+            append("\nA story one outlet carries and a story thirty carry are ")
+            append("different facts about the world, which is why these are ")
+            append("ordered by publishers rather than by time. Outlets ")
+            append("republishing the same wire copy are not independent ")
+            append("confirmation of each other.\n")
         }
     }
 
