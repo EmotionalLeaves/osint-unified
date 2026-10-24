@@ -38,160 +38,6 @@ object Places {
         "your heart", "cyberspace", "the cloud", "tbd", "-", "--", "?",
     )
 
-    /**
-     * Written form to the form everything is counted under.
-     *
-     * Endonyms, the common abbreviations, and the spellings that differ
-     * only by a diacritic once the diacritics are gone anyway.
-     */
-    private val ALIASES: Map<String, String> = buildMap {
-        // Cities whose English name differs from the local one. These
-        // are the ones that actually turn up in a profile's location
-        // field; a complete gazetteer would be a different project.
-        val cities = listOf(
-            "wien" to "vienna", "muenchen" to "munich", "munchen" to "munich",
-            "koeln" to "cologne", "koln" to "cologne", "nurnberg" to "nuremberg",
-            "nuernberg" to "nuremberg", "frankfurt am main" to "frankfurt",
-            "praha" to "prague", "moskva" to "moscow", "moskwa" to "moscow",
-            "sankt peterburg" to "saint petersburg",
-            "st petersburg" to "saint petersburg",
-            "st. petersburg" to "saint petersburg",
-            "roma" to "rome", "firenze" to "florence", "milano" to "milan",
-            "napoli" to "naples", "torino" to "turin", "venezia" to "venice",
-            "genova" to "genoa", "lisboa" to "lisbon", "porto" to "oporto",
-            "sevilla" to "seville", "zaragoza" to "saragossa",
-            "warszawa" to "warsaw", "krakow" to "cracow", "gdansk" to "danzig",
-            "beograd" to "belgrade", "zagreb" to "zagreb",
-            "bucuresti" to "bucharest", "kobenhavn" to "copenhagen",
-            "goteborg" to "gothenburg", "malmo" to "malmo",
-            "zurich" to "zurich", "geneve" to "geneva", "genf" to "geneva",
-            "basel" to "basel", "bern" to "berne",
-            "den haag" to "the hague", "s-gravenhage" to "the hague",
-            "'s-gravenhage" to "the hague", "antwerpen" to "antwerp",
-            "anvers" to "antwerp", "gent" to "ghent", "gand" to "ghent",
-            "brugge" to "bruges", "bruxelles" to "brussels",
-            "brussel" to "brussels", "liege" to "liege", "luik" to "liege",
-            "athina" to "athens", "athinai" to "athens",
-            "thessaloniki" to "salonica", "istanbul" to "istanbul",
-            "izmir" to "izmir", "kyiv" to "kyiv", "kiev" to "kyiv",
-            "lviv" to "lviv", "lvov" to "lviv", "odesa" to "odesa",
-            "odessa" to "odesa", "minsk" to "minsk", "tallinn" to "tallinn",
-            "riga" to "riga", "vilnius" to "vilnius", "helsinki" to "helsinki",
-            "helsingfors" to "helsinki", "oslo" to "oslo",
-            "reykjavik" to "reykjavik", "dublin" to "dublin",
-            "baile atha cliath" to "dublin", "edinburgh" to "edinburgh",
-            "beijing" to "beijing", "peking" to "beijing",
-            "guangzhou" to "guangzhou", "canton" to "guangzhou",
-            "shanghai" to "shanghai", "hong kong" to "hong kong",
-            "hongkong" to "hong kong", "hk" to "hong kong",
-            "tokyo" to "tokyo", "tokio" to "tokyo", "kyoto" to "kyoto",
-            "osaka" to "osaka", "seoul" to "seoul",
-            "mumbai" to "mumbai", "bombay" to "mumbai",
-            "kolkata" to "kolkata", "calcutta" to "kolkata",
-            "chennai" to "chennai", "madras" to "chennai",
-            "bengaluru" to "bengaluru", "bangalore" to "bengaluru",
-            "delhi" to "delhi", "new delhi" to "delhi",
-            "al qahirah" to "cairo", "cairo" to "cairo",
-            "mexico city" to "mexico city", "ciudad de mexico" to "mexico city",
-            "cdmx" to "mexico city", "sao paulo" to "sao paulo",
-            "rio de janeiro" to "rio de janeiro", "rio" to "rio de janeiro",
-            "buenos aires" to "buenos aires", "nyc" to "new york",
-            "new york city" to "new york", "ny" to "new york",
-            "sf" to "san francisco", "san fran" to "san francisco",
-            "bay area" to "san francisco bay area",
-            "la" to "los angeles", "l.a." to "los angeles",
-            "dc" to "washington", "washington dc" to "washington",
-            "washington d.c." to "washington",
-        )
-        cities.forEach { (from, to) -> put(from, to) }
-
-        // Countries: ISO alpha-2, alpha-3 and the names people write,
-        // all counted under the English name.
-        COUNTRIES.forEach { (name, codes) ->
-            put(name, name)
-            codes.forEach { put(it, name) }
-        }
-        OTHER_COUNTRY_NAMES.forEach { (from, to) -> put(from, to) }
-
-        // US states and Canadian provinces, because "Austin, TX" and
-        // "Austin, Texas" are one place — but only the codes that mean
-        // one thing.
-        //
-        // Half the subdivision codes are also country codes: CA is
-        // California and Canada, DE is Delaware and Germany, IN is
-        // Indiana and India, MD, PA, SC, VA and a dozen more. Guessing
-        // between them by position works until it does not — "Toronto,
-        // CA" would become California — and a wrong merge is the one
-        // failure this table must not produce, because two entries
-        // where there should be one is a reader noticing while one
-        // entry that merged two places is a reader misled. The
-        // ambiguous ones resolve to themselves and merge only with
-        // another copy of themselves.
-        SUBDIVISIONS.forEach { (code, name) ->
-            if (code !in COUNTRY_CODES) put(code, name)
-        }
-        SUBDIVISION_NAMES.forEach { put(it, it) }
-    }
-
-    /** Every code any country in the table goes by. */
-    private val COUNTRY_CODES: Set<String> =
-        COUNTRIES.flatMap { it.second }.toSet()
-
-    private val SUBDIVISION_NAMES: Set<String> =
-        SUBDIVISIONS.map { it.second }.toSet()
-
-    /**
-     * One written place, reduced to the form everything counts under,
-     * or null when it is not a place at all.
-     */
-    fun canonical(raw: String): String? {
-        val cleaned = clean(raw) ?: return null
-        return ALIASES[cleaned] ?: cleaned
-    }
-
-    /**
-     * A written place and the pieces of it worth counting separately.
-     *
-     * "Vienna, Austria" is both a claim about a city and a claim about
-     * a country, and the second is what lets a source that only says
-     * "AT" agree with it. Returned whole-first, deduplicated, and only
-     * for two or three components — a longer list is an address, and
-     * splitting an address produces street names as places.
-     */
-    fun parts(raw: String): List<String> {
-        val whole = canonical(raw) ?: return emptyList()
-        val pieces = raw.split(',', '·', '|')
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
-        if (pieces.size !in 2..3) return listOf(whole)
-        val out = LinkedHashSet<String>()
-        out += whole
-        pieces.forEach { piece -> canonical(piece)?.let { out += it } }
-        return out.toList()
-    }
-
-    /** Whether a canonical form names a country rather than somewhere in one. */
-    fun isCountry(canonical: String): Boolean = canonical in COUNTRY_NAMES
-
-    private fun clean(raw: String): String? {
-        var v = raw.trim()
-        if (v.isEmpty() || v.length > 60) return null
-        if (v.contains('@') || v.contains("http", true) || v.contains('/')) return null
-        // Diacritics removed, so Zürich and Zurich are one word before
-        // the alias table is consulted at all.
-        v = Normalizer.normalize(v, Normalizer.Form.NFD)
-            .replace(Regex("\\p{Mn}+"), "")
-        v = v.lowercase(Locale.US)
-            .replace(Regex("[\\p{Punct}&&[^.,'\\-]]"), " ")
-            .replace(Regex("\\s+"), " ")
-            .trim(' ', '.', ',', '-', '\'')
-        if (v.isEmpty() || v.length < 2) return null
-        if (v in NOT_A_PLACE) return null
-        // A place name made only of digits is a postcode or a mistake.
-        if (v.none { it.isLetter() }) return null
-        return v
-    }
-
     /** English name to the codes that mean it. */
     private val COUNTRIES: List<Pair<String, List<String>>> = listOf(
         "afghanistan" to listOf("af", "afg"), "albania" to listOf("al", "alb"),
@@ -310,4 +156,160 @@ object Places {
         "nb" to "new brunswick", "ns" to "nova scotia", "on" to "ontario",
         "qc" to "quebec", "sk" to "saskatchewan",
     )
+
+    /** Every code any country in the table goes by. */
+    private val COUNTRY_CODES: Set<String> =
+        COUNTRIES.flatMap { it.second }.toSet()
+
+    private val SUBDIVISION_NAMES: Set<String> =
+        SUBDIVISIONS.map { it.second }.toSet()
+
+    /**
+     * Written form to the form everything is counted under.
+     *
+     * Endonyms, the common abbreviations, and the spellings that differ
+     * only by a diacritic once the diacritics are gone anyway.
+     */
+    private val ALIASES: Map<String, String> = buildMap {
+        // Cities whose English name differs from the local one. These
+        // are the ones that actually turn up in a profile's location
+        // field; a complete gazetteer would be a different project.
+        val cities = listOf(
+            "wien" to "vienna", "muenchen" to "munich", "munchen" to "munich",
+            "koeln" to "cologne", "koln" to "cologne", "nurnberg" to "nuremberg",
+            "nuernberg" to "nuremberg", "frankfurt am main" to "frankfurt",
+            "praha" to "prague", "moskva" to "moscow", "moskwa" to "moscow",
+            "sankt peterburg" to "saint petersburg",
+            "st petersburg" to "saint petersburg",
+            "st. petersburg" to "saint petersburg",
+            "roma" to "rome", "firenze" to "florence", "milano" to "milan",
+            "napoli" to "naples", "torino" to "turin", "venezia" to "venice",
+            "genova" to "genoa", "lisboa" to "lisbon", "porto" to "oporto",
+            "sevilla" to "seville", "zaragoza" to "saragossa",
+            "warszawa" to "warsaw", "krakow" to "cracow", "gdansk" to "danzig",
+            "beograd" to "belgrade", "zagreb" to "zagreb",
+            "bucuresti" to "bucharest", "kobenhavn" to "copenhagen",
+            "goteborg" to "gothenburg", "malmo" to "malmo",
+            "zurich" to "zurich", "geneve" to "geneva", "genf" to "geneva",
+            "basel" to "basel", "bern" to "berne",
+            "den haag" to "the hague", "s-gravenhage" to "the hague",
+            "'s-gravenhage" to "the hague", "antwerpen" to "antwerp",
+            "anvers" to "antwerp", "gent" to "ghent", "gand" to "ghent",
+            "brugge" to "bruges", "bruxelles" to "brussels",
+            "brussel" to "brussels", "liege" to "liege", "luik" to "liege",
+            "athina" to "athens", "athinai" to "athens",
+            "thessaloniki" to "salonica", "istanbul" to "istanbul",
+            "izmir" to "izmir", "kyiv" to "kyiv", "kiev" to "kyiv",
+            "lviv" to "lviv", "lvov" to "lviv", "odesa" to "odesa",
+            "odessa" to "odesa", "minsk" to "minsk", "tallinn" to "tallinn",
+            "riga" to "riga", "vilnius" to "vilnius", "helsinki" to "helsinki",
+            "helsingfors" to "helsinki", "oslo" to "oslo",
+            "reykjavik" to "reykjavik", "dublin" to "dublin",
+            "baile atha cliath" to "dublin", "edinburgh" to "edinburgh",
+            "beijing" to "beijing", "peking" to "beijing",
+            "guangzhou" to "guangzhou", "canton" to "guangzhou",
+            "shanghai" to "shanghai", "hong kong" to "hong kong",
+            "hongkong" to "hong kong", "hk" to "hong kong",
+            "tokyo" to "tokyo", "tokio" to "tokyo", "kyoto" to "kyoto",
+            "osaka" to "osaka", "seoul" to "seoul",
+            "mumbai" to "mumbai", "bombay" to "mumbai",
+            "kolkata" to "kolkata", "calcutta" to "kolkata",
+            "chennai" to "chennai", "madras" to "chennai",
+            "bengaluru" to "bengaluru", "bangalore" to "bengaluru",
+            "delhi" to "delhi", "new delhi" to "delhi",
+            "al qahirah" to "cairo", "cairo" to "cairo",
+            "mexico city" to "mexico city", "ciudad de mexico" to "mexico city",
+            "cdmx" to "mexico city", "sao paulo" to "sao paulo",
+            "rio de janeiro" to "rio de janeiro", "rio" to "rio de janeiro",
+            "buenos aires" to "buenos aires", "nyc" to "new york",
+            "new york city" to "new york", "ny" to "new york",
+            "sf" to "san francisco", "san fran" to "san francisco",
+            "bay area" to "san francisco bay area",
+            "la" to "los angeles", "l.a." to "los angeles",
+            "dc" to "washington", "washington dc" to "washington",
+            "washington d.c." to "washington",
+        )
+        cities.forEach { (from, to) -> put(from, to) }
+
+        // Countries: ISO alpha-2, alpha-3 and the names people write,
+        // all counted under the English name.
+        COUNTRIES.forEach { (name, codes) ->
+            put(name, name)
+            codes.forEach { put(it, name) }
+        }
+        OTHER_COUNTRY_NAMES.forEach { (from, to) -> put(from, to) }
+
+        // US states and Canadian provinces, because "Austin, TX" and
+        // "Austin, Texas" are one place — but only the codes that mean
+        // one thing.
+        //
+        // Half the subdivision codes are also country codes: CA is
+        // California and Canada, DE is Delaware and Germany, IN is
+        // Indiana and India, MD, PA, SC, VA and a dozen more. Guessing
+        // between them by position works until it does not — "Toronto,
+        // CA" would become California — and a wrong merge is the one
+        // failure this table must not produce, because two entries
+        // where there should be one is a reader noticing while one
+        // entry that merged two places is a reader misled. The
+        // ambiguous ones resolve to themselves and merge only with
+        // another copy of themselves.
+        SUBDIVISIONS.forEach { (code, name) ->
+            if (code !in COUNTRY_CODES) put(code, name)
+        }
+        SUBDIVISION_NAMES.forEach { put(it, it) }
+    }
+
+
+    /**
+     * One written place, reduced to the form everything counts under,
+     * or null when it is not a place at all.
+     */
+    fun canonical(raw: String): String? {
+        val cleaned = clean(raw) ?: return null
+        return ALIASES[cleaned] ?: cleaned
+    }
+
+    /**
+     * A written place and the pieces of it worth counting separately.
+     *
+     * "Vienna, Austria" is both a claim about a city and a claim about
+     * a country, and the second is what lets a source that only says
+     * "AT" agree with it. Returned whole-first, deduplicated, and only
+     * for two or three components — a longer list is an address, and
+     * splitting an address produces street names as places.
+     */
+    fun parts(raw: String): List<String> {
+        val whole = canonical(raw) ?: return emptyList()
+        val pieces = raw.split(',', '·', '|')
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+        if (pieces.size !in 2..3) return listOf(whole)
+        val out = LinkedHashSet<String>()
+        out += whole
+        pieces.forEach { piece -> canonical(piece)?.let { out += it } }
+        return out.toList()
+    }
+
+    /** Whether a canonical form names a country rather than somewhere in one. */
+    fun isCountry(canonical: String): Boolean = canonical in COUNTRY_NAMES
+
+    private fun clean(raw: String): String? {
+        var v = raw.trim()
+        if (v.isEmpty() || v.length > 60) return null
+        if (v.contains('@') || v.contains("http", true) || v.contains('/')) return null
+        // Diacritics removed, so Zürich and Zurich are one word before
+        // the alias table is consulted at all.
+        v = Normalizer.normalize(v, Normalizer.Form.NFD)
+            .replace(Regex("\\p{Mn}+"), "")
+        v = v.lowercase(Locale.US)
+            .replace(Regex("[\\p{Punct}&&[^.,'\\-]]"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim(' ', '.', ',', '-', '\'')
+        if (v.isEmpty() || v.length < 2) return null
+        if (v in NOT_A_PLACE) return null
+        // A place name made only of digits is a postcode or a mistake.
+        if (v.none { it.isLetter() }) return null
+        return v
+    }
+
 }

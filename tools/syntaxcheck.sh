@@ -244,4 +244,6 @@ python3 "$ROOT/tools/classify-prefixes.py" || exit 1
 echo
 python3 "$ROOT/tools/shadowed-stdlib.py" || exit 1
 echo
+python3 "$ROOT/tools/init-order.py" || exit 1
+echo
 python3 "$ROOT/tools/novel-calls.py" || true
