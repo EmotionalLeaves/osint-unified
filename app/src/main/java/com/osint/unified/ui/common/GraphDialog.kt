@@ -174,6 +174,10 @@ private fun GraphCanvas(graph: GraphBuilder.Graph, modifier: Modifier = Modifier
                 val colour = when (node.group) {
                     0 -> Intel.Amber
                     1 -> Intel.Cyan
+                    // Group 3 is the coverage note — what was asked
+                    // and could not answer. Not green, which on this
+                    // screen means "found".
+                    3 -> Intel.TextLow
                     else -> Intel.Success
                 }
                 drawCircle(colour, radius, centre)
@@ -181,7 +185,7 @@ private fun GraphCanvas(graph: GraphBuilder.Graph, modifier: Modifier = Modifier
 
                 // Labels only where they can be read: at a distance every
                 // graph becomes a grey smear of overlapping text.
-                if (scale >= 0.8f || node.group < 2) {
+                if (scale >= 0.8f || node.group != 2) {
                     drawLabel(measurer, node.label, centre, radius, labelStyle, density.density)
                 }
             }
@@ -197,10 +201,20 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawLabel(
     style: TextStyle,
     densityScale: Float
 ) {
-    val text = label.take(36)
+    // Ellipsised, as PivotChip in ResultCard is and for the reason
+    // its comment gives: a truncated identifier with nothing to say
+    // so reads as a complete one.
+    val text = if (label.length <= 36) label else label.take(35) + "\u2026"
     val measured = measurer.measure(text, style)
     val x = centre.x + radius + 4f * densityScale
     val y = centre.y - measured.size.height / 2f
-    if (x > size.width || y < -40f || y > size.height + 40f) return
+    // Culled off every edge, not three of them: a label whose text
+    // runs off the left was drawn anyway, which is work and a
+    // half-visible word.
+    if (x > size.width || x + measured.size.width < 0f ||
+        y < -40f || y > size.height + 40f
+    ) {
+        return
+    }
     drawText(measured, topLeft = Offset(x, y))
 }

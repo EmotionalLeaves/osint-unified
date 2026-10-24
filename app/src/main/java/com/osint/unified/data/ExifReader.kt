@@ -150,15 +150,31 @@ class ExifReader(
                     }
                     if (written == 0L) throw IOException("the server sent an empty image")
 
+                    // That the bytes are an image, before saying
+                    // anything about its metadata.
+                    //
+                    // Nothing checked. ExifInterface does not throw
+                    // on a non-image, it yields an empty attribute
+                    // set — so an HTML interstitial, a captive
+                    // portal page or a PDF came back as "GPS:
+                    // (none)", which is this app saying it read the
+                    // metadata and found no location in it.
+                    val kind = imageKind(file)
+                        ?: throw IOException(
+                            "what came back from that URL is not an image, so there " +
+                                "is no metadata in it to read"
+                        )
+
                     val exif = ExifInterface(file.absolutePath)
                     val sb = StringBuilder()
+                    var readAnything = false
 
                     val latLong = FloatArray(2)
-                    if (exif.getLatLong(latLong)) {
+                    val located = exif.getLatLong(latLong)
+                    if (located) {
                         sb.append("GPS: ${latLong[0]}, ${latLong[1]}\n")
                         sb.append("Map: https://www.google.com/maps?q=${latLong[0]},${latLong[1]}\n")
-                    } else {
-                        sb.append("GPS: (none)\n")
+                        readAnything = true
                     }
 
                     mapOf(
@@ -168,13 +184,18 @@ class ExifReader(
                         "Software" to ExifInterface.TAG_SOFTWARE,
                         "Lens" to ExifInterface.TAG_LENS_MODEL
                     ).forEach { (label, tag) ->
-                        exif.getAttribute(tag)?.takeIf { it.isNotBlank() }
-                            ?.let { sb.append("$label: $it\n") }
+                        exif.getAttribute(tag)?.takeIf { it.isNotBlank() }?.let {
+                            sb.append("$label: $it\n")
+                            readAnything = true
+                        }
                     }
 
                     val w = exif.getAttributeInt(ExifInterface.TAG_IMAGE_WIDTH, 0)
                     val h = exif.getAttributeInt(ExifInterface.TAG_IMAGE_LENGTH, 0)
-                    if (w > 0 && h > 0) sb.append("Dimensions: ${w}x$h\n")
+                    if (w > 0 && h > 0) {
+                        sb.append("Dimensions: ${w}x$h\n")
+                        readAnything = true
+                    }
 
                     // The thumbnail nobody re-rendered.
                     //
@@ -208,9 +229,22 @@ class ExifReader(
                             }
                         }
                         sb.append("\n")
+                        readAnything = true
                     }
 
-                    sb.toString().ifBlank { "No EXIF metadata found." }
+                    // "No EXIF metadata found." was unreachable,
+                    // because the GPS line was appended first
+                    // whatever happened — so an image with no EXIF
+                    // block at all reported "GPS: (none)", which is
+                    // a different claim: that the metadata was read
+                    // and holds no location.
+                    if (!readAnything) {
+                        "No EXIF metadata in this $kind. The camera may have " +
+                            "written none, or something along the way stripped it."
+                    } else {
+                        if (!located) sb.append("GPS: (none)\n")
+                        sb.toString()
+                    }
                 } finally {
                     runCatching { file.delete() }
                 }
@@ -289,6 +323,32 @@ class ExifReader(
      * is 26, so it would compile, pass every check here, and throw
      * NoSuchMethodError on most of the phones that run this.
      */
+    /**
+     * What this file is, by its first bytes, or null if it is not an
+     * image at all.
+     *
+     * Magic numbers rather than the Content-Type header, which a
+     * host sets and which is wrong often enough that it cannot
+     * carry a claim about what was examined.
+     */
+    private fun imageKind(file: File): String? = runCatching {
+        val head = ByteArray(12)
+        val n = file.inputStream().use { it.read(head) }
+        if (n < 12) return@runCatching null
+        fun at(i: Int, vararg b: Int) = b.withIndex().all { (k, v) ->
+            head[i + k].toInt() and 0xFF == v
+        }
+        when {
+            at(0, 0xFF, 0xD8, 0xFF) -> "JPEG"
+            at(0, 0x89, 0x50, 0x4E, 0x47) -> "PNG"
+            at(0, 0x47, 0x49, 0x46, 0x38) -> "GIF"
+            at(0, 0x52, 0x49, 0x46, 0x46) && at(8, 0x57, 0x45, 0x42, 0x50) -> "WEBP"
+            at(0, 0x49, 0x49, 0x2A, 0x00) || at(0, 0x4D, 0x4D, 0x00, 0x2A) -> "TIFF"
+            at(4, 0x66, 0x74, 0x79, 0x70) -> "HEIF or AVIF"
+            else -> null
+        }
+    }.getOrNull()
+
     private fun readAtMost(input: java.io.InputStream, limit: Int): ByteArray {
         val out = java.io.ByteArrayOutputStream(minOf(limit, 64 * 1024))
         val buf = ByteArray(32 * 1024)

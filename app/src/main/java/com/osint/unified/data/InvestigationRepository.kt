@@ -266,8 +266,22 @@ class InvestigationRepository(
                 // The tool's own verdict where it has one, so the dossier is
                 // not left reading English to decide whether a sanctions
                 // search came back clean.
-                val stated = runCatching { executors.forTool(tool).classify(tool, raw) }
-                    .getOrNull()
+                // A classifier that threw was being recorded as a
+                // finding.
+                //
+                // `getOrNull()` made a thrown classify — a JSON
+                // shape change, an index out of bounds — into null,
+                // and null falls to the `else` branch, which is
+                // "success". The row then went through the prose
+                // path, where whatever the tool happened to print
+                // decides. "The verdict could not be read" is
+                // UNREACHABLE: nothing was established about it.
+                val attempt = runCatching { executors.forTool(tool).classify(tool, raw) }
+                attempt.exceptionOrNull()?.let {
+                    if (it is kotlinx.coroutines.CancellationException) throw it
+                }
+                val stated = attempt.getOrNull()
+                val verdictUnreadable = attempt.isFailure
                 // Fingerprinted here, where the whole answer is still in
                 // hand. Taking the digest later, from the stored row, is
                 // taking it from a copy this method truncated.
@@ -278,9 +292,10 @@ class InvestigationRepository(
                     toolId = tool.id,
                     toolName = tool.name,
                     input = input,
-                    status = when (stated) {
-                        Findings.Kind.ABSENT -> Findings.STATUS_ABSENT
-                        Findings.Kind.UNREACHABLE -> Findings.STATUS_UNREACHABLE
+                    status = when {
+                        verdictUnreadable -> Findings.STATUS_UNREACHABLE
+                        stated == Findings.Kind.ABSENT -> Findings.STATUS_ABSENT
+                        stated == Findings.Kind.UNREACHABLE -> Findings.STATUS_UNREACHABLE
                         else -> "success"
                     },
                     rawOutput = cap(raw),
@@ -364,7 +379,9 @@ class InvestigationRepository(
             append("Page: ").append(title.ifBlank { url }).append('\n')
             append("URL: ").append(url).append('\n')
             append("Captured: ").append(java.time.Instant.ofEpochMilli(now)).append('\n')
-            append("SHA-256 of the page as served: ").append(digest).append('\n')
+            append("SHA-256 of the page as served: ")
+            append(digest.ifBlank { "(could not be computed on this device)" })
+            append('\n')
             append("Size: ").append(bytes.size).append(" bytes\n\n")
             append(text)
         }
@@ -399,6 +416,17 @@ class InvestigationRepository(
         .trim()
 
     /** The digest of exactly what the source sent. */
+    /**
+     * The digest, or a sentence saying there is not one.
+     *
+     * It returned "" on failure, and the snapshot then wrote
+     * "SHA-256 of the page as served: " with nothing after it,
+     * which reads as "no integrity record was kept" rather than
+     * "the digest could not be taken". The row's own
+     * `outputSha256` column keeps the empty string, since that
+     * field is a digest or nothing; only the printed line needs
+     * words.
+     */
     private fun sha256(bytes: ByteArray): String = runCatching {
         java.security.MessageDigest.getInstance("SHA-256").digest(bytes)
             .joinToString("") { "%02x".format(it) }
