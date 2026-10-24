@@ -20,6 +20,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -28,6 +29,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
@@ -37,12 +39,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.compose.runtime.produceState
 import com.osint.unified.domain.ForceLayout
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import com.osint.unified.domain.GraphBuilder
 import com.osint.unified.ui.theme.Intel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * The link graph, drawn natively.
@@ -122,10 +123,25 @@ private fun GraphCanvas(graph: GraphBuilder.Graph, modifier: Modifier = Modifier
                 }
             }
     ) {
-        Canvas(Modifier.fillMaxSize()) {
-            if (size.width > 0 && kotlin.math.abs(canvasSize.x - size.width) > 1f) {
-                canvasSize = Offset(size.width, size.height)
-            }
+        // The size is read in the layout phase, not written in the
+        // draw phase.
+        //
+        // This wrote canvasSize from inside the draw scope, and
+        // canvasSize is the key the force layout is computed from —
+        // so a draw scheduled a recomposition, which recomputed the
+        // layout, which drew again. Compose warns about writing
+        // state during draw for exactly this reason. onSizeChanged
+        // reports the same number one phase earlier and only when
+        // it actually changes.
+        Canvas(
+            Modifier
+                .fillMaxSize()
+                .onSizeChanged {
+                    if (it.width > 0) {
+                        canvasSize = Offset(it.width.toFloat(), it.height.toFloat())
+                    }
+                }
+        ) {
             fun place(x: Float, y: Float) = Offset(
                 (x - size.width / 2) * scale + size.width / 2 + pan.x,
                 (y - size.height / 2) * scale + size.height / 2 + pan.y

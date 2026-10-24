@@ -186,13 +186,27 @@ fun FrameworkScreen(initialTarget: String = "", onBack: () -> Unit) {
 
             if (query.isNotBlank()) {
                 val q = query.trim()
-                val matches = allLeaves.filter {
-                    it.first.contains(q, true) || it.third.contains(q, true) ||
-                        it.second.contains(q, true)
-                }.take(300)
-                val tmplMatches = templates.filter {
-                    it.name.contains(q, true) || it.url.contains(q, true)
-                }.take(300)
+                // Filtered when the query changes, not on every
+                // recomposition.
+                //
+                // These are two case-insensitive sweeps over about
+                // twelve hundred directory entries and several
+                // thousand templates, and they ran during
+                // composition — so every keystroke in the search box
+                // did all of it on the thread drawing the keystroke,
+                // and so did every unrelated recomposition of this
+                // screen.
+                val matches = remember(q, allLeaves) {
+                    allLeaves.filter {
+                        it.first.contains(q, true) || it.third.contains(q, true) ||
+                            it.second.contains(q, true)
+                    }.take(300)
+                }
+                val tmplMatches = remember(q, templates) {
+                    templates.filter {
+                        it.name.contains(q, true) || it.url.contains(q, true)
+                    }.take(300)
+                }
                 Text(
                     "${matches.size} directory · ${tmplMatches.size} runnable",
                     style = MaterialTheme.typography.labelSmall, color = Intel.TextLow,

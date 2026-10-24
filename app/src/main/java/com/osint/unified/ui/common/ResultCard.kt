@@ -25,6 +25,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -56,6 +57,15 @@ fun ResultCard(row: ResultRow, onPivot: ((String) -> Unit)? = null) {
     var expanded by remember { mutableStateOf(false) }
     var showRaw by remember { mutableStateOf(false) }
     var copied by remember { mutableStateOf(false) }
+    // "COPIED" was permanent. It replaced the only label that says
+    // what the control does, so after one tap the card had a button
+    // reading COPIED that still copies, for the rest of the session.
+    LaunchedEffect(copied) {
+        if (copied) {
+            kotlinx.coroutines.delay(1_600)
+            copied = false
+        }
+    }
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
     val open: (String) -> Unit = { url -> LinkOpener.open(context, url) }
