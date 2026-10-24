@@ -18,7 +18,25 @@ class FindingsTest {
     fun absenceIsNotAFinding() {
         assertTrue(Findings.saysNothing("OFAC SDN: no sanctioned entity matching 'xyz'."))
         assertTrue(Findings.saysNothing("  \n  No accounts found for \"xyz\" across 900 sites."))
-        assertTrue(Findings.saysNothing(""))
+    }
+
+    /**
+     * Saying nothing is not the same as saying no.
+     *
+     * This test used to assert the opposite: that a blank output
+     * reported an absence. It is the difference between "we asked
+     * the sanctions list and this person is not on it" and "the
+     * sanctions list did not answer", and the app was drawing the
+     * first conclusion from the second — a claim about the world
+     * manufactured out of silence, then counted as a corroborating
+     * source and written into the export.
+     */
+    @Test
+    fun silenceIsNotAnAbsence() {
+        assertFalse(Findings.saysNothing(""))
+        assertFalse(Findings.saysNothing("   \n\n  "))
+        assertEquals(Findings.Kind.UNREACHABLE, Findings.kindOf(row("success", "")))
+        assertEquals(Findings.Kind.UNREACHABLE, Findings.kindOf(row("success", "  \n ")))
     }
 
     @Test
