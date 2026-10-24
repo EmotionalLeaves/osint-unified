@@ -212,6 +212,123 @@ object EntityExtractor {
         collect("SHA256", sha256, 4)
         collect("MD5", md5, 4)
 
+        out += labelled(results, seedLower, limitPerKind)
         return out
+    }
+
+    // ------------------------------------------------------------------
+    // What the sources say about a person, rather than about a machine
+    // ------------------------------------------------------------------
+
+    /**
+     * Labels this app's own tools print, and what each one asserts.
+     *
+     * Everything above this line is a machine identifier, and that was
+     * the whole of what the corroboration engine could see — while the
+     * sources added most recently return almost nothing else: chess,
+     * lichess, codeforces, codeberg, Hugging Face, GitHub, ORCID and
+     * the nonprofit registry all emit a declared name, an employer, a
+     * city or a country. So the single most valuable thing a handle
+     * search can produce — five platforms independently saying Vienna
+     * — never reached the engine built to say exactly that, and for a
+     * person's name, which routes to fourteen fetching tools, the
+     * corroborated section was near-empty by construction. The analyst
+     * read six cards and did the merge in their head.
+     *
+     * This is a parse and not any kind of guessing at prose: these
+     * lines are `Label: value`, written by this app, one per line.
+     */
+    private val PERSON_LABELS = setOf(
+        "declared name", "full name", "real name", "display name", "legal name"
+    )
+    private val ORG_LABELS = setOf(
+        "company", "organisation", "organization", "declared organisation",
+        "declared organization", "institution", "institutions", "employer",
+        "affiliation", "registrant organization", "registrant organisation",
+        "org", "works at"
+    )
+    private val PLACE_LABELS = setOf(
+        "location", "declared location", "country", "declared country",
+        "city", "declared city", "based in", "hometown",
+        "registrant country", "place"
+    )
+
+    /**
+     * Tools whose subject is a person or an account they hold, where a
+     * bare `Name:` is a claim about a person.
+     *
+     * Everywhere else it is the name of a company, an autonomous
+     * system or a certificate holder, and filing those as PERSON would
+     * put an ASN operator in the list of what this person is called.
+     */
+    private val NAME_MEANS_PERSON = setOf("username", "name", "email", "image")
+
+    private val labelLine = Regex("""^\s*[•\-*]?\s*([A-Za-z][A-Za-z /'-]{1,28}):\s*(.+?)\s*$""")
+
+    /** Values that are the source declining to say, not an answer. */
+    private val emptyValues = setOf(
+        "n/a", "na", "none", "null", "unknown", "not set", "not stated",
+        "not specified", "not provided", "undisclosed", "redacted",
+        "private", "-", "--", "?", "(none)", "(not set)", "hidden"
+    )
+
+    private fun labelled(
+        results: List<ResultRow>,
+        seedLower: String,
+        limitPerKind: Int
+    ): List<Pivot> {
+        val counts = LinkedHashMap<Pair<String, String>, Int>()
+        results.forEach { row ->
+            if (Findings.kindOf(row) != Findings.Kind.HIT) return@forEach
+            if (row.toolId in ToolRegistry.QUOTES_OTHERS) return@forEach
+            val inputType = ToolRegistry.byId(row.toolId)?.inputType.orEmpty()
+            row.rawOutput.lineSequence().take(400).forEach inner@{ line ->
+                val m = labelLine.find(line) ?: return@inner
+                val label = m.groupValues[1].trim().lowercase()
+                val raw = m.groupValues[2].trim().trimEnd('.', ';', ',')
+                if (raw.length < 2 || raw.length > 80) return@inner
+                if (raw.lowercase() in emptyValues) return@inner
+                if (raw.lowercase() == seedLower) return@inner
+                // An address, a link or a number is already collected
+                // above as the thing it is.
+                if (raw.contains('@') || raw.contains("http", true)) return@inner
+                if (raw.none { it.isLetter() }) return@inner
+                val kind = when {
+                    label in PERSON_LABELS -> "PERSON"
+                    label == "name" && inputType in NAME_MEANS_PERSON -> "PERSON"
+                    label in ORG_LABELS -> "ORG"
+                    label in PLACE_LABELS -> "PLACE"
+                    else -> return@inner
+                }
+                valuesOf(kind, raw).forEach { v ->
+                    if (v != seedLower) counts[kind to v] = (counts[kind to v] ?: 0) + 1
+                }
+            }
+        }
+        return counts.entries
+            .groupBy { it.key.first }
+            .flatMap { (_, entries) ->
+                entries.sortedByDescending { it.value }
+                    .take(limitPerKind)
+                    .map { Pivot(it.key.first, it.key.second, it.value) }
+            }
+    }
+
+    /**
+     * One written value as the things it asserts.
+     *
+     * A place is also a claim about the country it is in, which is
+     * what lets a source that only says "AT" agree with one that says
+     * "Vienna, Austria". A name and an employer are counted whole:
+     * splitting "Smith, Jones and Partners" on its comma would invent
+     * two firms.
+     */
+    internal fun valuesOf(kind: String, raw: String): List<String> = when (kind) {
+        "PLACE" -> Places.parts(raw)
+        "PERSON" -> listOfNotNull(PersonName.normalise(raw))
+        else -> listOfNotNull(
+            raw.lowercase().replace(Regex("\\s+"), " ").trim()
+                .takeIf { it.length in 2..60 }
+        )
     }
 }

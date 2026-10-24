@@ -679,6 +679,11 @@ class InvestigationExporter(private val appContext: Context) {
             // EMAIL — where the next reader chases it, which is the
             // thing a dismissal exists to prevent.
             dismissals.containsKey(p.kind to p.value.lowercase())
+        }.filterNot {
+            // A declared place is evidence, and it is reported under
+            // what was corroborated. It is not an identifier, and this
+            // section is headed IDENTIFIERS DISCOVERED.
+            it.kind == "PLACE"
         }
         val (direct, derived) = sorted.hits.partition { it.input.trim().lowercase() == seed }
 

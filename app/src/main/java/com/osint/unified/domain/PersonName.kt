@@ -167,6 +167,39 @@ object PersonName {
         return words.size >= 5
     }
 
+    /**
+     * A written name reduced to the form two sources are counted under.
+     *
+     * Five platforms declaring the same person write it five ways:
+     * "José García", "Jose Garcia", "García, José", "J. García". The
+     * corroboration engine counts assertions by their value, so
+     * without this they are five findings of one source each rather
+     * than one finding with five witnesses — which is the whole point
+     * of reading declared names at all.
+     *
+     * Given name and family name only: middles and titles are dropped,
+     * because a source that prints them and a source that does not are
+     * still naming the same person. Diacritics go too, so the merge
+     * does not depend on which keyboard somebody had. Returns null for
+     * anything that reads as an organisation — those are counted whole
+     * under ORG, where "Ltd" is part of the name rather than noise.
+     */
+    fun normalise(raw: String): String? {
+        val parsed = parse(raw)
+        if (parsed.isOrganisation) return null
+        val words = listOf(parsed.given, parsed.family)
+            .filter { it.isNotBlank() }
+            .map { word ->
+                java.text.Normalizer.normalize(word, java.text.Normalizer.Form.NFD)
+                    .replace(Regex("\\p{Mn}+"), "")
+                    .lowercase(java.util.Locale.US)
+                    .trim('.', ',', '\'', '-')
+            }
+            .filter { it.length > 1 }
+        if (words.isEmpty()) return null
+        return words.joinToString(" ")
+    }
+
     fun parse(raw: String): Parsed {
         val trimmed = raw.trim()
         // "Smith, John" — the form every official list uses, and the

@@ -287,11 +287,20 @@ fun InvestigationScreen(
                         seedIsPlace = observable is Observable.Coordinate,
                         dismissed = state.dismissals
                     ),
+                    // A place is evidence, not a lead.
+                    //
+                    // The extractor reads declared places now so that
+                    // five platforms saying Vienna can corroborate each
+                    // other — but a PIVOTS chip is an offer to open a
+                    // new investigation on what it says, and
+                    // investigating "Vienna" runs the person tools
+                    // against a city. It stays in CORROBORATED, where
+                    // it means something, and out of the chips.
                     pivots = EntityExtractor.extract(
                         state.results,
                         observable.raw,
                         seedIsPlace = observable is Observable.Coordinate
-                    ),
+                    ).filterNot { it.kind == "PLACE" },
                     alreadyChased = state.results.map { it.input }
                         .filter { it.trim().lowercase() != seedRaw }
                         .toSet(),
