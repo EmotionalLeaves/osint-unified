@@ -473,18 +473,33 @@ class UsernameChecker(private val appContext: Context) {
         // length-capped site was marked as control-verified for free.
         //
         // So: several shapes from one random seed, shortest last, and
-        // the first the site will accept is the one asked. Eight
-        // random hex characters is four billion to one against
-        // existing, which is enough.
+        // the first the site will accept is the one asked.
+        //
+        // And never shorter than ten random characters, which is the
+        // second half of this. The first version went down to
+        // `"zq" + 4` from a sixteen-letter alphabet — 65,536
+        // possibilities — and a collision does not merely waste a
+        // request: if that name happens to be registered, the site
+        // is marked as saying yes to anything and the hit for the
+        // person actually being investigated is dropped from the
+        // output with no trace. A false absence manufactured by the
+        // machinery added to prevent false presences, and the
+        // adjacent comment claimed "four billion to one" for a shape
+        // that was not in the list.
+        //
+        // Ten hex characters is 16^10, about a thousand billion. Ten
+        // from the letters-only alphabet is the same, since that
+        // alphabet is also sixteen. A site that will not accept
+        // twelve characters gets COULD_NOT_ASK, which is the honest
+        // answer and is marked as such.
         val seed = java.util.UUID.randomUUID().toString().replace("-", "")
         val lettersOnly = seed.map { c -> if (c.isDigit()) 'g' + (c - '0') else c }
             .joinToString("")
         val controls = listOf(
             "zq" + seed.take(16),
+            "zq" + lettersOnly.take(16),
             "zq" + seed.take(10),
-            "zq" + lettersOnly.take(10),
-            "zq" + seed.take(6),
-            "zq" + lettersOnly.take(4)
+            "zq" + lettersOnly.take(10)
         )
         val semaphore = Semaphore(48)
         // A verdict per candidate, by position: 0 never asked, 1 the

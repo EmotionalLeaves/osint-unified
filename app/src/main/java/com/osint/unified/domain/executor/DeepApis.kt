@@ -282,9 +282,18 @@ class DeepApis(
      *  company or place. Resolves entity-valued claims to readable labels. */
     fun wikidata(query: String): Result<String> = runCatching {
         val q = URLEncoder.encode(query, "UTF-8")
-        val hits = json.parseToJsonElement(
-            get("https://www.wikidata.org/w/api.php?action=wbsearchentities&search=$q&language=en&format=json&limit=3")
-        ).jsonObject["search"] as? JsonArray
+        // Through MediaWiki: a 200 carrying an `error` object and no
+        // `search` key is a refusal, and it was being printed as
+        // "Wikidata: nothing matching '<name>'" — an absence this
+        // source never asserted, which Findings then counted as a
+        // source that looked.
+        val hits = MediaWiki.body(
+            get(
+                "https://www.wikidata.org/w/api.php?action=wbsearchentities" +
+                    "&search=$q&language=en&format=json&limit=3"
+            ),
+            "Wikidata search"
+        )["search"] as? JsonArray
         val first = hits?.firstOrNull() as? JsonObject
             ?: return@runCatching "Wikidata: nothing matching '$query'."
         val id = first.str("id") ?: return@runCatching "Wikidata: nothing matching '$query'."
@@ -543,9 +552,16 @@ class DeepApis(
                 }
             },
             "Wikipedia" to {
-                val contribs = (json.parseToJsonElement(
-                    get("https://en.wikipedia.org/w/api.php?action=query&list=usercontribs&ucuser=$e&format=json&uclimit=20")
-                ).jsonObject["query"] as? JsonObject)?.get("usercontribs") as? JsonArray
+                // A refusal here read as "no such account", which
+                // is precisely what the "Three outcomes, not two"
+                // comment below this block exists to prevent.
+                val contribs = MediaWiki.query(
+                    get(
+                        "https://en.wikipedia.org/w/api.php?action=query" +
+                            "&list=usercontribs&ucuser=$e&format=json&uclimit=20"
+                    ),
+                    "Wikipedia contributions"
+                )["usercontribs"] as? JsonArray
                 contribs?.takeIf { it.isNotEmpty() }?.let { arr ->
                     val pages = arr.mapNotNull { (it as? JsonObject).str("title") }.distinct()
                     "  ${arr.size} recent edits\n  Pages: ${pages.take(8).joinToString(", ")}" +
@@ -1469,11 +1485,23 @@ class DeepApis(
         val reached = Reached()
 
         reached.of {
-            val pages = (json.parseToJsonElement(
-                get("https://commons.wikimedia.org/w/api.php?action=query&generator=geosearch" +
-                    "&ggscoord=$lat%7C$lon&ggsradius=3000&ggslimit=40&prop=imageinfo" +
-                    "&iiprop=url%7Cextmetadata&format=json")
-            ).jsonObject["query"] as? JsonObject)?.get("pages") as? JsonObject
+            // `query` is absent both when the search found nothing
+            // and when Commons refused, and the second was printing
+            // "No geotagged imagery found near …" — the exact
+            // sentence the comment above says was the bug. MediaWiki
+            // raises on the refusal; a genuine empty result returns a
+            // body with `query` present or with neither, so the
+            // no-results-block case is handled by `body` rather than
+            // `query` here.
+            val answer = MediaWiki.body(
+                get(
+                    "https://commons.wikimedia.org/w/api.php?action=query&generator=geosearch" +
+                        "&ggscoord=$lat%7C$lon&ggsradius=3000&ggslimit=40&prop=imageinfo" +
+                        "&iiprop=url%7Cextmetadata&format=json"
+                ),
+                "Commons geosearch"
+            )
+            val pages = (answer["query"] as? JsonObject)?.get("pages") as? JsonObject
             if (pages != null && pages.isNotEmpty()) {
                 sb.append("\nWikimedia Commons — ${pages.size} geotagged items within 3 km:\n")
                 pages.values.take(40).forEach { p ->

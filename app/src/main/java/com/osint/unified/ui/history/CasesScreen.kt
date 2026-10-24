@@ -228,10 +228,20 @@ fun CaseDetail(
             )
             links.take(40).forEach { link -> LinkRow(link) }
         } else if (links != null && targets.size >= 2) {
+            // "That is a result, not a gap" is only true of targets
+            // that were compared. The header above was taught to say
+            // so and this paragraph was not, so the card stated both
+            // sentences at once.
+            val ran = compared ?: targets.size
             Text(
-                "Nothing was found under more than one of these targets. That " +
-                    "is a result, not a gap — they may simply not be connected " +
-                    "by anything either of them published.",
+                if (ran < 2) {
+                    "There is nothing to compare yet: only $ran of " +
+                        "${targets.size} targets has been run."
+                } else {
+                    "Nothing was found under more than one of these targets. " +
+                        "That is a result, not a gap — they may simply not be " +
+                        "connected by anything either of them published."
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = Intel.TextMid,
                 modifier = Modifier.padding(top = 10.dp)

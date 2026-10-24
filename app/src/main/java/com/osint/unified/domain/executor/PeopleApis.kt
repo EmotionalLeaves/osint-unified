@@ -121,10 +121,26 @@ class PeopleApis(
             "https://api.crossref.org/works?query.author=$q&rows=25&sort=published" +
                 "&order=desc&select=title,author,issued,DOI,container-title,type"
         )
-        val message = json.parseToJsonElement(body).jsonObjectOrNull()?.get("message")
-            as? JsonObject
-        val items = message?.get("items") as? JsonArray
-        if (items.isNullOrEmpty()) {
+        // Null and empty are different answers.
+        //
+        // `jsonObjectOrNull()` is `as? JsonObject`, so it returns
+        // null for ANY body that is not an object — and Crossref
+        // answers 200 with a `message` that is an array for a
+        // validation failure, while a proxy or an interstitial
+        // answers with HTML. All of those were arriving as "No
+        // published work by X in Crossref", which Findings reads as
+        // an established absence about a person.
+        val root = json.parseToJsonElement(body).jsonObjectOrNull()
+            ?: throw java.io.IOException("Crossref answered in an unexpected shape")
+        val message = root["message"] as? JsonObject
+            ?: throw java.io.IOException(
+                "Crossref did not return a result set" +
+                    ((root["message"] as? JsonPrimitive)?.contentOrNull
+                        ?.let { ": $it" } ?: "")
+            )
+        val items = message["items"] as? JsonArray
+            ?: throw java.io.IOException("Crossref returned no items block")
+        if (items.isEmpty()) {
             return@runCatching "No published work by \"$name\" in Crossref."
         }
 
@@ -376,11 +392,16 @@ class PeopleApis(
      */
     fun authorWorks(name: String): Result<String> = runCatching {
         val q = URLEncoder.encode(name.trim(), "UTF-8")
+        // As with Crossref above: a body that is not an object, or
+        // one with no `docs` block, is a refusal and not an empty
+        // shelf.
         val o = json.parseToJsonElement(
             get("https://openlibrary.org/search/authors.json?q=$q")
         ).jsonObjectOrNull()
-        val docs = o?.get("docs") as? JsonArray
-        if (docs.isNullOrEmpty()) {
+            ?: throw java.io.IOException("Open Library answered in an unexpected shape")
+        val docs = o["docs"] as? JsonArray
+            ?: throw java.io.IOException("Open Library returned no docs block")
+        if (docs.isEmpty()) {
             return@runCatching "No published author named \"$name\" in Open Library."
         }
         buildString {

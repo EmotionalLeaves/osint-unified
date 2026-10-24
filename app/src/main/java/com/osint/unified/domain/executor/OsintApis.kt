@@ -804,10 +804,18 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
 
         // Wikipedia full-text search (reliable, keyless).
         runCatching {
-            val w = json.parseToJsonElement(
-                getBody("https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=$q&format=json&srlimit=8")
-            ).jsonObject
-            val hits = w["query"]?.jsonObject?.get("search")?.jsonArray
+            // Through MediaWiki, like the other four: this one does
+            // not print a false absence (the section is simply
+            // omitted), but a Wikipedia block vanishing from an
+            // aggregate answer with no explanation is the same class,
+            // and the runCatching around it records the reason.
+            val hits = MediaWiki.query(
+                getBody(
+                    "https://en.wikipedia.org/w/api.php?action=query&list=search" +
+                        "&srsearch=$q&format=json&srlimit=8"
+                ),
+                "Wikipedia search"
+            )["search"]?.jsonArray
             if (hits != null && hits.isNotEmpty()) {
                 out.append("\nWikipedia (${hits.size}):\n")
                 hits.forEach { el ->
@@ -1037,27 +1045,10 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
         val url = "https://en.wikipedia.org/w/api.php?action=query&list=geosearch" +
             "&gscoord=%.6f%%7C%.6f".format(java.util.Locale.US, lat, lon) +
             "&gsradius=10000&gslimit=25&format=json"
-        val body = json.parseToJsonElement(getBody(url)).jsonObject
-        // An error is not an absence.
-        //
-        // The MediaWiki action API answers HTTP 200 with an `error`
-        // object and no `query` key for a parameter or module error,
-        // which getBody does not throw on — so a missing `query`
-        // printed "No Wikipedia places within 10 km.", which
-        // Findings.NOTHING_SHAPE classifies as ABSENT and counts in
-        // "N of M sources returned something" as a source that looked.
-        (body["error"] as? JsonObject)?.let { err ->
-            val code = (err["code"] as? JsonPrimitive)?.contentOrNull ?: "unknown"
-            val info = (err["info"] as? JsonPrimitive)?.contentOrNull.orEmpty()
-            throw java.io.IOException(
-                "Wikipedia refused the query ($code)" +
-                    if (info.isBlank()) "" else ": $info"
-            )
-        }
-        val arr = body["query"]?.jsonObject?.get("geosearch")?.jsonArray
-        // No `query` and no `error` either: the answer is a shape this
-        // does not understand, which is also not an absence.
-        if (arr == null) throw java.io.IOException("Wikipedia returned no geosearch block")
+        // An error is not an absence — see MediaWiki, where the
+        // test now lives so that all five callers share it.
+        val arr = MediaWiki.query(getBody(url), "Wikipedia nearby")["geosearch"]?.jsonArray
+            ?: throw java.io.IOException("Wikipedia nearby: no geosearch block")
         if (arr.isEmpty()) "No Wikipedia places within 10 km." else
             "Nearby notable places (${arr.size}):\n\n" + arr.joinToString("\n") { el ->
                 val o = el.jsonObject

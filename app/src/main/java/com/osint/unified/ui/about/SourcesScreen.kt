@@ -25,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.osint.unified.network.DataMeter
 import com.osint.unified.ui.theme.Intel
+import androidx.lifecycle.repeatOnLifecycle
 
 /**
  * Who the data belongs to.
@@ -518,10 +519,20 @@ fun SourcesScreen(onBack: () -> Unit) {
 @Composable
 private fun DataUsed() {
     var tick by remember { mutableIntStateOf(0) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            kotlinx.coroutines.delay(2_000L)
-            tick++
+    val owner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    // Only while there is a screen to read it on.
+    //
+    // The third of these, and the one that wakes most often: the
+    // other two were a one-second clock and a four-minute subsolar
+    // point, and this is every two seconds, recomposing three
+    // DataMeter reads behind a dark screen for as long as the
+    // composition is retained.
+    LaunchedEffect(owner) {
+        owner.lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+            while (true) {
+                kotlinx.coroutines.delay(2_000L)
+                tick++
+            }
         }
     }
     val used = remember(tick) { DataMeter.bytes() }
