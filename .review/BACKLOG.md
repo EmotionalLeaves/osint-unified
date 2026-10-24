@@ -192,6 +192,84 @@ Two new rules fall out of it, both added to the list at the top:
   points" at the poll interval for ever, for an asset that will
   never start existing.
 
+### Verification of r460–r470, UI and rendering half (r15, 24 Oct)
+
+The other half of the same pass. Two highs, the first of them a
+regression introduced this morning, and a long tail of smaller
+things. Its own closing note is the best summary of the day:
+**when a cache or "already asked" key is introduced, grep for every
+place that wipes the data that key vouches for.**
+
+- **U1. An on-demand layer switched off and on in the same place
+  never refetches.** This morning's guard rewrite dropped the
+  `isNotEmpty()` term, and that term was the only thing invalidating
+  the guard when `clear()` wiped the layer's data.
+  `setVisibleLayers → clear` empties `state.sites` and drops the key
+  from `loaded`, and never resets `sitesKey`/`sitesKeyAnswered` — so
+  the view model believes it has already answered for a cell whose
+  data it just threw away. Tap MIL GROUND off and on without
+  panning: the pill reads `…` for ever and no request is made.
+  Escape is panning past the cell size, 78 km for airspace. Also
+  reachable through CLEAR and through preset→preset. Radiation is
+  immune because it has an explicit off call that resets its
+  centre; the other three have none, and that asymmetry is the bug.
+  **The fix belongs in `clear()`, not in the guards** — re-adding
+  `isNotEmpty()` would restore the pan storm.
+- **U2. The commit title said there were two background loops and
+  there are three.** `ui/about/SourcesScreen.kt:521` wakes every two
+  seconds to recompute the data-usage panel, more often than the
+  four-minute subsolar loop that was judged worth fixing, and keeps
+  doing it behind a dark screen. The whole of `ui/` was swept for
+  the rest of the category and there is nothing else: the remaining
+  loops are an `awaitPointerEventScope` and three one-shot
+  debounces.
+- **U3. `areaWanted` surviving process death pops an unbidden empty
+  dialog on cold start.** Saveable state restores, the view model
+  does not, and `state` was dropped from the effect's keys — so on
+  relaunch from Recents the effect fires once against an empty
+  state and never rebuilds, and the user is shown a modal report
+  saying nothing is anywhere. Rotation, which is the case the change
+  was for, is fine. (The dismiss paths and the long-press-the-same-
+  point-again case were both checked and are correct.)
+- **U4. `loadCpuFallback` ends up holding both texture forms**,
+  which the file's own comment says is the one thing it never does —
+  ~32 MB of Bitmap plus ~32 MB of IntArray on a roomy device, on
+  exactly the path where headroom is worst, because the shader bind
+  has just failed. It should recycle the Bitmaps first.
+- **U5. `armedForGlobe` was made saveable and its two companion
+  guards were not.** `arrivedOnMap` resets to 0 on rotation, which
+  makes the settle test immediately true, so two of the three
+  guards on the snap-back-to-globe gate are pre-satisfied after a
+  rotation. `MAP_SETTLE_MS` exists precisely because "simply
+  arriving sent you straight back and the toggle looked broken".
+- **U6. Six settings text fields are still thrown away on
+  rotation.** `showSettings` is saveable so the dialog survives; the
+  fields inside it are plain `remember`, so unsaved typing is lost.
+  A stronger case for saveability than `mapCentre` or `zoomNow`.
+- **U7. Small, in rough order of visibility:**
+  `thinGlobe` and `planGlobe` lost their documentation — the new
+  `GlobePlan` KDoc was inserted between the old doc block and the
+  declaration, so the first block now dangles and is dropped.
+  The picker renders a bare `THIS INVESTIGATION` heading with
+  nothing under it on a fresh install, which the code's own comment
+  calls worse than no heading.
+  `AreaReport.LAYER_WORDS` is missing `spaceWeather`, so that
+  caveat prints the raw key.
+  The radiation caveat is unconditional while the other three are
+  gated on the radius.
+  `clearLayers` does not reset `showFindings`, so CLEAR leaves the
+  magenta markers and the idle text appears under a lit pill.
+  `caseLinks` and `caseCompared` are two `stateIn`s over one source
+  and can disagree for a frame; `summary`'s defaulted third
+  parameter is the "a call site added later silently keeps the old
+  behaviour" hazard the code elsewhere warns about.
+  Marker z-order changed from HashMap order to insertion order,
+  which is a determinism improvement, recorded so a "the colours
+  changed" report is not chased as something else.
+  `vis(showAircraft || god, …)` passes `god` explicitly where `vis`
+  already applies it — pre-existing and harmless, but it reads as
+  though the other thirty-two were missing something.
+
 ### Third-pass defects (r13, 24 Oct) — CLOSED, 26 for 26
 
 A fresh sweep over what the day's two verification passes did not
@@ -466,7 +544,12 @@ whole of the view-model's search bookkeeping.
    `DatabaseEncryption.repairVersion`'s ladder in the same change.**
    Nothing enforces it and the consequence is a database that cannot
    be opened.
-7. **Write first, assert after.** Twice today a script asserted after
+7. **When a cache or "already asked" key is introduced, find every
+   place that wipes the data that key vouches for.** Three guards
+   were rewritten together and the fourth function — the one that
+   empties the layer — was not visited, so an on-demand layer
+   switched off and on never fetched again.
+8. **Write first, assert after.** Twice today a script asserted after
    its replace and threw before its write, so an edit believed to be
    on disk was not — a quieter failure than a compile error.
 
