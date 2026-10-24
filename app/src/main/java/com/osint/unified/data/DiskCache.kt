@@ -23,7 +23,13 @@ class DiskCache(private val context: Context) {
     fun read(name: String, maxAgeMs: Long): String? {
         val f = fileFor(name)
         if (!f.exists() || f.length() < 64) return null
-        if (System.currentTimeMillis() - f.lastModified() > maxAgeMs) return null
+        // coerceAtLeast, as `ageMillis` two functions below already
+        // does. Without it a clock that has moved backwards makes
+        // the difference negative, the test never fires, and a
+        // stale entry is served as fresh for ever — in the one
+        // function whose whole job is deciding freshness.
+        val age = (System.currentTimeMillis() - f.lastModified()).coerceAtLeast(0L)
+        if (age > maxAgeMs) return null
         return runCatching { f.readText() }.getOrNull()
     }
 
@@ -51,7 +57,45 @@ class DiskCache(private val context: Context) {
         return (System.currentTimeMillis() - stamp).coerceAtLeast(0L)
     }
 
-    fun write(name: String, body: String) {
-        runCatching { fileFor(name).writeText(body) }
+    /**
+     * Writes to a temporary file and renames it over the target.
+     *
+     * `writeText` truncates and then writes, so a process killed
+     * partway through the seven-megabyte Celestrak catalogue left a
+     * truncated file — and [read] validates only that the file is
+     * at least 64 bytes and young enough, so the half-written body
+     * was served for the whole day, and by [readStale] for ever
+     * after that. "A source that is temporarily refusing keeps
+     * working from the last good copy", which is this class's
+     * stated purpose, became "keeps working from a corrupt copy".
+     *
+     * A rename within one filesystem is atomic, so a reader sees
+     * either the old file or the whole new one and never half of
+     * either.
+     *
+     * Returns whether it worked. It used to return Unit and swallow
+     * everything, so a full disk or an unwritable cache directory
+     * was invisible: every caller believed it had cached, and
+     * re-downloaded seven and fourteen megabytes on every poll with
+     * nothing said to the data meter or to the person paying for
+     * it.
+     */
+    fun write(name: String, body: String): Boolean {
+        val target = fileFor(name)
+        val tmp = File(target.parentFile, "${target.name}.tmp")
+        return runCatching {
+            tmp.writeText(body)
+            if (!tmp.renameTo(target)) {
+                // Some filesystems refuse a rename over an existing
+                // file. Deleting first is a smaller window than
+                // writing in place, which is the whole window.
+                target.delete()
+                if (!tmp.renameTo(target)) throw java.io.IOException("could not replace $name")
+            }
+            true
+        }.getOrElse {
+            runCatching { tmp.delete() }
+            false
+        }
     }
 }

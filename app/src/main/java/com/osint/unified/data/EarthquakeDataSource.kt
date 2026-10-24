@@ -176,16 +176,38 @@ class EarthquakeDataSource(private val client: OkHttpClient = Http.feedClient) :
      */
     internal fun geofon(body: String = fetchGeofon()): List<Quake> {
         val cutoff = System.currentTimeMillis() - 24 * 3600_000L
-        return body.lineSequence().mapNotNull { line ->
+        // How many rows there were, against how many were usable.
+        //
+        // Every row failing its shape is not a quiet day. A 200
+        // whose column layout has changed, or an FDSN maintenance
+        // page, parsed to zero rows and the globe reported an
+        // established "no earthquakes anywhere in 24 hours" — and
+        // the test covering this asserted that behaviour, which is
+        // how it survived. Rows outside the window are a different
+        // thing and are not counted here: those were read.
+        var rows = 0
+        var unusable = 0
+        val quakes = body.lineSequence().mapNotNull { line ->
             if (line.isBlank() || line.startsWith("#")) return@mapNotNull null
+            rows++
             val f = line.split("|")
-            if (f.size < 11) return@mapNotNull null
-            val lat = f[2].trim().toDoubleOrNull() ?: return@mapNotNull null
-            val lon = f[3].trim().toDoubleOrNull() ?: return@mapNotNull null
-            if (lat !in -90.0..90.0 || lon !in -180.0..180.0) return@mapNotNull null
-            val mag = f[10].trim().toDoubleOrNull() ?: return@mapNotNull null
+            if (f.size < 11) {
+                unusable++
+                return@mapNotNull null
+            }
+            val lat = f[2].trim().toDoubleOrNull()
+            val lon = f[3].trim().toDoubleOrNull()
+            val mag = f[10].trim().toDoubleOrNull()
             val at = Freshness.parse(f[1].trim())
-            if (at == null || at < cutoff) return@mapNotNull null
+            if (lat == null || lon == null || mag == null || at == null ||
+                lat !in -90.0..90.0 || lon !in -180.0..180.0
+            ) {
+                unusable++
+                return@mapNotNull null
+            }
+            // Old, not malformed: the row was read and is simply
+            // outside the window this layer shows.
+            if (at < cutoff) return@mapNotNull null
             Quake(
                 lat = lat,
                 lon = lon,
@@ -197,6 +219,10 @@ class EarthquakeDataSource(private val client: OkHttpClient = Http.feedClient) :
                     ?.let { "https://geofon.gfz.de/eqinfo/event.php?id=$it" }
             )
         }.toList()
+        if (rows > 0 && unusable == rows) {
+            throw IOException("GEOFON answered in a shape this cannot read")
+        }
+        return quakes
     }
 
     private fun fetchGeofon(): String {

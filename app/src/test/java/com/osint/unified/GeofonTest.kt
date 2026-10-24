@@ -2,8 +2,10 @@ package com.osint.unified
 
 import com.osint.unified.data.EarthquakeDataSource
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.IOException
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
@@ -62,14 +64,41 @@ class GeofonTest {
         assertTrue(source.geofon(body).isEmpty())
     }
 
+    /**
+     * One bad row among good ones is skipped; every row being bad
+     * is a feed that changed shape.
+     *
+     * This test used to feed three malformed rows and assert the
+     * result was empty — which is the globe reporting "no
+     * earthquakes anywhere in twenty-four hours" from a body it
+     * could not read, and the test was protecting it. An FDSN
+     * maintenance page or a changed column layout reaches here as
+     * exactly that.
+     */
     @Test
     fun aTruncatedOrEmptyRowIsSkippedRatherThanGuessed() {
         val body = header + "\n" +
             "x|${recently()}|38.87|14.402\n" +
             "\n" +
             "y|${recently()}|notalatitude|14.402|10.0|||GFZ|y|mb|4.51||Somewhere|earthquake\n" +
-            "z|${recently()}|38.87|14.402|10.0|||GFZ|z|mb||| |earthquake"
-        assertTrue(source.geofon(body).isEmpty())
+            "good|${recently()}|38.87|14.402|10.0|||GFZ|g|mb|4.51||Sicily, Italy|earthquake"
+        val quakes = source.geofon(body)
+        assertEquals(1, quakes.size)
+        assertEquals("Sicily, Italy", quakes.first().place)
+    }
+
+    @Test
+    fun everyRowBeingUnreadableIsAFailureAndNotAQuietDay() {
+        val body = header + "\n" +
+            "x|${recently()}|38.87|14.402\n" +
+            "y|${recently()}|notalatitude|14.402|10.0|||GFZ|y|mb|4.51||Somewhere|earthquake"
+        assertThrows(IOException::class.java) { source.geofon(body) }
+    }
+
+    /** And a feed with no rows at all is still an honest zero. */
+    @Test
+    fun aHeaderWithNoRowsIsAnAnswer() {
+        assertTrue(source.geofon(header).isEmpty())
     }
 
     /** Two agencies reporting one earthquake is one earthquake. */

@@ -30,11 +30,31 @@ function withinRate(key) {
   // The map is keyed by credential and there is one credential, but an
   // unbounded map is still an unbounded map.
   if (hits.size > 64) {
-    for (const [k, v] of hits) if (v.length === 0) hits.delete(k);
+    // Entries whose window has emptied, not entries that were never
+    // filled: an entry is only ever stored after a timestamp is
+    // pushed, so the old `v.length === 0` could not match anything
+    // and the guard did nothing.
+    for (const [k, v] of hits) {
+      if (v.filter((at) => at > windowStart).length === 0) hits.delete(k);
+    }
   }
   return true;
 }
 
+// A partial answer is not an answer, and must not arrive as a 200.
+//
+// The test was `err && !stdout`: when execFile kills the child on the
+// timeout, or cuts it off at maxBuffer, *after* some output has
+// arrived, `err` is set and `stdout` is not empty — so the partial
+// body went back with HTTP 200 and the app stored it as a complete
+// result. subfinder killed at sixty seconds having emitted forty of
+// four hundred subdomains became "40 subdomains" in a dossier, as an
+// established set.
+//
+// The partial output is still worth sending; what must not happen is
+// sending it as though the tool had finished. It goes back as 206,
+// which the app reads as an incomplete answer, with a first line
+// saying so in words in case anything reads only the body.
 function runBinary(cmd, args, timeoutMs, res) {
   execFile(cmd, args, { timeout: timeoutMs, maxBuffer: EXEC_MAX_BUFFER }, (err, stdout, stderr) => {
     if (err && !stdout) {
@@ -42,6 +62,15 @@ function runBinary(cmd, args, timeoutMs, res) {
         tool: cmd,
         error: err.killed ? `Timed out after ${timeoutMs} ms` : (stderr || err.message).slice(0, 500),
       });
+    }
+    if (err) {
+      const why = err.killed
+        ? `${cmd} was stopped after ${timeoutMs} ms`
+        : `${cmd} stopped early: ${(stderr || err.message).slice(0, 200)}`;
+      return res
+        .status(206)
+        .type("text/plain")
+        .send(`PARTIAL: ${why}. What follows is incomplete.\n` + stdout);
     }
     res.type("text/plain").send(stdout || stderr || "(no output)");
   });
@@ -80,8 +109,19 @@ const handlers = {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: "data=" + encodeURIComponent(query),
+        signal: AbortSignal.timeout(40_000),
       });
       const text = await r.text();
+      // Overpass answers 429 "Too Many Requests" and 504 with an HTML
+      // body, and this relayed both as 200 application/json — so the
+      // app parsed zero elements and reported "nothing mapped near
+      // this point" for a request the service had refused.
+      if (!r.ok) {
+        return res.status(502).json({
+          error: `Overpass answered HTTP ${r.status}`,
+          body: text.slice(0, 300),
+        });
+      }
       res.type("application/json").send(text);
     } catch (e) {
       res.status(502).json({ error: "Overpass request failed: " + e.message });

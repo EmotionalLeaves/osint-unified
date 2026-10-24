@@ -39,7 +39,12 @@ curl -X POST localhost:3000/overpass_turbo -H 'content-type: application/json' \
 ## Security notes
 
 - `execFile` is used (no shell); inputs with shell metacharacters are rejected.
-- Per-IP rate limit (default 100/hr, `RATE_LIMIT` env var).
+- Rate limit per credential (default 100/hr, `RATE_LIMIT` env var),
+  applied after authorisation. It was per-IP, and behind a platform
+  proxy every request arrives from a handful of the provider's
+  addresses — so a stranger probing the service could exhaust the
+  quota of the one person allowed to use it without ever presenting
+  a token.
 - Active scanners (nuclei) are intrusive — only point them at targets you are
   authorized to test.
 - The 501 endpoints are intentionally disabled until you supply the required
