@@ -133,7 +133,7 @@ LOW
 
 ### Still open after today
 
-- [ ] **U5. A conflict source that records activity** (ACLED or UCDP),
+- [x] **U5. A conflict source that records activity** (closed r20: ACLED 403 and UCDP 401 both need accounts; replaced instead with Wikipedia's "List of ongoing armed conflicts", which carries deaths per year — the label is built from this year's deaths, not a lineage start date. OngoingConflicts + test.) (ACLED or UCDP),
   so "current" stops meaning "no end date on Wikidata". Needs probing
   for a keyless endpoint.
 - [x] **D1. The TLS tool died after it had its answer.** It followed
@@ -1054,7 +1054,7 @@ exceptions), `domain/Findings.kt`, `TsunamiDataSource`,
 whole of the view-model's search bookkeeping.
 
 ### Open work, in order
-- **O1. Layers as data** (was C6). One registry, not thirty-four
+- **O1. Layers as data** — DONE r20: the 33 switches are one saved set of `Layers` keys; `showX` are delegates onto it; what to fetch, ALL LAYERS and CLEAR come from the table (`Layers.fetched`, `Layers.SWITCHES`, `ridesWith`). Tested. (was C6). One registry, not thirty-four
   booleans spread across three files. Every layer added since has had
   to be added in three places, and the header, the pill and the brief
   have each disagreed with the others at least once because of it.
@@ -1100,7 +1100,7 @@ whole of the view-model's search bookkeeping.
     Open-Meteo already covers air quality worldwide.
   - **NWS radar stations** — `api.weather.gov/radar/stations`, a
     GeoJSON FeatureCollection. An inventory, not an event feed.
-- **O5. The rest of B3.** Probed 24 Oct, all keyless, all answering:
+- **O5. The rest of B3.** GitHub commit search (emailgithub), iNaturalist (inaturalist) and Crossref (publications) are in; **GBIF is what is left.** Probed 24 Oct, all keyless, all answering:
   - **GitHub commit search by author-email** — works and *filters*.
     `/search/commits?q=author-email%3A<addr>` returns real commits for
     a real address and `total_count: 0` with an empty `items` for one
@@ -1133,7 +1133,7 @@ whole of the view-model's search bookkeeping.
   rows behind a SHOW MORE, which is most of the win. Converting the
   whole screen is a structural rewrite with no device here to look at
   the result. Revisit if the tester reports scrolling trouble.
-- **O7. One map engine** (was C10, deliberately deferred). A rewrite
+- **O7. One map engine** — DONE by U1 (r19): there is one view, the globe, and no map engine at all. (was C10, deliberately deferred). A rewrite
   of the whole map surface with no device here, and the seam it
   removes is now a seam crossed once.
 

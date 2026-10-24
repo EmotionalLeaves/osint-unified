@@ -17,10 +17,11 @@ package com.osint.unified.ui.godeye
  *
  * So: the prose about a layer lives here, in one table, and the two
  * places that describe a layer in words read it rather than
- * repeating it. What is still written out by hand is the `show*`
- * flag and the list each layer's data lives in, because those are
- * typed fields of a state class rather than strings — that is the
- * rest of this job, and it is a bigger one.
+ * repeating it. The switches are one set of these keys
+ * (GodEyeViewScreen's `shownLayers`), and what to fetch, ALL LAYERS
+ * and CLEAR are worked out from this table. What is still written out
+ * by hand is the list each layer's data lives in, because those are
+ * typed fields of a state class.
  *
  * The test beside this file asserts the table covers exactly the
  * keys the view model polls, so the next layer added cannot be
@@ -46,7 +47,9 @@ internal object Layers {
         val key: String,
         val area: String,
         val brief: String? = null,
-        val reachKm: Double? = null
+        val reachKm: Double? = null,
+        /** Switched on and off with another layer rather than by its own pill. */
+        val ridesWith: String? = null
     )
 
     val ALL: List<Layer> = listOf(
@@ -95,7 +98,7 @@ internal object Layers {
         Layer("powerPlants", "power plants"),
         Layer("cables", "cable landings"),
         Layer("overlayPoints", "your overlay"),
-        Layer("spaceWeather", "space weather"),
+        Layer("spaceWeather", "space weather", ridesWith = "aurora"),
 
         // Fetched in a circle around the view. The reach is what the
         // area report needs to say "most of this radius was never
@@ -110,6 +113,18 @@ internal object Layers {
     )
 
     private val BY_KEY: Map<String, Layer> = ALL.associateBy { it.key }
+
+    /** Every layer that has a switch of its own: what ALL LAYERS turns on. */
+    val SWITCHES: Set<String> = ALL.filter { it.ridesWith == null }.mapTo(LinkedHashSet()) { it.key }
+
+    /**
+     * What to fetch for the switches that are on — every layer when
+     * [everything] is, and a layer that rides with another whenever
+     * that one is.
+     */
+    fun fetched(shown: Set<String>, everything: Boolean = false): Set<String> =
+        ALL.filter { everything || (it.ridesWith ?: it.key) in shown }
+            .mapTo(LinkedHashSet()) { it.key }
 
     fun of(key: String): Layer? = BY_KEY[key]
 

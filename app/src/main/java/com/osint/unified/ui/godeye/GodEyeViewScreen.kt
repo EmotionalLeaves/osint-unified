@@ -52,6 +52,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -132,32 +133,47 @@ fun GodEyeViewScreen(
     // you came to look at is under four thousand other dots. Turning
     // one on is a decision, and a decision is what makes the answer
     // mean something.
-    var showAircraft by rememberSaveable { mutableStateOf(false) }
-    var showVessels by rememberSaveable { mutableStateOf(false) }
-    var showQuakes by rememberSaveable { mutableStateOf(false) }
-    var showEvents by rememberSaveable { mutableStateOf(false) }
-    var showOverlay by rememberSaveable { mutableStateOf(false) }
-    var showWeather by rememberSaveable { mutableStateOf(false) }
-    var showFires by rememberSaveable { mutableStateOf(false) }
-    var showSats by rememberSaveable { mutableStateOf(false) }
-    var showNews by rememberSaveable { mutableStateOf(false) }
-    var showGdacs by rememberSaveable { mutableStateOf(false) }
-    var showVolcanoes by rememberSaveable { mutableStateOf(false) }
-    var showWorldWarnings by rememberSaveable { mutableStateOf(false) }
-    var showSeaLevel by rememberSaveable { mutableStateOf(false) }
-    var showPorts by rememberSaveable { mutableStateOf(false) }
-    var showSites by rememberSaveable { mutableStateOf(false) }
-    var showLaunches by rememberSaveable { mutableStateOf(false) }
-    var showOutages by rememberSaveable { mutableStateOf(false) }
-    var showAurora by rememberSaveable { mutableStateOf(false) }
-    var showBuoys by rememberSaveable { mutableStateOf(false) }
-    var showMetar by rememberSaveable { mutableStateOf(false) }
-    var showMil by rememberSaveable { mutableStateOf(false) }
-    var showConflict by rememberSaveable { mutableStateOf(false) }
-    var showCyclones by rememberSaveable { mutableStateOf(false) }
-    var showTsunami by rememberSaveable { mutableStateOf(false) }
-    var showAirportStatus by rememberSaveable { mutableStateOf(false) }
-    var showRadiation by rememberSaveable { mutableStateOf(false) }
+    // Which layers are switched on, as one set of the keys in [Layers].
+    //
+    // It was thirty-three separate booleans, each written out again in
+    // the list of what to fetch, in CLEAR, in ALL LAYERS and in the
+    // presets, and a layer added to some of those and not others is how
+    // the screen kept disagreeing with itself. The `show*` names below
+    // are views onto this set, so every place that reads one still reads
+    // the same thing; what to fetch, everything-on and everything-off
+    // are worked out from the table rather than listed by hand.
+    val shownLayers = rememberSaveable(
+        saver = listSaver<MutableState<Set<String>>, String>(
+            save = { it.value.toList() },
+            restore = { mutableStateOf(it.toSet()) }
+        )
+    ) { mutableStateOf(emptySet<String>()) }
+    var showAircraft by LayerSwitch(shownLayers, "aircraft")
+    var showVessels by LayerSwitch(shownLayers, "vessels")
+    var showQuakes by LayerSwitch(shownLayers, "quakes")
+    var showEvents by LayerSwitch(shownLayers, "naturalEvents")
+    var showOverlay by LayerSwitch(shownLayers, "overlayPoints")
+    var showWeather by LayerSwitch(shownLayers, "weather")
+    var showFires by LayerSwitch(shownLayers, "fires")
+    var showSats by LayerSwitch(shownLayers, "satellites")
+    var showNews by LayerSwitch(shownLayers, "news")
+    var showGdacs by LayerSwitch(shownLayers, "gdacs")
+    var showVolcanoes by LayerSwitch(shownLayers, "volcanoes")
+    var showWorldWarnings by LayerSwitch(shownLayers, "worldWarnings")
+    var showSeaLevel by LayerSwitch(shownLayers, "seaLevel")
+    var showPorts by LayerSwitch(shownLayers, "ports")
+    var showSites by LayerSwitch(shownLayers, "sites")
+    var showLaunches by LayerSwitch(shownLayers, "launches")
+    var showOutages by LayerSwitch(shownLayers, "outages")
+    var showAurora by LayerSwitch(shownLayers, "aurora")
+    var showBuoys by LayerSwitch(shownLayers, "buoys")
+    var showMetar by LayerSwitch(shownLayers, "metar")
+    var showMil by LayerSwitch(shownLayers, "milAircraft")
+    var showConflict by LayerSwitch(shownLayers, "conflicts")
+    var showCyclones by LayerSwitch(shownLayers, "cyclones")
+    var showTsunami by LayerSwitch(shownLayers, "tsunamis")
+    var showAirportStatus by LayerSwitch(shownLayers, "airportStatus")
+    var showRadiation by LayerSwitch(shownLayers, "radiation")
     // Everything on at once, which costs real bandwidth, so it is its own
     // deliberate switch rather than the fifth stop on a colour cycle.
     var god by rememberSaveable { mutableStateOf(false) }
@@ -425,13 +441,13 @@ fun GodEyeViewScreen(
     val visibleAircraft = remember(state.aircraft, flightFilter) {
         filterFlights(state.aircraft, flightFilter)
     }
-    var showCameras by rememberSaveable { mutableStateOf(false) }
-    var showAirspace by rememberSaveable { mutableStateOf(false) }
-    var showAirports by rememberSaveable { mutableStateOf(false) }
-    var showAqi by rememberSaveable { mutableStateOf(false) }
-    var showCables by rememberSaveable { mutableStateOf(false) }
-    var showPower by rememberSaveable { mutableStateOf(false) }
-    var showStations by rememberSaveable { mutableStateOf(false) }
+    var showCameras by LayerSwitch(shownLayers, "cameras")
+    var showAirspace by LayerSwitch(shownLayers, "airspace")
+    var showAirports by LayerSwitch(shownLayers, "airports")
+    var showAqi by LayerSwitch(shownLayers, "airQuality")
+    var showCables by LayerSwitch(shownLayers, "cables")
+    var showPower by LayerSwitch(shownLayers, "powerPlants")
+    var showStations by LayerSwitch(shownLayers, "stations")
 
     // Which feeds are worth spending someone's battery and mobile data on.
     //
@@ -440,81 +456,13 @@ fun GodEyeViewScreen(
     // twenty-four requests every ten minutes, and the aircraft sweep at
     // world zoom is measured in hundreds of megabytes an hour. A feed
     // nobody is looking at should not be fetched.
-    val visibleLayers = remember(
-        showAircraft,
-        showAirportStatus,
-        showAirports,
-        showAqi,
-        showAurora,
-        showBuoys,
-        showCables,
-        showConflict,
-        showCyclones,
-        showEvents,
-        showFires,
-        showGdacs,
-        showMetar,
-        showMil,
-        showNews,
-        showOverlay,
-        showPower,
-        showQuakes,
-        showSats,
-        showStations,
-        showTsunami,
-        showVessels,
-        showVolcanoes,
-        showWorldWarnings,
-        showSeaLevel,
-        showPorts,
-        showSites,
-        showLaunches,
-        showOutages,
-        showWeather,
-        showCameras, showAirspace, showRadiation, god
-    ) {
-        buildSet {
-            if (showAircraft || god) add("aircraft")
-            if (showMil || god) add("milAircraft")
-            if (showVessels || god) add("vessels")
-            if (showQuakes || god) add("quakes")
-            if (showEvents || god) add("naturalEvents")
-            if (showWeather || god) add("weather")
-            if (showFires || god) add("fires")
-            if (showSats || god) add("satellites")
-            if (showGdacs || god) add("gdacs")
-            if (showVolcanoes || god) add("volcanoes")
-            if (showWorldWarnings || god) add("worldWarnings")
-            if (showSeaLevel || god) add("seaLevel")
-            if (showPorts || god) add("ports")
-            if (showSites || god) add("sites")
-            if (showLaunches || god) add("launches")
-            if (showOutages || god) add("outages")
-            if (showConflict || god) add("conflicts")
-            if (showAqi || god) add("airQuality")
-            if (showStations || god) add("stations")
-            if (showAirports || god) add("airports")
-            if (showPower || god) add("powerPlants")
-            if (showAurora || god) add("aurora")
-            if (showBuoys || god) add("buoys")
-            if (showMetar || god) add("metar")
-            if (showNews || god) add("news")
-            if (showCables || god) add("cables")
-            if (showCyclones || god) add("cyclones")
-            if (showTsunami || god) add("tsunamis")
-            if (showAirportStatus || god) add("airportStatus")
-            if (showOverlay || god) add("overlayPoints")
-            if (showCameras || god) add("cameras")
-            if (showAirspace || god) add("airspace")
-            if (showRadiation || god) add("radiation")
-            // Space weather rides with the aurora layer, which is what
-            // it is for. It used to be added unconditionally, which
-            // meant the layer count was never zero — so the "+ ADD
-            // LAYERS" label was unreachable, CLEAR was always offered,
-            // and the line saying nothing is being fetched could never
-            // appear and would have been untrue if it had.
-            if (showAurora || god) add("spaceWeather")
-        }
+    // Space weather rides with the aurora layer, which is what it is
+    // for; that is in the table too. It used to be added
+    // unconditionally, which meant the layer count was never zero — so
+    // "+ ADD LAYERS" was unreachable and the line saying nothing is
+    // being fetched could never appear.
+    val visibleLayers = remember(shownLayers.value, god) {
+        Layers.fetched(shownLayers.value, everything = god)
     }
     LaunchedEffect(visibleLayers) { viewModel.setVisibleLayers(visibleLayers) }
 
@@ -855,23 +803,7 @@ fun GodEyeViewScreen(
             // can say by themselves.
             val settleGod = {
                 if (god) {
-                    showAircraft = true; showAirportStatus = true
-                    showAirports = true; showAirspace = true
-                    showAqi = true; showAurora = true
-                    showBuoys = true; showCables = true
-                    showCameras = true; showConflict = true
-                    showCyclones = true; showEvents = true
-                    showFires = true; showGdacs = true
-                    showLaunches = true; showMetar = true
-                    showMil = true; showNews = true
-                    showOutages = true; showOverlay = true
-                    showPorts = true; showPower = true
-                    showQuakes = true; showRadiation = true
-                    showSats = true; showSeaLevel = true
-                    showSites = true; showStations = true
-                    showTsunami = true; showVessels = true
-                    showVolcanoes = true; showWeather = true
-                    showWorldWarnings = true
+                    shownLayers.value = Layers.SWITCHES
                     god = false
                 }
             }
@@ -889,43 +821,11 @@ fun GodEyeViewScreen(
                 // `showX || god` and without this line not one of the
                 // thirty-three assignments reaches the map.
                 god = false
-                showAircraft = false
-                showAirportStatus = false
-                showAirports = false
-                showAirspace = false
-                showAqi = false
-                showAurora = false
-                showBuoys = false
-                showCables = false
-                showCameras = false
-                showConflict = false
-                showCyclones = false
-                showEvents = false
-                showFires = false
-                showGdacs = false
-                showLaunches = false
-                showMetar = false
-                showMil = false
-                showNews = false
-                showOutages = false
-                showOverlay = false
-                showPorts = false
-                showPower = false
-                showQuakes = false
-                showRadiation = false
+                shownLayers.value = emptySet()
                 // Not just hidden: the view model keeps its own flag
                 // and goes on querying Safecast on every pan without
                 // this, for a layer nobody can see.
                 viewModel.ensureRadiation(false)
-                showSats = false
-                showSeaLevel = false
-                showSites = false
-                showStations = false
-                showTsunami = false
-                showVessels = false
-                showVolcanoes = false
-                showWeather = false
-                showWorldWarnings = false
             }
 
             // Six questions, instead of thirty-three switches.
@@ -2661,3 +2561,22 @@ private fun SettingsField(
     )
 }
 
+/**
+ * One layer's switch, as a view onto the set of switched-on layers.
+ *
+ * Read and written like the boolean it replaced, so `showPorts = true`
+ * and `if (showPorts)` still mean what they did; the state underneath
+ * is the one set, saved once.
+ */
+private class LayerSwitch(
+    private val shown: MutableState<Set<String>>,
+    private val key: String
+) {
+    operator fun getValue(thisRef: Any?, property: kotlin.reflect.KProperty<*>): Boolean =
+        key in shown.value
+
+    operator fun setValue(thisRef: Any?, property: kotlin.reflect.KProperty<*>, value: Boolean) {
+        val now = shown.value
+        if ((key in now) != value) shown.value = if (value) now + key else now - key
+    }
+}

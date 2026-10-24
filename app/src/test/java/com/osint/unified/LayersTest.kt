@@ -111,4 +111,24 @@ class LayersTest {
     fun anUnknownKeyComesBackAsItself() {
         assertEquals("somethingNew", Layers.area("somethingNew"))
     }
+
+    /** ALL LAYERS is every switch; space weather has none of its own. */
+    @Test
+    fun everyLayerButTheRidersHasASwitch() {
+        assertEquals(Layers.ALL.size - 1, Layers.SWITCHES.size)
+        assertFalse("spaceWeather" in Layers.SWITCHES)
+        assertTrue("aurora" in Layers.SWITCHES)
+    }
+
+    /** What is fetched is what is switched on, plus what rides with it. */
+    @Test
+    fun theFetchListFollowsTheSwitches() {
+        assertEquals(emptySet<String>(), Layers.fetched(emptySet()))
+        assertEquals(setOf("ports"), Layers.fetched(setOf("ports")))
+        assertEquals(setOf("aurora", "spaceWeather"), Layers.fetched(setOf("aurora")))
+        assertEquals(Layers.ALL.map { it.key }.toSet(), Layers.fetched(emptySet(), everything = true))
+        assertEquals(Layers.ALL.map { it.key }.toSet(), Layers.fetched(Layers.SWITCHES))
+        // A key no layer has is not fetched.
+        assertEquals(emptySet<String>(), Layers.fetched(setOf("nonsense")))
+    }
 }
