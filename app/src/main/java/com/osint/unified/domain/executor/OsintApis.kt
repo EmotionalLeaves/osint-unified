@@ -22,6 +22,12 @@ import java.security.MessageDigest
 class OsintApis(private val client: OkHttpClient = Http.client) {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
+
+    /** Ceilings for the certificate-transparency walk, which is the
+     *  one lookup in here with no natural end. */
+    private val CT_PAGE = 1000
+    private val MAX_CT_PAGES = 5
+    private val MAX_CT_NAMES = 5000
     /**
      * What this app calls itself, which is deliberately not itself.
      *
@@ -96,22 +102,49 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
             }
         }
 
+        // crt.sh answers a wildcard query for a large domain with
+        // tens of thousands of rows, and this walked all of them
+        // into a set that is then sorted and printed. Bounded, and
+        // honest about the bound.
+        var crtTruncated = false
         val crtFailure = runCatching {
             val url = "https://crt.sh/?q=" + URLEncoder.encode("%.$d", "UTF-8") + "&output=json"
-            json.parseToJsonElement(getBody(url, patient = true)).jsonArray.forEach { el ->
+            val rows = json.parseToJsonElement(getBody(url, patient = true)).jsonArray
+            for (el in rows) {
+                if (subs.size >= MAX_CT_NAMES) { crtTruncated = true; break }
                 ((el as? JsonObject)?.get("name_value") as? JsonPrimitive)?.contentOrNull
                     ?.let(::record)
             }
         }.exceptionOrNull()
         val fromCrtSh = subs.size
 
+        // Cert Spotter pages, and one request is one page.
+        //
+        // The call asked once and reported whatever came back as the
+        // complete set. A domain with more issuances than a page
+        // holds — which is most domains worth looking at — got a
+        // silent prefix presented as an answer, and "N names" read
+        // as a count rather than as the start of one. It follows the
+        // id cursor now, and says so when it stops early.
+        var spotterPages = 0
+        var spotterMore = false
         val spotterFailure = runCatching {
-            val url = "https://api.certspotter.com/v1/issuances?domain=$d" +
-                "&include_subdomains=true&expand=dns_names"
-            json.parseToJsonElement(getBody(url)).jsonArray.forEach { el ->
-                ((el as? JsonObject)?.get("dns_names") as? JsonArray)?.forEach { n ->
-                    (n as? JsonPrimitive)?.contentOrNull?.let(::record)
+            var after: String? = null
+            while (spotterPages < MAX_CT_PAGES) {
+                val url = "https://api.certspotter.com/v1/issuances?domain=$d" +
+                    "&include_subdomains=true&expand=dns_names&limit=$CT_PAGE" +
+                    (after?.let { "&after=" + URLEncoder.encode(it, "UTF-8") } ?: "")
+                val page = json.parseToJsonElement(getBody(url)).jsonArray
+                spotterPages++
+                page.forEach { el ->
+                    ((el as? JsonObject)?.get("dns_names") as? JsonArray)?.forEach { n ->
+                        (n as? JsonPrimitive)?.contentOrNull?.let(::record)
+                    }
                 }
+                if (page.size < CT_PAGE) break
+                after = ((page.last() as? JsonObject)?.get("id") as? JsonPrimitive)?.contentOrNull
+                if (after == null) break
+                if (spotterPages >= MAX_CT_PAGES) spotterMore = true
             }
         }.exceptionOrNull()
 
@@ -121,6 +154,14 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
                 append(" (crt.sh $fromCrtSh")
                 append(", Cert Spotter +${subs.size - fromCrtSh}")
                 append(")")
+                if (crtTruncated) {
+                    append("\ncrt.sh returned more than $MAX_CT_NAMES names and was cut ")
+                    append("off there, so this list is a prefix, not the whole index.")
+                }
+                if (spotterMore) {
+                    append("\nCert Spotter had further pages after ${MAX_CT_PAGES * CT_PAGE} ")
+                    append("issuances; they were not fetched.")
+                }
                 if (crtFailure != null) append("\ncrt.sh did not answer: ${crtFailure.message}")
                 append("\n")
                 append(subs.sorted().joinToString("\n"))
@@ -617,18 +658,32 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
             getBody("https://cavalier.hudsonrock.com/api/json/v2/osint-tools/search-by-email?email=" + URLEncoder.encode(email, "UTF-8"))
         ).jsonObject
         val stealers = o["stealers"] as? JsonArray
+        // The verdict is the first line, and the vendor's own prose
+        // comes after it.
+        //
+        // It was the other way round. The app reads the first
+        // non-blank line of a tool's output to decide whether the
+        // tool found something, and Hudson Rock opens every reply —
+        // including a clean one — with a sentence of its own about
+        // its service. So an email with no infostealer record was
+        // filed as a hit, counted as a corroborating source, and
+        // written into the export as one.
         buildString {
-            (o["message"] as? JsonPrimitive)?.contentOrNull?.let { append("$it\n") }
-            if (stealers != null && stealers.isNotEmpty()) {
-                append("Infostealer infections: ${stealers.size}\n")
-                stealers.take(6).forEach { s ->
+            val n = stealers?.size ?: 0
+            if (n > 0) {
+                append("Infostealer infections: $n\n")
+                stealers!!.take(6).forEach { s ->
                     val so = s.jsonObject
                     val fam = (so["stealer_family"] as? JsonPrimitive)?.contentOrNull ?: "stealer"
                     val date = (so["date_compromised"] as? JsonPrimitive)?.contentOrNull?.take(10) ?: ""
                     append("• $fam $date\n")
                 }
+            } else {
+                append("No infostealer records found for this email.\n")
             }
-            if (isBlank()) append("No infostealer records found for this email.")
+            (o["message"] as? JsonPrimitive)?.contentOrNull
+                ?.takeIf { it.isNotBlank() }
+                ?.let { append("\nHudson Rock says: $it") }
         }
     }
 
@@ -872,10 +927,22 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
 
     /** Wikipedia GeoSearch: notable places near a coordinate. */
     fun wikiNearby(input: String): Result<String> = runCatching {
-        val parts = input.split(",").map { it.trim() }
-        require(parts.size == 2) { "Expected 'lat, lon'." }
+        // Parsed as numbers before they go into a URL.
+        //
+        // This split on a comma and interpolated both halves
+        // straight into the query string, so anything the user typed
+        // — an ampersand, a fragment of another parameter — became
+        // part of the request.
+        val parts = input.split(",").map { it.trim().toDoubleOrNull() }
+        require(parts.size == 2 && parts.all { it != null }) { "Expected 'lat, lon'." }
+        val lat = parts[0]!!
+        val lon = parts[1]!!
+        require(lat in -90.0..90.0 && lon in -180.0..180.0) {
+            "Latitude must be between -90 and 90, longitude between -180 and 180."
+        }
         val url = "https://en.wikipedia.org/w/api.php?action=query&list=geosearch" +
-            "&gscoord=${parts[0]}%7C${parts[1]}&gsradius=10000&gslimit=25&format=json"
+            "&gscoord=%.6f%%7C%.6f".format(java.util.Locale.US, lat, lon) +
+            "&gsradius=10000&gslimit=25&format=json"
         val arr = json.parseToJsonElement(getBody(url))
             .jsonObject["query"]?.jsonObject?.get("geosearch")?.jsonArray
         if (arr == null || arr.isEmpty()) "No Wikipedia places within 10 km." else

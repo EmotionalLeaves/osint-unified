@@ -149,7 +149,19 @@ class OsintApplication : Application() {
         ExecutorFactory(
             cloud = CloudToolExecutor(settings),
             local = LocalToolExecutor(applicationInfo.nativeLibraryDir, filesDir.absolutePath),
-            direct = DirectToolExecutor(this, UsernameChecker(this), exifReader, settings)
+            // The same camera inventory the map layer uses.
+            //
+            // DirectToolExecutor defaults this parameter to a fresh
+            // CctvDataSource, and nobody overrode it, so the app held
+            // two: one for the CAMERAS layer and one for the camera
+            // tool, each with its own six-hour cache and each pulling
+            // nine Caltrans district inventories in full. The
+            // constructor already says "held, not rebuilt"; it was
+            // being rebuilt here.
+            direct = DirectToolExecutor(
+                this, UsernameChecker(this), exifReader, settings,
+                cctv = cctvDataSource
+            )
         )
     }
 
