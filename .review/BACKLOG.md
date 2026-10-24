@@ -27,6 +27,133 @@ closed; their headings say so.
   URL the code can emit is public; without the actual link this is
   guesswork.
 
+### The files no pass had ever read (r17, 24 Oct)
+
+`GraphBuilder`, `ForceLayout`, `OrbitPropagator`, `Identify`,
+`Listing`, `ObservableExtractor`, `SigningIdentity`, `DiskCache`,
+`InvestigationRepository`, `ExifReader`, `ImageText`, `backend/`,
+and the test suite. The worst defect this project has had came out
+of it, and so did the most reassuring clearance.
+
+**Closed already (r484–r486):** the regex that crashed the app.
+`(?:label\.)+tld` in five files, `java.util.regex` recursing once
+per label, StackOverflowError at four kilobytes, on the composition
+thread, over output from the database — so one stored result could
+crash a case on open for ever, from content a subject chose. The
+email pattern beside it took sixty-one seconds at the scan cap.
+Both measured, both rewritten into `domain/Hostnames.kt`, six tests
+added and `tools/regex-recursion.py` wired into the pre-flight,
+which immediately found two more.
+
+- **T1. `ExifReader.fromUrl` returns its size refusal as a
+  success**, thirteen lines below its own comment forbidding
+  exactly that ("a string beginning 'HTTP 404' was stored as a
+  successful result, counted as a finding and shown with a green
+  dot"). "Refusing to read more than 25 MB from this URL." matches
+  no `Findings` phrase, so it is classified **HIT**.
+- **T2. `credentialsFromUrl` and `credentialsFromUri` do the same**
+  — "Could not read X: timeout" is also HIT, because `UNREACHABLE`
+  holds "could not be read" and not "could not read", and
+  `NOTHING_SHAPE`'s window hits the colon in `https:` before it
+  reaches a noun. A C2PA fetch that timed out is filed as a Content
+  Credentials finding, and both callers were written to catch a
+  failure they can never see.
+- **T3. `SigningIdentity` fails open.** `fingerprint()` returns null
+  on a `NameNotFoundException` or a null signer array — which
+  happens on OEM ROMs — and null compares false, so "could not
+  tell" prints as "not signed with a published key". The one job of
+  that file is to warn that the database encryption is worthless;
+  when it cannot establish the answer it prints the reassuring one.
+- **T4. And it will report the published key for ever after the key
+  is rotated.** `signingCertificateHistory.firstOrNull()` is the
+  oldest certificate, so after the remedy the file documents, it
+  still reports the published key. The doc says the opposite:
+  "When the key is rotated this reports nothing and needs no
+  further change."
+- **T5. `backend` turns a timed-out or truncated scan into HTTP 200
+  with partial output.** `if (err && !stdout)` — a `subfinder`
+  killed at sixty seconds after emitting forty of four hundred
+  subdomains is stored as a complete set.
+- **T6. `backend` forwards an Overpass error page as a successful
+  JSON answer.** No `r.ok` check: a 429 or a 504 with an HTML body
+  is relayed as 200 `application/json`, and the app reports
+  "nothing mapped near this point" for a request that was refused.
+- **T7. `DiskCache.write` is not atomic.** `writeText` truncates
+  then writes, and `read` validates only length ≥ 64 and the mtime
+  — so a process killed partway through the 7 MB Celestrak
+  catalogue leaves a truncated file that is served for the whole
+  TTL and by `readStale` for ever after. The "keeps working from
+  the last good copy" path becomes "keeps working from a corrupt
+  one".
+- **T8. `GeofonTest` asserts that a body in which every row is
+  unparseable is an honest zero.** The test is protecting the
+  defect. `GlobalFeedsTest` in the same suite has the right
+  contract. `aStationWithNoReadingOrNoPositionIsSkipped` has the
+  same shape.
+- **T9. A classifier that throws is recorded as a finding.**
+  `InvestigationRepository` coalesces a thrown `classify` to null
+  and null falls to `"success"`. There is no value for "the verdict
+  could not be read".
+- **T10. The graph truncates at twelve leaves and says nothing**, in
+  a package that has `Listing.andMore` for exactly this, on what
+  its own comment calls "the screen most likely to be
+  screenshotted". It also keeps only HITs, so ten refused sources
+  and ten genuine absences draw the identical picture — the
+  three-way split exists so the UI can tell them apart and the one
+  picture people share throws it away. And node identity is a
+  48-character prefix, which is the collision the comment above it
+  says was fixed.
+- **T11. `Identify` has no file-suffix guard** (fixed in r484),
+  **`NOT_HOSTS` was missing both examples its own comment names**
+  (fixed), and a nine- or ten-digit number is reported as a Unix
+  timestamp as the only reading, in a tool whose header promises
+  every reading is offered.
+- **T12. "No EXIF metadata found." is unreachable** — `describe()`
+  always appends a GPS line first — so an image with no EXIF block
+  at all reports `GPS: (none)`, which is a different claim. And
+  nothing checks the fetched bytes are an image: an HTML
+  interstitial yields `GPS: (none)` for a file that was never a
+  photograph.
+- **T13. `backend` is an authenticated SSRF.** `httpx -u` and
+  `nuclei -u` take any URL, so the bearer token is the only thing
+  between a caller and the cloud metadata endpoint. The container
+  also runs as root and installs four release archives with no
+  checksum.
+- **T14. `DiskCache.write` cannot report a failure**, so a full disk
+  is invisible and 7 MB and 14 MB are re-downloaded every poll with
+  nothing surfaced. A backwards clock makes a stale entry fresh for
+  ever, which the `ageMillis` function two lines below guards
+  against and `read` does not.
+- **T15. Nine of the files in scope have no test at all.** The cheap
+  high-value ones named: `GraphBuilder` over all-UNREACHABLE rows,
+  `ForceLayout` determinism and its degenerate cases, a `DiskCache`
+  round trip against a truncated file, and `Findings.kindOf` on the
+  three literal strings `ExifReader` returns.
+- **T16. Small:** `geodetic` returns an altitude 6,799 km wrong
+  exactly at the pole, and the test that feeds it that input asserts
+  only the latitude; the Newton guard is `continue` where it means
+  `break`; `ForceLayout` pins an arbitrary node for a graph with no
+  "seed"; duplicate links when one tool yields several hits;
+  `sha256` returns `""` on failure and the export prints the empty
+  string; `base58Check` conflates "could not check" with "checksum
+  wrong" when its own type already has a third value for that; MGRS
+  accepts an odd digit count; `ImageText.fromUri` has no pixel cap
+  where `fromUrl` carefully has one; the backend README documents
+  the rate limiter that was deliberately replaced.
+
+**Found sound, and worth recording because they were the most
+likely places to hide something:** `OrbitPropagator`'s orbital
+mechanics, ported and run — 3.57 km ground error and 3.66 km
+altitude for the ISS at 38-hour-old elements, J2 secular rates
+correct including sign, and the Kepler solver run over four
+thousand mean anomalies at every eccentricity from 0 to 0.999 with
+zero non-convergences. `ForceLayout`'s termination, determinism and
+every degenerate case. `Listing.kt` entire. `Identify.base58Check`
+and `looksLikeIpv6`. `InvestigationRepository`'s transactions,
+foreign keys and the whole `runTool` lifecycle. The backend's
+authorisation: constant-time compare, no shell, rate limit keyed to
+the credential, refuses to start without a token.
+
 ### The three big API files, read whole (r16, 24 Oct)
 
 `DeepApis.kt` (2,742 lines), `PeopleApis.kt` and `HandleApis.kt` had
