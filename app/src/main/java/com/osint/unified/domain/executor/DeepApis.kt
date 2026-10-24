@@ -456,6 +456,10 @@ class DeepApis(
      * exposes one.
      */
     suspend fun socialSweep(username: String): String = coroutineScope {
+        // Set when Stack Overflow's fuzzy name page was full and
+        // held no exact match: the absence below is then about the
+        // first ten name matches, not about the platform.
+        var soNarrowed = false
         val u = username.trim().removePrefix("@")
         val e = URLEncoder.encode(u, "UTF-8")
 
@@ -465,7 +469,14 @@ class DeepApis(
                 // try the default form first and the bare handle after.
                 val body = runCatching {
                     get("https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=$e.bsky.social")
-                }.getOrElse {
+                }.getOrElse { e2 ->
+                    // STOP has to stop here too. `getOrElse`
+                    // catches everything, CancellationException
+                    // included, and then issued a second request —
+                    // so a stopped sweep went on making calls.
+                    // Every other failure path in this file
+                    // re-throws it explicitly.
+                    if (e2 is CancellationException) throw e2
                     get("https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=$e")
                 }
                 val o = json.parseToJsonElement(body).jsonObject
@@ -531,9 +542,19 @@ class DeepApis(
                 val items = json.parseToJsonElement(
                     get("https://api.stackexchange.com/2.3/users?inname=$e&site=stackoverflow&pagesize=10")
                 ).jsonObject["items"] as? JsonArray
-                items?.mapNotNull { it as? JsonObject }
+                // `inname` is fuzzy and this reads one page of ten,
+                // so somebody whose exact display name is the
+                // eleventh fuzzy match drops out and the sweep
+                // reports "No account found on: Stack Overflow".
+                // The exactness test is right; the page is what has
+                // to be said out loud.
+                val exact = items?.mapNotNull { it as? JsonObject }
                     ?.filter { it.str("display_name").equals(u, ignoreCase = true) }
-                    ?.takeIf { it.isNotEmpty() }
+                    .orEmpty()
+                if (exact.isEmpty() && (items?.size ?: 0) >= 10) {
+                    soNarrowed = true
+                }
+                exact.takeIf { it.isNotEmpty() }
                     ?.take(3)
                     ?.joinToString("\n") { o ->
                         "  ${o.str("display_name")} — ${o.int("reputation") ?: 0} rep, " +
@@ -667,7 +688,13 @@ class DeepApis(
                 )
                 append("\n")
             }
-            if (misses.isNotEmpty()) append("\nNo account found on: ${misses.joinToString(", ")}")
+            if (misses.isNotEmpty()) {
+                append("\nNo account found on: ${misses.joinToString(", ")}")
+                if (soNarrowed && "Stack Overflow" in misses) {
+                    append("\n  (Stack Overflow: no exact display-name match in the ")
+                    append("first ten name matches, which is as far as this looked.)")
+                }
+            }
             if (unreachable.isNotEmpty()) {
                 append("\nCould not be reached, so nothing is claimed about these: ")
                 append(unreachable.joinToString(", "))
@@ -1256,7 +1283,11 @@ class DeepApis(
             }
         }
         if (seen.isEmpty()) {
-            return@runCatching "No outage alerts matching '${filter ?: ""}' in the last 24 hours."
+            return@runCatching if (filter == null) {
+                "IODA reports no internet outage alerts in the last 24 hours."
+            } else {
+                "No outage alerts matching '$filter' in the last 24 hours."
+            }
         }
         sb.append("${seen.size} affected networks/regions:\n\n")
         seen.values.take(60).forEach { sb.append(it).append("\n") }
@@ -1272,7 +1303,12 @@ class DeepApis(
         val o = json.parseToJsonElement(get("https://onionoo.torproject.org/details?search=$q&limit=5")).jsonObject
         val relays = o["relays"] as? JsonArray
         if (relays.isNullOrEmpty()) {
-            return@runCatching "Tor: '${input.trim()}' is not a known relay or bridge."
+            // What was established is that it is not in Onionoo's
+            // current directory, which covers recently-seen relays
+            // and which this queried five results deep. "Not a known
+            // relay" is a stronger sentence than that supports.
+            return@runCatching "Tor: '${input.trim()}' is not in Onionoo's current " +
+                "directory of relays and bridges."
         }
         val sb = StringBuilder("Tor network — ${relays.size} matching relay(s)\n")
         relays.forEach { r ->
@@ -1286,7 +1322,12 @@ class DeepApis(
             n.str("as_name")?.let { sb.append("\n  Network: $it (${n.str("as") ?: "?"})") }
             n.str("first_seen")?.let { sb.append("\n  First seen: ${it.substringBefore(' ')}") }
             n.str("last_seen")?.let { sb.append("\n  Last seen: ${it.substringBefore(' ')}") }
-            n.int("observed_bandwidth")?.let { sb.append("\n  Bandwidth: ${it / 1024} KB/s") }
+            n.int("observed_bandwidth")?.let {
+                // Bytes per second, and KiB is not KB. Integer
+                // division also printed "0 KB/s" for anything under
+                // a kibibyte.
+                sb.append("\n  Bandwidth: %.1f KiB/s".format(Locale.US, it / 1024.0))
+            }
             n.str("contact")?.takeIf { it.isNotBlank() }?.let { sb.append("\n  Operator contact: $it") }
             n.str("platform")?.let { sb.append("\n  Platform: $it") }
             val exit = (n["flags"] as? JsonArray)?.any {
@@ -2167,9 +2208,16 @@ class DeepApis(
             if (notAsked > 0) {
                 append("$notAsked could not be looked up and are not counted either way.\n")
             }
-            if (asked.isEmpty()) {
+            if (asked.isEmpty() && notAsked == 0) {
                 append("\nNone of the obvious lookalikes resolve. That is unusual for a well-known brand ")
                 append("and good news for this one.")
+            } else if (asked.isEmpty()) {
+                // The reassurance used to be printed unconditionally,
+                // two lines under the count of domains that could not
+                // be looked up at all — so it contradicted the line
+                // above it.
+                append("\nNone of the lookalikes that could be looked up resolve, but ")
+                append("$notAsked of them could not be, so this is not a clean sheet.")
             } else {
                 append("\nRegistered lookalikes:\n")
                 asked.forEach { (d, ip) -> append("• $d → $ip\n") }

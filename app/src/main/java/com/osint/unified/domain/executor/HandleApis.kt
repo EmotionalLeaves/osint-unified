@@ -411,7 +411,9 @@ class HandleApis(
                 .lowercase().takeIf { it.length in 2..5 }
             buildString {
                 append("The host serves this file as ${type ?: "an unstated type"}")
-                length?.let { append(", ${it / 1024} KB") }
+                // KiB, and not integer division: anything under a
+                // kibibyte printed ", 0 KB".
+                length?.let { append(", %.1f KiB".format(java.util.Locale.US, it / 1024.0)) }
                 append(".\n")
                 modified?.let { append("Last modified on the host: $it\n") }
                 resp.header("ETag")?.let { append("ETag: $it\n") }
