@@ -137,6 +137,17 @@ data class GodEyeUiState(
     /** Why the last tap on the search button did nothing, if it did
      *  nothing. An empty box used to be answered with silence. */
     val queryTrouble: String? = null,
+    /**
+     * How many sources this search will actually dispatch.
+     *
+     * The progress line divided by suggestedTools.size, which is
+     * every tool the router named — including the ones autoRun
+     * drops: the active-recon set and the redundant sweeps. So a
+     * domain search counted to 15 out of 21 and stopped, username to
+     * 11 of 16, an image to 3 of 5, and the bar disappeared with the
+     * number unfinished, which reads as the scan giving up.
+     */
+    val plannedTools: Int = 0,
     /** The second pass is chasing what the first pass turned up. */
     val enrichmentRunning: Boolean = false,
     /** Identifiers the first pass discovered and the second pass is looking
@@ -221,6 +232,25 @@ class GodEyeViewModel(
     /** toolId|input pairs already dispatched for the current investigation,
      *  so the enrichment pass never repeats a lookup the first pass did. */
     private val dispatched = HashSet<String>()
+
+    /**
+     * Which fan-out is the current one.
+     *
+     * A cancelled tool job does not reach its `finally` straight
+     * away: the repository first writes a "cancelled" row under
+     * NonCancellable, which is a round trip to the database, and
+     * only then rethrows. So the decrement commonly landed after the
+     * NEXT search had already added its own counts — and since two
+     * searches of the same type dispatch almost the same tool ids,
+     * it decremented the new run's counters. The progress bar
+     * vanished while the tools were still going and the dossier
+     * printed "No source returned anything on this target" over a
+     * scan in flight.
+     *
+     * Every launch carries the token it was started under, and a
+     * decrement from an older one is ignored.
+     */
+    private var searchRun = 0
 
     /** Everything the current search has in flight, so a new search can
      *  stop it rather than letting two searches write to one dossier. */
@@ -1048,6 +1078,9 @@ class GodEyeViewModel(
         // so the header would say the new target while the intel below it
         // was the old one.
         currentInvestigationId = null
+        // Anything still unwinding from the last search belongs to
+        // the last search, including its counter decrements.
+        searchRun++
         searchJobs.forEach { it.cancel() }
         searchJobs.clear()
         resultsJob?.cancel()
@@ -1117,6 +1150,7 @@ class GodEyeViewModel(
                 it.id !in REDUNDANT_SWEEPS &&
                 (!it.touchesTarget || settings.activeReconEnabled)
         }
+        _state.update { it.copy(plannedTools = tools.size) }
         runToolsInParallel(tools, thenEnrich = settings.followUpEnabled)
     }
 
@@ -1125,6 +1159,8 @@ class GodEyeViewModel(
         val tools = _state.value.suggestedTools.filter {
             it.executionMode != ExecutionMode.CLOUD && it.touchesTarget
         }
+        // Added to the denominator, or the counter reads 18 of 15.
+        _state.update { it.copy(plannedTools = it.plannedTools + tools.size) }
         runToolsInParallel(tools, force = true)
     }
 
@@ -1259,8 +1295,10 @@ class GodEyeViewModel(
             if (thenEnrich) searchJobs addAndForget viewModelScope.launch { enrich(observable) }
             return
         }
+        val run = searchRun
         searchJobs addAndForget viewModelScope.launch {
             val investigationId = ensureInvestigation(observable)
+            if (run != searchRun) return@launch
             _state.update { it.copy(runningTools = it.runningTools.plusRunning(fresh.map { t -> t.id })) }
             val produced = coroutineScope {
                 fresh.map { tool ->
@@ -1270,9 +1308,27 @@ class GodEyeViewModel(
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Exception) {
+                            // Not the tool failing — runTool turns that
+                            // into an error row itself. This is the
+                            // database refusing, so the row inserted as
+                            // "running" is never updated and the dossier
+                            // says "N still running" for the rest of the
+                            // session. Say so once, rather than leaving
+                            // a spinner that will never stop.
+                            _state.update {
+                                it.copy(
+                                    feedTrouble = it.feedTrouble +
+                                        ("${tool.id} result" to
+                                            (e.message ?: "could not be recorded"))
+                                )
+                            }
                             null
                         } finally {
-                            _state.update { it.copy(runningTools = it.runningTools.minusRunning(tool.id)) }
+                            if (run == searchRun) {
+                                _state.update {
+                                    it.copy(runningTools = it.runningTools.minusRunning(tool.id))
+                                }
+                            }
                         }
                     }
                 }.map { it.await() }

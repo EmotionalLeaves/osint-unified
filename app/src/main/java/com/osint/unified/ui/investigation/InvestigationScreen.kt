@@ -233,6 +233,14 @@ fun InvestigationScreen(
             it.input.trim().lowercase() == seedRaw && it.status != "running"
         }
         val found = state.results.count { Findings.isHit(it) }
+        // Counted over the same rows as `done`.
+        //
+        // "15 sources queried · 22 returned intel" is what you get
+        // when one half of a sentence counts the seed's rows and the
+        // other half counts every row including the second pass's.
+        val foundSeed = state.results.count {
+            it.input.trim().lowercase() == seedRaw && Findings.isHit(it)
+        }
         // Everything the dossier is made of, worked out once and away
         // from the main thread.
         //
@@ -343,8 +351,21 @@ fun InvestigationScreen(
                         state.enrichmentRunning ->
                             "second pass · chasing ${state.enriching.size} discovered " +
                                 "identifier${if (state.enriching.size == 1) "" else "s"} · $found hits"
-                        anyRunning -> "scanning · $done/${state.suggestedTools.size} sources · $found hits"
-                        done > 0 -> "$done sources queried · $found returned intel"
+                        // Against what will actually run, not
+                        // against every tool the router named.
+                        anyRunning ->
+                            "scanning · $done/${
+                                if (state.plannedTools > 0) state.plannedTools
+                                else state.suggestedTools.size
+                            } sources · $foundSeed hits"
+                        // Both halves over the same rows, and the
+                        // second pass's own count said separately
+                        // rather than folded into the first's.
+                        done > 0 -> buildString {
+                            append("$done sources queried · $foundSeed returned intel")
+                            val chased = found - foundSeed
+                            if (chased > 0) append(" · $chased more from follow-up")
+                        }
                         else -> "ready — run all, or tap a source below"
                     },
                     style = MaterialTheme.typography.labelMedium,
