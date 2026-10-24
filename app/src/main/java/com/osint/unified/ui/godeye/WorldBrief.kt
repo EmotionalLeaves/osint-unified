@@ -61,7 +61,9 @@ object WorldBrief {
      * one: at the start, after a separator, or in front of the word
      * "alert".
      */
-    private fun alertRank(label: String): Int {
+    /** Visible to the test that proves the bounded selection agrees
+     *  with the full sort it replaced. */
+    internal fun alertRank(label: String): Int {
         val l = label.lowercase()
         fun says(pair: Pair<String, Boolean>): Boolean {
             val (word, alsoAPlace) = pair
@@ -115,14 +117,40 @@ object WorldBrief {
             // it would run that regex tens of thousands of times per
             // rebuild, on the thread drawing the globe — so each item is
             // scored exactly once and the sort works on the scores.
-            val scored = source.map { blip ->
-                Triple(rank(blip), ageMinutes(blip.label) ?: Int.MAX_VALUE, blip)
+            // Six kept, not a hundred thousand sorted.
+            //
+            // The scoring was already done once per item, and then
+            // the whole layer was sorted to take six off the front:
+            // a full O(n log n) over six figures of wildfire
+            // detections, plus a Triple allocated for every one of
+            // them. Keeping a shelf of six as it goes is one pass and
+            // six comparisons an item, and it allocates nothing it
+            // does not keep.
+            val best = ArrayList<Triple<Int, Int, GeoBlip>>(PER_SECTION + 1)
+            var worstSeverity = Int.MIN_VALUE
+            source.forEach { blip ->
+                val score = rank(blip)
+                val age = ageMinutes(blip.label) ?: Int.MAX_VALUE
+                if (best.size == PER_SECTION) {
+                    val worst = best[best.size - 1]
+                    if (score < worst.first ||
+                        (score == worst.first && age >= worst.second)
+                    ) {
+                        worstSeverity = maxOf(worstSeverity, score)
+                        return@forEach
+                    }
+                }
+                var at = best.size
+                while (at > 0) {
+                    val prev = best[at - 1]
+                    if (prev.first > score || (prev.first == score && prev.second <= age)) break
+                    at--
+                }
+                best.add(at, Triple(score, age, blip))
+                worstSeverity = maxOf(worstSeverity, score)
+                if (best.size > PER_SECTION) best.removeAt(best.size - 1)
             }
-            val top = scored
-                .sortedWith(compareByDescending<Triple<Int, Int, GeoBlip>> { it.first }
-                    .thenBy { it.second })
-                .take(PER_SECTION)
-                .map { (_, _, b) -> Entry(b.label, b.lat, b.lon, b.url) }
+            val top = best.map { (_, _, b) -> Entry(b.label, b.lat, b.lon, b.url) }
             // A feed that has started failing still has its last
             // answer in the state, and this printed it with no mark on
             // it at all — while the same layer was listed under NOT
@@ -137,7 +165,10 @@ object WorldBrief {
                     // A section of ordinary items should not outrank a
                     // section holding a red alert, so the worst item in it
                     // lifts the whole block.
-                    severity + (scored.maxOfOrNull { it.first } ?: 1),
+                    // The worst item in the layer, tracked as it went
+                    // rather than read back off a list that no longer
+                    // exists.
+                    severity + (if (worstSeverity == Int.MIN_VALUE) 1 else worstSeverity),
                     top,
                     note
                 )

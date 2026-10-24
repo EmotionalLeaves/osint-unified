@@ -190,7 +190,15 @@ fun GodEyeViewScreen(
     // Keyed on the layers the brief reads, not the whole state: the
     // aircraft poll replaces the state object every fifteen seconds, and
     // rebuilding the ranking each time would be work for no new answer.
-    val brief = remember(
+    // Off the main thread, because it reads every layer.
+    //
+    // build() scores every item of every armed layer — a regex per
+    // label — and the fire layer alone can hold six figures. That ran
+    // inside `remember`, which is to say synchronously during
+    // composition, at the moment a poll returned. The brief is a
+    // sentence at the top of the screen; it can arrive a frame late.
+    val brief by produceState(
+        initialValue = WorldBrief.Brief(emptyList(), emptyList()),
         state.conflicts, state.gdacs, state.tsunamis, state.cyclones,
         state.volcanoes, state.worldWarnings, state.seaLevel, state.outages,
         state.ports, state.launches, state.sites,
@@ -205,7 +213,7 @@ fun GodEyeViewScreen(
         // The traffic line reads these three, so leaving them out of the key
         // let the brief quote counts the header beside it had moved past.
         state.aircraft, state.vessels, state.satellites
-    ) { WorldBrief.build(state) }
+    ) { value = withContext(Dispatchers.Default) { WorldBrief.build(state) } }
     // The panel of search controls and layer pills is most of a phone
     // screen. On something called a God's Eye View the globe should be the
     // thing you are looking at, so the panel folds away — and starts

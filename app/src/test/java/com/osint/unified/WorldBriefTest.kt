@@ -156,4 +156,61 @@ class WorldBriefTest {
         val headline = WorldBrief.headline(WorldBrief.build(state))
         assertTrue("headline was \"$headline\"", headline.contains("not reporting"))
     }
+
+    /**
+     * The shelf of six must agree with the full sort it replaced.
+     *
+     * A hundred thousand wildfire detections were being sorted in
+     * full to take six off the front, during composition. The
+     * selection is a single pass now, and the only thing that matters
+     * about it is that it picks the same six in the same order.
+     */
+    @Test
+    fun theTopSixAreTheSameSixAFullSortWouldPick() {
+        val labels = (1..500).map { i ->
+            val level = when (i % 4) {
+                0 -> "RED"
+                1 -> "ORANGE"
+                2 -> "GREEN"
+                else -> ""
+            }
+            "Event $i · $level · ${i}m ago"
+        }
+        val blips = labels.mapIndexed { i, l -> GeoBlip(i * 0.1, i * 0.1, l) }
+        val brief = WorldBrief.build(
+            GodEyeUiState(gdacs = blips, loaded = setOf("gdacs"))
+        )
+        val section = brief.sections.first { it.title.startsWith("DISASTER ALERTS") }
+
+        // What a full sort of the same scores would have produced.
+        val expected = blips
+            .map { Triple(WorldBrief.alertRank(it.label), WorldBrief.ageMinutes(it.label) ?: Int.MAX_VALUE, it) }
+            .sortedWith(
+                compareByDescending<Triple<Int, Int, GeoBlip>> { it.first }.thenBy { it.second }
+            )
+            .take(6)
+            .map { it.third.label }
+
+        assertEquals(expected, section.entries.map { it.text })
+    }
+
+    @Test
+    fun aFeedThatIsDownIsMarkedOnTheHeadlineToo() {
+        // The mark lives on the section title, and the headline used
+        // to return the entry text without it — so the one line of
+        // the brief that is always on screen presented a stale entry
+        // from a dead feed as the current situation.
+        val brief = WorldBrief.build(
+            GodEyeUiState(
+                gdacs = listOf(GeoBlip(1.0, 1.0, "Flood: Somewhere · RED · 10m ago")),
+                loaded = setOf("gdacs"),
+                feedTrouble = mapOf("gdacs" to "no answer")
+            )
+        )
+        assertTrue(brief.sections.first().title.contains("FEED DOWN"))
+        assertTrue(
+            WorldBrief.headline(brief),
+            WorldBrief.headline(brief).contains("LAST KNOWN")
+        )
+    }
 }
