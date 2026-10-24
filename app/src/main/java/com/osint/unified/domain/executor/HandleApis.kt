@@ -112,6 +112,116 @@ class HandleApis(
     }
 
     /**
+     * iNaturalist: where and when a handle has been, by its own record.
+     *
+     * Every observation carries a date, a coordinate and usually a place
+     * name, posted publicly by the account holder — so a handle here is a
+     * movement history they published themselves, and the strongest
+     * "where does this person go" signal a username can lead to without
+     * an account or a key.
+     *
+     * Two things are respected rather than worked around. A location the
+     * observer chose to obscure, or that iNaturalist blurs because the
+     * species is sensitive, is reported as blurred and its coordinates are
+     * not printed: the observer said no, and a blurred point presented as
+     * exact would be wrong anyway. And the observations come from the v2
+     * API with only the fields read here — about 370 bytes each, where v1
+     * sends about 59 KB, so thirty of them cost eleven kilobytes of
+     * somebody's data rather than nearly two megabytes.
+     */
+    fun inaturalist(username: String): Result<String> = runCatching {
+        val handle = clean(username)
+        // A 404 is "no such account" only when it says so. The endpoint
+        // moving would also answer 404, and that is not an absence.
+        val userBody = run {
+            val request = Request.Builder().url("https://api.inaturalist.org/v1/users/" + enc(handle))
+                .header("User-Agent", Http.defaultUserAgent)
+                .header("Accept", "application/json")
+                .build()
+            client.newCall(request).execute().use { resp ->
+                val body = resp.body?.bodyText().orEmpty()
+                if (resp.code == 404 && body.contains("does not exist", ignoreCase = true)) {
+                    return@runCatching "No iNaturalist account named \"$handle\"."
+                }
+                if (!resp.isSuccessful) throw IOException("iNaturalist HTTP ${resp.code}")
+                body
+            }
+        }
+        val user = (json.parseToJsonElement(userBody).jsonObject["results"] as? JsonArray)
+            ?.firstOrNull() as? JsonObject
+            ?: throw IOException("iNaturalist answered without the account")
+        val login = user.str("login") ?: handle
+        val observations = user.int("observations_count") ?: 0
+
+        val lines = ArrayList<String>()
+        var blurred = 0
+        var read = 0
+        if (observations > 0) {
+            val fields = "(observed_on:!t,location:!t,place_guess:!t,obscured:!t," +
+                "geoprivacy:!t,taxon_geoprivacy:!t,uri:!t,taxon:(name:!t,preferred_common_name:!t))"
+            val obsBody = getOrNull(
+                "https://api.inaturalist.org/v2/observations?user_login=" + enc(login) +
+                    "&per_page=$INAT_PAGE&order_by=observed_on&order=desc&fields=" + enc(fields)
+            ) ?: throw IOException("iNaturalist did not return the observations")
+            val results = json.parseToJsonElement(obsBody).jsonObject["results"] as? JsonArray
+                ?: throw IOException("iNaturalist answered without observations")
+            results.forEach { el ->
+                val o = el as? JsonObject ?: return@forEach
+                read++
+                val date = o.str("observed_on") ?: "undated"
+                val place = o.str("place_guess")
+                val taxon = (o["taxon"] as? JsonObject).let { it.str("preferred_common_name") ?: it.str("name") }
+                val hidden = (o["obscured"] as? JsonPrimitive)?.contentOrNull == "true" ||
+                    o.str("geoprivacy") in setOf("obscured", "private") ||
+                    o.str("taxon_geoprivacy") in setOf("obscured", "private")
+                val where = if (hidden) {
+                    blurred++
+                    (place ?: "location withheld") + " — location blurred"
+                } else {
+                    val loc = o.str("location")?.split(',')?.mapNotNull { it.trim().toDoubleOrNull() }
+                    val coord = if (loc != null && loc.size == 2) {
+                        " (%.5f, %.5f)".format(Locale.US, loc[0], loc[1])
+                    } else {
+                        ""
+                    }
+                    (place ?: "no place name") + coord
+                }
+                lines.add("• $date — $where" + (taxon?.let { " · $it" } ?: ""))
+            }
+        }
+
+        buildString {
+            append("iNaturalist account \"$login\" exists.\n")
+            user.str("name")?.let { append("Declared name: $it\n") }
+            user.str("orcid")?.let { append("ORCID: $it\n") }
+            user.str("created_at")?.let { append("Joined: ${it.take(10)}\n") }
+            if (user["suspended"] == JsonPrimitive(true)) append("Account is suspended.\n")
+            append("$observations observation" + if (observations == 1) "" else "s")
+            user.int("species_count")?.let { append(", $it species") }
+            append(".\n")
+            if (lines.isNotEmpty()) {
+                append(
+                    if (observations > read) "\nWhere and when — the latest $read of $observations:\n"
+                    else "\nWhere and when:\n"
+                )
+                lines.forEach { append(it).append('\n') }
+                if (blurred > 0) {
+                    append(
+                        "\n$blurred of these have their location blurred, by the observer " +
+                            "or because the species is sensitive. Their coordinates are " +
+                            "not shown.\n"
+                    )
+                }
+            }
+            append("\nhttps://www.inaturalist.org/people/$login\n")
+            append(
+                "\nA place name is iNaturalist's guess from the coordinate; the dates " +
+                    "and coordinates are the observer's own record.\n"
+            )
+        }
+    }
+
+    /**
      * Codeforces, where competitors fill in where they work or study.
      *
      * Of the four handle sources here this is the one most likely to
@@ -592,6 +702,9 @@ class HandleApis(
         else v
 
     // ------------------------------------------------------------------
+
+    /** Observations read per account: the latest page, enough to see a pattern. */
+    private val INAT_PAGE = 30
 
     private val DECLARED =
         "\nEverything above except the dates is what the account holder " +

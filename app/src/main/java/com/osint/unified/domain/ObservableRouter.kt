@@ -364,7 +364,7 @@ class ObservableRouter {
             is Observable.Username -> listOf(
                 "keybase", "socialsweep", "github", "ghactivity",
                 "wikiuser", "chess", "lichess", "codeforces",
-                "codeberg", "huggingface",
+                "codeberg", "huggingface", "inaturalist",
                 "sherlock", "maigret", "blackbird", "reddit", "hackernews",
                 "telegram", "osmuser", "wikidata",
                 "websearch", "dorks", "toolrun", "framework"

@@ -551,7 +551,7 @@ class DirectToolExecutor(
             // Each of these opens with the account either existing
             // or not, in its own words.
             "chess", "lichess", "codeforces", "codeberg", "huggingface",
-            "wikiuser" -> when {
+            "inaturalist", "wikiuser" -> when {
                 head.startsWith("No ") -> Findings.Kind.ABSENT
                 head.contains("could not be asked") ||
                     head.contains("could not be reached") -> Findings.Kind.UNREACHABLE
@@ -744,6 +744,7 @@ class DirectToolExecutor(
                 "chess" -> handles.chess(input)
                 "lichess" -> handles.lichess(input)
                 "codeforces" -> handles.codeforces(input)
+                "inaturalist" -> handles.inaturalist(input)
                 "wikiuser" -> handles.wikimediaUser(input)
                 "codeberg" -> handles.codeberg(input)
                 "huggingface" -> handles.huggingFace(input)

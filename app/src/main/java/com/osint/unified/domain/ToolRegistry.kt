@@ -244,6 +244,10 @@ object ToolRegistry {
             "Declared name, country, bio and self-listed social links, plus when " +
                 "the account was last seen.",
             "https://lichess.org"),
+        Tool("inaturalist", "iNaturalist record", SOCMINT, "username", "text", DIRECT,
+            "Where and when an account has posted wildlife observations — dated, " +
+                "located and public — plus the name and ORCID it declares.",
+            "https://www.inaturalist.org"),
         Tool("codeforces", "Codeforces profile", SOCMINT, "username", "text", DIRECT,
             "Declared name, city, country and employer or university from a " +
                 "competitive-programming profile.",
@@ -585,7 +589,7 @@ object ToolRegistry {
             // are harder than that, but the dossier grades a source
             // and not a line.
             "chess", "lichess", "codeforces", "codeberg", "huggingface",
-            "libravatar",
+            "inaturalist", "libravatar",
             // And this keyserver verifies nothing at all: a key here
             // is a claim that somebody uploaded, not a confirmed
             // address, which is the whole difference from pgpkey
