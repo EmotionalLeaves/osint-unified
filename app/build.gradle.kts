@@ -88,7 +88,7 @@ android {
         release {
             signingConfig = signingConfigs.getByName("shared")
             // Off here, on purpose. R8 rewrites reflection-dependent code
-            // — Room, kotlinx.serialization, osmdroid's overlay loading —
+            // — Room, kotlinx.serialization, reflective overlay loading —
             // and the failures it causes appear at runtime on a device,
             // not in a build log. Nothing in this project can run the app,
             // so a shrunk build cannot be proved to work from here.
@@ -203,7 +203,11 @@ dependencies {
     // matters more here than the size, and size does not matter
     // here at all.
     implementation("com.google.mlkit:text-recognition:16.0.1")
-    implementation("org.osmdroid:osmdroid-android:6.1.20")
+    // osmdroid is gone. It existed to draw the flat map, which
+    // existed because the bundled whole-Earth mosaic runs out of
+    // pixels at about a large country across — so the globe fetches
+    // the same satellite tiles itself now and there is one view
+    // instead of two.
     implementation("androidx.browser:browser:1.8.0")
     // So the in-app browser can be put through the same proxy as
     // everything else. A WebView has its own networking and ignores the

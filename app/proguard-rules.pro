@@ -45,12 +45,6 @@
 -keep class net.zetetic.** { *; }
 -dontwarn net.zetetic.**
 
-# ---- osmdroid ---------------------------------------------------------
-# Tile sources and the configuration object are resolved reflectively
-# from names held in preferences and resources.
--keep class org.osmdroid.** { *; }
--dontwarn org.osmdroid.**
-
 # ---- WorkManager ------------------------------------------------------
 # A worker is instantiated from the class name stored in its database row.
 -keep class * extends androidx.work.ListenableWorker { <init>(...); }

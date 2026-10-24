@@ -26,6 +26,15 @@ closed; their headings say so.
   second camera, the handoff hysteresis and the MAP button all go.
   In that order, so no commit leaves the globe unable to do what the
   map could.
+- [ ] **U1a. The dead half of the two-view code.** Deleting the map
+  left `planMarkers`, `PendingMarker`, `MapWindow`, `MapPlan`,
+  `planFor` and `markerBucket` in `MarkerPlan.kt` alive only through
+  `MarkerPlanTest`, and `shouldHandToMap`, `closeEnoughToArm`,
+  `shouldReturnToGlobe` and `thresholdSpan` in `GlobeHandoff` alive
+  only through `GlobeHandoffTest`. Delete both sets and port the
+  tests that encode a real rule onto `planGlobe`/`thinGlobe` — some
+  of them cover the shared `thinBy` fairness and are worth keeping.
+  Kept out of the deletion commit on purpose: a working globe first.
 - [ ] **U2. The military layer does not work.** Reported, not yet
   reproduced. Find out whether it fetches, whether it parses, and
   whether anything reaches the screen.

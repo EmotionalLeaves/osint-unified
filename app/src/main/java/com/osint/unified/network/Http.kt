@@ -161,11 +161,13 @@ object Http {
         // differently later is a proxy that still works.
         relay = if (host.isNullOrBlank() || port !in 1..65535) null
         else runCatching { InetSocketAddress.createUnresolved(host.trim(), port) }.getOrNull()
-        // The map's tile loader is not OkHttp — osmdroid uses
-        // HttpURLConnection, which consults the JVM's default selector. A
-        // proxy that covered everything except the thing drawing the
-        // screen would be worse than none, because it would look like it
-        // was working.
+        // Set on the JVM's default selector as well as on the
+        // clients. The tiles go through OkHttp now that the globe
+        // fetches them itself, but anything in a library that
+        // reaches for HttpURLConnection consults this instead — and
+        // a proxy that covered everything except one thing would be
+        // worse than none, because it would look like it was
+        // working.
         runCatching {
             ProxySelector.setDefault(if (relay == null) systemSelector else Relay)
         }

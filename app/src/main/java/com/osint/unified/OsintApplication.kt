@@ -66,7 +66,6 @@ class OsintApplication : Application() {
             com.osint.unified.ui.common.PrivateBrowserHost
                 .useProxy(settings.proxyHost, settings.proxyPort)
         }
-        configureMapTileCache()
         // Idempotent and cheap: with no watched targets the worker returns
         // immediately, so there is nothing to turn on or off.
         com.osint.unified.work.WatchWorker.schedule(this)
@@ -195,29 +194,6 @@ class OsintApplication : Application() {
 
     val repository: InvestigationRepository by lazy {
         InvestigationRepository(database, executorFactory)
-    }
-
-    /**
-     * Where map tiles are kept.
-     *
-     * osmdroid was only given a user agent. Without a configured base path
-     * its cache defaults to legacy external storage, which apps cannot
-     * write to from Android 10 onwards — so every pan re-downloaded the
-     * imagery it had just fetched. A private directory with a size cap
-     * fixes the bandwidth and keeps the tiles out of shared storage, which
-     * on this app is also a record of where someone has been looking.
-     */
-    private fun configureMapTileCache() {
-        runCatching {
-            val config = org.osmdroid.config.Configuration.getInstance()
-            config.load(this, getSharedPreferences("osmdroid", MODE_PRIVATE))
-            config.userAgentValue = "OSINT-Unified/${BuildConfig.VERSION_NAME}"
-            val base = java.io.File(cacheDir, "osmdroid").apply { mkdirs() }
-            config.osmdroidBasePath = base
-            config.osmdroidTileCache = java.io.File(base, "tiles").apply { mkdirs() }
-            config.tileFileSystemCacheMaxBytes = 300L * 1024 * 1024
-            config.tileFileSystemCacheTrimBytes = 240L * 1024 * 1024
-        }
     }
 
     val watchRepository: WatchRepository by lazy {

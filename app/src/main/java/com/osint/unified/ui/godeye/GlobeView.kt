@@ -5,6 +5,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -15,6 +16,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.geometry.Offset
@@ -101,6 +103,7 @@ fun GlobeView(
     // thing that lays it out, three hundred times a frame, is not.
     val ink = remember { labelInk() }
     val halo = remember { labelHalo() }
+    val credit = remember { creditInk() }
 
     // Decoded once, off the main thread, and kept for the life of the
     // process: twenty megabytes of Earth is not something to re-read
@@ -372,6 +375,58 @@ fun GlobeView(
         }
     }
 
+    // Satellite tiles, for the zooms where a whole-Earth mosaic has
+    // no pixels left.
+    //
+    // This is what used to be a second screen. The map existed
+    // because the bundled imagery runs out at about a large country
+    // across, and the answer was to hand the view to osmdroid —
+    // another camera, another gesture set, another marker overlay,
+    // and a hysteresis band to stop the two of them fighting over
+    // the boundary. The imagery is the only thing that was ever
+    // missing, so the imagery is what is added.
+    val tiles = remember { TileStore() }
+    DisposableEffect(Unit) { onDispose { tiles.clear() } }
+    val tileVersion by tiles.version.collectAsStateWithLifecycle()
+
+    val tileSpan = if (viewport.width > 0) {
+        GlobeHandoff.spanDegrees(viewport.width, viewport.height, zoom)
+    } else {
+        360.0
+    }
+    // Faded in across the band rather than switched on at a number,
+    // so there is no frame where the planet changes character. At
+    // the top of the band the mosaic is still the better picture; at
+    // the bottom it is a blur and the tiles are the globe.
+    val tileAlpha = when {
+        tileSpan >= Tiles.TILES_FROM_SPAN -> 0f
+        tileSpan <= Tiles.TILES_FULL_SPAN -> 1f
+        else -> ((Tiles.TILES_FROM_SPAN - tileSpan) /
+            (Tiles.TILES_FROM_SPAN - Tiles.TILES_FULL_SPAN)).toFloat()
+    }
+    val tileZoom = if (tileAlpha > 0f && viewport.width > 0) {
+        Tiles.zoomFor(tileSpan, viewport.width, centreLat.toDouble())
+    } else {
+        0
+    }
+    // Asked for from here and never from the draw. A draw runs on
+    // every frame of a pinch, and queueing a fetch from one spends
+    // somebody's data on ground that was under the thumb for a
+    // sixtieth of a second.
+    val tileKey = if (tileZoom == 0) "" else {
+        "$tileZoom:${Math.round(Tiles.tileXOf(centreLon.toDouble(), tileZoom))}:" +
+            "${Math.round(Tiles.tileYOf(centreLat.toDouble(), tileZoom))}"
+    }
+    LaunchedEffect(tileKey, viewport, drifting) {
+        if (tileZoom == 0 || viewport.width <= 0) return@LaunchedEffect
+        tiles.request(
+            Tiles.cover(
+                centreLat.toDouble(), centreLon.toDouble(),
+                tileSpan, viewport.width, viewport.height, tileZoom
+            )
+        )
+    }
+
     Canvas(
         modifier = modifier
             .fillMaxSize()
@@ -548,13 +603,49 @@ fun GlobeView(
         // photograph trailed behind — and a globe whose coastlines
         // slide across its own continents reads as broken, where the
         // same globe lagging as one piece just reads as heavy.
+        // The tiles for this frame, and whether any of them are here
+        // yet.
+        //
+        // Worked out before the sphere is drawn because it decides
+        // whether the sphere is drawn at all. Once the imagery is
+        // fully opaque the mosaic beneath it is invisible, and at
+        // these zooms it would be a bitmap blown up to forty million
+        // pixels across — the cost of painting something nobody can
+        // see. The vectors go with it: a coastline is the tiles'
+        // own job from here, and a hand-drawn one over a photograph
+        // of the same coast is just a second, worse coastline.
+        //
+        // Unless nothing has arrived. Opening the screen already
+        // zoomed in would otherwise be a black rectangle, so the
+        // mosaic keeps the seat warm until the first tile lands.
+        //
+        // `tileVersion` is read here so the draw depends on it:
+        // without naming it, a tile arriving would not repaint the
+        // canvas and the imagery would appear only on the next
+        // gesture.
+        @Suppress("UNUSED_EXPRESSION") tileVersion
+        val tileRefs = if (tileAlpha > 0f && tileZoom > 0) {
+            Tiles.cover(
+                lat0, lon0, tileSpan,
+                size.width.toInt(), size.height.toInt(), tileZoom
+            )
+        } else {
+            emptyList()
+        }
+        val haveTiles = tileRefs.any { tiles.peek(it) != null }
+        val tilesCoverIt = haveTiles && tileAlpha >= 0.999f
+
         val sphere = globe
         // On the GPU path there is nothing to lag behind: the sphere is
         // drawn in this frame, at this camera, so the coastlines and
         // the markers are too.
         val shownLat = if (gpuSphere != null) lat0 else sphere?.lat ?: lat0
         val shownLon = if (gpuSphere != null) lon0 else sphere?.lon ?: lon0
-        if (gpuSphere != null) {
+        if (tilesCoverIt) {
+            // The void the tiles sit on, for the moment before one
+            // of them arrives and for any gap at the edges.
+            drawRect(color = Color(0xFF0B0E11), size = size)
+        } else if (gpuSphere != null) {
             GlobeShader.aim(
                 gpuSphere.shader, cx, cy, radius, lat0, lon0, sun.first, sun.second
             )
@@ -597,6 +688,17 @@ fun GlobeView(
             )
             drawTerminator(terminator, cx, cy, radius, lat0, lon0)
         }
+        // The satellite imagery, over the mosaic and under
+        // everything that is drawn on the Earth rather than being
+        // part of it.
+        //
+        // Read here so the draw depends on it: `tileVersion` changes
+        // when a tile lands, and without naming it the canvas would
+        // not know to repaint and tiles would appear only on the
+        // next gesture.
+        if (tileRefs.isNotEmpty()) {
+            drawTiles(tiles, tileRefs, cx, cy, radius, lat0, lon0, tileAlpha)
+        }
         // Names only when the camera has settled. Text is the most
         // expensive thing on this canvas and the least useful while
         // the planet is moving under a thumb.
@@ -635,7 +737,21 @@ fun GlobeView(
                 drawMarkerLabels(named, cx, cy, radius, shownLat, shownLon, ink, halo)
             }
         }
-        drawLimb(cx, cy, radius, textured)
+        // No limb once the imagery covers the screen: the horizon
+        // of a sphere you are standing on is not on the screen, and
+        // a ring drawn at forty million pixels is nowhere near it.
+        if (!tilesCoverIt) drawLimb(cx, cy, radius, textured)
+        // Esri's terms require the credit wherever the imagery is
+        // shown. It used to be an osmdroid overlay on the other
+        // view; there is no other view, so it is drawn here, and
+        // only while there is imagery to credit.
+        if (haveTiles) {
+            drawIntoCanvas { canvas ->
+                canvas.nativeCanvas.drawText(
+                    TileStore.ATTRIBUTION, 10f, size.height - 10f, credit
+                )
+            }
+        }
     }
 }
 
@@ -726,6 +842,105 @@ data class GlobePoint(
             title?.let(::withoutAge)?.takeIf { it.isNotBlank() }
                 ?: "${floor(lat * 1000).toInt()}:${floor(lon * 1000).toInt()}"
             )
+}
+
+/**
+ * Each tile painted onto the sphere as the quadrilateral it really
+ * is.
+ *
+ * A tile is a rectangle in Mercator and a curved patch on a globe,
+ * and at the zooms where tiles are worth fetching the difference
+ * across one tile is small but not nothing. `setPolyToPoly` takes
+ * the four projected corners and works out the transform, so the
+ * imagery follows the curve instead of being pasted flat over it —
+ * which is what would show as a visible crease down the middle of
+ * the view at the top of the band, exactly where the fade is trying
+ * to be invisible.
+ *
+ * Corners behind the horizon are skipped rather than drawn wrong: an
+ * orthographic projection folds the far side back over the near one,
+ * so a tile straddling the limb would be smeared across the disc.
+ */
+private fun DrawScope.drawTiles(
+    store: TileStore,
+    refs: List<Tiles.Ref>,
+    cx: Float,
+    cy: Float,
+    radius: Float,
+    lat0: Double,
+    lon0: Double,
+    alpha: Float
+) {
+    if (refs.isEmpty() || alpha <= 0f) return
+    val paint = tilePaint(alpha)
+    val matrix = android.graphics.Matrix()
+    val src = FloatArray(8)
+    val dst = FloatArray(8)
+    val corner = FloatArray(2)
+    // The camera's trig, hoisted out of the loop the way every other
+    // projection in this file does it — four corners times forty-odd
+    // tiles times sixty frames is a lot of sines to take twice.
+    val sinLat0 = kotlin.math.sin(Math.toRadians(lat0))
+    val cosLat0 = kotlin.math.cos(Math.toRadians(lat0))
+    drawIntoCanvas { canvas ->
+        refs.forEach { ref ->
+            val bitmap = store.peek(ref) ?: return@forEach
+            val west = Tiles.lonOfTile(ref.x, ref.z)
+            val east = Tiles.lonOfTile(ref.x + 1, ref.z)
+            val north = Tiles.latOfTile(ref.y, ref.z)
+            val south = Tiles.latOfTile(ref.y + 1, ref.z)
+            var behind = false
+            var i = 0
+            // Clockwise from the north-west, matching src below.
+            val lats = doubleArrayOf(north, north, south, south)
+            val lons = doubleArrayOf(west, east, east, west)
+            while (i < 4) {
+                val near = Orthographic.projectInto(
+                    lats[i], lons[i], sinLat0, cosLat0, lon0, radius, cx, cy, corner
+                )
+                if (!near) { behind = true; break }
+                dst[i * 2] = corner[0]
+                dst[i * 2 + 1] = corner[1]
+                i++
+            }
+            if (behind) return@forEach
+            val w = bitmap.width.toFloat()
+            val h = bitmap.height.toFloat()
+            src[0] = 0f; src[1] = 0f
+            src[2] = w; src[3] = 0f
+            src[4] = w; src[5] = h
+            src[6] = 0f; src[7] = h
+            // Grown by half a pixel from its own middle, because two
+            // tiles that meet exactly leave a hairline of whatever is
+            // behind them along every shared edge, and a grid of
+            // hairlines across the planet is the first thing anyone
+            // notices.
+            var mx = 0f
+            var my = 0f
+            i = 0
+            while (i < 4) { mx += dst[i * 2]; my += dst[i * 2 + 1]; i++ }
+            mx /= 4f; my /= 4f
+            i = 0
+            while (i < 4) {
+                val dx = dst[i * 2] - mx
+                val dy = dst[i * 2 + 1] - my
+                val len = kotlin.math.hypot(dx, dy)
+                val grow = if (len > 0.01f) (len + 0.5f) / len else 1f
+                dst[i * 2] = mx + dx * grow
+                dst[i * 2 + 1] = my + dy * grow
+                i++
+            }
+            matrix.reset()
+            if (!matrix.setPolyToPoly(src, 0, dst, 0, 4)) return@forEach
+            canvas.nativeCanvas.drawBitmap(bitmap, matrix, paint)
+        }
+    }
+}
+
+private fun tilePaint(alpha: Float) = android.graphics.Paint().apply {
+    isAntiAlias = true
+    isFilterBitmap = true
+    this.alpha = (alpha.coerceIn(0f, 1f) * 255f).roundToInt()
 }
 
 private fun globeRadius(width: Int, height: Int, zoom: Float): Float =
@@ -1339,6 +1554,14 @@ private fun labelInk() = android.graphics.Paint().apply {
     )
 }
 
+/** Small, legible over photography, and out of the way. */
+private fun creditInk() = android.graphics.Paint().apply {
+    isAntiAlias = true
+    color = 0xB3FFFFFF.toInt()
+    textSize = 22f
+    setShadowLayer(3f, 0f, 0f, 0xCC000000.toInt())
+}
+
 private fun labelHalo() = android.graphics.Paint().apply {
     isAntiAlias = true
     color = android.graphics.Color.argb(205, 2, 6, 10)
@@ -1359,7 +1582,18 @@ private val TERMINATOR = Color(0x99FFC14D)
 private val HALO = Color(0x9905080C)
 
 private const val MIN_ZOOM = 0.6f
-private const val MAX_ZOOM = 8f
+/**
+ * Far enough in to read a street name.
+ *
+ * It was 8, which is about a large country across the screen —
+ * the point where the bundled mosaic runs out of pixels and the
+ * app used to hand the view to a separate map. There is no second
+ * view to hand it to now, so the globe goes the whole way: zoom 19
+ * of the tile imagery, which on a phone-width screen is a little
+ * under this. Past that Esri has no more photographs and zooming
+ * further would only magnify the last ones.
+ */
+private const val MAX_ZOOM = 48_000f
 private const val SPIN_DECAY = 0.94f
 
 /** Below this a flick has stopped, and the globe stops redrawing. */

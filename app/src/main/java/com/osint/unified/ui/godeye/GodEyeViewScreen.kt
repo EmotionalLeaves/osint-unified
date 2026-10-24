@@ -58,7 +58,6 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -96,19 +95,6 @@ import kotlin.math.cos
 import kotlin.math.log2
 import kotlin.math.pow
 import kotlin.math.roundToInt
-import org.osmdroid.config.Configuration
-import org.osmdroid.events.DelayedMapListener
-import org.osmdroid.events.MapEventsReceiver
-import org.osmdroid.events.MapListener
-import org.osmdroid.events.ScrollEvent
-import org.osmdroid.events.ZoomEvent
-import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
-import org.osmdroid.util.BoundingBox
-import org.osmdroid.util.GeoPoint
-import org.osmdroid.util.MapTileIndex
-import org.osmdroid.views.MapView
-import org.osmdroid.views.overlay.MapEventsOverlay
-import org.osmdroid.views.overlay.Marker
 import java.util.Locale
 
 private val EXAMPLES = listOf("example.com", "8.8.8.8", "40.7128,-74.0060", "+14155550123", "John Smith")
@@ -325,14 +311,16 @@ fun GodEyeViewScreen(
     var searchPx by remember { mutableIntStateOf(0) }
     var typesPx by remember { mutableIntStateOf(0) }
     var panelPx by remember { mutableIntStateOf(0) }
-    // A thing called a God's Eye View should be a globe. Mercator is the
-    // right tool for looking at a street and the wrong one for looking at
-    // the Earth, so the sphere is what opens, and the flat map is one tap
-    // away for the close work it is actually good at.
-    var roundEarth by rememberSaveable { mutableStateOf(true) }
-    // One camera for both views. The globe and the map are the same
-    // view at different distances, so turning the Earth to a place and
-    // pinching in has to arrive there rather than at a default.
+    // One camera, because there is one view.
+    //
+    // There used to be two: a sphere and a flat map, a button to
+    // swap between them, a conversion so the swap kept your place,
+    // and a hysteresis band so a pinch landing on the boundary did
+    // not flip back and forth under the thumb. All of that existed
+    // because the bundled whole-Earth mosaic runs out of pixels at
+    // about a large country across — so the globe now paints itself
+    // with the same satellite tiles the map was showing, and goes
+    // the rest of the way on its own.
     var globeCamera by rememberSaveable(
         saver = listSaver(
             save = { listOf(it.value.lat, it.value.lon, it.value.zoom) },
@@ -366,7 +354,7 @@ fun GodEyeViewScreen(
     // Reported on a coarse grid with a pause after it, because this
     // fires on every frame of a drag and one of the things downstream
     // of it is a network query.
-    if (roundEarth) {
+    run {
         val (vw, vh) = globeSize
         LaunchedEffect(
             vw, vh,
@@ -386,47 +374,29 @@ fun GodEyeViewScreen(
             }
         }
     }
-    // Where the map should jump to when the globe hands over, and the
-    // other way about. Not the search focus: that is a different kind
-    // of move and the map already has one.
-    var handoff by rememberSaveable(stateSaver = TripleDoubleSaver) {
-        mutableStateOf<Triple<Double, Double, Double>?>(null)
-    }
-    // Where the flat map is looking, so switching back to the globe
-    // lands on what was on screen rather than wherever the globe was
-    // left.
-    var mapCentre by rememberSaveable(stateSaver = DoublePairSaver) {
-        mutableStateOf<Pair<Double, Double>?>(null)
-    }
-    // The last zoom the map reported, and when the map was arrived at.
+    // Fly to a newly focused place: a coordinate search, or the first
+    // geo-located finding of an investigation.
     //
-    // Returning to the globe needs both. The map opens at whatever
-    // zoom it was last left at, which is often wide enough to satisfy
-    // the "far enough out for a sphere" test — so arriving on the map
-    // bounced straight back to the globe and the toggle looked broken.
-    // It now takes a deliberate zoom *out*, and not in the first
-    // moment after arriving.
-    // Saveable alongside `armedForGlobe`, which is the whole of
-    // the snap-back-to-globe gate. Making one of the three
-    // survive a rotation and not the others left two of the
-    // guards pre-satisfied afterwards: `arrivedOnMap` reset to
-    // zero, which makes the settle test true at once, so a
-    // single zoom-out report was enough to throw the user back
-    // to the globe. MAP_SETTLE_MS exists because arriving used
-    // to do exactly that.
-    var lastMapZoom by rememberSaveable { mutableDoubleStateOf(Double.NaN) }
-    var arrivedOnMap by rememberSaveable { mutableLongStateOf(0L) }
-    // Whether zooming out is allowed to turn the map back into a globe.
-    //
-    // It is not, until the map has actually been zoomed in close. The
-    // map opens wide — pressing MAP from a whole-Earth globe lands at
-    // about zoom 3 — and "wide" is exactly the condition that used to
-    // send you straight back, so a pan with a few pixels of zoom
-    // wobble in it bounced you to the sphere and the MAP button looked
-    // broken. Going in close is the person saying they want tiles;
-    // coming back out from there is them saying they are done with
-    // them. Arriving wide says nothing either way.
-    var armedForGlobe by rememberSaveable { mutableStateOf(false) }
+    // The flat map did this and the globe did not, so deleting the
+    // map would have deleted the behaviour with it — searching a
+    // coordinate would have set a focus nothing acted on. Animated
+    // rather than set, because unlike the old handoff this is not
+    // the continuation of a gesture: it is the view being taken
+    // somewhere, and it should be visible that it moved.
+    var appliedFocus by remember { mutableStateOf<Pair<Double, Double>?>(null) }
+    LaunchedEffect(state.mapFocus, globeSize) {
+        val focus = state.mapFocus ?: return@LaunchedEffect
+        val (w, h) = globeSize
+        if (w <= 0 || focus == appliedFocus) return@LaunchedEffect
+        appliedFocus = focus
+        globeCamera = GlobeCamera(
+            focus.first.toFloat().coerceIn(-89f, 89f),
+            focus.second.toFloat(),
+            GlobeHandoff.globeZoom(
+                GlobeHandoff.mapSpanDegrees(FOCUS_TILE_ZOOM, w, focus.first), w, h
+            )
+        )
+    }
     var flightFilter by rememberSaveable { mutableStateOf("ALL") }
     // Filtered once per change, not twice per recomposition over 11,000
     // aircraft — the pill and the map now also read the same list.
@@ -688,53 +658,10 @@ fun GodEyeViewScreen(
                         tint = Intel.Cyan
                     )
                 }
-                Text(
-                    if (roundEarth) "GLOBE" else "MAP",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Intel.Cyan,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(50))
-                        .background(Intel.Elevated)
-                        .border(1.dp, Intel.Cyan, RoundedCornerShape(50))
-                        .clickable {
-                            // The toggle carries the camera too. A
-                            // person who presses MAP wants the map of
-                            // where they are looking, not of wherever
-                            // the map happened to be left.
-                            val (w, h) = globeSize
-                            if (roundEarth) {
-                                if (w > 0) {
-                                    val span = GlobeHandoff.spanDegrees(w, h, globeCamera.zoom)
-                                    handoff = Triple(
-                                        globeCamera.lat.toDouble(),
-                                        globeCamera.lon.toDouble(),
-                                        GlobeHandoff.tileZoom(
-                                            span, w, globeCamera.lat.toDouble()
-                                        )
-                                    )
-                                }
-                                arrivedOnMap = System.currentTimeMillis()
-                                lastMapZoom = Double.NaN
-                                armedForGlobe = false
-                            } else if (w > 0 && zoomNow > 0.0) {
-                                globeCamera = GlobeCamera(
-                                    lat = (mapCentre?.first ?: globeCamera.lat.toDouble())
-                                        .toFloat().coerceIn(-89f, 89f),
-                                    lon = (mapCentre?.second ?: globeCamera.lon.toDouble())
-                                        .toFloat(),
-                                    zoom = GlobeHandoff.globeZoom(
-                                        GlobeHandoff.mapSpanDegrees(
-                                            zoomNow, w,
-                                            mapCentre?.first ?: globeCamera.lat.toDouble()
-                                        ),
-                                        w, h
-                                    )
-                                )
-                            }
-                            roundEarth = !roundEarth
-                        }
-                        .padding(horizontal = 10.dp, vertical = 5.dp)
-                )
+                // No toggle, because there is nothing to toggle
+                // between. The globe is the view; it paints itself
+                // with satellite tiles once it is close enough to
+                // need them, which is all the map was ever for.
                 // The other five destinations moved to the bar along the
                 // bottom, where they have names. Settings stays here: it
                 // adjusts this screen.
@@ -1282,13 +1209,9 @@ fun GodEyeViewScreen(
                     )
                 } else if (shown < total) {
                     Text(
-                        if (roundEarth) {
-                            "Showing $shown of $total — the rest are over the " +
-                                "horizon, or thinned out of a crowd. Zoom in " +
-                                "for the ones here."
-                        } else {
-                            "Showing $shown of $total — the rest are outside this view."
-                        },
+                        "Showing $shown of $total — the rest are over the " +
+                            "horizon, or thinned out of a crowd. Zoom in " +
+                            "for the ones here.",
                         style = MaterialTheme.typography.bodySmall,
                         color = Intel.TextLow,
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
@@ -1429,7 +1352,7 @@ fun GodEyeViewScreen(
                     // ALL LAYERS has no business arming them.
                     findings = if (showFindings) state.findings else emptyList()
                 )
-                if (roundEarth) {
+                run {
                     // Thinned before the sphere ever sees it. The globe
                     // projects every point it is handed on every frame,
                     // and the fire detections alone are now six figures
@@ -1532,31 +1455,7 @@ fun GodEyeViewScreen(
                     GlobeView(
                         points = globePoints,
                         camera = globeCamera,
-                        onCamera = { next ->
-                            globeCamera = next
-                            // Past a large country across the screen a
-                            // sphere is the wrong thing to be looking
-                            // at, so it hands over mid-pinch and the
-                            // zoom simply continues on tiles.
-                            val (w, h) = globeSize
-                            if (w > 0 && GlobeHandoff.shouldHandToMap(w, h, next.zoom)) {
-                                handoff = Triple(
-                                    next.lat.toDouble(),
-                                    next.lon.toDouble(),
-                                    GlobeHandoff.tileZoom(
-                                        GlobeHandoff.spanDegrees(w, h, next.zoom),
-                                        w, next.lat.toDouble()
-                                    )
-                                )
-                                arrivedOnMap = System.currentTimeMillis()
-                                lastMapZoom = Double.NaN
-                                // Arrived by pinching in through the
-                                // boundary, so reversing that pinch
-                                // should take the sphere back.
-                                armedForGlobe = true
-                                roundEarth = false
-                            }
-                        },
+                        onCamera = { next -> globeCamera = next },
                         onInspect = { p ->
                             inspected = Inspected(
                                 p.kind, p.title.orEmpty().ifBlank { p.kind },
@@ -1570,65 +1469,6 @@ fun GodEyeViewScreen(
                             )
                         }
                     )
-                } else {
-                GlobeMap(
-                    layers = layers,
-                    layerVersion = state.layerVersion,
-                    visibleLayers = visibleLayers,
-                    onPlotted = { shown, total -> plotted = shown to total },
-                    focus = state.mapFocus,
-                    handoff = handoff,
-                    onInspect = { inspected = it },
-                    onViewport = { lat, lon, zoom ->
-                        zoomNow = zoom
-                        mapCentre = lat to lon
-                        viewModel.onViewportChanged(lat, lon, zoom)
-                        // And back the other way: zoom out far enough
-                        // and the tiles become a sphere again, at the
-                        // same place and showing the same ground.
-                        //
-                        // Only on a deliberate zoom out, though. The
-                        // map opens wherever it was last left, which is
-                        // often already wide enough to satisfy the
-                        // test — so simply arriving sent you straight
-                        // back and the toggle looked broken.
-                        val (w, h) = globeSize
-                        val zoomingOut = !lastMapZoom.isNaN() && zoom < lastMapZoom - 0.01
-                        val settled = System.currentTimeMillis() - arrivedOnMap > MAP_SETTLE_MS
-                        lastMapZoom = zoom
-                        // Close enough that the person is clearly using
-                        // the map. From here, zooming back out means
-                        // they want the globe.
-                        if (w > 0 && GlobeHandoff.closeEnoughToArm(zoom, w, lat, h)) {
-                            armedForGlobe = true
-                        }
-                        if (w > 0 && armedForGlobe && zoomingOut && settled &&
-                            GlobeHandoff.shouldReturnToGlobe(zoom, w, lat, h)
-                        ) {
-                            globeCamera = GlobeCamera(
-                                lat.toFloat().coerceIn(-89f, 89f),
-                                lon.toFloat(),
-                                GlobeHandoff.globeZoom(
-                                    GlobeHandoff.mapSpanDegrees(zoom, w, lat), w, h
-                                )
-                            )
-                            handoff = null
-                            lastMapZoom = Double.NaN
-                            armedForGlobe = false
-                            roundEarth = true
-                        }
-                    },
-                    // Markers are a few dp across, so most taps miss. Every
-                    // miss used to fire forty lookups from the person's own
-                    // IP, create a history row and throw them into a dossier
-                    // for a random patch of ocean. The most-touched surface
-                    // in the app was wired to its most expensive action.
-                    onMapTap = { lat, lon -> tapped = lat to lon },
-                    onAreaPress = { lat, lon, zoom ->
-                        areaWanted = Triple(lat, lon, AreaReport.radiusForZoom(zoom))
-                    },
-                    modifier = Modifier.fillMaxSize().clipToBounds()
-                )
                 }
                 // What a tap offers, instead of what it used to do.
                 tapped?.let { (tLat, tLon) ->
@@ -2162,363 +2002,6 @@ private fun UtcClock() {
 }
 
 /**
- * Native OpenStreetMap globe via osmdroid. No WebView and no WebGL — tiles
- * are drawn directly by Android, which renders reliably where the embedded
- * web map libraries did not. Tap the map to investigate a coordinate, tap a
- * marker to investigate that aircraft or vessel, and long-press anywhere for
- * everything every loaded layer holds around that point.
- */
-@Composable
-private fun GlobeMap(
-    layers: MapLayers,
-    /** Raised when a feed's contents actually change, so the marker
-     *  plan can be keyed on an integer rather than on a deep
-     *  comparison of thirty lists. */
-    layerVersion: Int,
-    /** And which of them are on, which the version does not cover. */
-    visibleLayers: Set<String>,
-    focus: Pair<Double, Double>?,
-    /** Where the globe handed over: a place and the zoom that shows
-     *  the same ground it was showing. Applied once. */
-    handoff: Triple<Double, Double, Double>?,
-    onInspect: (Inspected) -> Unit,
-    onViewport: (Double, Double, Double) -> Unit,
-    onMapTap: (Double, Double) -> Unit,
-    onAreaPress: (Double, Double, Double) -> Unit,
-    /** How many markers are on screen, and how many the layers hold. */
-    onPlotted: (Int, Int) -> Unit = { _, _ -> },
-    modifier: Modifier = Modifier
-) {
-    // Which focus has already been flown to. Saved, not merely
-    // remembered: on a plain remember this reset whenever the globe left
-    // the screen, so returning from another tab flew the camera back to
-    // the last search at zoom nine and threw away wherever you had
-    // scrolled to.
-    val appliedFocus = rememberSaveable(
-        saver = listSaver(
-            save = { listOf(it.value?.first, it.value?.second) },
-            restore = { saved ->
-                val lat = saved.getOrNull(0) as? Double
-                val lon = saved.getOrNull(1) as? Double
-                mutableStateOf(if (lat != null && lon != null) lat to lon else null)
-            }
-        )
-    ) { mutableStateOf<Pair<Double, Double>?>(null) }
-    // Survives a rotation and a trip to the dossier, so coming back does
-    // not drop you at zoom 2.5 over the Atlantic.
-    val lastCamera = rememberSaveable(
-        saver = listSaver(
-            save = { listOf(it.value?.first, it.value?.second, it.value?.third) },
-            restore = { saved ->
-                val lat = saved.getOrNull(0) as? Double
-                val lon = saved.getOrNull(1) as? Double
-                val zoom = saved.getOrNull(2) as? Double
-                mutableStateOf(
-                    if (lat != null && lon != null && zoom != null) Triple(lat, lon, zoom)
-                    else null
-                )
-            }
-        )
-    ) { mutableStateOf<Triple<Double, Double, Double>?>(null) }
-    val appliedHandoff = remember { mutableStateOf<Triple<Double, Double, Double>?>(null) }
-    // The visible area, updated as the map is panned or zoomed. Markers are
-    // culled to it so a layer can hold tens of thousands of points without
-    // the map trying to draw them all.
-    //
-    // Held as plain numbers rather than osmdroid's BoundingBox because
-    // the work that reads it now runs off the main thread, and because a
-    // data class compares equal to itself: panning out and back no longer
-    // counts as a change.
-    var inView by remember { mutableStateOf<MapWindow?>(null) }
-    // Cache marker dot drawables by colour+size so a rebuild of hundreds of
-    // markers doesn't allocate a fresh icon each time.
-    val dotCache = remember { HashMap<Long, Drawable>() }
-
-    // Which markers belong on screen, worked out away from the main
-    // thread and only when the layers or the view actually change.
-    //
-    // This used to happen inside the AndroidView's update block, which
-    // Compose runs on *every* recomposition — so typing a single
-    // character into the search box walked seventy thousand points,
-    // grouped them, thinned them, destroyed every Marker on the map and
-    // built them all again, on the thread drawing the keyboard. The
-    // result was a map that stuttered whenever anything at all changed,
-    // for no new information.
-    // The same key as the globe's, for the same reason: comparing
-    // thirty lists of markers element by element is not a cheap way
-    // to find out whether they changed.
-    val planned by produceState(
-        initialValue = MapPlan(emptyList(), 0),
-        layerVersion, visibleLayers, inView
-    ) {
-        value = withContext(Dispatchers.Default) { planFor(layers, inView) }
-    }
-    val plan = planned.markers
-    // Said out loud, because an empty map is sometimes the right
-    // answer and always looks like a broken one.
-    LaunchedEffect(planned) { onPlotted(planned.markers.size, planned.total) }
-    // The plan currently on the map, by identity. Same instance means
-    // nothing to do — the common case, and now free.
-    val rendered = remember { mutableStateOf<List<PendingMarker>?>(null) }
-    // Markers already on the map, keyed by what they represent rather
-    // than by position, so an aircraft that moved is moved rather than
-    // destroyed and rebuilt.
-    val placed = remember { HashMap<String, Marker>() }
-    AndroidView(
-        modifier = modifier,
-        // Detached when the composable leaves.
-        //
-        // Nothing did this, and GLOBE/MAP is a toggle that the pinch
-        // handoff flips on its own — so every trip through the
-        // boundary built a fresh MapView and abandoned the previous
-        // one with its tile-provider thread pool still draining a
-        // download queue. A few pinches leaked several.
-        onRelease = { map ->
-            runCatching {
-                map.overlays.clear()
-                map.onDetach()
-            }
-        },
-        factory = { ctx ->
-            // osmdroid refuses to fetch tiles without a user agent.
-            Configuration.getInstance().userAgentValue = ctx.packageName
-            MapView(ctx).apply {
-                // Esri World Imagery: keyless satellite basemap (no token), and
-                // its tile path is z/y/x with no extension, so build it directly.
-                // Attribution is required and is drawn by the overlay below.
-                setTileSource(object : OnlineTileSourceBase(
-                    "EsriWorldImagery", 0, 19, 256, "",
-                    arrayOf("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/")
-                ) {
-                    override fun getTileURLString(pMapTileIndex: Long): String {
-                        val z = MapTileIndex.getZoom(pMapTileIndex)
-                        val x = MapTileIndex.getX(pMapTileIndex)
-                        val y = MapTileIndex.getY(pMapTileIndex)
-                        return "$baseUrl$z/$y/$x"
-                    }
-                })
-                setMultiTouchControls(true)
-                setBackgroundColor(0xFF0B0E11.toInt())
-                // Esri's terms require the imagery to be credited wherever it
-                // is shown, and the app was using it with no attribution at
-                // all. The overlay also carries OpenStreetMap, whose data
-                // the place and infrastructure layers come from.
-                overlays.add(
-                    org.osmdroid.views.overlay.CopyrightOverlay(ctx).apply {
-                        setCopyrightNotice(
-                            "Imagery © Esri, Maxar, Earthstar Geographics · " +
-                                "Data © OpenStreetMap contributors"
-                        )
-                        setTextSize(9)
-                    }
-                )
-                // Where the map was last left, rather than the middle of the
-                // Atlantic every time the screen is reopened.
-                controller.setZoom(lastCamera.value?.third ?: 2.5)
-                controller.setCenter(
-                    lastCamera.value?.let { GeoPoint(it.first, it.second) }
-                        ?: GeoPoint(20.0, 0.0)
-                )
-                val receiver = object : MapEventsReceiver {
-                    override fun singleTapConfirmedHelper(p: GeoPoint): Boolean {
-                        onMapTap(p.latitude, p.longitude)
-                        return true
-                    }
-                    override fun longPressHelper(p: GeoPoint): Boolean {
-                        onAreaPress(p.latitude, p.longitude, zoomLevelDouble)
-                        return true
-                    }
-                }
-                overlays.add(MapEventsOverlay(receiver))
-                // The moment the map has a size, say what it can see.
-                //
-                // Everything that decides which markers belong on
-                // screen, and every layer that queries around the
-                // view, needs a bounding box — and a MapView has no
-                // meaningful one until it has been laid out. Waiting
-                // for a scroll event meant a map that was opened and
-                // then simply looked at never reported anything, so
-                // the layers switched on over it did nothing.
-                addOnFirstLayoutListener { _, _, _, _, _ ->
-                    runCatching {
-                        boundingBox.asWindowOrNull()?.let { inView = it }
-                        onViewport(
-                            mapCenter.latitude, mapCenter.longitude, zoomLevelDouble
-                        )
-                    }
-                }
-                // Debounced so a fling triggers one rebuild, not fifty.
-                addMapListener(
-                    DelayedMapListener(
-                        object : MapListener {
-                            override fun onScroll(event: ScrollEvent?): Boolean {
-                                boundingBox.asWindowOrNull()?.let { inView = it }
-                                lastCamera.value = Triple(
-                                    mapCenter.latitude, mapCenter.longitude, zoomLevelDouble
-                                )
-                                onViewport(mapCenter.latitude, mapCenter.longitude, zoomLevelDouble)
-                                return false
-                            }
-
-                            override fun onZoom(event: ZoomEvent?): Boolean {
-                                boundingBox.asWindowOrNull()?.let { inView = it }
-                                lastCamera.value = Triple(
-                                    mapCenter.latitude, mapCenter.longitude, zoomLevelDouble
-                                )
-                                onViewport(mapCenter.latitude, mapCenter.longitude, zoomLevelDouble)
-                                return false
-                            }
-                        },
-                        250L
-                    )
-                )
-            }
-        },
-        update = { map -> runCatching {
-            // Not only when the window is missing.
-            //
-            // The window came from three places: the first-layout
-            // listener, a debounced scroll or zoom event, and this
-            // block when it had nothing at all. So any camera change
-            // that emits no listener event — setZoom and animateTo
-            // are both called from this file — left the markers
-            // planned against where the map used to be, with nothing
-            // that would ever notice. Comparing the live camera
-            // against the one the window was captured at costs three
-            // reads and closes that off.
-            val liveLat = map.mapCenter.latitude
-            val liveLon = map.mapCenter.longitude
-            val liveZoom = map.zoomLevelDouble
-            val captured = lastCamera.value
-            val drifted = captured == null ||
-                kotlin.math.abs(captured.third - liveZoom) > 0.01 ||
-                kotlin.math.abs(captured.first - liveLat) > 1e-6 ||
-                kotlin.math.abs(captured.second - liveLon) > 1e-6
-            // The first pass happens before any scroll or zoom event, so
-            // the window is unknown and everything would be planned. Fill
-            // it in and let the recomposition that causes do the work.
-            if (inView == null || drifted) {
-                // Only once it is a real box.
-                //
-                // This used to take whatever osmdroid said on the
-                // first pass, which is before the MapView has been
-                // laid out: a zero-height view reports north equal to
-                // south, the planner culled every marker against it,
-                // and nothing re-read the window until a scroll or
-                // zoom event. Open the map, turn a layer on, do not
-                // drag: nothing, for ever. Left null until it is
-                // valid, which the planner reads as "do not cull".
-                map.boundingBox.asWindowOrNull()?.let { window ->
-                    if (window != inView) inView = window
-                    lastCamera.value = Triple(liveLat, liveLon, liveZoom)
-                    // And say where that is. The viewport used to be
-                    // reported only from the listeners, so until the
-                    // map had been panned the app did not know where
-                    // it was looking and the layers that query around
-                    // the view gave up silently when asked.
-                    onViewport(liveLat, liveLon, liveZoom)
-                }
-            }
-            // Not an `else`: the pass that fills the window in must
-            // still draw what it already has, and the pass that finds
-            // no window yet must draw the uncollected plan rather than
-            // leave the map blank.
-            if (plan !== rendered.value) {
-                val density = map.resources.displayMetrics.density
-                val wanted = HashSet<String>(plan.size * 2)
-                plan.forEach { pm ->
-                    var key = pm.identity
-                    // Two unnamed readings can round to the same place.
-                    // Without this the second would overwrite the first
-                    // and the map would be one marker short for ever.
-                    if (!wanted.add(key)) {
-                        var n = 2
-                        while (!wanted.add("$key#$n")) n++
-                        key = "$key#$n"
-                    }
-                    val px = (pm.sizeDp * density).toInt()
-                    val shape = shapeFor(pm.kind)
-                    val iconKey = (pm.color.toLong() shl 16) xor
-                        (px.toLong() shl 4) xor shape.ordinal.toLong()
-                    val icon = dotCache.getOrPut(iconKey) { markerIcon(shape, pm.color, px) }
-                    // Reused rather than rebuilt. An aircraft that moved
-                    // is the same aircraft; destroying its Marker and
-                    // allocating another for a new latitude is most of
-                    // what made a refresh expensive.
-                    val m = placed.getOrPut(key) {
-                        Marker(map).also {
-                            it.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                            map.overlays.add(it)
-                        }
-                    }
-                    m.position = GeoPoint(pm.lat, pm.lon)
-                    if (m.icon !== icon) m.icon = icon
-                    m.title = pm.title
-                    // Layers marked non-clickable are fields of readings —
-                    // an aurora cell, an AQI blob. Opening an inspector on
-                    // one produces a dialog whose only content is a disabled
-                    // INVESTIGATE button, which is worse than no dialog.
-                    if (pm.clickable) {
-                        m.setOnMarkerClickListener { _, _ ->
-                            onInspect(
-                                Inspected(
-                                    pm.kind,
-                                    pm.title.orEmpty().ifBlank { pm.kind },
-                                    pm.lat,
-                                    pm.lon,
-                                    pm.url
-                                )
-                            )
-                            true
-                        }
-                    } else {
-                        // A reused marker keeps the listener it was given
-                        // last time, so a cell that is now part of a
-                        // non-clickable layer would still open a dialog.
-                        m.setOnMarkerClickListener { _, _ -> false }
-                    }
-                }
-                if (placed.size > wanted.size) {
-                    val gone = placed.keys.filterNot { it in wanted }
-                    gone.forEach { key ->
-                        placed.remove(key)?.let { map.overlays.remove(it) }
-                    }
-                }
-                map.invalidate()
-                // Marked applied only now that it has been.
-                //
-                // This was set before the loop ran, and the whole
-                // block is inside a runCatching — so anything thrown
-                // part-way left the map half populated, the exception
-                // discarded, and the identity guard above satisfied,
-                // which meant that plan was never reapplied and the
-                // stale markers stayed until the layers changed again.
-                rendered.value = plan
-            }
-
-            // The globe handed this view the camera it was using.
-            // Set rather than animated: this is the continuation of a
-            // pinch that is still happening, and a half-second flight
-            // in the middle of one feels like the map fighting back.
-            if (handoff != null && handoff != appliedHandoff.value) {
-                map.controller.setZoom(handoff.third)
-                map.controller.setCenter(GeoPoint(handoff.first, handoff.second))
-                appliedHandoff.value = handoff
-                map.invalidate()
-            }
-
-            // Fly to a newly-focused location (coordinate search or first geo finding).
-            if (focus != null && focus != appliedFocus.value) {
-                map.controller.animateTo(GeoPoint(focus.first, focus.second))
-                map.controller.setZoom(9.0)
-                appliedFocus.value = focus
-                map.invalidate()
-            }
-        } }
-    )
-}
-
-/**
  * Turns a marker's display label into something worth searching.
  *
  * Labels are built for reading — "GHOST52 · GLF4", "CAM Hwy 5 at Pocket ·
@@ -2542,12 +2025,8 @@ private fun investigableQuery(obj: Inspected): String? {
     }
 }
 
-/** The most of the screen the control panel may take, open or not. The
- *  map gets the rest, and it is never nothing. */
-
-/** How long after arriving on the map before it may hand back. Long
- *  enough for osmdroid to report the camera it opened with. */
-private const val MAP_SETTLE_MS = 1_500L
+/** Close enough to see a town, which is what a coordinate search means. */
+private const val FOCUS_TILE_ZOOM = 9.0
 
 /** How far the globe has to turn, in degrees, before it is worth
  *  telling the rest of the app about. */
@@ -3151,17 +2630,3 @@ private fun SettingsField(
     )
 }
 
-/**
- * The same, but null when the box is not a real view of anything.
- *
- * osmdroid answers `boundingBox` from the MapView's current size, and
- * before the view has been laid out that size is zero — so it returns
- * a box whose north edge equals its south edge, or one made of NaN.
- * Handed to the planner, that culls every marker on Earth, and since
- * the window was then only refreshed by a scroll or zoom event the map
- * stayed empty until the person happened to drag it. A null means "no
- * window yet", which the planner reads as "do not cull", so the worst
- * case is a few too many markers for one frame instead of none at all.
- */
-private fun BoundingBox.asWindowOrNull(): MapWindow? =
-    MapWindow.of(latNorth, latSouth, lonWest, lonEast)
