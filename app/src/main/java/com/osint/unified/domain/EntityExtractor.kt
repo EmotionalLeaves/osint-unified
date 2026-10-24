@@ -158,9 +158,9 @@ object EntityExtractor {
         val seedLower = seed.trim().lowercase()
         val out = ArrayList<Pivot>()
 
-        fun collect(kind: String, regex: Regex, limit: Int = limitPerKind, transform: (MatchResult) -> String? = { it.value }) =
-            collectValues(kind, regex.findAll(text).map { transform(it) }, limit)
-
+        // Declared before `collect`, which calls it: a local
+        // function is only in scope after its declaration.
+        //
         // Separated so a scan that is not a regex can feed it. The
         // host and address scans are hand-written now, for the
         // reasons set out in Hostnames.
@@ -190,6 +190,13 @@ object EntityExtractor {
                 out += Pivot(kind, it.key, it.value)
             }
         }
+
+        fun collect(
+            kind: String,
+            regex: Regex,
+            limit: Int = limitPerKind,
+            transform: (MatchResult) -> String? = { it.value }
+        ) = collectValues(kind, regex.findAll(text).map { transform(it) }, limit)
 
         collectValues("EMAIL", Hostnames.emailsIn(text).asSequence())
         collect("HANDLE", handle) { it.groupValues.getOrNull(1) }

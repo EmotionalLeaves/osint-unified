@@ -360,7 +360,9 @@ class PeopleApis(
                 append("\n")
             }
             andMore(results.size, 20)
-            if (count > 20) append("\n…and ${count - 20} more.\n")
+            // Only when the service gave a total. `count` is
+            // nullable now precisely because it may not.
+            count?.let { if (it > 20) append("\n…and ${it - 20} more.\n") }
             append("\nRECAP holds what somebody has paid to pull out of PACER, ")
             append("so it is a large sample of the federal docket and not all of it. ")
             append("A name in a case caption is a party, a lawyer or a judge.")
