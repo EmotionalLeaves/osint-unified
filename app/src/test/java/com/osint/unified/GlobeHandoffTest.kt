@@ -268,4 +268,38 @@ class GlobeHandoffTest {
         )
         assertFalse(GlobeHandoff.shouldHandToMap(lw, lh, globe))
     }
+
+    /**
+     * The visible radius reaches the corner, not the side.
+     *
+     * A point at angle theta from the camera lands at
+     * radius*sin(theta) from the centre of the disc, in whatever
+     * direction it happens to lie — so on a portrait screen the
+     * furthest point still in frame is in a corner, further out
+     * than the half-width the handoff's own span measures. Culling
+     * markers to the width dropped everything along the top and
+     * bottom edges.
+     */
+    @Test
+    fun theVisibleRadiusCoversTheCornersOfAPortraitView() {
+        val w = 1080
+        val h = 2000
+        listOf(1.2f, 2f, 4f, 8f).forEach { zoom ->
+            val span = GlobeHandoff.spanDegrees(w, h, zoom)
+            val radius = GlobeHandoff.visibleRadiusDegrees(w, h, zoom)
+            assertTrue(
+                "zoom $zoom: radius $radius must reach past half the width span $span",
+                radius > span / 2.0 - 1e-9
+            )
+        }
+    }
+
+    @Test
+    fun aCornerOffTheGlobeMeansNothingIsCulled() {
+        // Zoomed out, the whole disc is inside the view and the
+        // corner is off the sphere entirely.
+        assertEquals(180.0, GlobeHandoff.visibleRadiusDegrees(1080, 2000, 0.6f), 0.0)
+        // And a view with no size yet cannot cull anything.
+        assertEquals(180.0, GlobeHandoff.visibleRadiusDegrees(0, 0, 2f), 0.0)
+    }
 }

@@ -87,6 +87,10 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.osint.unified.BuildConfig
 import com.osint.unified.ui.theme.Intel
+import kotlin.math.ceil
+import kotlin.math.cos
+import kotlin.math.log2
+import kotlin.math.pow
 import kotlin.math.roundToInt
 import org.osmdroid.config.Configuration
 import org.osmdroid.events.DelayedMapListener
@@ -471,7 +475,12 @@ fun GodEyeViewScreen(
       BoxWithConstraints(modifier = Modifier.padding(pad).fillMaxSize()) {
         val viewport = maxHeight
         val density = LocalDensity.current
-        val chrome = with(density) { (bannerPx + headerPx + searchPx + typesPx).toDp() }
+        // The banner's height counts only while the banner is there.
+        // onSizeChanged does not fire when a composable leaves, so
+        // its last measurement would otherwise stay in the total for
+        // the rest of the session.
+        val banner = if (com.osint.unified.data.db.AppDatabase.lockedOut) bannerPx else 0
+        val chrome = with(density) { (banner + headerPx + searchPx + typesPx).toDp() }
         // A map worth looking at. Below this there is no point
         // drawing one, and the panel has to give way instead.
         val mapFloor = 200.dp
@@ -486,7 +495,12 @@ fun GodEyeViewScreen(
         // to float it over the map than to leave a 50dp slot.
         val minPanel = 140.dp
         val overlay = forPanel - mapFloor < minPanel
-        val panelMax = if (overlay) forPanel * 0.72f else forPanel - mapFloor
+        // Never negative. In landscape at a large font `chrome` can
+        // exceed the viewport, and a negative Dp handed to heightIn
+        // coerces to zero rather than throwing — which is survivable
+        // but means the arithmetic above stopped describing anything.
+        val panelMax = (if (overlay) forPanel * 0.72f else forPanel - mapFloor)
+            .coerceAtLeast(0.dp)
         Column(modifier = Modifier.fillMaxSize()) {
             // An encrypted database this device can no longer open.
             //
@@ -751,9 +765,23 @@ fun GodEyeViewScreen(
                     .zIndex(1f)
                     .fillMaxWidth()
                     .background(Intel.Base)
+                    // Measured OUTSIDE the scroller, which is the
+                    // whole point of measuring it.
+                    //
+                    // verticalScroll measures its child with an
+                    // infinite height and then clamps itself, so an
+                    // onSizeChanged placed after it in the chain
+                    // reports the full unclipped content height —
+                    // not the height the panel occupies. That number
+                    // is the map's top padding, so opening the panel
+                    // on any phone where its content overflows pushed
+                    // the map straight through its own 200dp floor to
+                    // nothing: the exact failure this measurement was
+                    // added to prevent, reintroduced by one modifier
+                    // being on the wrong side of another.
+                    .onSizeChanged { panelPx = it.height }
                     .heightIn(max = panelMax)
                     .verticalScroll(rememberScrollState())
-                    .onSizeChanged { panelPx = it.height }
             ) {
             if (panelOpen) {
             FlowRow(
@@ -1184,16 +1212,43 @@ fun GodEyeViewScreen(
                     // every layer working", and it is the globe, which
                     // is the view that opens.
                     //
-                    // So the budget follows the camera. The keys are
-                    // quantised to a quarter of the current span and
-                    // the cull keeps a little more than is visible, so
-                    // this runs on a real move rather than on a frame.
-                    val span = GlobeHandoff.spanDegrees(
+                    // So the budget follows the camera — on a real
+                    // move, and never on a frame.
+                    //
+                    // The radius is to the corner of the view, not
+                    // across its width: a point at angle θ from the
+                    // camera lands at radius·sin(θ) from the centre
+                    // of the disc in any direction, so the furthest
+                    // visible point is at a corner. Measuring across
+                    // the width culled markers along the top and
+                    // bottom of a portrait globe.
+                    //
+                    // And the step is snapped to a power of two
+                    // before it is used as a key. It was a plain
+                    // function of the zoom, and the zoom changes on
+                    // every frame of a pinch, a flick and a
+                    // double-tap flight — so produceState cancelled
+                    // and relaunched a full pass over six figures of
+                    // points sixty times a second, discarded every
+                    // one of them, and left the markers frozen at
+                    // the pre-gesture set for the whole gesture.
+                    // That is precisely the per-frame cost this is
+                    // here to avoid.
+                    val visible = GlobeHandoff.visibleRadiusDegrees(
                         globeSize.first, globeSize.second, globeCamera.zoom
                     )
-                    val step = (span / 4.0).coerceAtLeast(1.0)
+                    val rawStep = (visible / 3.0).coerceAtLeast(1.0)
+                    val step = 2.0.pow(ceil(log2(rawStep)))
+                    // A degree of longitude is a shorter distance the
+                    // further from the equator you are, so a key in
+                    // plain degrees recomputes several times as often
+                    // near the poles for the same movement across the
+                    // ground. Widened by the same factor the gestures
+                    // already use.
+                    val lonStep = (step / cos(Math.toRadians(globeCamera.lat.toDouble()))
+                        .coerceAtLeast(0.15)).coerceAtMost(180.0)
                     val keyLat = kotlin.math.round(globeCamera.lat / step)
-                    val keyLon = kotlin.math.round(globeCamera.lon / step)
+                    val keyLon = kotlin.math.round(globeCamera.lon / lonStep)
                     val globePoints by produceState(
                         emptyList<GlobePoint>(), layers, keyLat, keyLon, step
                     ) {
@@ -1201,7 +1256,14 @@ fun GodEyeViewScreen(
                             thinGlobe(
                                 layers.points(),
                                 centre = globeCamera.lat.toDouble() to globeCamera.lon.toDouble(),
-                                keepWithinDegrees = span / 2.0 + step
+                                // The corner radius, plus the
+                                // furthest the camera can drift
+                                // before the key flips — half a
+                                // step in latitude and half a
+                                // longitude step, which at this
+                                // latitude is worth at most half a
+                                // step of ground.
+                                keepWithinDegrees = visible + step
                             )
                         }
                     }

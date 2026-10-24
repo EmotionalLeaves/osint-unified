@@ -4,6 +4,7 @@ import kotlin.math.asin
 import kotlin.math.cos
 import kotlin.math.ln
 import kotlin.math.max
+import kotlin.math.hypot
 import kotlin.math.min
 import kotlin.math.sin
 
@@ -37,6 +38,31 @@ import kotlin.math.sin
  * invisible.
  */
 internal object GlobeHandoff {
+
+    /**
+     * The angle from the centre of the globe to the furthest corner
+     * of the view.
+     *
+     * spanDegrees measures across the width, because that is the
+     * number the handoff needs. It is the wrong number for deciding
+     * what is visible: a point at angular distance θ from the camera
+     * lands at radius·sin(θ) from the centre of the disc in whatever
+     * direction it likes, so the furthest point still on screen is
+     * at a corner, not at the left edge. Using the width meant
+     * culling markers along the top and bottom of a portrait globe
+     * — the same symptom as culling nothing at all, moved from the
+     * middle to the edges.
+     */
+    fun visibleRadiusDegrees(width: Int, height: Int, zoom: Float): Double {
+        if (width <= 0 || height <= 0 || zoom <= 0f) return 180.0
+        val radius = min(width, height) / 2.0 * GLOBE_FILL * zoom
+        val corner = hypot(width.toDouble(), height.toDouble()) / 2.0
+        val sine = corner / radius
+        // The corner is off the globe entirely, so everything on the
+        // near hemisphere is potentially in frame.
+        if (sine >= 1.0) return 180.0
+        return Math.toDegrees(asin(sine))
+    }
 
     /** How much of the Earth the globe is showing across the screen. */
     fun spanDegrees(width: Int, height: Int, zoom: Float): Double {
