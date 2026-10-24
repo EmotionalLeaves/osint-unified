@@ -659,7 +659,207 @@ list is here because the pattern matters more than the items.
   reading" the same string. Anything that limits what is read has
   to say so in a way the caller can act on.
 
-## F. Then
+## F. The exhaustive sweep, 24 Oct
 
-Every issue known, listed and fixed. Every improvement, listed and
-fixed. Then round again.
+Two reviewers went over the two areas that had never had a
+dedicated pass: everything below the lock gate (the screens, the
+Activity, AppLock, LinkOpener) and everything that persists or
+runs in the background (Room, the migrations, the exporter, Http,
+the worker). Twenty-six defects between them. Worked in this
+order, hardest-first within each severity band.
+
+### F-a. State that lives below the AppLock gate
+
+The whole of the first report's top finding and its #7 are one
+root cause, which makes this the highest-value fix in the batch.
+
+- [ ] **F1. Unlocking replays every pending navigation signal.**
+  `MainActivity` hoists `screen` and `tabState` above the
+  `return@Surface` lock gate precisely because that gate disposes
+  the subtree and a `rememberSaveable` only survives
+  `onSaveInstanceState`, not plain disposal. The five
+  de-duplication guards — `handledNav`, `handledShare`,
+  `handledWatch`, `handledBrowserNav`, `handledSnapshot` — were
+  left below it. Lock on, background, unlock: all five are zero,
+  every `LaunchedEffect` re-runs, and the signals are still
+  non-zero because they live in the ViewModel or in process-wide
+  singletons. `navSignal` ≥ 1 after any search, so every unlock
+  dumps you into the dossier. `investigateTarget` and
+  `snapshotTaken` are never nulled, so the last browser target is
+  re-searched with a full fan-out and the last snapshot re-filed.
+  `sharedAt` is an Activity field, so the last share re-runs. Fix:
+  the guards go above the gate with `screen`, and the browser
+  singletons get nulled by their consumers.
+- [ ] **F2. With the lock on, the Forensics photo picker never
+  works.** The picker is registered inside the composition;
+  launching it stops the Activity, which sets `locked = true`,
+  which disposes the subtree, which unregisters the launcher. The
+  result arrives with nobody listening. Every time. Fix: register
+  above the gate, or don't re-lock for an `onStop` this app
+  caused by starting an activity for a result.
+- [ ] **F3. `sharedImage` is never cleared.** Nothing nulls it, and
+  `ForensicsScreen` keys its effect on the Uri, so every
+  re-entry — by hand, or after a lock cycle — re-reads the old
+  share and overwrites whatever decode the user just ran. By then
+  the URI grant has usually lapsed, so real work is replaced with
+  "Could not read that image".
+
+### F-b. Data the user loses or is lied to about
+
+- [ ] **F4. A persistent failure to open the encrypted database
+  tells the user "nothing was lost" over an empty one.** First
+  launch after the failure: no backup, no plaintext file, so the
+  note is honest and `plain()` hands back an unopened builder
+  whose first query creates a fresh empty database. Every launch
+  after that: the plaintext file now exists, so the note becomes
+  "the unencrypted copy of your cases is being used — nothing was
+  lost". The real database is intact on disk, the user is looking
+  at an empty case list being told it is their cases, and the
+  reasonable response — reinstall — deletes the one file that
+  still has them. Fix: only claim the fallback holds their cases
+  when it predates the failure.
+- [ ] **F5. `migrateIfNeeded` deletes the plaintext database even
+  when the backup rename failed.** `plain.renameTo(backup)`'s
+  return value is discarded and `cleanUp(plain)` runs
+  unconditionally. The unconditional part is right for the
+  sidecars and wrong for the main file: on a failed rename there
+  is now neither a backup nor an original.
+- [ ] **F6. The pre-encryption backup is saved without its WAL.**
+  The rename moves the main file; the cleanup deletes `-wal` and
+  `-shm`. The encrypted copy gets the WAL's committed pages
+  because `copyInto` ATTACHes a live database; the backup does
+  not. So the insurance is strictly older than the thing it
+  insures, and the note still says nothing was lost. Fix:
+  checkpoint before the rename, or rename the sidecars too.
+- [ ] **F7. `selected` never refreshes, so filing and tags go
+  stale.** `flatMapLatest { flowOf(it).map { repository.byId(it) } }`
+  wraps a one-shot suspend read, so it re-emits only when the id
+  changes. File a target: the TARGETS list updates, the case chip
+  does not move, and the tags button says SAVE TAGS forever
+  because `tags.trim() == investigation.tags` can never become
+  true. Two views of the same row disagree. Fix: a real
+  `Flow<Investigation?>` query.
+- [ ] **F8. Pressing STOP leaves rows stuck at "running" for eight
+  tools.** Bare `runCatching` around a suspend call catches
+  `CancellationException`, so `runTool`'s cancelled branch — the
+  one written under `NonCancellable` specifically to stamp the
+  row — never runs, and the `resultDao.update` it falls through
+  to throws in an already-cancelled coroutine. The row is never
+  written at all. The earlier note said four places; there are at
+  least eight, including the username sweep, which is the
+  slowest and most-used tool in the app.
+
+### F-c. Correctness the user can see
+
+- [ ] **F9. AppLock opens the app when it cannot determine an
+  authenticator.** `usable()` returns null on everything but
+  `BIOMETRIC_SUCCESS`, and `prompt()` then calls `onUnlocked()`
+  with no authentication. Five failed fingerprints is lockout, and
+  the next background cycle lets anyone in. A transient
+  `HW_UNAVAILABLE` does the same. The intent — don't brick the app
+  when the screen lock is removed — only justifies
+  `NONE_ENROLLED` and `NO_HARDWARE`.
+- [ ] **F10. No `launchMode`, so a share stacks a second
+  Activity.** `standard` means `onNewIntent` is never delivered,
+  so the listener `MainActivity` registers is unreachable for a
+  share arriving while the app is running. A second
+  `MainActivity` means a second `ViewModelStore`, a second
+  `GodEyeViewModel`, and a second set of 26 feed pollers — the
+  exact duplicate data bill `onStart`/`onStop` exists to stop.
+- [ ] **F11. A share silently destroys an in-flight search.**
+  `onSearch` cancels every job and nulls the current
+  investigation before it decides whether to fan out, so the
+  "prepared, not fired" comment is true of the new target and
+  irrelevant to the old one. RUN ALL in progress, share a link:
+  40 requests cancelled, dossier replaced, pending notes write
+  dropped. Also: the `consumedKey` guard is an extra on the
+  Intent, and after process death the Intent is rebuilt from the
+  parcel captured at launch, so recents re-fires the old share.
+- [ ] **F12. One case's shared identifiers under another case's
+  name.** `openCase` is a synchronous combine; `caseLinks` goes
+  through `flatMapLatest` → `mapLatest` → `flowOn(Default)` and
+  re-reads every result row of every target first. `stateIn`
+  holds the old value meanwhile, so case A's rows render under
+  case B's heading with no loading state to tell them apart.
+- [ ] **F13. The database is opened on the main thread.** `by
+  lazy` is SYNCHRONIZED and `MainActivity` resolves it during
+  `setContent` and from a `LaunchedEffect`. Whoever gets there
+  first runs the keystore unseal, `repairVersion`'s up-to-seven
+  opens, and on first launch after the upgrade a whole
+  `sqlcipher_export`, holding the monitor. ANR on the first
+  launch after the encryption upgrade, worst for the people with
+  the most cases.
+- [ ] **F14. System back in CASES skips the drill-down.** The
+  in-screen arrow has three levels, the system handler has none —
+  `"history"` falls to the else branch and jumps to the globe. And
+  because the selection lives in the ViewModel, tapping CASES in
+  the nav bar lands back inside the old target. There is no path
+  from the nav bar to the CASES root.
+- [ ] **F15. Every piece of FrameworkScreen state is plain
+  `remember`.** The one tab `SaveableStateProvider` cannot help.
+  Four folders deep, tap GLOBE, tap TOOLS: back at the root with
+  an empty box. And `remember(initialTarget)` keys the typed
+  target on the last search, so a search finishing elsewhere
+  replaces what the user typed.
+- [ ] **F16. The live case-links view collapses two targets with
+  the same seed.** `associate { it.seedObservable to … }` where
+  the exporter — whose own comments say filing the same observable
+  twice is ordinary — keys by id. The report is right and the
+  screen is wrong.
+
+### F-d. Smaller, one fix each
+
+- [ ] **F17.** A double-tap deletes an investigation: DELETE and
+  CONFIRM are the same 48dp target in the same place with no
+  debounce, and the delete cascades results and dismissals.
+- [ ] **F18.** No scheme allow-list before `WebView.loadUrl`.
+  `shouldOverrideUrlLoading` guards every navigation except the
+  initial one, which is the one carrying the externally-supplied
+  string — and `GeoBlip.url` comes from remote feeds. Blast
+  radius is small (opaque origin, file and content access off)
+  and the fix is one line in `sanitize`.
+- [ ] **F19.** An inline 429 retry clears the cooldown and never
+  re-records a second refusal, so a host that has now refused
+  twice has no cooldown at all.
+- [ ] **F20.** `Thread.sleep` inside the interceptor, up to ~15 s
+  per call and once while holding the pacing monitor, against a
+  64-wide sweep on a 64-thread `Dispatchers.IO`. Everything else
+  on IO — including the export — queues behind it.
+  `limitedParallelism` for the sweep. Same helper swallows
+  `InterruptedException` and clears the flag.
+- [ ] **F21.** CSV exports carry no analyst notes and no ruled-out
+  list; the case CSV does not even name the case. The one format
+  where the investigator's own judgement is entirely absent.
+- [ ] **F22.** The export cache is only purged when another export
+  is made, so a user who exports once leaves that dossier in
+  `cacheDir/exports` for the life of the install.
+- [ ] **F23.** The plaintext database path is never pre-flighted,
+  so a migration failure there surfaces as a crash from whatever
+  screen queries first — on the path most likely to be running an
+  old schema.
+- [ ] **F24.** A failed encrypted open leaks the Room instance and
+  its SQLCipher connection for the life of the process.
+- [ ] **F25.** `writePdf`'s `document.close()` is not in a
+  `finally`.
+- [ ] **F26.** The minor list: `getStringExtra` where the sender
+  sent a CharSequence; the URL share branch with no `.take`;
+  `trimEnd(')')` breaking `/wiki/Foo_(bar)` and the 8-character
+  floor dropping short URLs silently; `NewCaseField`'s unkeyed
+  `rememberSaveable` carrying a half-typed name between targets;
+  REMOVE with no confirmation; the unchecked `EXTRA_STREAM`
+  scheme; `applyProxy` persisting a host but not an invalid port;
+  exports on `rememberCoroutineScope`; `FrameworkScreen`'s back
+  popping folders the user cannot see; `openWatchId` never
+  cleared; `WatchRepository.fingerprint` and
+  `markRunningAsInterrupted` swallowing cancellation.
+- [ ] **F27.** `exportSchema = true`, commit the JSON, and
+  `MigrationTestHelper` tests for 1→7, for 3→4 with duplicate
+  observables (the only non-additive migration: it deletes rows
+  and builds a UNIQUE index over live data), and for 6→7.
+  Separately: `repairVersion` derives the version from table and
+  column existence only, so a database that reached a version and
+  lost an index is stamped "already there".
+
+## G. Then
+
+Every improvement, listed and fixed. Then round again.
