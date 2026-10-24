@@ -108,7 +108,7 @@ outranks everything I found by reading.
   cap-before-cull ordering I suspected is real — just not where I
   expected it.
 
-  - **2b-1. The globe's 2500-marker budget is spread over the whole
+  - [done] **2b-1. The globe's 2500-marker budget is spread over the whole
     Earth and never recomputed for the camera.** `produceState` for
     the globe points is keyed on the layers only, and `thinGlobe`
     takes no window at all: it samples every layer down to
@@ -123,18 +123,18 @@ outranks everything I found by reading.
     about 83 points world-wide and under one on screen at 22 deg.
     Every layer dies at once, which is the report word for word. Cull
     to the camera before thinning, the way the flat map already does.
-  - **2b-2. Marker labels on the globe never render at any zoom.**
+  - [done] **2b-2. Marker labels on the globe never render at any zoom.**
     The 30-label cap is tested against all 2500 thinned points
     instead of the ones actually on screen, so with any real layer
     set the count is in the hundreds and the branch never runs.
-  - **2b-3. `ensureSites` records its cache key before the fetch is
+  - [done] **2b-3. `ensureSites` records its cache key before the fetch is
     launched.** `onDemand` returns early if a job is still running,
     so the new region's key gets recorded against the old region's
     data and the next call sees a hit and returns too. The layer
     freezes on the previous region with no outstanding request and no
     error. Cameras and airspace both check the job first; sites is
     the only one with the order wrong.
-  - **2b-4. Three layers are gated by a fourth layer's freshness
+  - [done] **2b-4. Three layers are gated by a fourth layer's freshness
     test.** `movedBeyond` compares against `radiationCentre` and
     radiation's radius-for-zoom, and cameras (25 km), sites (120 km)
     and military ground (150 km) all fetch fixed radii that have
@@ -143,7 +143,7 @@ outranks everything I found by reading.
     re-ask. Only bites with RADIATION armed — with it off,
     `radiationCentre` is null and the gate passes everything, which
     is the opposite waste.
-  - **2b-5. The map window is only re-read on a listener event or
+  - [done] **2b-5. The map window is only re-read on a listener event or
     when it is null.** 250 ms debounce, and no fallback comparing the
     live zoom against the zoom the window was captured at. If any
     zoom path emits no event the window stays stale indefinitely.
