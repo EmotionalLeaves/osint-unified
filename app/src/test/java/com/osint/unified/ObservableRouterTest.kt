@@ -316,4 +316,41 @@ class ObservableRouterTest {
         assertTrue(router.classifyAs("500, 900", "coordinate") is Observable.Name)
         assertTrue(router.classifyAs("51.5, -0.1", "coordinate") is Observable.Coordinate)
     }
+    /**
+     * A coordinate with the moment asked about written after it.
+     *
+     * Without this the one input the chronolocation feature exists for
+     * matched nothing, fell through to Name, and was sent to the
+     * account sweep — so asking what the shadows should look like at
+     * 14:30 searched two thousand sites for a username.
+     */
+    @Test
+    fun aCoordinateCanCarryTheDateBeingAskedAbout() {
+        listOf(
+            "51.5074, -0.1278, 2026-03-02",
+            "51.5074,-0.1278,2026-03-02T14:30",
+            "51.5074,-0.1278, 2026-03-02 14:30:09Z",
+            "51.5074,-0.1278,2026-03-02T14:30+02:00",
+        ).forEach { input ->
+            val o = ObservableRouter().classify(input)
+            assertTrue(
+                "$input should still be a coordinate, was ${o::class.simpleName}",
+                o is Observable.Coordinate
+            )
+            val c = o as Observable.Coordinate
+            assertEquals(51.5074, c.lat, 1e-9)
+            assertEquals(-0.1278, c.lon, 1e-9)
+            assertEquals("the raw input keeps the date for the tool to read", input, c.raw)
+        }
+    }
+
+    /** And a trailing phrase that is not a date is still not a coordinate. */
+    @Test
+    fun aTrailingPhraseIsNotADate() {
+        assertTrue(
+            ObservableRouter().classify("51.5074, -0.1278, next tuesday")
+                !is Observable.Coordinate
+        )
+    }
+
 }

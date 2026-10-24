@@ -2055,9 +2055,21 @@ class DeepApis(
         }
         com.osint.unified.domain.Mgrs.from(lat, lon)?.let { sb.append("MGRS: $it\n") }
 
-        val now = Date()
+        // The moment asked about, or this one if none was given.
+        val asked = parseWhen(input)
+        val now = Date(asked?.instant ?: System.currentTimeMillis())
         val sun = solarPosition(lat, lon, now)
-        sb.append("\nSun right now (${utc(now.time)}):\n")
+        if (asked == null) {
+            sb.append("\nSun right now (${utc(now.time)}):\n")
+        } else {
+            sb.append("\nSun at ${utc(now.time)}")
+            sb.append(" — the moment you gave")
+            if (!asked.hasTime) sb.append(", midnight UTC because no time was given")
+            else if (!asked.asGiven.contains('Z') && !asked.asGiven.contains('+')) {
+                sb.append(", read as UTC because no zone was given")
+            }
+            sb.append(":\n")
+        }
         sb.append("Elevation: %.1f°\n".format(Locale.US, sun.first))
         sb.append("Azimuth: %.1f° (compass bearing to the sun)\n".format(Locale.US, sun.second))
         if (sun.first > 0) {
@@ -2109,22 +2121,48 @@ class DeepApis(
                 val abs = kotlin.math.abs(offset)
                 sb.append("\nLocal time zone: $zone (UTC$sign%02d:%02d)\n"
                     .format(Locale.US, abs / 3600, (abs % 3600) / 60))
-                sb.append("Local time now: ${wallClock(now.time + offset * 1000)}\n")
+                sb.append(
+                    if (asked == null) "Local time now: " else "Local time then: "
+                )
+                sb.append("${wallClock(now.time + offset * 1000)}\n")
                 sb.append("Everything above this line is UTC; a timestamp on a ")
                 sb.append("photograph taken here would read local.\n")
             }
         }
 
-        // Sunrise/sunset and today's weather, for verifying a claimed timestamp.
+        // Sunrise, sunset and the weather on that day, for verifying a
+        // claimed timestamp. The archive endpoint for a past date, the
+        // forecast endpoint for today — the same fields either way, and
+        // one request, not a multiplier.
         runCatching {
-            val o = json.parseToJsonElement(
-                get("https://api.open-meteo.com/v1/forecast?latitude=$lat&longitude=$lon" +
-                    "&daily=sunrise,sunset,temperature_2m_max,temperature_2m_min,precipitation_sum&timezone=UTC&forecast_days=1")
-            ).jsonObject["daily"]?.jsonObject
+            val day = isoDay(now.time)
+            val url = if (asked == null) {
+                "https://api.open-meteo.com/v1/forecast?latitude=$lat&longitude=$lon" +
+                    "&daily=sunrise,sunset,temperature_2m_max,temperature_2m_min," +
+                    "precipitation_sum&timezone=UTC&forecast_days=1"
+            } else {
+                "https://archive-api.open-meteo.com/v1/archive?latitude=$lat&longitude=$lon" +
+                    "&start_date=$day&end_date=$day" +
+                    "&daily=sunrise,sunset,temperature_2m_max,temperature_2m_min," +
+                    "precipitation_sum&timezone=UTC"
+            }
+            val o = json.parseToJsonElement(get(url)).jsonObject["daily"]?.jsonObject
             fun first(k: String) = ((o?.get(k) as? JsonArray)?.firstOrNull() as? JsonPrimitive)?.contentOrNull
-            sb.append("\nToday (UTC): sunrise ${first("sunrise")}, sunset ${first("sunset")}\n")
+            sb.append(if (asked == null) "\nToday (UTC): " else "\n$day (UTC): ")
+            sb.append("sunrise ${first("sunrise")}, sunset ${first("sunset")}\n")
             sb.append("Temp ${first("temperature_2m_min")}–${first("temperature_2m_max")}°C, ")
             sb.append("precipitation ${first("precipitation_sum")} mm\n")
+            if (asked != null && sun.first > 3.0) {
+                sb.append("\nSo: a photograph taken here at that moment has shadows ")
+                sb.append("falling toward %.0f° at %.2f× the object's height. "
+                    .format(Locale.US, (sun.second + 180.0) % 360.0,
+                        1.0 / tan(Math.toRadians(sun.first))))
+                sb.append("Shadows that disagree with that are evidence the time, ")
+                sb.append("the place or both are wrong.\n")
+            } else if (asked != null && sun.first <= 0.0) {
+                sb.append("\nSo: the sun was below the horizon at that moment. ")
+                sb.append("A daylight photograph is not from this time and place.\n")
+            }
         }
         sb.append("\nSun path tool: https://www.suncalc.org/#/$lat,$lon,15/")
         sb.toString()
@@ -2134,11 +2172,25 @@ class DeepApis(
      *  matches the conditions on the date it claims. */
     fun historicalWeather(input: String): Result<String> = runCatching {
         val (lat, lon) = parseCoord(input) ?: return@runCatching "Not a coordinate: $input"
+        // The week around the date asked about, or the last month if
+        // none was given.
+        //
+        // The window was hardcoded to the last 31 days under a tool
+        // description promising "tests whether a photo matches its
+        // claimed date" — so a photograph could be confirmed or
+        // contradicted by the weather on a completely different day,
+        // with nothing in the output saying which day it was about.
+        val asked = parseWhen(input)
+        val fmt = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply {
+            timeZone = TimeZone.getTimeZone("UTC")
+        }
         val cal = Calendar.getInstance(TimeZone.getTimeZone("UTC"))
-        cal.add(Calendar.DAY_OF_YEAR, -31)
-        val fmt = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }
+        if (asked != null) cal.timeInMillis = asked.instant
+        // The archive runs about five days behind, so a date inside
+        // that window has no data and the neighbours are what there is.
+        cal.add(Calendar.DAY_OF_YEAR, if (asked != null) -3 else -31)
         val start = fmt.format(cal.time)
-        cal.add(Calendar.DAY_OF_YEAR, 24)
+        cal.add(Calendar.DAY_OF_YEAR, if (asked != null) 6 else 24)
         val end = fmt.format(cal.time)
         val o = json.parseToJsonElement(
             get("https://archive-api.open-meteo.com/v1/archive?latitude=$lat&longitude=$lon" +
@@ -2148,14 +2200,31 @@ class DeepApis(
         fun col(k: String) = (o[k] as? JsonArray)?.map { (it as? JsonPrimitive)?.contentOrNull ?: "-" } ?: emptyList()
         val days = col("time"); val tmax = col("temperature_2m_max"); val tmin = col("temperature_2m_min")
         val rain = col("precipitation_sum"); val snow = col("snowfall_sum"); val code = col("weathercode")
-        val sb = StringBuilder("Historical weather — %.4f, %.4f\n$start to $end (UTC)\n\n".format(Locale.US, lat, lon))
+        val sb = StringBuilder("Historical weather — %.4f, %.4f\n".format(Locale.US, lat, lon))
+        if (asked != null) {
+            sb.append("The days around ${isoDay(asked.instant)}, which is the date you gave")
+            sb.append(" — $start to $end (UTC)\n\n")
+        } else {
+            sb.append("$start to $end (UTC). No date was given, so this is the ")
+            sb.append("last month rather than any claimed day: add one after the ")
+            sb.append("coordinate, as `51.5, -0.12, 2026-03-02`.\n\n")
+        }
         days.indices.forEach { i ->
             sb.append("${days[i]}  ${tmin.getOrNull(i)}–${tmax.getOrNull(i)}°C  ")
             sb.append("rain ${rain.getOrNull(i)}mm  snow ${snow.getOrNull(i)}cm  ")
             sb.append(wmo(code.getOrNull(i)?.toDoubleOrNull()?.toInt()))
             sb.append("\n")
         }
-        sb.append("\nUse this to check whether a photo's weather matches its claimed date.")
+        sb.append(
+            if (asked != null) {
+                "\nCompare this with the weather in the photograph. Snow on the " +
+                    "ground on a day the archive records as dry and 18°C is a " +
+                    "contradiction worth following."
+            } else {
+                "\nUse this to check whether a photo's weather matches its " +
+                    "claimed date — give the date to be told about that day."
+            }
+        )
         sb.toString()
     }
 
@@ -2302,6 +2371,59 @@ class DeepApis(
         return lat to lon
     }
 
+    /** A moment given after the coordinate, and whether it named a time. */
+    internal data class Moment(val instant: Long, val hasTime: Boolean, val asGiven: String)
+
+    /**
+     * The date, or date and time, written after a coordinate.
+     *
+     * Both chronolocation tools exist to test whether a photograph
+     * matches a claimed time and place, and neither could be told the
+     * time: sunAndTerrain computed the solar position for the instant
+     * the analyst happened to be reading, and historicalWeather
+     * hardcoded a window of the last month. Meanwhile the same dossier
+     * routinely holds the EXIF capture timestamp twenty centimetres up
+     * the screen. parseCoord read the first two comma-separated fields
+     * and silently dropped the rest, so there was nowhere to put it.
+     *
+     * Accepted: `51.5,-0.12, 2026-03-02` and
+     * `51.5,-0.12, 2026-03-02 14:30` — with T or a space, optional
+     * seconds, and an optional Z or ±hh:mm. A time with no zone is
+     * read as UTC and the output says so, because a photograph's
+     * timestamp usually is not UTC and guessing would be worse than
+     * stating the assumption.
+     */
+    internal fun parseWhen(input: String): Moment? {
+        val m = WHEN_PATTERN.find(input) ?: return null
+        val (y, mo, d) = listOf(1, 2, 3).map { m.groupValues[it].toInt() }
+        val hasTime = m.groupValues[4].isNotEmpty()
+        val hh = m.groupValues[4].toIntOrNull() ?: 0
+        val mi = m.groupValues[5].toIntOrNull() ?: 0
+        val ss = m.groupValues[6].toIntOrNull() ?: 0
+        if (mo !in 1..12 || d !in 1..31 || hh !in 0..23 || mi !in 0..59 || ss !in 0..60) {
+            return null
+        }
+        val zone = m.groupValues[7]
+        val offsetSeconds = when {
+            zone.isEmpty() || zone.equals("Z", true) -> 0
+            else -> {
+                val sign = if (zone.startsWith("-")) -1 else 1
+                val digits = zone.drop(1).replace(":", "")
+                if (digits.length < 4) return null
+                sign * (digits.take(2).toInt() * 3600 + digits.drop(2).take(2).toInt() * 60)
+            }
+        }
+        val cal = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
+            clear()
+            set(y, mo - 1, d, hh, mi, ss)
+        }
+        return Moment(
+            cal.timeInMillis - offsetSeconds * 1000L,
+            hasTime,
+            m.value.trim()
+        )
+    }
+
     /** NOAA solar position: returns (elevation°, azimuth°) for a UTC instant. */
     private fun solarPosition(lat: Double, lon: Double, when_: Date): Pair<Double, Double> {
         val cal = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply { time = when_ }
@@ -2383,6 +2505,11 @@ class DeepApis(
      *  label must not say UTC. */
     private fun wallClock(millis: Long): String =
         SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US)
+            .apply { timeZone = TimeZone.getTimeZone("UTC") }.format(Date(millis))
+
+    /** The UTC calendar day of an instant, as the APIs want it. */
+    private fun isoDay(millis: Long): String =
+        SimpleDateFormat("yyyy-MM-dd", Locale.US)
             .apply { timeZone = TimeZone.getTimeZone("UTC") }.format(Date(millis))
 
     private fun utc(millis: Long): String =
@@ -2494,6 +2621,19 @@ class DeepApis(
     }
 
     private companion object {
+        /**
+         * A date, optionally with a time, written after a coordinate.
+         *
+         * Deliberately strict: a four-digit year with dashes. A looser
+         * pattern would read the "2026" out of a coordinate's decimals
+         * or out of a filename and silently answer about the wrong day,
+         * which is worse than answering about today and saying so.
+         */
+        val WHEN_PATTERN = Regex(
+            """(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?)?\s*(Z|[+-]\d{2}:?\d{2})?""",
+            RegexOption.IGNORE_CASE
+        )
+
         /** The circle photosNear asks Panoramax about, in metres. */
         const val PANORAMAX_RADIUS_M = 400.0
 

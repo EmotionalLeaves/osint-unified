@@ -28,7 +28,23 @@ class ObservableRouter {
     }
 
     private val emailRegex = Regex("""^[^\s@]+@[^\s@]+\.[^\s@]+$""")
-    private val coordinateRegex = Regex("""^-?\d{1,3}(?:\.\d+)?\s*,\s*-?\d{1,3}(?:\.\d+)?$""")
+    /**
+     * A latitude and longitude, optionally followed by the moment the
+     * question is about.
+     *
+     * The tail is here because the two chronolocation tools can now be
+     * told a date, and without it `51.5, -0.12, 2026-03-02` matched
+     * nothing, fell through to Name, and was sent to the account sweep
+     * — so the one input the feature exists for classified as a
+     * person's name. The date part is strict for the same reason the
+     * parser's is: a loose tail would make a mistyped coordinate look
+     * like a place on Earth.
+     */
+    private val coordinateRegex = Regex(
+        """^-?\d{1,3}(?:\.\d+)?\s*,\s*-?\d{1,3}(?:\.\d+)?""" +
+            """(?:\s*,\s*\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?)?""" +
+            """\s*(?:Z|[+-]\d{2}:?\d{2})?)?$"""
+    )
     private val ipv4Regex = Regex("""^(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:/\d{1,2})?$""")
     // Groups of up to four hex digits, and at least one group longer
     // than two — otherwise this is a MAC address or a clock.
