@@ -171,7 +171,20 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         if (intent.getBooleanExtra(consumedKey, false)) return
         intent.putExtra(consumedKey, true)
         if (intent.action == WatchWorker.ACTION_OPEN_WATCH) {
-            openWatchId.longValue = intent.getLongExtra(WatchWorker.EXTRA_WATCH_ID, -1L)
+            // The same content signature the share path uses.
+            //
+            // This relied on the extra put on the Intent object, which
+            // the comment above says is useless after process death —
+            // and with singleTop this intent can be the task's root,
+            // so the system re-delivers it on every cold restore from
+            // recents. Use the app, let it be killed, reopen from
+            // recents: you landed on WATCH instead of where you were,
+            // every time.
+            val watchId = intent.getLongExtra(WatchWorker.EXTRA_WATCH_ID, -1L)
+            val signature = "${intent.action}|$watchId"
+            if (signature == consumedShare) return
+            consumedShare = signature
+            openWatchId.longValue = watchId
             openWatchAt.longValue = System.currentTimeMillis()
             return
         }
@@ -545,6 +558,13 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                             // notification had pointed at once, however
                             // long ago and whether or not it still
                             // exists.
+                            // Cleared by the screen once it has
+                            // scrolled to the row, not on the first
+                            // composition — the list is filled
+                            // asynchronously from Room, so clearing it
+                            // immediately meant the scroll never
+                            // happened and a watched target near the
+                            // bottom had to be found by hand.
                             onFocusHandled = { openWatchId.longValue = -1L },
                             onOpen = { target ->
                                 godEyeViewModel.onQueryChange(target)

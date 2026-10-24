@@ -21,8 +21,19 @@
         android:theme="@style/Theme.OsintUnified"
         android:extractNativeLibs="true">
 
-        <!-- launchMode is singleTask so that a share reaches the app
-             that is already running. With the default `standard` mode
+        <!-- launchMode is singleTop so that a share reaches the app
+             that is already running.
+
+             singleTop and not singleTask: singleTask additionally
+             makes this the root of a task with its own affinity,
+             which sends a share into the OSINT task instead of
+             leaving it in the sharing app's - so Back from the
+             dossier exited to the launcher rather than returning to
+             the browser - and breaks ACTION_PROCESS_TEXT, whose
+             caller uses startActivityForResult and gets an immediate
+             cancellation from an activity in another task.
+             singleTop delivers onNewIntent, which was the whole
+             problem, and changes nothing else. With the default `standard` mode
              onNewIntent is never delivered, so the listener MainActivity
              registers for it was unreachable, and a share arriving while
              the app was open pushed a SECOND MainActivity on top: a
@@ -34,7 +45,7 @@
             android:name=".MainActivity"
             android:exported="true"
             android:label="@string/app_name"
-            android:launchMode="singleTask"
+            android:launchMode="singleTop"
             android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.OsintUnified">
             <intent-filter>

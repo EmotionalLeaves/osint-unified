@@ -73,7 +73,6 @@ fun WatchScreen(
     var unseen by remember { mutableStateOf<Map<Long, Int>>(emptyMap()) }
     var events by remember { mutableStateOf<List<WatchEvent>>(emptyList()) }
     var expanded by remember { mutableStateOf(focusWatchId) }
-    LaunchedEffect(focusWatchId) { if (focusWatchId != null) onFocusHandled() }
     // Held by the repository, not by this screen: the sweep outlives
     // the tab it was started from. See checkAllDetached.
     val checking by repository.running.collectAsStateWithLifecycle()
@@ -96,6 +95,14 @@ fun WatchScreen(
         if (index >= 0) {
             expanded = id
             runCatching { listState.animateScrollToItem(index) }
+            // Only now. It was cleared in an effect of its own that
+            // ran on the first composition, while `list` was still
+            // empty because Room fills it asynchronously — so this
+            // effect found nothing, the id went null, and every
+            // restart returned at the line above. The row expanded,
+            // off screen, and the scroll the notification exists for
+            // never happened.
+            onFocusHandled()
         }
     }
 

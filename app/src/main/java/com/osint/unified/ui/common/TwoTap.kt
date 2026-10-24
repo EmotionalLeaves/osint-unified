@@ -7,6 +7,7 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import kotlinx.coroutines.delay
 
 /**
@@ -64,9 +65,20 @@ class TwoTap internal constructor(
  */
 @Composable
 fun rememberTwoTap(key: Any?, onConfirm: () -> Unit): TwoTap {
-    val armedAt = rememberSaveable(key) { mutableStateOf(0L) }
+    // saveable(key = …), not saveable(inputs).
+    //
+    // rememberSaveable's first vararg is `inputs`; the registry key
+    // stays the positional composite hash. Inside a plain forEach —
+    // which is how a case's targets are drawn — every iteration has
+    // the same composite hash, so armed state was restored
+    // POSITIONALLY: arm REMOVE on the third target, rotate while the
+    // list has shifted by one, and the armed row is a different
+    // target whose next tap unfiles it.
+    val armedAt = rememberSaveable(key, key = key?.toString()) { mutableStateOf(0L) }
+    // The latest lambda, not the one captured when this was keyed.
+    val latest = rememberUpdatedState(onConfirm)
     val action = remember(key, armedAt) {
-        TwoTap(armedAt, { onConfirm() }, { System.currentTimeMillis() })
+        TwoTap(armedAt, { latest.value() }, { System.currentTimeMillis() })
     }
     LaunchedEffect(armedAt.value) {
         val at = armedAt.value

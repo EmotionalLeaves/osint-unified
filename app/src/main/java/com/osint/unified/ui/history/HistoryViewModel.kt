@@ -89,6 +89,19 @@ class HistoryViewModel(
 
     fun consumeExport() { _exported.value = null }
 
+    /**
+     * Dropped when the screen that asked for it has gone.
+     *
+     * An export that finished after the user left HISTORY stayed in
+     * `_exported`, and the share sheet then appeared the next time
+     * they opened the screen — which reads as the app doing something
+     * on its own. The file is still in the cache and the purge takes
+     * it within the day.
+     */
+    fun forgetUnhandledExport() {
+        if (!_exporting.value) _exported.value = null
+    }
+
     fun clearExportTrouble() { _exportTrouble.value = null }
 
     /**
@@ -105,7 +118,13 @@ class HistoryViewModel(
     fun exportOpenCase(format: ExportFormat) = runExport { exportCase(format) }
 
     private fun runExport(work: suspend () -> File?) {
-        if (_exporting.value) return
+        if (_exporting.value) {
+            // Said, rather than dropped. The button greys but still
+            // responds, so a second tap looked like it had worked.
+            _exportTrouble.value = "One export is already running — " +
+                "it will offer the file when it finishes."
+            return
+        }
         _exporting.value = true
         viewModelScope.launch {
             val file = runCatching { work() }
@@ -140,15 +159,21 @@ class HistoryViewModel(
         // name, observable and notes.
         val rows = repository.resultsFor(investigation.id)
         if (rows.isEmpty()) return null
-        return runCatching {
-            exporter.export(
-                router.classify(investigation.seedObservable),
-                rows,
-                format,
-                investigation.notes,
-                repository.dismissalsFor(investigation.id)
-            )
-        }.getOrNull()
+        // Thrown, not swallowed.
+        //
+        // runCatching{...}.getOrNull() here meant no exception ever
+        // reached runExport, so its failure branch was dead and every
+        // real failure — a full disk, a PDF page that throws, a
+        // misconfigured provider path — came out as "there is nothing
+        // to export here yet", which is a statement about the case
+        // rather than about what went wrong.
+        return exporter.export(
+            router.classify(investigation.seedObservable),
+            rows,
+            format,
+            investigation.notes,
+            repository.dismissalsFor(investigation.id)
+        )
     }
 
     // ---- Cases: several targets held together as one enquiry ----
@@ -310,25 +335,24 @@ class HistoryViewModel(
         val case = repository.caseById(_openCaseId.value ?: return null) ?: return null
         val targets = repository.targetsOf(case.id)
         if (targets.isEmpty()) return null
-        return runCatching {
-            exporter.exportCase(
-                caseName = case.name,
-                summary = case.summary,
-                targets = targets.map { t ->
-                    InvestigationExporter.CaseTarget(
-                        id = t.id,
-                        name = t.name,
-                        type = t.observableType,
-                        observable = router.classify(t.seedObservable),
-                        results = repository.resultsFor(t.id),
-                        notes = t.notes,
-                        tags = CaseLinks.split(t.tags),
-                        dismissals = repository.dismissalsFor(t.id)
-                    )
-                },
-                format = format
-            )
-        }.getOrNull()
+        // Not swallowed; see export() above.
+        return exporter.exportCase(
+            caseName = case.name,
+            summary = case.summary,
+            targets = targets.map { t ->
+                InvestigationExporter.CaseTarget(
+                    id = t.id,
+                    name = t.name,
+                    type = t.observableType,
+                    observable = router.classify(t.seedObservable),
+                    results = repository.resultsFor(t.id),
+                    notes = t.notes,
+                    tags = CaseLinks.split(t.tags),
+                    dismissals = repository.dismissalsFor(t.id)
+                )
+            },
+            format = format
+        )
     }
 
     fun delete(id: Long) {

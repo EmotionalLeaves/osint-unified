@@ -97,6 +97,11 @@ fun HistoryScreen(
         viewModel.consumeExport()
         share(context, done.file, done.format)
     }
+    // And anything left over from a visit that ended mid-export is
+    // dropped rather than offered on arrival.
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose { viewModel.forgetUnhandledExport() }
+    }
 
     // System back follows the arrow, level for level.
     //

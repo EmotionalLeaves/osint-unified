@@ -55,6 +55,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.launch
@@ -386,7 +387,14 @@ private object SelfTest {
                                     System.currentTimeMillis() - t0,
                                     "no response"
                                 )
-                            _results.value = _results.value + (p.name to res)
+                            // update, not value = value + ...
+                            //
+                            // Twelve coroutines doing a read, a copy
+                            // and a write: two finishing together
+                            // meant one map won and the other probe's
+                            // result was lost, leaving its row at "…"
+                            // for good and out of the count.
+                            _results.update { it + (p.name to res) }
                         }
                     }
                 }
