@@ -14,6 +14,7 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -56,6 +57,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -67,12 +69,13 @@ import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
@@ -222,12 +225,23 @@ fun GodEyeViewScreen(
     // phone has: the front door was a wall of buttons with a sliver of map
     // underneath.
     var panelOpen by rememberSaveable { mutableStateOf(false) }
-    // What is left of the screen after the panel has had its share.
+    // What is left of the screen after everything above the map.
     //
-    // PANEL_MAX_HEIGHT was 300dp on every device, which is a third of
-    // one phone and three fifths of another, and at a large system
-    // font size it was less than the controls needed either way.
-    val panelMax = (LocalConfiguration.current.screenHeightDp * 0.38f).dp
+    // Measured, not guessed. PANEL_MAX_HEIGHT was 300dp on every
+    // device; a share of screenHeightDp replaced it and was better
+    // but still wrong, because a share of the whole screen takes no
+    // account of what is already using it. In landscape the header
+    // and the search box are 132dp of a 270dp viewport, the panel
+    // claimed 137 more, and the map — the entire point of the
+    // screen — was laid out at about one pixel. The same thing
+    // happens in portrait at a 2x system font size.
+    //
+    // So: measure the chrome, and give the panel only what is left
+    // once the map has kept a usable amount.
+    var bannerPx by remember { mutableIntStateOf(0) }
+    var headerPx by remember { mutableIntStateOf(0) }
+    var searchPx by remember { mutableIntStateOf(0) }
+    var panelPx by remember { mutableIntStateOf(0) }
     // A thing called a God's Eye View should be a globe. Mercator is the
     // right tool for looking at a street and the wrong one for looking at
     // the Earth, so the sphere is what opens, and the flat map is one tap
@@ -435,7 +449,29 @@ fun GodEyeViewScreen(
 
 
     Scaffold(containerColor = Intel.Base) { pad ->
-        Column(modifier = Modifier.padding(pad).fillMaxSize()) {
+      // The height the content actually has, after the system bars
+      // and the navigation bar — which is what the panel has to
+      // divide, and is 80dp or more short of the display height.
+      BoxWithConstraints(modifier = Modifier.padding(pad).fillMaxSize()) {
+        val viewport = maxHeight
+        val density = LocalDensity.current
+        val chrome = with(density) { (bannerPx + headerPx + searchPx).toDp() }
+        // A map worth looking at. Below this there is no point
+        // drawing one, and the panel has to give way instead.
+        val mapFloor = 200.dp
+        val forPanel = viewport - chrome
+        // Two ways to arrange a panel and a map. Where there is room
+        // for both, the panel sits above and pushes the map down,
+        // which is what it has always done. Where there is not, the
+        // panel floats over the map instead of evicting it: same
+        // opaque strip in the same place, but the map keeps its
+        // height behind it.
+        // Below this a scrolling panel is not worth having; better
+        // to float it over the map than to leave a 50dp slot.
+        val minPanel = 140.dp
+        val overlay = forPanel - mapFloor < minPanel
+        val panelMax = if (overlay) forPanel * 0.72f else forPanel - mapFloor
+        Column(modifier = Modifier.fillMaxSize()) {
             // An encrypted database this device can no longer open.
             //
             // Said here rather than only on the settings screen. The
@@ -451,6 +487,7 @@ fun GodEyeViewScreen(
                     color = Intel.Base,
                     modifier = Modifier
                         .fillMaxWidth()
+                        .onSizeChanged { bannerPx = it.height }
                         .background(Intel.Danger)
                         .clickable { showWhy = true }
                         .padding(horizontal = 12.dp, vertical = 6.dp)
@@ -491,7 +528,10 @@ fun GodEyeViewScreen(
             // ---- Console header + live telemetry ----
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 4.dp, top = 10.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onSizeChanged { headerPx = it.height }
+                    .padding(start = 14.dp, end = 4.dp, top = 10.dp)
             ) {
                 Column(Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -647,20 +687,27 @@ fun GodEyeViewScreen(
                 ),
                 keyboardActions = KeyboardActions(onSearch = { viewModel.onSearch() }),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)
-            )
-
-            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    // A share of the screen, not 300dp.
-                    //
-                    // A fixed ceiling is a different thing on every
-                    // phone: on a short screen, or at a large system
-                    // font size, the controls overflowed into a
-                    // scroll with nothing to say it scrolled.
+                    .onSizeChanged { searchPx = it.height }
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            )
+
+            // The panel and the map share what is left, in one of the
+            // two arrangements decided above.
+            Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
+            Column(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    // Source order would draw the panel under the
+                    // map; this keeps the panel above it without
+                    // moving three hundred lines past it.
+                    .zIndex(1f)
+                    .fillMaxWidth()
+                    .background(Intel.Base)
                     .heightIn(max = panelMax)
                     .verticalScroll(rememberScrollState())
+                    .onSizeChanged { panelPx = it.height }
             ) {
             if (panelOpen) {
             // Search-type selector: AUTO detects; others force the type so a
@@ -982,9 +1029,11 @@ fun GodEyeViewScreen(
 
             Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .padding(top = 2.dp)
+                    .fillMaxSize()
+                    .padding(
+                        top = if (overlay) 2.dp
+                        else with(density) { panelPx.toDp() } + 2.dp
+                    )
                     .clipToBounds()
                     // Measured on the container both views fill, not
                     // on the globe. Measuring it on the globe meant
@@ -1250,7 +1299,9 @@ fun GodEyeViewScreen(
                     )
                 }
             }
+            }
         }
+      }
     }
 
     if (showBrief) {

@@ -41,6 +41,61 @@ outranks everything I found by reading.
   overflow behaviour for long labels, and a check at small-width,
   large-font and landscape. FirstRunScreen is already known to draw
   under the status bar.
+
+  Audited 23 Oct against every screen, at 320 dp width, in landscape
+  and at 2.0x font scale. The pass is now a numbered list, worst
+  first; fonts are all `sp` off `theme/Type.kt` and insets are
+  covered by Scaffold everywhere except the two screens that already
+  call `safeDrawingPadding`, so neither of those is the problem.
+
+  - **2a-1. In landscape the globe gets zero height.** GodEyeViewScreen's
+    root Column does not scroll, and the header (~60 dp), the search
+    field (~72 dp) and the controls panel (`panelMax` =
+    `screenHeightDp * 0.38`) are all outside the panel's own scroll
+    and are measured before the map, which takes `weight(1f)`. On a
+    640x360 dp landscape phone that is 269 dp of chrome against ~270 dp
+    of usable height, after the 80 dp nav bar — the map resolves to
+    about nothing. At 2.0x font in portrait it is ~60 dp. This is the
+    most likely thing he actually saw. `panelMax` has to come from
+    measured remaining space, with a floor under the map.
+  - **2a-2. The private browser's action row runs off the right edge.**
+    Four labels and three spacers in a plain Row: ~296 dp against
+    296 dp usable at 320 dp width. MY BROWSER and INVESTIGATE are
+    measured at zero and vanish at the stock "large" font setting;
+    SNAPSHOT, which is the evidence-preservation feature, goes next.
+  - **2a-3. The marker-inspect dialog cannot scroll.** Its two
+    siblings do; this one was missed, so in landscape the OPEN SOURCE
+    link below the fold is clipped away rather than scrolled to.
+  - **2a-4. Watch's "N watched" line disappears at large font.** It is
+    the weighted child of a Row whose two buttons are measured first
+    and take everything.
+  - **2a-5. Two lists get measured to zero height.** Diagnostics'
+    self-test results behind a long bundle manifest, and the watch
+    list behind its intro paragraph: in both, unbounded content above
+    a `fillMaxSize` LazyColumn. Both fix by moving the content above
+    into an `item {}`.
+  - **2a-6. Touch targets under 48 dp with no other route.**
+    `minimumInteractiveComponentSize()` is applied in GodEyeViewScreen
+    and InvestigationScreen and nowhere else. Worst: PrivateBrowser's
+    actions and CLOSE (no padding at all, ~15 dp, and CLOSE is the
+    only way out once BackHandler is walking page history), then
+    CasesScreen's case chips, HistoryScreen, WatchScreen,
+    FrameworkScreen's RUN, ResultCard's COPY/RAW.
+  - **2a-7. `maxLines` without `overflow = Ellipsis`** in four places,
+    so long values are clipped mid-glyph with no sign they continue:
+    ResultCard's PivotChip, InvestigationScreen's FactChip and
+    breadcrumb, FrameworkScreen's app-bar title.
+  - **2a-8. A long pivot value eats its own count badge.**
+  - **2a-9. Fixed-width containers holding text**: the AREA report's
+    58 dp distance column (the identical control elsewhere already
+    uses `widthIn(min=)` and carries a comment saying why), and
+    MoreScreen's 110 dp proxy-port field.
+  - **2a-10. Nav-bar labels wrap and clip** at large font inside M3's
+    fixed 80 dp bar; the unseen count belongs on a badge, not in the
+    label string.
+  - **2a-11. The keyboard covers every field but Forensics'.** No
+    `imePadding()` and no `windowSoftInputMode`: notes, tags, new
+    case, proxy host and port, and all six settings fields.
 - **2b. Zooming into the map stops every layer working.** Concrete
   and reproducible. Suspects, in order: the on-demand layers were
   never re-queried when the view moved (fixed since, untested by
