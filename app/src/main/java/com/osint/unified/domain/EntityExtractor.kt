@@ -405,7 +405,21 @@ object EntityExtractor {
                 Places.parts(raw).mapIndexed { index, value -> value to (index > 0) }
             }
             kind == "PERSON" ->
-                listOfNotNull(PersonName.normalise(raw)).map { it to false }
+                // A trailing parenthetical is a qualifier, not part
+                // of the name. The commit search writes "Ada
+                // Lovelace  (18 of 20 commits)" as a confidence
+                // note, and other tools append "(verified)" or a
+                // date the same way — handed whole to the name
+                // parser, the digits made it read as an organisation
+                // and the name was dropped. Stripped here, where it
+                // is known to be a name; a place like "Vienna
+                // (Austria)" keeps its parenthetical because only
+                // this branch removes it.
+                listOfNotNull(
+                    PersonName.normalise(
+                        raw.replace(Regex("""\s*\([^()]*\)\s*$"""), "").trim()
+                    )
+                ).map { it to false }
             else -> listOfNotNull(
                 raw.lowercase()
                     // The pipe is the watch digest's own separator,
