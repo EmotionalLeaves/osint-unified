@@ -233,7 +233,14 @@ class AisDataSource(
             .build()
         return client.newCall(request).execute().use { resp ->
             val body = resp.body?.string()
-            if (!resp.isSuccessful || body.isNullOrBlank()) return emptyList()
+            // Thrown, not returned. The caller is
+            // `runCatching { fetchOne(url) }.getOrNull()`, which
+            // reads an empty list as "that feed answered and there
+            // are no ships in its waters" — so a 429 from Fintraffic
+            // emptied the Baltic and counted itself as having
+            // answered.
+            if (!resp.isSuccessful) throw IOException("AIS feed HTTP ${resp.code}: $url")
+            if (body.isNullOrBlank()) throw IOException("AIS feed returned nothing: $url")
             // Measured after decompression, which is the honest number
             // for "how heavy is this feed" even though the wire sees
             // roughly a seventh of it: the ratio is the server's

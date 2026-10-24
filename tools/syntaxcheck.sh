@@ -251,5 +251,6 @@ echo
 python3 "$ROOT/tools/api-floor.py" || exit 1
 echo
 python3 "$ROOT/tools/saveable-keys.py" || exit 1
+python3 "$ROOT/tools/empty-is-an-answer.py" || exit 1
 echo
 python3 "$ROOT/tools/novel-calls.py" || true

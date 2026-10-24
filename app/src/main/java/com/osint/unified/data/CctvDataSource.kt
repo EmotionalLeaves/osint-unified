@@ -152,6 +152,8 @@ class CctvDataSource(
         if (held != null && System.currentTimeMillis() - held.first < NETWORK_TTL_MS) {
             return held.second
         }
+        // A throw propagates: `near()` counts it as a failed
+        // attempt and reports the gap. Only an answer is cached.
         val fresh = net.fetch()
         regional[net.name] =
             (
@@ -168,9 +170,9 @@ class CctvDataSource(
      * each with a still image endpoint of its own.
      */
     private fun newYork(): List<GeoBlip> {
-        val body = body("https://webcams.nyctmc.org/api/cameras") ?: return emptyList()
+        val body = body("https://webcams.nyctmc.org/api/cameras")
         val arr = runCatching { json.parseToJsonElement(body) as? JsonArray }.getOrNull()
-            ?: return emptyList()
+            ?: throw java.io.IOException("New York answered in an unexpected shape")
         return arr.mapNotNull { el ->
             val o = el as? JsonObject ?: return@mapNotNull null
             fun s(k: String) = (o[k] as? JsonPrimitive)?.contentOrNull
@@ -194,9 +196,9 @@ class CctvDataSource(
      * reading than the others.
      */
     private fun london(): List<GeoBlip> {
-        val body = body("https://api.tfl.gov.uk/Place/Type/JamCam") ?: return emptyList()
+        val body = body("https://api.tfl.gov.uk/Place/Type/JamCam")
         val arr = runCatching { json.parseToJsonElement(body) as? JsonArray }.getOrNull()
-            ?: return emptyList()
+            ?: throw java.io.IOException("Transport for London answered in an unexpected shape")
         return arr.mapNotNull { el ->
             val o = el as? JsonObject ?: return@mapNotNull null
             fun s(k: String) = (o[k] as? JsonPrimitive)?.contentOrNull
@@ -222,10 +224,9 @@ class CctvDataSource(
     /** Fintraffic's roadside weather cameras, as GeoJSON. */
     private fun finland(): List<GeoBlip> {
         val body = body("https://tie.digitraffic.fi/api/weathercam/v1/stations")
-            ?: return emptyList()
         val features = runCatching {
             json.parseToJsonElement(body).jsonObject["features"] as? JsonArray
-        }.getOrNull() ?: return emptyList()
+        }.getOrNull() ?: throw java.io.IOException("Fintraffic answered in an unexpected shape")
         return features.mapNotNull { el ->
             val o = el as? JsonObject ?: return@mapNotNull null
             val coords = (o["geometry"] as? JsonObject)?.get("coordinates") as? JsonArray
@@ -246,13 +247,25 @@ class CctvDataSource(
         }
     }
 
-    private fun body(url: String): String? {
+    /**
+     * The body, or a raised failure.
+     *
+     * It returned null for a refusal and the three network readers
+     * turned that null into an empty list — which `cached()` then
+     * stored and `near()` counted as an answer, so Transport for
+     * London 429ing read as "no public cameras in London". Now that
+     * an empty answer is cached for a backoff period, a false one
+     * would be held for thirty-six minutes.
+     */
+    private fun body(url: String): String {
         val request = Request.Builder().url(url)
             .header("User-Agent", "OSINT-Unified/1.0 (research)")
             .header("Accept", "application/json")
             .build()
         return client.newCall(request).execute().use { resp ->
-            if (!resp.isSuccessful) null else resp.body?.string()?.takeIf { it.isNotBlank() }
+            if (!resp.isSuccessful) throw java.io.IOException("HTTP ${resp.code} from $url")
+            resp.body?.string()?.takeIf { it.isNotBlank() }
+                ?: throw java.io.IOException("empty body from $url")
         }
     }
 

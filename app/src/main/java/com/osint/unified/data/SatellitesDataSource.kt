@@ -62,6 +62,10 @@ class SatellitesDataSource(
     suspend fun fetch(): List<GeoBlip> = withContext(Dispatchers.IO) {
         val now = System.currentTimeMillis()
         if (catalogue.isEmpty() || now - fetchedAt > CATALOGUE_TTL_MS) {
+            // empty-is-an-answer: an empty catalogue is never
+            // returned to the caller — fetch() throws below when the
+            // snapshot is empty, which is the whole of this source's
+            // honesty about an unreadable catalogue.
             val loaded = runCatching { loadCatalogue() }.getOrDefault(emptyList())
             if (loaded.isNotEmpty()) {
                 catalogue = loaded
@@ -91,6 +95,8 @@ class SatellitesDataSource(
         cache?.read(CACHE_KEY, CATALOGUE_TTL_MS)?.let { cached ->
             parseCatalogue(cached).takeIf { it.isNotEmpty() }?.let { return it }
         }
+        // empty-is-an-answer: as above — the empty list reaches
+        // fetch() and nowhere else, and fetch() raises on it.
         val body = fetchCatalogue() ?: cache?.readStale(CACHE_KEY) ?: return emptyList()
         val parsed = parseCatalogue(body)
         if (parsed.isNotEmpty()) cache?.write(CACHE_KEY, body)
@@ -117,6 +123,9 @@ class SatellitesDataSource(
 
     private fun parseCatalogue(body: String): List<Elements> {
         val arr = runCatching { json.parseToJsonElement(body) as? JsonArray }.getOrNull()
+            // empty-is-an-answer: as above — this reaches fetch(),
+            // which raises on an empty snapshot rather than
+            // asserting an empty sky.
             ?: return emptyList()
         val fmt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US)
             .apply { timeZone = TimeZone.getTimeZone("UTC") }
