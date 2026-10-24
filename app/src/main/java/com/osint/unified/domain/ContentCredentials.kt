@@ -106,11 +106,20 @@ object ContentCredentials {
         val jumbf = bytes.indexOfAscii("jumb") >= 0 || bytes.indexOfAscii("c2pa") >= 0
         val caBX = bytes.indexOfAscii("caBX") >= 0
 
+        // A generative assertion counts only inside a manifest.
+        //
+        // "algorithmicMedia" is a fragment of a real IPTC newscode and
+        // also a fragment of two English words with binary between
+        // them. On its own it is not evidence of anything, and
+        // "THIS FILE SAYS IT WAS MACHINE-GENERATED" is the strongest
+        // sentence this app prints about a picture — it does not get
+        // to rest on a substring.
+        val inManifest = jumbf || caBX || text.contains("digitalSourceType", true)
         MARKERS.forEach { (marker, meaning, meansGenerated) ->
-            if (text.contains(marker, ignoreCase = true)) {
-                findings.add(Finding(meaning, "C2PA manifest"))
-                if (meansGenerated) generated = true
-            }
+            if (!text.contains(marker, ignoreCase = true)) return@forEach
+            if (meansGenerated && !inManifest) return@forEach
+            findings.add(Finding(meaning, "C2PA manifest"))
+            if (meansGenerated) generated = true
         }
         GENERATORS.forEach { (needle, name) ->
             if (text.contains(needle, ignoreCase = true)) {
@@ -120,7 +129,15 @@ object ContentCredentials {
         PROMPT_KEYS.forEach { key ->
             // A PNG text chunk is the keyword, a NUL, then the value,
             // so the keyword appears on its own in the printable runs.
-            if (Regex("(^|\\W)$key\\u0000", RegexOption.IGNORE_CASE).containsMatchIn(text)) {
+            // The chunk type sits immediately before the keyword in a
+            // PNG — "tEXtparameters\u0000" — so a plain word boundary
+            // never matches and the first version of this found
+            // nothing at all.
+            val at = Regex(
+                "(?:^|[^A-Za-z0-9]|tEXt|iTXt|zTXt)" + Regex.escape(key) + "\\u0000",
+                RegexOption.IGNORE_CASE
+            )
+            if (at.containsMatchIn(text)) {
                 findings.add(
                     Finding("carries a \"$key\" text chunk, which generators use " +
                         "for the prompt and the settings", "PNG text chunk")
