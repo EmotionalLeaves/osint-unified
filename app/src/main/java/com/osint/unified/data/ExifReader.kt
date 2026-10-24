@@ -77,15 +77,30 @@ class ExifReader(
         }
     }
 
-    /** The tags worth reading, in the order they are worth reading them. */
+    /**
+     * The tags worth reading, in the order they are worth reading them.
+     *
+     * This is the gallery path, and it had the defect the URL path was
+     * fixed for and this one was not: `sb` was never empty, because the
+     * GPS line went in whatever happened, so `ifBlank` at the bottom was
+     * dead and a photograph with no EXIF block at all came back as
+     * "GPS: (none)" — the app stating it read the metadata and found no
+     * location, which is a different and stronger claim than having
+     * found no metadata. Classified HIT, counted among the sources that
+     * returned something.
+     *
+     * The same image through [fromUrl] said the true thing. Two paths,
+     * two opposite answers, five lines apart in one file.
+     */
     private fun describe(exif: ExifInterface): String {
         val sb = StringBuilder()
+        var readAnything = false
         val latLong = FloatArray(2)
-        if (exif.getLatLong(latLong)) {
+        val located = exif.getLatLong(latLong)
+        if (located) {
             sb.append("GPS: ${latLong[0]}, ${latLong[1]}\n")
             sb.append("Coordinates: ${latLong[0]},${latLong[1]}\n")
-        } else {
-            sb.append("GPS: (none)\n")
+            readAnything = true
         }
         mapOf(
             "Make" to ExifInterface.TAG_MAKE,
@@ -98,12 +113,25 @@ class ExifReader(
             "Copyright" to ExifInterface.TAG_COPYRIGHT,
             "Orientation" to ExifInterface.TAG_ORIENTATION
         ).forEach { (label, tag) ->
-            exif.getAttribute(tag)?.takeIf { it.isNotBlank() }?.let { sb.append("$label: $it\n") }
+            exif.getAttribute(tag)?.takeIf { it.isNotBlank() }?.let {
+                sb.append("$label: $it\n")
+                readAnything = true
+            }
         }
         val w = exif.getAttributeInt(ExifInterface.TAG_IMAGE_WIDTH, 0)
         val h = exif.getAttributeInt(ExifInterface.TAG_IMAGE_LENGTH, 0)
-        if (w > 0 && h > 0) sb.append("Dimensions: ${w}x$h\n")
-        return sb.toString().ifBlank { "No EXIF metadata found." }
+        if (w > 0 && h > 0) {
+            sb.append("Dimensions: ${w}x$h\n")
+            readAnything = true
+        }
+        if (!readAnything) {
+            return "No EXIF metadata in this image. The camera may have " +
+                "written none, or something along the way stripped it."
+        }
+        // Worth saying, but only once there is something for it to
+        // qualify. On its own it is the whole false claim.
+        if (!located) sb.append("GPS: (none)\n")
+        return sb.toString()
     }
 
     suspend fun fromUrl(url: String): String = withContext(Dispatchers.IO) {

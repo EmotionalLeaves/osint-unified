@@ -34,6 +34,47 @@ object Findings {
     const val STATUS_ABSENT = "absent"
     const val STATUS_UNREACHABLE = "unreachable"
 
+    /**
+     * The tool was cut off part-way and what it sent is a fragment.
+     *
+     * The backend returns a killed scan as HTTP 206 with a `PARTIAL:`
+     * first line, and its comment said the app "reads as an incomplete
+     * answer". The app did not: OkHttp's `isSuccessful` is `200..299`,
+     * so 206 was a success, and the prose matched nothing here either
+     * — "was stopped after 60000 ms" is not an unreachable phrase and
+     * carries no `no` in the first thirty-four characters. So forty of
+     * four hundred subdomains were stored as a complete set, which is
+     * the state the 206 was added to end.
+     *
+     * It is a HIT: forty real subdomains were found and they are worth
+     * having. What it must never become is an absence, and what it must
+     * never be read as is "and no others" — hence a status of its own
+     * rather than a sentence in the body that any of three readers can
+     * fail to notice.
+     */
+    const val STATUS_PARTIAL = "partial"
+
+    /** What the backend prefixes a cut-off body with. */
+    const val PARTIAL_MARKER = "PARTIAL:"
+
+    /** True when a body announces itself as a fragment. */
+    fun saysPartial(text: String): Boolean =
+        text.trimStart().startsWith(PARTIAL_MARKER, ignoreCase = true)
+
+    /**
+     * Statuses whose row holds an answer that a failed re-run must not
+     * destroy.
+     *
+     * Three places in the repository asked `status == "success"` to mean
+     * this, which is how adding a status quietly removes its protection.
+     * It also means an absence had none: a source that said no, re-run
+     * while the network was down, had the no overwritten with "could not
+     * reach" — losing the more useful of the two answers. An absence is
+     * a finding of record and keeps the same shelter a hit does.
+     */
+    fun holdsAnAnswer(status: String): Boolean =
+        status == "success" || status == STATUS_PARTIAL || status == STATUS_ABSENT
+
     /** Openings that mean the source looked and found nothing. */
     private val NOTHING = listOf(
         "no entry matching", "no registered legal entity", "no sanctioned entity",
@@ -197,7 +238,7 @@ object Findings {
      */
     private val NOTHING_SHAPE = Regex(
         "^[^;]{0,34}?\\b(?:no|not)\\b[^;:]{0,44}?\\b(?:" +
-            "record|records|data|result|results|match|matches|matched|" +
+            "record|records|data|metadata|result|results|match|matches|matched|" +
             "account|accounts|entry|entries|entity|entities|key|keys|" +
             "profile|profiles|repositor\\w*|filing|filings|photo|photos|" +
             "mention|mentions|transaction|transactions|scan|scans|activity|" +
@@ -225,6 +266,9 @@ object Findings {
             else -> Kind.HIT
         }
         STATUS_ABSENT -> Kind.ABSENT
+        // A fragment is still a finding. It is the completeness that is
+        // gone, not the content.
+        STATUS_PARTIAL -> Kind.HIT
         else -> Kind.UNREACHABLE
     }
 

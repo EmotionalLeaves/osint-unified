@@ -208,7 +208,7 @@ class InvestigationRepository(
         // destroyed the finding it was supposed to refresh. Evidence is not
         // deleted to make room for an attempt to re-collect it.
         val previous = resultDao.existing(investigationId, tool.id, input)
-        val rowId = if (previous != null && previous.status == "success") {
+        val rowId = if (previous != null && Findings.holdsAnAnswer(previous.status)) {
             previous.id
         } else {
             resultDao.insert(
@@ -240,7 +240,7 @@ class InvestigationRepository(
                 // A stopped re-run leaves the previous finding exactly as
                 // it was. Only a row that had nothing in it becomes
                 // "cancelled".
-                if (previous == null || previous.status != "success") {
+                if (previous == null || !Findings.holdsAnAnswer(previous.status)) {
                     resultDao.update(
                         ResultRow(
                             id = rowId,
@@ -293,6 +293,13 @@ class InvestigationRepository(
                     toolName = tool.name,
                     input = input,
                     status = when {
+                        // First, because it outranks every verdict below
+                        // it. A scan killed at sixty seconds having found
+                        // nothing yet is not an absence — it is a scan
+                        // that did not finish, and recording it as "this
+                        // source says no" is the worst answer the app can
+                        // give.
+                        Findings.saysPartial(raw) -> Findings.STATUS_PARTIAL
                         verdictUnreadable -> Findings.STATUS_UNREACHABLE
                         stated == Findings.Kind.ABSENT -> Findings.STATUS_ABSENT
                         stated == Findings.Kind.UNREACHABLE -> Findings.STATUS_UNREACHABLE
@@ -311,7 +318,7 @@ class InvestigationRepository(
                 // says that the refresh failed. Overwriting a finding with
                 // an error message is losing evidence to a dropped
                 // connection.
-                if (previous != null && previous.status == "success") {
+                if (previous != null && Findings.holdsAnAnswer(previous.status)) {
                     previous.copy(
                         errorMessage = "could not be refreshed " +
                             "(${err.message ?: err.javaClass.simpleName}); " +

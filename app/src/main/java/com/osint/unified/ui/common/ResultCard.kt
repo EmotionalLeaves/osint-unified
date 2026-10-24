@@ -163,6 +163,18 @@ fun ResultCard(row: ResultRow, onPivot: ((String) -> Unit)? = null) {
             // described the behaviour the app still had: a green
             // "found" with a timestamp, and the failed refresh
             // recorded and then dropped.
+            // Said here as well as in the body's first line, because the
+            // body is the part a reader skims and this is the part that
+            // decides what the rest of it means.
+            if (row.status == Findings.STATUS_PARTIAL) {
+                Text(
+                    "⚠ Cut off before it finished — what follows is a " +
+                        "fragment, not the whole answer.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Intel.Amber,
+                    modifier = Modifier.padding(top = 6.dp)
+                )
+            }
             if (!row.errorMessage.isNullOrBlank() && row.status != "error") {
                 Text(
                     "⚠ ${row.errorMessage}",
@@ -247,7 +259,11 @@ fun ResultCard(row: ResultRow, onPivot: ((String) -> Unit)? = null) {
                 }
             }
 
-            if (onPivot != null && row.status == "success") {
+            // A fragment's forty subdomains are forty real subdomains, and
+            // pivoting on one is the point of having them.
+            if (onPivot != null &&
+                (row.status == "success" || row.status == Findings.STATUS_PARTIAL)
+            ) {
                 val pivots = remember(row.id, row.rawOutput) {
                     ObservableExtractor.extract(row.rawOutput, row.input)
                 }
@@ -272,7 +288,11 @@ private const val RAW_PREVIEW_CHARS = 4_000
 
 /** Statuses that mean the source answered, whatever the answer was. */
 private val FINISHED_WITH_OUTPUT = setOf(
-    "success", Findings.STATUS_ABSENT, Findings.STATUS_UNREACHABLE
+    "success", Findings.STATUS_ABSENT, Findings.STATUS_UNREACHABLE,
+    // A fragment has a body to show, so it belongs here. Left out, the
+    // card would render the lines-are-empty path over a result that has
+    // forty lines.
+    Findings.STATUS_PARTIAL
 )
 
 /**
@@ -373,6 +393,7 @@ private fun StatusDot(status: String) {
         // absences looked like a dossier still loading.
         Findings.STATUS_ABSENT -> Intel.TextLow
         Findings.STATUS_UNREACHABLE -> Intel.Amber
+        Findings.STATUS_PARTIAL -> Intel.Amber
         "cancelled", "interrupted" -> Intel.TextLow
         else -> Intel.Amber
     }

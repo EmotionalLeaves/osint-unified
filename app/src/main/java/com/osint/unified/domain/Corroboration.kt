@@ -520,8 +520,14 @@ object Corroboration {
         if (leads > 0) parts.add("$leads uncorroborated")
         if (parts.isEmpty()) parts.add("nothing corroborated")
         if (wrong > 0) parts.add("$wrong marked wrong")
+        // Counted among the hits, because they returned something, and
+        // named separately, because "returned something" is all that can
+        // be said for them. A fragment supports what is in it and nothing
+        // about what is not.
+        val cutOff = results.count { it.status == Findings.STATUS_PARTIAL }
         return parts.joinToString(" · ") +
             " · ${sorted.hits.size} of ${results.size} sources returned something" +
+            (if (cutOff > 0) " · $cutOff cut off part-way" else "") +
             if (sorted.failed.isNotEmpty()) " · ${sorted.failed.size} unreachable" else ""
     }
 }

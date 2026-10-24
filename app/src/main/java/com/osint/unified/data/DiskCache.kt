@@ -1,6 +1,9 @@
 package com.osint.unified.data
 
 import android.content.Context
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import java.io.File
 
 /**
@@ -18,6 +21,25 @@ import java.io.File
 class DiskCache(private val context: Context) {
 
     private fun fileFor(name: String) = File(context.cacheDir, "feed-$name")
+
+    private val _trouble = MutableStateFlow<String?>(null)
+
+    /**
+     * Set when a write fails, cleared when the next one works.
+     *
+     * [write] was given a `Boolean` so that a full disk could not be
+     * invisible, and all six callers dropped it on the floor — which
+     * left the behaviour exactly as it had been, with a longer
+     * docstring. There is nothing useful a single caller can do with
+     * `false` anyway: the fetch succeeded, the data is good, the layer
+     * should draw. What is wrong is not this poll, it is that every
+     * poll from now on re-downloads seven and fourteen megabytes.
+     *
+     * So the answer is collected here instead, once, where a seventh
+     * caller is covered without being asked to remember, and said to
+     * the person paying for the data.
+     */
+    val trouble: StateFlow<String?> = _trouble.asStateFlow()
 
     /** The cached body if it exists and is younger than [maxAgeMs]. */
     fun read(name: String, maxAgeMs: Long): String? {
@@ -92,9 +114,12 @@ class DiskCache(private val context: Context) {
                 target.delete()
                 if (!tmp.renameTo(target)) throw java.io.IOException("could not replace $name")
             }
+            _trouble.value = null
             true
-        }.getOrElse {
+        }.getOrElse { why ->
             runCatching { tmp.delete() }
+            _trouble.value = why.message?.takeIf { it.isNotBlank() }
+                ?: why.javaClass.simpleName
             false
         }
     }

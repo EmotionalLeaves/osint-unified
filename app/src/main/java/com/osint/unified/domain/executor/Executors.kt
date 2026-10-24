@@ -65,6 +65,11 @@ class CloudToolExecutor(
 
     private val jsonMedia = "application/json; charset=utf-8".toMediaType()
 
+    private companion object {
+        /** Partial Content: the backend's word for a scan that was killed. */
+        const val HTTP_PARTIAL = 206
+    }
+
     override suspend fun execute(tool: Tool, input: String): Result<String> =
         withContext(Dispatchers.IO) {
             val base = settings.backendBaseUrl.trimEnd('/')
@@ -94,8 +99,26 @@ class CloudToolExecutor(
                     .build()
                 client.newCall(request).execute().use { resp ->
                     val text = resp.body?.string().orEmpty()
-                    if (resp.isSuccessful) Result.success(text)
-                    else Result.failure(IOException("HTTP ${resp.code}: ${text.take(300)}"))
+                    when {
+                        // 206 is the backend saying the tool was killed
+                        // part-way and this is a fragment. `isSuccessful`
+                        // is `200..299`, so it was a plain success and the
+                        // fragment was stored as a finished scan — the
+                        // thing the 206 was introduced to prevent, with
+                        // nothing on this side ever reading it.
+                        //
+                        // The marker is restated rather than trusted. The
+                        // status code is the contract; the first line is a
+                        // courtesy for whatever reads only the body, and a
+                        // courtesy a future handler can forget to send.
+                        resp.code == HTTP_PARTIAL -> Result.success(
+                            if (Findings.saysPartial(text)) text
+                            else "${Findings.PARTIAL_MARKER} ${tool.name} was stopped " +
+                                "before it finished. What follows is incomplete.\n" + text
+                        )
+                        resp.isSuccessful -> Result.success(text)
+                        else -> Result.failure(IOException("HTTP ${resp.code}: ${text.take(300)}"))
+                    }
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 // CancellationException extends IllegalStateException, so

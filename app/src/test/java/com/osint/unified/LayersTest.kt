@@ -2,6 +2,7 @@ package com.osint.unified
 
 import com.osint.unified.ui.godeye.Layers
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -59,7 +60,14 @@ class LayersTest {
     fun everyLayerHasWordsForTheAreaReport() {
         Layers.ALL.forEach {
             assertTrue(it.key, it.area.isNotBlank())
-            assertTrue(it.key, it.area != it.key)
+            // Not `area != key`, which failed a correct table:
+            // "volcanoes" is both the key and the right word for it.
+            // And not "no capitals" either — "US airport status" has
+            // two. The defect was an identifier reaching the page,
+            // which is the key reused when the key is not English:
+            // the area report printed `spaceWeather` at the person.
+            val echoesAnIdentifier = it.area == it.key && it.key.any { c -> c.isUpperCase() }
+            assertFalse(it.key, echoesAnIdentifier)
         }
     }
 

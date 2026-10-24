@@ -87,6 +87,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
+import com.osint.unified.OsintApplication
+import kotlinx.coroutines.flow.MutableStateFlow
 import com.osint.unified.BuildConfig
 import com.osint.unified.ui.theme.Intel
 import kotlin.math.ceil
@@ -1224,6 +1226,25 @@ fun GodEyeViewScreen(
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = Intel.Danger,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                )
+            }
+
+            // The one thing a broken cache does that the person can
+            // see on their bill. Two of these feeds are seven and
+            // fourteen megabytes, and an uncacheable one is fetched
+            // again on every poll for as long as the app is open.
+            val cacheTrouble by remember(context) {
+                (context.applicationContext as? OsintApplication)?.diskCache?.trouble
+                    ?: MutableStateFlow<String?>(null)
+            }.collectAsStateWithLifecycle()
+            cacheTrouble?.let { why ->
+                Text(
+                    "The feed cache cannot be written ($why). The large " +
+                        "feeds will be downloaded again on every refresh " +
+                        "until there is room for them.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Intel.Amber,
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
                 )
             }
