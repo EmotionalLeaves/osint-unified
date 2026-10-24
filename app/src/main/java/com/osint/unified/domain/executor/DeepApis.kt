@@ -109,7 +109,22 @@ class DeepApis(
     fun keybase(username: String): Result<String> = runCatching {
         val u = URLEncoder.encode(username, "UTF-8")
         val body = get("https://keybase.io/_/api/1.0/user/lookup.json?usernames=$u&fields=basics%2Cproofs_summary")
-        val them = json.parseToJsonElement(body).jsonObject["them"] as? JsonArray
+        val root = json.parseToJsonElement(body).jsonObject
+        // Keybase answers 200 for a refusal and says so in `status`.
+        //
+        // Probed 24 Oct: an input it will not accept comes back
+        // `{"status":{"code":100,"name":"INPUT_ERROR", …}}` with no
+        // `them` at all — and `them == null` was printed as
+        // "Keybase: no account named 'x'", which Findings reads as
+        // an established absence. Code 0 is OK and 205 is
+        // NOT_FOUND, which is the real absence.
+        val status = (root["status"] as? JsonObject)
+        val code = (status?.get("code") as? JsonPrimitive)?.intOrNull
+        if (code != null && code != 0 && code != 205) {
+            val name = status.str("name") ?: "code $code"
+            throw IOException("Keybase refused the lookup ($name)")
+        }
+        val them = root["them"] as? JsonArray
         val who = them?.firstOrNull() as? JsonObject
             ?: return@runCatching "Keybase: no account named '$username'."
         val sb = StringBuilder("Keybase — proven identities for '$username':\n")
@@ -752,7 +767,16 @@ class DeepApis(
     fun breaches(email: String): Result<String> = runCatching {
         val e = URLEncoder.encode(email.trim(), "UTF-8")
         val body = get("https://api.xposedornot.com/v1/check-email/$e")
-        val arr = json.parseToJsonElement(body).jsonObject["breaches"] as? JsonArray
+        val root = json.parseToJsonElement(body).jsonObject
+        // "Not found in any indexed public breach" is this app
+        // telling someone their address is clean. It must not be
+        // said because the service declined: XposedOrNot signals a
+        // bad input and a service error with an `Error` field at
+        // HTTP 200, and the field was never read.
+        root.str("Error")?.takeIf { !it.equals("Not found", ignoreCase = true) }?.let {
+            throw IOException("the breach index refused the lookup: $it")
+        }
+        val arr = root["breaches"] as? JsonArray
         val names = (arr?.firstOrNull() as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
             ?: emptyList()
         if (names.isEmpty()) return@runCatching "Breach check: $email not found in any indexed public breach."
@@ -1200,7 +1224,13 @@ class DeepApis(
         val rows = json.parseToJsonElement(
             get("https://api.ioda.inetintel.cc.gatech.edu/v2/outages/alerts?from=$from&until=$now&limit=120")
         ).jsonObject["data"] as? JsonArray
-        if (rows.isNullOrEmpty()) return@runCatching "IODA reports no internet outage alerts in the last 24 hours."
+        // Missing is not empty: IODA v2 wraps an error in the same
+        // envelope at 200, and "no internet outage alerts in the
+        // last 24 hours" is a statement about the whole world.
+            ?: throw IOException("IODA answered without a data block")
+        if (rows.isEmpty()) {
+            return@runCatching "IODA reports no internet outage alerts in the last 24 hours."
+        }
         val filter = input.trim().lowercase().takeIf { it.isNotBlank() && it != "osint" }
         val sb = StringBuilder("Internet outages — last 24 hours\n")
         val seen = LinkedHashMap<String, String>()
@@ -1307,6 +1337,21 @@ class DeepApis(
             "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&company=$q&type=&dateb=&owner=include&count=20&output=atom",
             agent
         )
+        // That it is the feed, before concluding anything from not
+        // finding things in it.
+        //
+        // Nothing checked. The three regexes below simply find
+        // nothing in an HTML page, and EDGAR serves its throttle and
+        // automated-tool notices as HTML — so a request SEC had
+        // declined came out as "No registrant matched 'Acme
+        // Holdings' in SEC EDGAR", which Findings reads as an
+        // established absence about a company.
+        if (!xml.contains("<feed", ignoreCase = true)) {
+            throw IOException(
+                "SEC EDGAR did not return its Atom feed — it may be throttling " +
+                    "this request"
+            )
+        }
         val sb = StringBuilder("SEC EDGAR — '$name'\n")
         // Each registrant read out of its own entry.
         //

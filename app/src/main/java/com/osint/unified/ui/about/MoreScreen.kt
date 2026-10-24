@@ -82,6 +82,18 @@ fun MoreScreen(
     }
     val encrypted = storage.first
     val storageNote = storage.second
+    // The published-key warning, which was written, imported here,
+    // and never called.
+    //
+    // The whole of SigningIdentity exists to say that the sealing
+    // this panel describes assumes nobody else can produce an app
+    // with the same identity — and that stopped being true when
+    // this project's signing key was committed to a public
+    // repository with its password in the build file. The check was
+    // there and the sentence was never shown.
+    val signing by produceState(initialValue = SigningIdentity.Verdict.UNKNOWN, context) {
+        value = withContext(Dispatchers.IO) { SigningIdentity.verdict(context) }
+    }
 
     Scaffold(
         containerColor = Intel.Base,
@@ -165,6 +177,28 @@ fun MoreScreen(
                     color = Intel.TextLow,
                     modifier = Modifier.padding(top = 6.dp)
                 )
+                when (signing) {
+                    SigningIdentity.Verdict.PUBLISHED -> Text(
+                        "This copy is signed with a key that is published, so " +
+                            "the sealing above is worth less than it sounds: " +
+                            "anyone can build an app with the same identity, " +
+                            "install it as an update and unseal the key. Treat " +
+                            "the encryption as protection against a lost phone, " +
+                            "not against someone who has it.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Intel.Amber,
+                        modifier = Modifier.padding(top = 6.dp)
+                    )
+                    SigningIdentity.Verdict.UNKNOWN -> Text(
+                        "This build's signature could not be read, so whether " +
+                            "it was signed with the published key is unknown. " +
+                            "It is not an all-clear.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Intel.Amber,
+                        modifier = Modifier.padding(top = 6.dp)
+                    )
+                    SigningIdentity.Verdict.OTHER -> Unit
+                }
             }
 
             Spacer(Modifier.height(16.dp))

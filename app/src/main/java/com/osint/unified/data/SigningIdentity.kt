@@ -23,9 +23,41 @@ import java.security.MessageDigest
  */
 object SigningIdentity {
 
+    /** What this build's signature turned out to be. */
+    enum class Verdict {
+        /** Signed with the key that was published. Say so. */
+        PUBLISHED,
+
+        /** Signed with something else. The sealing assumption holds. */
+        OTHER,
+
+        /**
+         * The signature could not be read at all.
+         *
+         * A `Boolean` could not say this, and the one job of this
+         * file is to warn that the database encryption is worthless
+         * — so when it could not establish the answer it printed
+         * the reassuring one. `getPackageInfo` throws
+         * `NameNotFoundException`, `signingInfo` comes back null and
+         * the signer array comes back null on OEM ROMs, every one of
+         * which became `false`, which is "not signed with a
+         * published key". Failing open, in the warning.
+         */
+        UNKNOWN
+    }
+
+    fun verdict(context: Context): Verdict {
+        val mine = fingerprint(context) ?: return Verdict.UNKNOWN
+        return if (mine.equals(BuildConfig.PUBLIC_KEY_SHA256, ignoreCase = true)) {
+            Verdict.PUBLISHED
+        } else {
+            Verdict.OTHER
+        }
+    }
+
     /** True when this copy is signed with the key that is public. */
     fun signedWithAPublishedKey(context: Context): Boolean =
-        fingerprint(context)?.equals(BuildConfig.PUBLIC_KEY_SHA256, ignoreCase = true) == true
+        verdict(context) == Verdict.PUBLISHED
 
     /** The SHA-256 of this app's signing certificate, lower-case hex. */
     fun fingerprint(context: Context): String? = runCatching {
@@ -35,9 +67,20 @@ object SigningIdentity {
                 context.packageName, PackageManager.GET_SIGNING_CERTIFICATES
             )
             val signing = info.signingInfo ?: return@runCatching null
-            val signers = if (signing.hasMultipleSigners()) signing.apkContentsSigners
-            else signing.signingCertificateHistory
-            signers?.firstOrNull()?.toByteArray() ?: return@runCatching null
+            // apkContentsSigners on both branches: it is what signed
+            // THIS apk, which is the question.
+            //
+            // The else branch read signingCertificateHistory, which
+            // is the rotation history oldest-first — so after the
+            // remedy this file documents, `firstOrNull()` returns
+            // the published certificate and the app would have
+            // reported the warning for ever. The doc says the
+            // opposite: "when the key is rotated this reports
+            // nothing and needs no further change."
+            val signers = signing.apkContentsSigners
+                ?.takeIf { it.isNotEmpty() }
+                ?: signing.signingCertificateHistory
+            signers?.lastOrNull()?.toByteArray() ?: return@runCatching null
         } else {
             @Suppress("DEPRECATION")
             val info = packages.getPackageInfo(context.packageName, PackageManager.GET_SIGNATURES)
