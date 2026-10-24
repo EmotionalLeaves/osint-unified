@@ -1061,7 +1061,7 @@ whole of the view-model's search bookkeeping.
 - **O2. Search as the spine** — r20: the box now says what it will do before it does it ("Reads as EMAIL · asks 23 sources · usually 1.2 MB", from the same first-wave filter the search runs), and an empty box offers the last six targets as pills that reopen the stored case without spending data. (was C8, I1). The globe is the entry
   point and search is a box on it; the tester's "none of the search
   features really worked" is partly that.
-- **O3. The subscribe half of the briefing** (was G2). Scheduled
+- **O3. The subscribe half of the briefing** — r20: topic watches. FOLLOW on the Watch screen; each background check collects GDELT (1 day) and Google News RSS, keeps 600 headline keys, reports only unseen coverage under 48 h old, clustered into stories with outlet counts, into the dated watch log and a notification. First check is a stated baseline, not "new". TopicNews + 10 tests. Still open: analyst notes attached to a dated briefing. (was G2). Scheduled
   collection into the watch worker, clustering across collections
   rather than within one query, RSS beside GDELT, and a dated
   briefing with the analyst's notes attached. Worth much more now

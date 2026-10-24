@@ -233,6 +233,65 @@ fun WatchScreen(
                 )
             }
 
+            // Following a subject: the subscribe half of the briefing.
+            // Each check collects what GDELT and Google News carry on
+            // it, and reports only coverage it has not reported before,
+            // grouped into stories.
+            var topic by remember { mutableStateOf("") }
+            var topicNote by remember { mutableStateOf<String?>(null) }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
+            ) {
+                androidx.compose.material3.OutlinedTextField(
+                    value = topic,
+                    onValueChange = { topic = it; topicNote = null },
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodySmall,
+                    placeholder = {
+                        Text("follow a topic in the news — e.g. Sudan, drone strike", style = MaterialTheme.typography.labelSmall)
+                    },
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                        imeAction = androidx.compose.ui.text.input.ImeAction.Done
+                    ),
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(Modifier.width(8.dp))
+                val canFollow = topic.trim().length >= 2
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(7.dp))
+                        .background(if (canFollow) Intel.Cyan else Intel.Elevated)
+                        .clickable(enabled = canFollow) {
+                            val t = topic.trim()
+                            scope.launch {
+                                val added = runCatching { repository.addTopic(t) }.getOrDefault(false)
+                                topicNote = if (added) {
+                                    "Following \u201c$t\u201d. The first check notes what is out there now; " +
+                                        "after that, only new coverage is reported."
+                                } else {
+                                    "\u201c$t\u201d is already watched."
+                                }
+                                if (added) {
+                                    topic = ""
+                                    // So the baseline is taken now, not in six hours.
+                                    repository.checkAllDetached()
+                                }
+                            }
+                        }
+                        .padding(horizontal = 12.dp, vertical = 9.dp)
+                ) {
+                    Text(
+                        "FOLLOW",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (canFollow) Intel.Base else Intel.TextLow
+                    )
+                }
+            }
+            topicNote?.let {
+                Text(it, style = MaterialTheme.typography.labelSmall, color = Intel.TextMid, modifier = Modifier.padding(top = 4.dp))
+            }
+
             trouble?.let { why ->
                 Text(
                     "The last check did not finish: $why",
@@ -247,7 +306,8 @@ fun WatchScreen(
             if (list.isEmpty()) {
                 Text(
                     "Nothing watched yet. Open a dossier and tap WATCH to have " +
-                        "the app keep checking that target on its own.",
+                        "the app keep checking that target on its own, or follow a " +
+                        "topic above to be told about new coverage of it.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = Intel.TextMid,
                     modifier = Modifier.padding(top = 20.dp)

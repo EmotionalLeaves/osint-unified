@@ -10,6 +10,7 @@ import com.osint.unified.domain.Findings
 import com.osint.unified.domain.Observable
 import com.osint.unified.domain.ObservableRouter
 import com.osint.unified.domain.Tool
+import com.osint.unified.domain.TopicNews
 import com.osint.unified.domain.executor.ExecutorFactory
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
@@ -83,6 +84,16 @@ class WatchRepository(
     suspend fun add(observable: Observable): Boolean = dao.insert(
         Watch(observable = observable.raw, observableType = observable.typeLabel)
     ) != -1L
+
+    /**
+     * Follow a subject in the news rather than a target. True when this
+     * added it; false when that text is already watched.
+     */
+    suspend fun addTopic(topic: String): Boolean {
+        val t = topic.trim()
+        if (t.isEmpty()) return false
+        return dao.insert(Watch(observable = t, observableType = TOPIC)) != -1L
+    }
 
     suspend fun remove(id: Long) = dao.delete(id)
 
@@ -164,6 +175,7 @@ class WatchRepository(
 
     /** One target. Returns a description if something changed, else null. */
     private suspend fun check(watch: Watch): Change? {
+        if (watch.observableType == TOPIC) return checkTopic(watch)
         val observable = router.classify(watch.observable)
         // Passive only, always. A watch runs by itself, four times a day,
         // with nobody there to decide anything — so it is the last place
@@ -303,6 +315,87 @@ class WatchRepository(
     }
 
     /**
+     * A topic: collect, keep only what has not been reported, say it as
+     * stories.
+     *
+     * The digest is the remembered headline keys, newest first. A source
+     * that did not answer is left out of this round and nothing is
+     * concluded from its silence; if neither answered, the attempt is
+     * recorded and nothing is reported, as with a target.
+     */
+    private suspend fun checkTopic(watch: Watch): Change? = withContext(Dispatchers.IO) {
+        val topic = watch.observable
+        val now = System.currentTimeMillis()
+        val q = java.net.URLEncoder.encode(topic, "UTF-8")
+        val sources = listOf(
+            "https://api.gdeltproject.org/api/v2/doc/doc?query=$q" +
+                "&mode=artlist&format=json&maxrecords=75&sort=datedesc&timespan=1d"
+                to TopicNews::parseGdelt,
+            "https://news.google.com/rss/search?q=$q&hl=en-US&gl=US&ceid=US:en"
+                to TopicNews::parseGoogleRss
+        )
+        var answered = 0
+        val fresh = ArrayList<com.osint.unified.domain.StoryClusters.Article>()
+        sources.forEach { (url, parse) ->
+            val got = runCatching { parse(fetchText(url)) }
+            got.exceptionOrNull()?.let { if (it is CancellationException) throw it }
+            got.getOrNull()?.let { answered++; fresh += it }
+        }
+        if (answered == 0) {
+            dao.update(
+                watch.copy(
+                    lastCheckedAt = now, checks = watch.checks + 1,
+                    lastAnswered = 0, lastAsked = sources.size
+                )
+            )
+            return@withContext null
+        }
+        val previous = watch.digest.lineSequence().filter { it.isNotBlank() }.toList()
+        val memory = TopicNews.remember(previous, TopicNews.keysOf(fresh))
+        val base = watch.copy(
+            digest = memory.joinToString("\n"),
+            lastCheckedAt = now,
+            checks = watch.checks + 1,
+            lastAnswered = answered,
+            lastAsked = sources.size
+        )
+        // The first check has nothing to compare with. It says what it
+        // saw, on the row, and reports nothing as new.
+        if (previous.isEmpty()) {
+            dao.update(base.copy(lastChange = TopicNews.baseline(topic, fresh), lastChangeAt = now))
+            return@withContext null
+        }
+        val unseen = TopicNews.unseen(fresh, previous.toHashSet(), now)
+        val description = TopicNews.describe(topic, unseen.values.toList())
+        if (description == null) {
+            dao.update(base)
+            return@withContext null
+        }
+        dao.update(base.copy(lastChange = description, lastChangeAt = now))
+        events.insert(
+            WatchEvent(
+                watchId = watch.id,
+                at = now,
+                summary = description,
+                appeared = "",
+                vanished = "",
+                altered = ""
+            )
+        )
+        events.trim(watch.id, 100)
+        Change(watch.id, topic, description)
+    }
+
+    /** A body, or an exception: a refusal is never an empty page. */
+    private fun fetchText(url: String): String {
+        val request = okhttp3.Request.Builder().url(url).build()
+        return com.osint.unified.network.Http.client.newCall(request).execute().use { resp ->
+            if (!resp.isSuccessful) throw java.io.IOException("HTTP ${resp.code} from ${resp.request.url.host}")
+            resp.body?.string() ?: throw java.io.IOException("no body from ${resp.request.url.host}")
+        }
+    }
+
+    /**
      * What one round of checking produced.
      *
      * [answered] is every source that replied at all; [found] is the subset
@@ -407,6 +500,9 @@ class WatchRepository(
      * answer's diff is partial, which is why [WatchDigest.describe]
      * never claims the list it prints is complete.
      */
+    // empty-is-an-answer: an empty set here means "detail not known",
+    // and check() reads it that way — it skips the diff rather than
+    // reporting everything as new. No absence is claimed from it.
     private fun entitiesIn(toolId: String, output: String, seed: String): Set<String> =
         runCatching {
             com.osint.unified.domain.EntityExtractor.extract(
@@ -445,7 +541,10 @@ class WatchRepository(
         MessageDigest.getInstance("SHA-1").digest(s.toByteArray())
             .joinToString("") { "%02x".format(it) }.take(16)
 
-    private companion object {
+    companion object {
+        /** The watch type of a followed subject, as opposed to a target. */
+        const val TOPIC = "Topic"
+
         /** Enough for a meaningful picture; few enough to run unattended. */
         const val TOOLS_PER_CHECK = 10
         const val TOOL_TIMEOUT_MS = 30_000L
