@@ -7,6 +7,7 @@ import com.osint.unified.domain.ExecutionMode
 import com.osint.unified.domain.Findings
 import com.osint.unified.domain.Tool
 import com.osint.unified.network.Http
+import com.osint.unified.network.Http.text
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.Dispatchers
@@ -781,7 +782,10 @@ class DirectToolExecutor(
                                 skipped = "HTTP ${resp.code}"
                                 null
                             } else {
-                                resp.body?.string()
+                                // Twenty endpoints in parallel, each
+                                // pointed at a different directory's
+                                // idea of a response size.
+                                resp.body?.text()
                             }
                         }
                     }.getOrElse {

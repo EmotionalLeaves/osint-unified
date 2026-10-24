@@ -1,6 +1,7 @@
 package com.osint.unified.domain.executor
 
 import com.osint.unified.network.Http
+import com.osint.unified.network.Http.text
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -1108,7 +1109,13 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
             .header("User-Agent", agentFor(url, ua)).build()
         val c = if (patient) com.osint.unified.network.Http.slowApiClient else client
         c.newCall(request).execute().use { resp ->
-            val body = resp.body?.string().orEmpty()
+            // Bounded. These go to whatever the user typed, and
+            // body.string() reads all of it: a certificate
+            // transparency query for a large domain is tens of
+            // megabytes, and a URL that turns out to be a video is
+            // however long the video is. The connection closes at
+            // the limit, so the rest never crosses the network.
+            val body = resp.body?.text().orEmpty()
             if (!resp.isSuccessful) throw IOException("HTTP ${resp.code}")
             return body
         }

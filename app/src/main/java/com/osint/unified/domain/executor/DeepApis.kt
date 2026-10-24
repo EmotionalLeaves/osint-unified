@@ -2,6 +2,7 @@ package com.osint.unified.domain.executor
 
 import com.osint.unified.data.Freshness
 import com.osint.unified.network.Http
+import com.osint.unified.network.Http.text
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -2305,7 +2306,9 @@ class DeepApis(
                 .header("Accept", "application/json, text/html;q=0.9, */*;q=0.8")
                 .build()
             client.newCall(request).execute().use { resp ->
-                val body = resp.body?.string().orEmpty()
+                // Bounded, like the other tool clients: the target
+                // here is whatever was typed in.
+                val body = resp.body?.text().orEmpty()
                 if (resp.isSuccessful) return body
                 last = IOException("HTTP ${resp.code}")
                 // A 4xx is an answer; only a 5xx is worth asking again.

@@ -397,4 +397,46 @@ object Http {
             .callTimeout(180, TimeUnit.SECONDS)
             .build()
     }
+
+    /**
+     * How much of a response body an investigation tool will read.
+     *
+     * Every one of them called `body.string()`, which reads the
+     * whole thing into memory however large it is. A certificate
+     * transparency query for a large domain is tens of megabytes; a
+     * URL that turns out to be a video is however long the video
+     * is; and a tool pointed at the wrong thing downloads all of it
+     * before discovering that. On a phone that is somebody's data
+     * allowance, and on a big enough body it is the process.
+     *
+     * Four megabytes is far more than any of these endpoints
+     * legitimately returns, and the connection is closed as soon as
+     * it is reached, so the rest is never transferred.
+     */
+    const val MAX_BODY_BYTES = 4L * 1024 * 1024
+
+    /**
+     * The body, up to a limit, with the rest left on the wire.
+     *
+     * Reads at most one byte past the limit so the caller can tell
+     * that there was more. A multi-byte character split exactly at
+     * the boundary comes back as a replacement character, which is
+     * the last character of a body already being truncated.
+     */
+    fun ResponseBody.text(limit: Long = MAX_BODY_BYTES): String {
+        val src = source()
+        // Fills the buffer up to the limit, or to the end of the
+        // body if that comes first. The return value says which,
+        // and either way nothing past this is downloaded.
+        src.request(limit + 1)
+        val held = src.buffer
+        val take = minOf(held.size, limit)
+        val text = held.readUtf8(take)
+        return if (held.size > 0) {
+            text + "\n…truncated at ${limit / (1024 * 1024)} MB by this app, " +
+                "not by the source."
+        } else {
+            text
+        }
+    }
 }
