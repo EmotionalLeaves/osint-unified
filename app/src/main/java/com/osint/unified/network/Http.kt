@@ -423,7 +423,7 @@ object Http {
      * the boundary comes back as a replacement character, which is
      * the last character of a body already being truncated.
      */
-    fun ResponseBody.text(limit: Long = MAX_BODY_BYTES): String {
+    fun ResponseBody.bodyText(limit: Long = MAX_BODY_BYTES): String {
         val src = source()
         // Fills the buffer up to the limit, or to the end of the
         // body if that comes first. The return value says which,

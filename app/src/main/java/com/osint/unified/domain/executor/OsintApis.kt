@@ -1,7 +1,7 @@
 package com.osint.unified.domain.executor
 
 import com.osint.unified.network.Http
-import com.osint.unified.network.Http.text
+import com.osint.unified.network.Http.bodyText
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -1115,7 +1115,7 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
             // megabytes, and a URL that turns out to be a video is
             // however long the video is. The connection closes at
             // the limit, so the rest never crosses the network.
-            val body = resp.body?.text().orEmpty()
+            val body = resp.body?.bodyText().orEmpty()
             if (!resp.isSuccessful) throw IOException("HTTP ${resp.code}")
             return body
         }

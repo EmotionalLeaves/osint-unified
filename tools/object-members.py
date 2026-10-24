@@ -23,7 +23,13 @@ MEMBER = re.compile(
     r"^\s*(?:@\w+(?:\([^)]*\))?\s+)*"
     r"(?:private\s+|internal\s+|public\s+|const\s+|override\s+|lateinit\s+|inline\s+"
     r"|data\s+|sealed\s+|value\s+|abstract\s+|open\s+|enum\s+|annotation\s+|suspend\s+)*"
-    r"(?:val|var|fun|object|class|interface|typealias)\s+(?:<[^>]*>\s*)?([A-Za-z_][A-Za-z0-9_]*)",
+    r"(?:val|var|fun|object|class|interface|typealias)\s+(?:<[^>]*>\s*)?"
+    # An extension member declared inside the object — `fun
+    # ResponseBody.bodyText()` — is named bodyText, not
+    # ResponseBody. Capturing the first identifier recorded it
+    # under the receiver's name, so every use of the real name was
+    # reported as a member that does not exist.
+    r"(?:[A-Za-z_][A-Za-z0-9_]*(?:<[^>]*>)?\.)?([A-Za-z_][A-Za-z0-9_]*)",
     re.M,
 )
 

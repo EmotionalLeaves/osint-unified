@@ -1,7 +1,7 @@
 package com.osint.unified.domain.executor
 
 import com.osint.unified.network.Http
-import com.osint.unified.network.Http.text
+import com.osint.unified.network.Http.bodyText
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -496,7 +496,7 @@ class HandleApis(
             .header("Accept", "application/json")
             .build()
         client.newCall(request).execute().use { resp ->
-            val body = resp.body?.text().orEmpty()
+            val body = resp.body?.bodyText().orEmpty()
             if (resp.code == 404 || resp.code == 410) return null
             if (!resp.isSuccessful) throw IOException("HTTP ${resp.code}")
             return body

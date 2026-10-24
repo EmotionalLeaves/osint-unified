@@ -2,7 +2,7 @@ package com.osint.unified.domain.executor
 
 import com.osint.unified.domain.PersonName
 import com.osint.unified.network.Http
-import com.osint.unified.network.Http.text
+import com.osint.unified.network.Http.bodyText
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.json.Json
@@ -418,7 +418,7 @@ class PeopleApis(
             .header("Accept", "application/json")
             .build()
         client.newCall(request).execute().use { resp ->
-            val body = resp.body?.text().orEmpty()
+            val body = resp.body?.bodyText().orEmpty()
             if (!resp.isSuccessful) throw IOException("HTTP ${resp.code}")
             return body
         }

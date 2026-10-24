@@ -7,7 +7,7 @@ import com.osint.unified.domain.ExecutionMode
 import com.osint.unified.domain.Findings
 import com.osint.unified.domain.Tool
 import com.osint.unified.network.Http
-import com.osint.unified.network.Http.text
+import com.osint.unified.network.Http.bodyText
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.Dispatchers
@@ -58,12 +58,7 @@ interface ToolExecutor {
  */
 class CloudToolExecutor(
     private val settings: AppSettings,
-    private val client: OkHttpClient = Http.client,
-    /** Last, and defaulted: the positional callers pass four
-     *  arguments and a parameter added in the middle of the list
-     *  silently re-binds every one of them. */
-    private val imageText: com.osint.unified.data.ImageText =
-        com.osint.unified.data.ImageText(appContext)
+    private val client: OkHttpClient = Http.client
 ) : ToolExecutor {
 
     private val jsonMedia = "application/json; charset=utf-8".toMediaType()
@@ -278,7 +273,13 @@ class DirectToolExecutor(
     /** Held, not rebuilt: it owns a six-hour inventory cache. */
     private val cctv: com.osint.unified.data.CctvDataSource =
         com.osint.unified.data.CctvDataSource(),
-    private val client: OkHttpClient = Http.client
+    private val client: OkHttpClient = Http.client,
+    /** Last, and defaulted: a parameter added in the middle of this
+     *  list silently re-binds every positional argument its one
+     *  caller passes, which is how the first attempt at this put it
+     *  on the wrong executor. */
+    private val imageText: com.osint.unified.data.ImageText =
+        com.osint.unified.data.ImageText(appContext)
 ) : ToolExecutor {
 
     /** One endpoint directoryRun tried, and what came of it. */
@@ -884,7 +885,7 @@ class DirectToolExecutor(
                                 // Twenty endpoints in parallel, each
                                 // pointed at a different directory's
                                 // idea of a response size.
-                                resp.body?.text()
+                                resp.body?.bodyText()
                             }
                         }
                     }.getOrElse {
