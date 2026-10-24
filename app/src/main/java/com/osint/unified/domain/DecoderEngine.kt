@@ -4,7 +4,10 @@ import android.util.Base64
 import java.net.URLDecoder
 import java.net.URLEncoder
 import java.security.MessageDigest
-import java.util.Date
+import java.time.Instant
+import java.time.ZoneId
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 
 /** CyberChef-style on-device data transforms. Pure, synchronous, no network. */
 object DecoderEngine {
@@ -119,9 +122,46 @@ object DecoderEngine {
         return "Header: ${b64url(parts[0])}\nPayload: ${b64url(parts[1])}"
     }
 
+    /**
+     * A Unix timestamp, read in both units and said in both zones.
+     *
+     * Three things were wrong with the one line this replaces. A
+     * negative number — which is a real timestamp, before 1970 —
+     * went through the seconds branch and `n * 1000` overflowed
+     * silently into a date somewhere else entirely. Any number at
+     * all produced a date, including ones no clock could mean, so
+     * there was no way to tell a timestamp from a phone number.
+     * And Date.toString() is the device's own zone with no label,
+     * which for the one field in an investigation where the zone
+     * decides whether two events are the same event is not enough.
+     */
     private fun parseTimestamp(input: String): String {
         val n = input.trim().toLongOrNull() ?: return "Not a number"
-        val millis = if (n > 9_999_999_999L) n else n * 1000
-        return Date(millis).toString()
+        // Ten digits or fewer is seconds, more is milliseconds — the
+        // boundary being that seconds will not reach eleven digits
+        // until the year 5138.
+        val seconds = n in -99_999_999_999L..9_999_999_999L
+        val millis = if (seconds) n * 1000 else n
+        val at = runCatching { Instant.ofEpochMilli(millis) }.getOrNull()
+        if (at == null || at.isBefore(FLOOR) || at.isAfter(CEILING)) {
+            return "Out of range for a Unix timestamp: $n read as " +
+                (if (seconds) "seconds" else "milliseconds") +
+                " is not a date between 1800 and 2200."
+        }
+        return buildString {
+            append("Read as ").append(if (seconds) "seconds" else "milliseconds").append("\n")
+            append("UTC:   ").append(ISO.format(at)).append("\n")
+            append("Local: ").append(LOCAL.format(at)).append(" (")
+            append(ZoneId.systemDefault()).append(")")
+        }
     }
+
+    private val FLOOR: Instant = Instant.parse("1800-01-01T00:00:00Z")
+    private val CEILING: Instant = Instant.parse("2200-01-01T00:00:00Z")
+    private val ISO: DateTimeFormatter =
+        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss 'UTC'")
+            .withZone(ZoneOffset.UTC)
+    private val LOCAL: DateTimeFormatter =
+        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+            .withZone(ZoneId.systemDefault())
 }
