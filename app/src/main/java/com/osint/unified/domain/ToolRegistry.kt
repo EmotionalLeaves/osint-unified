@@ -50,7 +50,7 @@ object ToolRegistry {
      * toolrun is deliberately not here: it runs the directory
      * rather than printing it.
      */
-    val LINK_LISTS = setOf("framework", "dorks", "websearch", "reverseimage")
+    val LINK_LISTS = setOf("framework", "dorks", "reverseimage")
 
     val all: List<Tool> get() = graded
 
@@ -591,9 +591,25 @@ object ToolRegistry {
         // F — directories and search pages. These are places to look, not
         // sources that said anything, and they are graded as what they
         // are rather than left to look like findings.
-        listOf("framework", "toolrun", "dorks", "websearch").forEach {
+        listOf("framework", "toolrun", "dorks").forEach {
             put(it, Grading.Reliability.UNJUDGED)
         }
+
+        // websearch was in that list and is not one of them.
+        //
+        // It was swept in with the directories because of its name.
+        // It fetches the DuckDuckGo instant-answer abstract and up to
+        // eight Wikipedia articles with their snippets, and emits no
+        // search-engine links at all — so a fetching source was being
+        // force-classified as an absence and graded F, in the email,
+        // username, phone, wallet, aircraft and person lists: six of
+        // the twelve types, each losing a real source from its
+        // findings. C, because it is a third party reporting what it
+        // holds, and it stays in QUOTES_OTHERS because a Wikipedia
+        // snippet is somebody else's page and mining it for
+        // identifiers is how a dossier acquires facts about a
+        // different person of the same name.
+        put("websearch", Grading.Reliability.FAIRLY)
     }
 
     /** Every tool, carrying the grade the table above gives it. */

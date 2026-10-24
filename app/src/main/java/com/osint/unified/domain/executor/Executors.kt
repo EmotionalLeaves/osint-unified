@@ -395,10 +395,17 @@ class DirectToolExecutor(
                         Findings.Kind.UNREACHABLE else null
                 }
             }
-            "framework", "dorks", "websearch", "reverseimage" ->
+            "framework", "dorks", "reverseimage" ->
                 // These are lists of places to look, not findings about the
                 // target. Counting them as hits inflated every dossier.
                 Findings.Kind.ABSENT
+            // websearch was in that list and does not belong in it
+            // either: it fetches an abstract and up to eight articles
+            // and prints what they say. Its own two sentences decide.
+            "websearch" -> when {
+                starts("No web/wiki results for") -> Findings.Kind.ABSENT
+                else -> null
+            }
             // toolrun was in that list and does not belong in it.
             //
             // It is the one tool that takes the curated directory and
