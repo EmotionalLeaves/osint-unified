@@ -774,6 +774,27 @@ whole of the view-model's search bookkeeping.
   avoids. Blocked until a coordinate-bearing endpoint is found.
   Separately: a tap that opens the stream rather than a link —
   Wisconsin's records carry an HLS `videoUrl`.
+
+  **Probed again 24 Oct and still blocked.** Ten more candidates:
+  Alberta 511 answers `{"Message":"Invalid Key"}`; 511NY, Idaho's
+  511 host and 511 Virginia all serve a single-page application
+  rather than their data; `opendata.ndw.nu` and `wsdot.wa.gov` are
+  portals; Baden-Württemberg's camera JSON has moved; Trafficscotland's
+  RSS is a 404; police.uk sits behind Cloudflare. No keyless,
+  coordinate-bearing camera inventory has turned up in two sessions
+  of looking, and it is time to stop looking for one every round.
+
+  What the same probes did find, keyless and coordinate-bearing, is
+  recorded here rather than lost:
+  - **Sveriges Radio traffic messages** —
+    `api.sr.se/api/v2/traffic/messages?format=json`, live incidents
+    across Sweden, each with a latitude. A real "what is happening
+    now" layer for one country.
+  - **IRCEL-CELINE** — `geo.irceline.be/sos/api/v1/stations`,
+    Belgian air-quality stations as GeoJSON. Marginal, since
+    Open-Meteo already covers air quality worldwide.
+  - **NWS radar stations** — `api.weather.gov/radar/stations`, a
+    GeoJSON FeatureCollection. An inventory, not an event feed.
 - **O5. The rest of B3.** Probed 24 Oct, all keyless, all answering:
   - **GitHub commit search by author-email** — works and *filters*.
     `/search/commits?q=author-email%3A<addr>` returns real commits for
