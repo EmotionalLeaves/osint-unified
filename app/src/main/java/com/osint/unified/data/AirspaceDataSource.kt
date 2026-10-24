@@ -27,7 +27,11 @@ import okhttp3.Request
 class AirspaceDataSource(
     private val client: OkHttpClient = Http.feedClient,
     private val ground: MilitaryAreasDataSource = MilitaryAreasDataSource()
-) {
+) : PartlyAnswered {
+
+    @Volatile override var lastGaps: String? = null
+        private set
+
 
     /**
      * Restricted airspace where there is a source for it, and military
@@ -50,6 +54,16 @@ class AirspaceDataSource(
         val faa = if (inUsAirspace(lat, lon)) runCatching { fetch() } else null
         val attempts = listOfNotNull(mapped, faa)
         val merged = attempts.flatMap { it.getOrDefault(emptyList()) }
+        // As in CctvDataSource: Overpass answering an honest empty
+        // while the FAA service refuses is not a total failure, and
+        // reporting it as an established zero put `MIL GROUND 0` and
+        // a loaded tick over the Nellis range with the only source
+        // that covers it refused. The gap is carried, not raised.
+        lastGaps = gapsFrom(
+            attempts.size,
+            attempts.filter { it.isFailure }.map { it.exceptionOrNull() },
+            "airspace sources"
+        )
         // Only a failure is a failure. An area with no mapped military
         // ground and no US airspace over it is an answer.
         if (merged.isEmpty() && attempts.all { it.isFailure }) {
@@ -82,14 +96,29 @@ class AirspaceDataSource(
     @Volatile private var cache: List<GeoBlip> = emptyList()
     @Volatile private var fetchedAt = 0L
 
+    /** The inventory changes rarely. */
+    private val TTL_MS = 12 * 60 * 60 * 1000L
+
     suspend fun fetch(): List<GeoBlip> = withContext(Dispatchers.IO) {
         val age = System.currentTimeMillis() - fetchedAt
-        if (cache.isNotEmpty() && age < 12 * 60 * 60 * 1000L) return@withContext cache
+        // `fetchedAt != 0L`, not `cache.isNotEmpty()`: caching an
+        // empty answer below is pointless while the guard that would
+        // serve it still demands a non-empty one.
+        if (fetchedAt != 0L && age < TTL_MS) return@withContext cache
         val out = ArrayList<GeoBlip>()
         // The service caps each response at 2000 features, so page through.
         var offset = 0
         while (offset < 8000) {
-            val page = runCatching { page(offset) }.getOrDefault(emptyList())
+            // The first page refusing is the service refusing, and
+            // `getOrDefault(emptyList())` turned that into "the
+            // United States has no special-use airspace". Later
+            // pages are different: an empty one is how the paging
+            // ends.
+            val page = try {
+                page(offset)
+            } catch (e: Exception) {
+                if (offset == 0) throw e else break
+            }
             if (page.isEmpty()) break
             out.addAll(page)
             offset += 2000
@@ -101,7 +130,7 @@ class AirspaceDataSource(
         cache = out
         fetchedAt =
             if (out.isNotEmpty()) System.currentTimeMillis()
-            else System.currentTimeMillis() - (12 * 60 * 60 * 1000L * 9 / 10)
+            else System.currentTimeMillis() - TTL_MS * 9 / 10
         out
     }
 
@@ -112,9 +141,13 @@ class AirspaceDataSource(
             .header("User-Agent", "OSINT-Unified/1.0 (research)").build()
         client.newCall(request).execute().use { resp ->
             val body = resp.body?.string()
-            if (!resp.isSuccessful || body.isNullOrBlank()) return emptyList()
+            // Thrown, not returned: a quiet return counts as an
+            // answer, and this one was being counted as "no
+            // restricted airspace anywhere in the United States".
+            if (!resp.isSuccessful) throw java.io.IOException("FAA SUA HTTP ${resp.code}")
+            if (body.isNullOrBlank()) throw java.io.IOException("FAA SUA returned an empty body")
             val features = json.parseToJsonElement(body).jsonObject["features"] as? JsonArray
-                ?: return emptyList()
+                ?: throw java.io.IOException("FAA SUA answered in an unexpected shape")
             val out = ArrayList<GeoBlip>(features.size)
             features.forEach { f ->
                 val o = f as? JsonObject ?: return@forEach

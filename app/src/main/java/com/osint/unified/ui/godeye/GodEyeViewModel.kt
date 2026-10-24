@@ -449,6 +449,41 @@ class GodEyeViewModel(
                 else -> s
             }
         }
+        // And the on-demand layers' memory of where they asked.
+        //
+        // This is the other half of `*KeyAnswered`, and leaving it
+        // out broke the feature the guard protects. The guard used
+        // to be `key == sitesKey && sites.isNotEmpty()`, and that
+        // second term was the only thing invalidating it when the
+        // data was thrown away here — so once the key alone decided,
+        // switching MIL GROUND off and on again without panning left
+        // the view model certain it had already answered for a cell
+        // whose polygons it had just deleted. The pill read "…" for
+        // ever and no request was made. Escape was panning 78 km.
+        //
+        // Not by restoring `isNotEmpty()`, which is the pan storm
+        // coming back: an honestly empty answer has to stay valid.
+        // The key is forgotten when the data behind it is.
+        if ("cameras" in gone) {
+            cameraKey = null
+            cameraKeyAnswered = null
+        }
+        if ("sites" in gone) {
+            sitesKey = null
+            sitesKeyAnswered = null
+        }
+        if ("airspace" in gone) {
+            airspaceKey = null
+            airspaceKeyAnswered = null
+        }
+        // Radiation already had this: `ensureRadiation(false)` is
+        // called from every place that disarms it and resets its
+        // centre and zoom band. Belt and braces, for the paths that
+        // disarm it by changing the visible set instead.
+        if ("radiation" in gone) {
+            radiationCentre = null
+            radiationZoomBand = -1
+        }
         // And the bookkeeping, or the brief still believes these
         // answered.
         return s.copy(
@@ -599,7 +634,15 @@ class GodEyeViewModel(
                     if (result == null) {
                         val why = attempt.exceptionOrNull()?.message?.take(90)
                             ?: "no answer"
-                        state.copy(feedTrouble = state.feedTrouble + (key to why))
+                        state.copy(
+                            feedTrouble = state.feedTrouble + (key to why),
+                            // Or the layer is listed twice — once as
+                            // not reporting and once as partly
+                            // covered by a fetch ten minutes old —
+                            // and the area report counts it as two
+                            // layers that could not say.
+                            feedPartial = state.feedPartial - key
+                        )
                     } else {
                         apply(
                             state.copy(
@@ -778,6 +821,10 @@ class GodEyeViewModel(
         job: () -> Job?,
         setJob: (Job?) -> Unit,
         fetch: suspend () -> List<GeoBlip>,
+        /** As in [poll]: who was missing from the fetch that just
+         *  succeeded. Cameras and airspace each merge two or more
+         *  sources and can lose one without losing the layer. */
+        gaps: (() -> String?)? = null,
         apply: (GodEyeUiState, List<GeoBlip>) -> GodEyeUiState
     ) {
         if (job()?.isActive == true) return
@@ -786,18 +833,26 @@ class GodEyeViewModel(
                 val attempt = runCatching { fetch() }
                 attempt.exceptionOrNull()?.let { if (it is CancellationException) throw it }
                 val v = attempt.getOrNull()
+                val missing = if (v != null) gaps?.invoke() else null
                 _state.update { st ->
                     if (v == null) {
                         st.copy(
                             feedTrouble = st.feedTrouble +
                                 (key to (attempt.exceptionOrNull()?.message?.take(90)
-                                    ?: "no answer"))
+                                    ?: "no answer")),
+                            // A layer that has just failed outright
+                            // must not also still be described as
+                            // partially covered by an older fetch.
+                            feedPartial = st.feedPartial - key
                         )
                     } else {
                         apply(
                             st.copy(
                                 loaded = st.loaded + key,
                                 feedTrouble = st.feedTrouble - key,
+                                feedPartial =
+                                    if (missing == null) st.feedPartial - key
+                                    else st.feedPartial + (key to missing),
                                 // The marker plans are keyed on this.
                                 //
                                 // The thirty polled feeds bump it when
@@ -927,6 +982,7 @@ class GodEyeViewModel(
                 cameraKeyAnswered = key
                 v
             },
+            gaps = { if (where == null) null else cctvDataSource.lastGaps },
             apply = { st, v -> st.copy(cameras = v) }
         )
     }
@@ -959,6 +1015,7 @@ class GodEyeViewModel(
                 airspaceKeyAnswered = key
                 v
             },
+            gaps = { if (where == null) null else airspaceDataSource.lastGaps },
             apply = { st, v -> st.copy(airspace = v) }
         )
     }

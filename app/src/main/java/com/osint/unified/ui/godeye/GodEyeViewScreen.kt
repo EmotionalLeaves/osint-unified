@@ -1035,7 +1035,8 @@ fun GodEyeViewScreen(
                 LayerPill("METAR", state.metar.size, Color(0xFF9FE8FF), showMetar || god, full = "Airport weather", loaded = "metar" in state.loaded, trouble = "metar" in state.feedTrouble, partial = "metar" in state.feedPartial) { settleGod(); showMetar = !showMetar }
                 LayerPill(
                 "MIL GROUND", state.airspace.size, Color(0xFFFF5370), showAirspace || god, full = "Military areas", loadsOnDemand = true, loaded = "airspace" in state.loaded,
-                trouble = "airspace" in state.feedTrouble
+                trouble = "airspace" in state.feedTrouble,
+                partial = "airspace" in state.feedPartial
                 ) {
                 settleGod()
                 showAirspace = !showAirspace
@@ -1069,7 +1070,8 @@ fun GodEyeViewScreen(
                 LayerPill("OUTAGE·GLOBAL", state.outages.size, Color(0xFFFF6B6B), showOutages || god, full = "Internet outages", loaded = "outages" in state.loaded, trouble = "outages" in state.feedTrouble) { settleGod(); showOutages = !showOutages }
                 LayerPill(
                 "CAMERAS", state.cameras.size, Color(0xFFB388FF), showCameras || god, full = "Public cameras", loadsOnDemand = true, loaded = "cameras" in state.loaded,
-                trouble = "cameras" in state.feedTrouble
+                trouble = "cameras" in state.feedTrouble,
+                partial = "cameras" in state.feedPartial
                 ) {
                 settleGod()
                 showCameras = !showCameras

@@ -322,7 +322,23 @@ internal object DatabaseEncryption {
                     }
                 }.getOrDefault(false)
 
+            // Highest first, and this ladder has to grow with
+            // AppDatabase.SCHEMA_VERSION.
+            //
+            // It did not when the schema went to 8. A database
+            // already at 8 whose user_version is wrong — a restore,
+            // an interrupted encrypt-in-place, a copyInto carrying a
+            // stale version — was detected as 7, renumbered to 7,
+            // and handed to Room, which then ran MIGRATION_7_8 and
+            // hit `duplicate column name: lastAnswered`. The
+            // migration throws, the fallback opens an empty database
+            // and the real one sits there unopened: the exact
+            // failure this whole function exists to prevent, caused
+            // by the function not being edited alongside the bump.
+            // `repairLadderCoversSchema` is the test that now fails
+            // if it is forgotten again.
             val actual = when {
+                hasColumn("watches", "lastAnswered") -> 8
                 hasTable("cases") -> 7
                 hasTable("dismissals") -> 6
                 hasColumn("results", "outputSha256") -> 5

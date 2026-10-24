@@ -33,10 +33,11 @@ import java.util.Locale
  * Luzon. The Joint Typhoon Warning Center covers the rest and publishes
  * it as plain message text, which [JtwcAdvisory] reads.
  *
- * Both keyless. Either one failing leaves the other's storms on the map,
- * because half the world's cyclones is better than none — but silence
- * with a centre missing is not an all-clear, so an empty result raises
- * unless every centre answered.
+ * Both keyless. Either one failing leaves the other's storms on the
+ * map, because half the world's cyclones is better than none — and
+ * when one is missing the result says so through [lastGaps], so the
+ * world brief never prints an all-clear for an ocean nothing was read
+ * from. Only a total failure raises.
  */
 class CycloneDataSource(private val client: OkHttpClient = Http.feedClient) :
     PartlyAnswered {
@@ -79,26 +80,32 @@ class CycloneDataSource(private val client: OkHttpClient = Http.feedClient) :
         )
         val found = atlantic.getOrDefault(emptyList()) +
             elsewhere.flatMap { it.getOrDefault(emptyList()) }
-        // Partial data is shown: a storm an answering centre reported
-        // is real whatever the others did. It is only the ABSENCE that
-        // needs everyone, because an empty list here is read out loud
-        // by the world brief as "no tropical cyclones anywhere in the
-        // world".
+        // Throws only when NOBODY answered. A gap is reported, not
+        // raised.
         //
-        // "Every centre failed" was the old test, and it was the same
-        // mistake TsunamiDataSource had already found and written a
-        // comment about. The Atlantic is quiet for most of the year,
-        // so NHC answering `activeStorms: []` while all five JTWC
-        // advisories 403 — the ordinary outcome for a non-browser
-        // agent on some networks — satisfied it and printed the
-        // all-clear through a West Pacific typhoon.
-        if (found.isEmpty() && answers.any { it.isFailure }) {
+        // This was `found.isEmpty() && answers.any { isFailure }`
+        // for a few hours, and that was wrong in a way worth
+        // recording. The JTWC advisories 403 for a non-browser agent
+        // on some networks — this file's own comment says so — and
+        // the Atlantic is quiet for most of the year, so NHC
+        // answering `activeStorms: []` with JTWC dark satisfied that
+        // test on every poll. The layer read "not reporting" every
+        // ten minutes, permanently, where it had previously shown a
+        // true Atlantic zero: a false alarm in place of a fact.
+        //
+        // The honest answer is neither. It is "no storms, and two of
+        // three centres did not answer", which is exactly what
+        // `lastGaps` was added to carry, and which the throw made
+        // unreachable because the poller only reads the gaps on the
+        // success path. So: return what was found, let the gap speak,
+        // and raise only when there is no answer at all. The brief
+        // cannot print an all-clear for a layer in `feedPartial`.
+        if (answers.all { it.isFailure }) {
             throw IOException(
-                "not every cyclone centre answered, so silence is not " +
-                    "an all-clear: " +
+                "no cyclone centre could be reached: " +
                     answers.mapNotNull { it.exceptionOrNull()?.message }
                         .distinct().joinToString("; ")
-                        .ifBlank { "no centre could be reached" }
+                        .ifBlank { "no reason given" }
             )
         }
         found

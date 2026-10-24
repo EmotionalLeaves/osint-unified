@@ -121,10 +121,29 @@ class TsunamiDataSource(private val client: OkHttpClient = Http.feedClient) :
         // Partial data is still shown: a marker from an agency that
         // did answer is real whatever the others did. It is only the
         // absence that needs everyone.
-        if (found.isEmpty() && answers.any { it.isFailure }) {
+        // Raised only when nobody answered.
+        //
+        // The test here used to be `found.isEmpty() && any failed`,
+        // and the comment above explains why it was written that way:
+        // an empty list is read out loud as an all-clear, and an
+        // all-clear from a centre nothing was read from is a lie.
+        // That reasoning is still right; the remedy was too blunt.
+        // There are five feeds, an empty bulletin list is the normal
+        // state on almost every day, and the two US feeds share one
+        // host and one 429 cooldown — so any single failure put the
+        // whole layer into "not reporting", which it would have been
+        // in for most of its life.
+        //
+        // [lastGaps], set above, is the answer the throw was standing
+        // in for: the empty list goes out with "1 of 5 tsunami
+        // centres did not answer" attached, the pill marks it, and
+        // `WorldBrief` tests `feedPartial` before it tests quiet, so
+        // the all-clear still cannot be printed.
+        if (answers.all { it.isFailure }) {
             throw IOException(
-                "not every tsunami centre answered, so silence is not an all-clear: " +
-                    answers.mapNotNull { it.exceptionOrNull()?.message }.joinToString("; ")
+                "no tsunami centre could be reached: " +
+                    answers.mapNotNull { it.exceptionOrNull()?.message }
+                        .distinct().joinToString("; ").ifBlank { "no reason given" }
             )
         }
         found

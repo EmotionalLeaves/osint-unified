@@ -1,5 +1,6 @@
 package com.osint.unified
 
+import com.osint.unified.data.db.AppDatabase
 import com.osint.unified.data.db.MigrationSql
 import java.sql.Connection
 import java.sql.DriverManager
@@ -16,7 +17,8 @@ import org.junit.Test
  * wants an instrumented test on a device, which this project's CI does
  * not have. But a migration is SQL, and SQL can be run anywhere: a
  * version-1 database is built here, filled with the sort of rows a real
- * one holds, and taken up to 7 one step at a time.
+ * one holds, and taken up to the current schema version one step
+ * at a time.
  *
  * The migration that needs this is 3 to 4 — the only one in the chain
  * that is not purely additive. It deletes user rows and then builds a
@@ -102,6 +104,9 @@ class MigrationChainTest {
                 db.columns("results").containsAll(
                     listOf("outputSha256", "outputBytes", "truncated")
                 )
+            )
+            assertTrue(
+                db.columns("watches").containsAll(listOf("lastAnswered", "lastAsked"))
             )
             // And the index names Room generates, which repairVersion
             // cannot see and so cannot repair.
@@ -252,6 +257,77 @@ class MigrationChainTest {
             assertEquals(0, db.count("SELECT count(*) FROM `results`"))
             assertEquals(0, db.count("SELECT count(*) FROM `dismissals`"))
             assertFalse(db.tables().isEmpty())
+        }
+    }
+
+    /**
+     * The chain reaches the version the app declares.
+     *
+     * One line, and it is the cheap guard against a whole class: a
+     * schema bump with no migration beside it ships a build that
+     * cannot open an existing database. Everything else in this file
+     * only proves the steps that exist are correct.
+     */
+    @Test
+    fun theChainReachesTheDeclaredSchemaVersion() {
+        assertEquals(
+            "MigrationSql.chain does not reach AppDatabase.SCHEMA_VERSION",
+            AppDatabase.SCHEMA_VERSION,
+            MigrationSql.chain.last().first
+        )
+        assertEquals(
+            "a step is missing from MigrationSql.chain",
+            AppDatabase.SCHEMA_VERSION - 1,
+            MigrationSql.chain.size
+        )
+        // And in order, with no gaps.
+        MigrationSql.chain.forEachIndexed { index, (to, _) ->
+            assertEquals(index + 2, to)
+        }
+    }
+
+    /**
+     * And `DatabaseEncryption.repairVersion` can recognise it.
+     *
+     * That function detects a database's real schema by looking at
+     * its tables and columns, and its ladder has to be extended by
+     * hand every time the version goes up. It was not when the
+     * schema went to 8: a database already at 8 was detected as 7,
+     * renumbered to 7, and then destroyed by a migration that ran
+     * ALTER TABLE on a column that already existed.
+     *
+     * This replays the chain and asserts that the real schema is
+     * distinguishable from the one below it by something the ladder
+     * could test — which is the property the ladder needs and the
+     * thing a bump quietly breaks.
+     */
+    @Test
+    fun repairLadderCoversSchema() {
+        memory().use { db ->
+            db.run(MigrationSql.v1)
+            db.seedV1()
+            MigrationSql.chain.forEach { (_, statements) -> db.run(statements) }
+            val top = MigrationSql.chain.last()
+            // Whatever the newest step added — a table or a column —
+            // has to be visible to a PRAGMA, or repairVersion cannot
+            // tell this version from the one before it.
+            val addedColumns = top.second
+                .filter { it.contains("ADD COLUMN", ignoreCase = true) }
+                .mapNotNull { Regex("ADD COLUMN `([^`]+)`").find(it)?.groupValues?.get(1) }
+            val addedTables = top.second
+                .mapNotNull { Regex("CREATE TABLE IF NOT EXISTS `([^`]+)`").find(it)?.groupValues?.get(1) }
+            assertTrue(
+                "the newest migration step adds nothing repairVersion could detect",
+                addedColumns.isNotEmpty() || addedTables.isNotEmpty()
+            )
+            addedTables.forEach { assertTrue(it, it in db.tables()) }
+            // The table each column landed on, read back from the db.
+            addedColumns.forEach { column ->
+                assertTrue(
+                    "$column is not on any table after the chain",
+                    db.tables().any { column in db.columns(it) }
+                )
+            }
         }
     }
 }

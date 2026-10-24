@@ -30,7 +30,11 @@ import okhttp3.Request
 class CctvDataSource(
     private val client: OkHttpClient = Http.feedClient,
     private val surveillance: SurveillanceDataSource = SurveillanceDataSource()
-) {
+) : PartlyAnswered {
+
+    @Volatile override var lastGaps: String? = null
+        private set
+
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
     private val districts = listOf("3", "4", "5", "6", "7", "8", "10", "11", "12")
@@ -107,11 +111,22 @@ class CctvDataSource(
         }
         val attempts = listOfNotNull(mapped, live) + local
         val merged = attempts.flatMap { it.getOrDefault(emptyList()) }
-        // A zero that was established is a zero. Looking at the middle
-        // of the Pacific, where OpenStreetMap has no mapped cameras
-        // and no operator publishes any, used to be reported as a feed
-        // failure — the inverse of the mistake the rest of this pass
-        // is about, and it put a red mark on a layer that had worked.
+        // Who was missing, rather than one boolean for the lot.
+        //
+        // `all { isFailure }` on its own was not enough: Overpass
+        // answering an honest empty while Caltrans 403s is not a
+        // total failure, so the layer reported an established zero
+        // for ground the only source that covers it had refused —
+        // `CAMERAS 0` with a loaded tick over a Californian freeway.
+        // And `any { isFailure }` would be the cyclone mistake in
+        // another file: mid-Pacific, where nothing is published and
+        // nothing fails, has to stay a clean zero.
+        lastGaps = gapsFrom(
+            attempts.size,
+            attempts.filter { it.isFailure }.map { it.exceptionOrNull() },
+            "camera sources"
+        )
+        // A zero that was established is a zero.
         if (merged.isEmpty() && attempts.all { it.isFailure }) {
             throw java.io.IOException("no camera source answered")
         }
@@ -122,16 +137,31 @@ class CctvDataSource(
      *  other networks use. */
     private val CALIFORNIA = Network("Caltrans", 32.5, 42.1, -124.5, -114.1) { emptyList() }
 
-    /** Six hours, per network, like the Californian set. */
+    /**
+     * Six hours, per network, like the Californian set — and an empty
+     * answer is cached as well, for a tenth as long.
+     *
+     * `if (fresh.isNotEmpty())` was the test, ten lines below the
+     * same mistake being fixed in `fetch()`. With Transport for
+     * London answering empty or unreachable, nothing was ever
+     * written, the age check could never short-circuit, and every
+     * settled pan over London re-fired a megabyte request.
+     */
     private suspend fun cached(net: Network): List<GeoBlip> {
         val held = regional[net.name]
-        if (held != null && System.currentTimeMillis() - held.first < 6 * 60 * 60 * 1000L) {
+        if (held != null && System.currentTimeMillis() - held.first < NETWORK_TTL_MS) {
             return held.second
         }
         val fresh = net.fetch()
-        if (fresh.isNotEmpty()) regional[net.name] = System.currentTimeMillis() to fresh
+        regional[net.name] =
+            (
+                if (fresh.isNotEmpty()) System.currentTimeMillis()
+                else System.currentTimeMillis() - NETWORK_TTL_MS * 9 / 10
+                ) to fresh
         return fresh
     }
+
+    private val NETWORK_TTL_MS = 6 * 60 * 60 * 1000L
 
     /**
      * New York City's traffic cameras — about nine hundred of them,
@@ -229,11 +259,24 @@ class CctvDataSource(
     suspend fun fetch(): List<GeoBlip> = withContext(Dispatchers.IO) {
         // The inventory changes rarely; refresh at most every six hours.
         val age = System.currentTimeMillis() - fetchedAt
-        if (cache.isNotEmpty() && age < 6 * 60 * 60 * 1000L) return@withContext cache
-        val merged = coroutineScope {
-            districts.map { d -> async { runCatching { district(d) }.getOrDefault(emptyList()) } }
-                .flatMap { it.await() }
+        // `fetchedAt != 0L`, not `cache.isNotEmpty()`. Caching an
+        // empty answer below did nothing while the guard still
+        // required a non-empty one to serve it — the backdating was
+        // written and then never consulted.
+        if (fetchedAt != 0L && age < NETWORK_TTL_MS) return@withContext cache
+        val tries = coroutineScope {
+            districts.map { d -> async { runCatching { district(d) } } }.map { it.await() }
         }
+        // One district refusing is not the state having no cameras in
+        // it, and every district refusing is certainly not.
+        if (tries.all { it.isFailure }) {
+            throw java.io.IOException(
+                "no Caltrans district answered: " +
+                    tries.mapNotNull { it.exceptionOrNull()?.message }
+                        .distinct().take(2).joinToString("; ").ifBlank { "no reason given" }
+            )
+        }
+        val merged = tries.flatMap { it.getOrDefault(emptyList()) }
         // An empty answer is cached too, for a tenth as long.
         //
         // It used not to be, and `fetchedAt` was not advanced either,
@@ -247,7 +290,7 @@ class CctvDataSource(
             if (merged.isNotEmpty()) System.currentTimeMillis()
             // Backdated, so an empty result is retried in thirty-six
             // minutes rather than in six hours or on the next pan.
-            else System.currentTimeMillis() - (6 * 60 * 60 * 1000L * 9 / 10)
+            else System.currentTimeMillis() - NETWORK_TTL_MS * 9 / 10
         merged
     }
 
@@ -258,8 +301,21 @@ class CctvDataSource(
             .header("User-Agent", "OSINT-Unified/1.0 (research)").build()
         client.newCall(request).execute().use { resp ->
             val body = resp.body?.string()
-            if (!resp.isSuccessful || body.isNullOrBlank()) return emptyList()
-            val data = json.parseToJsonElement(body).jsonObject["data"] as? JsonArray ?: return emptyList()
+            // Thrown, not returned. A quiet return counts as an
+            // answer: every district refusing used to make `fetch()`
+            // succeed with an empty list, which `near()` then
+            // reported as "no cameras here". The sibling helpers in
+            // MetarDataSource and AirQualityDataSource carry a
+            // comment saying exactly this; these two did the
+            // opposite.
+            if (!resp.isSuccessful) {
+                throw java.io.IOException("Caltrans district $d: HTTP ${resp.code}")
+            }
+            if (body.isNullOrBlank()) {
+                throw java.io.IOException("Caltrans district $d returned an empty body")
+            }
+            val data = json.parseToJsonElement(body).jsonObject["data"] as? JsonArray
+                ?: throw java.io.IOException("Caltrans district $d answered in an unexpected shape")
             val out = ArrayList<GeoBlip>(data.size)
             data.forEach { el ->
                 val cctv = (el as? JsonObject)?.get("cctv") as? JsonObject ?: return@forEach

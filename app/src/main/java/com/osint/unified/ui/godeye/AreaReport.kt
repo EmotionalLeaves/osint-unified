@@ -92,7 +92,11 @@ object AreaReport {
         "cyclones" to "tropical cyclones", "tsunamis" to "tsunami bulletins",
         "airportStatus" to "US airport status", "overlayPoints" to "your overlay",
         "cameras" to "traffic cameras", "airspace" to "restricted airspace",
-        "radiation" to "radiation monitors"
+        "radiation" to "radiation monitors",
+        // The thirty-fourth key. It rides with aurora in
+        // `visibleLayers` and can land in `feedTrouble` on its own,
+        // and without this line the caveat printed the raw key.
+        "spaceWeather" to "space weather"
     )
 
     /**
@@ -230,7 +234,16 @@ object AreaReport {
                 )
             }
         }
-        if ("radiation" in state.loaded && "radiation" !in state.feedTrouble) {
+        // Radiation is fetched for the viewport rather than a fixed
+        // circle, so there is no reach to compare — but the caveat
+        // was unconditional while the other three are gated on the
+        // radius, so a tight zoom still printed it and still
+        // inflated the "N layers could not say" count. The report
+        // only reaches past a viewport once it is wide.
+        if ("radiation" in state.loaded &&
+            "radiation" !in state.feedTrouble &&
+            radiusKm > 60.0
+        ) {
             caveats.add(
                 "radiation monitors — only fetched for the area on screen when " +
                     "the layer last loaded"
