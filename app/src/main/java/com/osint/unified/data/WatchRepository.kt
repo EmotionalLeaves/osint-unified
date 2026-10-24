@@ -213,13 +213,33 @@ class WatchRepository(
         // stored digest — "now found by X" on the next successful check: a
         // watch flapping between two false alarms.
         val vanished = previous.keys.filter { it in outcome.answered && it !in fresh }
-        val altered = fresh.keys.filter { it in previous && fresh[it] != previous[it] }
+        val altered = fresh.keys.filter {
+            it in previous && fresh[it]?.fingerprint != previous[it]?.fingerprint
+        }
+        // And, for the ones that changed, WHAT changed.
+        //
+        // This is the whole difference between a notification worth
+        // acting on and one that means "go and look yourself" — which
+        // is what every watch event said until now, against a database
+        // that no longer holds the previous answer to look at.
+        val gained = LinkedHashSet<String>()
+        val lost = LinkedHashSet<String>()
+        altered.forEach { id ->
+            val before = previous[id]?.entities.orEmpty()
+            val after = fresh[id]?.entities.orEmpty()
+            gained += after - before
+            lost += before - after
+        }
+        appeared.forEach { id -> gained += fresh[id]?.entities.orEmpty() }
 
         // A source that could not be reached keeps its previous
         // fingerprint, so the baseline survives the outage.
         val merged = previous.filterKeys { it !in outcome.answered } + fresh
 
-        val description = WatchDigest.describe(watch.observable, appeared, vanished, altered)
+        val description = WatchDigest.describe(
+            watch.observable, appeared, vanished, altered,
+            gained.toList(), lost.toList()
+        )
         dao.update(
             watch.copy(
                 digest = serialise(merged),
@@ -257,7 +277,7 @@ class WatchRepository(
      */
     private data class Outcome(
         val answered: Set<String>,
-        val found: Map<String, String>
+        val found: Map<String, Snapshot>
     )
 
     /**
@@ -297,26 +317,80 @@ class WatchRepository(
                     Findings.saysNothing(output) -> ""
                     else -> sha1(WatchDigest.normalise(output))
                 }
-                tool.id to fingerprint
+                val snapshot = if (fingerprint.isNullOrEmpty()) null else {
+                    Snapshot(fingerprint, entitiesIn(tool.id, output.orEmpty(), observable.raw))
+                }
+                Triple(tool.id, fingerprint, snapshot)
             }
         }.map { it.await() }
 
         Outcome(
             answered = results.filter { it.second != null }.map { it.first }.toSet(),
-            found = results.mapNotNull { (id, fp) ->
-                if (fp.isNullOrEmpty()) null else id to fp
+            found = results.mapNotNull { (id, _, snap) ->
+                if (snap == null) null else id to snap
             }.toMap()
         )
     }
 
-    private fun serialise(digest: Map<String, String>): String =
-        digest.entries.sortedBy { it.key }.joinToString("\n") { "${it.key}\t${it.value}" }
+    /**
+     * What one source said last time: a fingerprint, and the
+     * identifiers it named.
+     *
+     * The fingerprint alone is why a watch could say "changed at
+     * Shodan" and never what changed. The content is not stored — the
+     * class comment above is right that a growing archive of every
+     * answer is the wrong thing — but the extracted identifiers are a
+     * few hundred bytes a target and are exactly what a reader wants:
+     * "new host mail2.example.com", not "a hash moved". And nothing
+     * else can supply it later, because runTool replaces the previous
+     * row, so the old answer is gone from the database too.
+     */
+    private data class Snapshot(val fingerprint: String, val entities: Set<String>)
 
-    private fun parse(stored: String): Map<String, String> = stored.lineSequence()
+    private fun serialise(digest: Map<String, Snapshot>): String =
+        digest.entries.sortedBy { it.key }.joinToString("\n") { (id, snap) ->
+            "$id\t${snap.fingerprint}\t${snap.entities.joinToString("|")}"
+        }
+
+    private fun parse(stored: String): Map<String, Snapshot> = stored.lineSequence()
         .mapNotNull { line ->
             val parts = line.split("\t")
-            if (parts.size == 2 && parts[0].isNotBlank()) parts[0] to parts[1] else null
+            if (parts.size < 2 || parts[0].isBlank()) return@mapNotNull null
+            // Two fields is a row written before this stored entities.
+            // It parses as a snapshot with none, and the first check
+            // after the upgrade fills them in.
+            val entities = parts.getOrNull(2).orEmpty()
+                .split('|').filter { it.isNotBlank() }.toSet()
+            parts[0] to Snapshot(parts[1], entities)
         }.toMap()
+
+    /**
+     * The identifiers in one answer, as the set a later check diffs
+     * against.
+     *
+     * Capped, because this is stored per source per target and a
+     * subdomain sweep can name hundreds. The cap means a very large
+     * answer's diff is partial, which is why [WatchDigest.describe]
+     * never claims the list it prints is complete.
+     */
+    private fun entitiesIn(toolId: String, output: String, seed: String): Set<String> =
+        runCatching {
+            com.osint.unified.domain.EntityExtractor.extract(
+                listOf(
+                    com.osint.unified.data.db.Result(
+                        investigationId = 0,
+                        toolId = toolId,
+                        toolName = toolId,
+                        input = seed,
+                        status = "success",
+                        rawOutput = output,
+                        startedAt = 0
+                    )
+                ),
+                seed,
+                limitPerKind = 10
+            ).map { "${it.kind}:${it.value}" }.take(ENTITY_CAP).toSet()
+        }.getOrDefault(emptySet())
 
     private fun sha1(s: String): String =
         MessageDigest.getInstance("SHA-1").digest(s.toByteArray())
@@ -326,6 +400,9 @@ class WatchRepository(
         /** Enough for a meaningful picture; few enough to run unattended. */
         const val TOOLS_PER_CHECK = 10
         const val TOOL_TIMEOUT_MS = 30_000L
+
+        /** Identifiers remembered per source per target. */
+        const val ENTITY_CAP = 24
     }
 }
 
@@ -359,7 +436,11 @@ internal object WatchDigest {
         target: String,
         appeared: List<String>,
         vanished: List<String>,
-        altered: List<String>
+        altered: List<String>,
+        /** Identifiers in the new answer that were not in the old one. */
+        gained: List<String> = emptyList(),
+        /** And the ones that were and are not. */
+        lost: List<String> = emptyList()
     ): String? {
         if (appeared.isEmpty() && vanished.isEmpty() && altered.isEmpty()) return null
         fun names(ids: List<String>) = ids.map {
@@ -369,6 +450,33 @@ internal object WatchDigest {
         if (appeared.isNotEmpty()) parts.add("now found by ${names(appeared)}")
         if (vanished.isNotEmpty()) parts.add("no longer found by ${names(vanished)}")
         if (altered.isNotEmpty()) parts.add("changed at ${names(altered)}")
-        return "$target — ${parts.joinToString("; ")}"
+        val head = "$target — ${parts.joinToString("; ")}"
+        // What changed, by name, where it is known.
+        //
+        // A watch existed to answer "what changed" and could only
+        // answer "something did, at Shodan" — the check reduced every
+        // answer to a hash and threw the rest away, and runTool
+        // replaces the previous row, so there was nothing left to
+        // compare against afterwards either. Three months of watching
+        // produced a hundred events and not one byte of what any
+        // source had said.
+        val detail = ArrayList<String>()
+        if (gained.isNotEmpty()) detail.add("new: " + pretty(gained))
+        if (lost.isNotEmpty()) detail.add("gone: " + pretty(lost))
+        return if (detail.isEmpty()) head else "$head\n" + detail.joinToString("; ")
+    }
+
+    /**
+     * A handful of identifiers, named, with the rest counted.
+     *
+     * Never claims the list is complete: the check remembers a capped
+     * set per source, so a very large answer's difference is partial
+     * and saying otherwise would be the same class of lie as a header
+     * that states a total and lists fewer.
+     */
+    private fun pretty(values: List<String>, show: Int = 4): String {
+        val named = values.take(show).joinToString(", ") { it.substringAfter(':') }
+        val rest = values.size - show
+        return if (rest > 0) "$named and $rest more" else named
     }
 }

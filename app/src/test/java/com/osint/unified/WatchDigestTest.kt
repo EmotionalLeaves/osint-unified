@@ -4,6 +4,7 @@ import com.osint.unified.data.WatchDigest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -69,4 +70,53 @@ class WatchDigestTest {
         val d = WatchDigest.describe("x.com", listOf("not-a-real-tool"), emptyList(), emptyList())
         assertTrue(d!!.contains("not-a-real-tool"))
     }
+    /**
+     * The whole point of a watch: not that something changed, but
+     * what.
+     *
+     * Every event used to read "changed at Shodan", because the check
+     * reduced each answer to a hash and threw the rest away — and
+     * runTool replaces the previous row, so there was nothing left to
+     * compare against afterwards either.
+     */
+    @Test
+    fun aChangeNamesWhatChanged() {
+        val d = WatchDigest.describe(
+            "example.com",
+            appeared = emptyList(),
+            vanished = emptyList(),
+            altered = listOf("crtsh"),
+            gained = listOf("HOST:mail2.example.com", "HOST:vpn.example.com"),
+            lost = listOf("HOST:old.example.com")
+        )
+        requireNotNull(d)
+        assertTrue(d, d.contains("mail2.example.com"))
+        assertTrue(d, d.contains("vpn.example.com"))
+        assertTrue(d, d.contains("old.example.com"))
+        assertTrue(d, d.contains("new:"))
+        assertTrue(d, d.contains("gone:"))
+        // The kind prefix is for the diff, not for the reader.
+        assertFalse(d, d.contains("HOST:"))
+    }
+
+    /** A long list is counted rather than claimed to be complete. */
+    @Test
+    fun aLongListSaysHowManyItIsNotShowing() {
+        val many = (1..9).map { "HOST:h$it.example.com" }
+        val d = WatchDigest.describe(
+            "example.com", emptyList(), emptyList(), listOf("crtsh"), gained = many
+        )
+        requireNotNull(d)
+        assertTrue(d, d.contains("and 5 more"))
+    }
+
+    /** And with nothing extracted it reads exactly as it always did. */
+    @Test
+    fun withNoDetailTheOldSentenceIsUnchanged() {
+        val d = WatchDigest.describe("x.com", listOf("crtsh"), emptyList(), emptyList())
+        requireNotNull(d)
+        assertFalse(d, d.contains("new:"))
+        assertTrue(d, d.contains("now found by"))
+    }
+
 }
