@@ -94,12 +94,35 @@ object PrivateBrowserHost {
             Thread(r, "webview-proxy").apply { isDaemon = true }
         }
 
+    /**
+     * Whether the WebView is actually going through the proxy.
+     *
+     * Null when nothing has been asked of it. This used to be a
+     * `Unit`-returning function that swallowed its failure and kept
+     * no state, while `Http.useProxy` succeeded independently — so
+     * on a device whose WebView provider lacks PROXY_OVERRIDE, or
+     * if ProxyController threw, the settings row read "this sends
+     * the app through Tor" and the banner inside the browser said
+     * "it still sees an address — the proxy's, when the proxy is
+     * on", and this one screen went direct. The class's own doc
+     * names that outcome as the thing it exists to prevent.
+     */
+    @Volatile
+    var proxied: Boolean? = null
+        private set
+
     fun useProxy(host: String?, port: Int) {
-        if (!WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE)) return
-        runCatching {
+        val wanted = !host.isNullOrBlank() && port in 1..65535
+        if (!WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE)) {
+            // Nothing can be routed, so say so rather than leaving
+            // the last answer standing.
+            proxied = if (wanted) false else null
+            return
+        }
+        val applied = runCatching {
             val proxies = ProxyController.getInstance()
             val executor = proxyCallbacks
-            if (host.isNullOrBlank() || port !in 1..65535) {
+            if (!wanted) {
                 proxies.clearProxyOverride(executor) { }
             } else {
                 proxies.setProxyOverride(
@@ -107,9 +130,18 @@ object PrivateBrowserHost {
                     executor
                 ) { }
             }
+        }.isSuccess
+        proxied = when {
+            !wanted -> null
+            applied -> true
+            else -> false
         }
     }
 }
+
+/** Truncated text that says it is truncated. */
+private fun ellipsise(s: String, max: Int): String =
+    if (s.length <= max) s else s.take(max - 1) + "\u2026"
 
 @SuppressLint("SetJavaScriptEnabled")
 @OptIn(ExperimentalLayoutApi::class)
@@ -175,13 +207,30 @@ fun PrivateBrowserDialog(url: String, onDismiss: () -> Unit) {
                                 .padding(horizontal = 10.dp, vertical = 6.dp)
                         )
                     }
+                    // The address, not the page's title.
+                    //
+                    // This monospace line under the banner reads as
+                    // an address bar and showed `document.title`,
+                    // which the page chooses — so a page titled
+                    // "https://accounts.google.com/signin" displayed
+                    // as that, in the one place a person looks to
+                    // see where they are. The real address was only
+                    // reachable through COPY LINK.
                     Text(
-                        title.take(120),
+                        ellipsise(current, 120),
                         style = MaterialTheme.typography.labelSmall,
-                        color = Intel.TextMid,
+                        color = Intel.TextHi,
                         fontFamily = FontFamily.Monospace,
                         modifier = Modifier.padding(top = 2.dp)
                     )
+                    if (title.isNotBlank() && title != current) {
+                        Text(
+                            ellipsise(title, 120),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Intel.TextLow,
+                            modifier = Modifier.padding(top = 1.dp)
+                        )
+                    }
                     // Four labels and three spacers in a plain Row
                     // measured about 296dp, against the 296dp a 320dp
                     // phone has: MY BROWSER and INVESTIGATE were
@@ -232,6 +281,20 @@ fun PrivateBrowserDialog(url: String, onDismiss: () -> Unit) {
                         color = Intel.TextLow,
                         modifier = Modifier.padding(top = 4.dp)
                     )
+                    // And whether it actually is. The line above
+                    // promised the proxy without anything checking
+                    // that this WebView had taken it.
+                    if (PrivateBrowserHost.proxied == false) {
+                        Text(
+                            "The proxy is on for the rest of the app and this " +
+                                "browser could not take it — this device's " +
+                                "WebView does not support it. Pages opened here " +
+                                "go direct, from your own address.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Intel.Danger,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
                     blocked?.let {
                         Text(
                             "Blocked a link to $it — only web pages open here.",

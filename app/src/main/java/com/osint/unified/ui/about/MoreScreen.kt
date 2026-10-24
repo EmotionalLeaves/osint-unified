@@ -259,6 +259,12 @@ private fun PrivacyControls(settings: AppSettings, lockAvailable: Boolean) {
     var lockOn by rememberSaveable { mutableStateOf(settings.appLockEnabled) }
     var portTrouble by rememberSaveable { mutableStateOf(false) }
 
+    // Whether the in-app browser took the proxy. The row below
+    // promises Tor for "the app", and the one screen that loads a
+    // target's own pages is a WebView, which routes separately and
+    // can silently refuse.
+    var browserProxied by remember { mutableStateOf(PrivateBrowserHost.proxied) }
+
     fun applyProxy() {
         val parsed = port.toIntOrNull() ?: 0
         // Said, rather than quietly ignored.
@@ -281,6 +287,7 @@ private fun PrivacyControls(settings: AppSettings, lockAvailable: Boolean) {
             Http.useProxy(null, 0)
             PrivateBrowserHost.useProxy(null, 0)
         }
+        browserProxied = PrivateBrowserHost.proxied
     }
 
     Column(
@@ -321,6 +328,18 @@ private fun PrivacyControls(settings: AppSettings, lockAvailable: Boolean) {
                     checkedTrackColor = Intel.Cyan,
                     uncheckedTrackColor = Intel.Elevated
                 )
+            )
+        }
+
+        if (proxyOn && browserProxied == false) {
+            Text(
+                "The built-in browser could not take the proxy — this " +
+                    "device's WebView does not support it, so pages opened " +
+                    "in it go direct from your own address. Everything else " +
+                    "in the app still goes through the proxy.",
+                style = M3.typography.bodySmall,
+                color = Intel.Danger,
+                modifier = Modifier.padding(top = 8.dp)
             )
         }
 
