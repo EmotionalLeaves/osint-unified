@@ -371,9 +371,27 @@ object Corroboration {
             val group = exclusiveGroup(key.first, key.second) ?: return@forEach
             val independent = independentCount(claims.map { it.first }.distinct())
             exclusive.getOrPut(group) { HashMap() }[key.second] = independent
+            // Demoted, exactly as the asserting side is.
+            //
+            // This read the catalogue grade, so a source this case
+            // had caught being wrong twice — and which is read one
+            // grade lower for everything it claims — contradicted at
+            // full strength. CaseLinks was changed for precisely
+            // this reason in the same pass, and the fix went to
+            // CaseLinks and not to the function CaseLinks gets its
+            // grades from. The investigator's judgement has to
+            // outrank the catalogue's in both directions.
             exclusiveBest.getOrPut(group) { HashMap() }[key.second] =
                 claims.map { it.first }.distinct()
-                    .map { ToolRegistry.byId(it)?.reliability ?: Grading.Reliability.UNJUDGED }
+                    .map { id ->
+                        val base = ToolRegistry.byId(id)?.reliability
+                            ?: Grading.Reliability.UNJUDGED
+                        if (familiesOf(id).any { f -> f in unreliableHere }) {
+                            Grading.demote(base)
+                        } else {
+                            base
+                        }
+                    }
                     .minOrNull() ?: Grading.Reliability.UNJUDGED
         }
 

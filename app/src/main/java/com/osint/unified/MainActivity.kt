@@ -28,10 +28,18 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.osint.unified.data.AirQualityDataSource
+import com.osint.unified.data.AirspaceDataSource
+import com.osint.unified.data.CctvDataSource
+import com.osint.unified.data.CycloneDataSource
+import com.osint.unified.data.EarthquakeDataSource
+import com.osint.unified.data.MetarDataSource
+import com.osint.unified.data.TsunamiDataSource
 import com.osint.unified.ui.diagnostics.DiagnosticsScreen
 import com.osint.unified.ui.diagnostics.FeedProbe
 import com.osint.unified.ui.forensics.ForensicsScreen
@@ -588,13 +596,37 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                         )
                         "diagnostics" -> {
                             val app = application as OsintApplication
+                            // The seven merged feeds are probed on
+                            // their OWN instances, not the
+                            // application's.
+                            //
+                            // Each of them records which agencies
+                            // were missing from its last fetch in a
+                            // field on itself, which the poller reads
+                            // immediately afterwards. Sharing the
+                            // object means two callers writing that
+                            // field and one of them reading it, so
+                            // opening this screen while the globe is
+                            // polling could put the self-test's gaps
+                            // on the globe's pill, or the other way
+                            // round — the precise failure the field
+                            // exists to prevent. A probe is a
+                            // one-shot request and an extra instance
+                            // costs a few objects.
+                            val probeQuakes = remember { EarthquakeDataSource() }
+                            val probeMetar = remember { MetarDataSource() }
+                            val probeAir = remember { AirQualityDataSource() }
+                            val probeCyclone = remember { CycloneDataSource() }
+                            val probeTsunami = remember { TsunamiDataSource() }
+                            val probeCctv = remember { CctvDataSource() }
+                            val probeAirspace = remember { AirspaceDataSource() }
                             DiagnosticsScreen(
                                 app.executorFactory,
                                 feeds = listOf(
                                     FeedProbe("Aircraft (OpenSky/adsb.fi)") { app.aircraftDataSource.fetch().size },
                                     FeedProbe("Military ADS-B") { app.milAircraftDataSource.fetch().size },
                                     FeedProbe("Vessels (AIS \u00b7 Fintraffic + Kystverket)") { app.aisDataSource.fetch().size },
-                                    FeedProbe("Earthquakes (USGS)") { app.earthquakeDataSource.fetch().size },
+                                    FeedProbe("Earthquakes (USGS)") { probeQuakes.fetch().size },
                                     FeedProbe("Natural events (EONET)") { app.naturalEventsDataSource.fetch().size },
                                     FeedProbe("Wildfires (NASA FIRMS)") { app.firesDataSource.fetch().size },
                                     FeedProbe("Volcanoes (Smithsonian GVP)") { app.volcanoDataSource.fetch().size },
@@ -609,19 +641,19 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                     FeedProbe("Aurora (SWPC)") { app.auroraDataSource.fetch().size },
                                     FeedProbe("News (GDELT)") { app.newsDataSource.fetch().size },
                                     FeedProbe("Ocean buoys (NDBC)") { app.buoyDataSource.fetch().size },
-                                    FeedProbe("METAR (AWC)") { app.metarDataSource.fetch().size },
+                                    FeedProbe("METAR (AWC)") { probeMetar.fetch().size },
                                     FeedProbe("Satellites (Celestrak)") { app.satellitesDataSource.fetch().size },
-                                    FeedProbe("Air quality (Open-Meteo)") { app.airQualityDataSource.fetch().size },
+                                    FeedProbe("Air quality (Open-Meteo)") { probeAir.fetch().size },
                                     FeedProbe("Seismic stations (IRIS)") { app.seismicStationDataSource.fetch().size },
                                     FeedProbe("Conflicts (Wikidata)") { app.conflictDataSource.fetch().size },
                                     FeedProbe("Airports (bundled)") { app.airportDataSource.fetch().size },
                                     FeedProbe("Power plants (bundled)") { app.powerPlantDataSource.fetch().size },
-                                    FeedProbe("Cameras (OpenStreetMap + Caltrans)") { app.cctvDataSource.fetch().size },
-                                    FeedProbe("Airspace (FAA \u00b7 US + OSM military)") { app.airspaceDataSource.fetch().size },
+                                    FeedProbe("Cameras (OpenStreetMap + Caltrans)") { probeCctv.fetch().size },
+                                    FeedProbe("Airspace (FAA \u00b7 US + OSM military)") { probeAirspace.fetch().size },
                                     FeedProbe("Space weather (SWPC)") { app.spaceWeatherDataSource.fetch().alerts.size + 1 },
                                     FeedProbe("Cable landings") { app.cableLandingDataSource.fetch().size },
-                                    FeedProbe("Tropical cyclones (NHC + JTWC)") { app.cycloneDataSource.fetch().size },
-                                    FeedProbe("Tsunami bulletins (NTWC/PTWC)") { app.tsunamiDataSource.fetch().size },
+                                    FeedProbe("Tropical cyclones (NHC + JTWC)") { probeCyclone.fetch().size },
+                                    FeedProbe("Tsunami bulletins (NTWC/PTWC)") { probeTsunami.fetch().size },
                                     FeedProbe("Airport status (FAA \u00b7 US)") { app.airportStatusDataSource.fetch().size },
                                     FeedProbe("Radiation (Safecast archive)") { app.radiationDataSource.fetch(35.65, 139.84, 8.0).size },
                                     FeedProbe("Custom overlay") { app.overlayDataSource.fetch().size }

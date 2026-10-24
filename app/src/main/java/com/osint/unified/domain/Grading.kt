@@ -119,8 +119,17 @@ object Grading {
         // to be at least as good as the one it is contradicting.
         // Below that it is noted — `contradicted` is carried on the
         // entity and shown — but it does not move the grade.
+        //
+        // The floor is NOT_USUALLY rather than FAIRLY. At FAIRLY it
+        // also silenced a D contradicting a D, which is a real
+        // conflict: two aggregators of unclear provenance asserting
+        // mutually exclusive countries for one subject means at
+        // least one of them is definitely wrong, and the grade has
+        // to say so. What the floor is for is E and F — a pattern
+        // match and an ungraded directory — which can no more
+        // destroy a claim than they can confirm one.
         contradicting > agreeing &&
-            contradictingSource <= Reliability.FAIRLY &&
+            contradictingSource <= Reliability.NOT_USUALLY &&
             contradictingSource <= source -> Credibility.IMPROBABLE
         // Agreement from sources nobody should believe is not
         // confirmation. It is still worth something — two accounts of

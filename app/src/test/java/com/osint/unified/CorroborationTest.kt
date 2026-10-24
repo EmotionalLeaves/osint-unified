@@ -314,6 +314,38 @@ class CorroborationTest {
         )
     }
 
+    /**
+     * Two aggregators of unclear provenance asserting mutually
+     * exclusive countries: at least one is definitely wrong, and the
+     * first version of the quality gate let both come out clean.
+     */
+    @Test
+    fun twoWeakButNotWorthlessSourcesInConflictAreStillImprobable() {
+        assertEquals(
+            Grading.Credibility.IMPROBABLE,
+            Grading.credibility(
+                source = Grading.Reliability.NOT_USUALLY,
+                agreeing = 0,
+                contradicting = 1,
+                contradictingSource = Grading.Reliability.NOT_USUALLY
+            )
+        )
+    }
+
+    /** But a pattern match contradicting a pattern match is noise. */
+    @Test
+    fun twoUnreliableSourcesInConflictMoveNothing() {
+        assertEquals(
+            Grading.credibility(Grading.Reliability.UNRELIABLE, agreeing = 0),
+            Grading.credibility(
+                source = Grading.Reliability.UNRELIABLE,
+                agreeing = 0,
+                contradicting = 1,
+                contradictingSource = Grading.Reliability.UNRELIABLE
+            )
+        )
+    }
+
     @Test
     fun twoGoodSourcesStillConfirm() {
         assertEquals(
