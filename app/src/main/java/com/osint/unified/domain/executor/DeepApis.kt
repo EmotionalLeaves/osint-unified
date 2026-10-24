@@ -926,9 +926,15 @@ class DeepApis(
                 )
                 if (commits > COMMIT_PAGE) sb.append("; the latest $COMMIT_PAGE read")
                 sb.append(":\n")
+                // "Declared name:" at the start of its own line,
+                // because that is the label EntityExtractor reads as
+                // a PERSON — and a name that is not extracted is a
+                // name the dossier cannot pivot on, which would
+                // waste the only part of this that answers the
+                // question somebody asked.
                 names.forEach { (name, n) ->
-                    sb.append("• Name on the commits: $name")
-                    if (names.size > 1 || n > 1) sb.append(" ($n of ${items.size} read)")
+                    sb.append("Declared name: $name")
+                    if (names.size > 1 || n > 1) sb.append("  ($n of ${items.size} read)")
                     sb.append('\n')
                 }
                 login?.let { sb.append("• Linked account: $it — https://github.com/$it\n") }
