@@ -229,6 +229,46 @@ object ToolRegistry {
             "Notable places within 10 km of a coordinate (Wikipedia GeoSearch).",
             "https://en.wikipedia.org"),
         // ---- Deep keyless sources (probed live before shipping) ----
+        // The handle sources that return a profile rather than a tick.
+        //
+        // Eight username tools already fetch, and every one of them
+        // answers the same question: does an account with this name
+        // exist here. Worth knowing once, thin as a dossier. These
+        // answer the other one — when it does exist, what has its
+        // owner written down about themselves. A declared city, an
+        // employer, a real name or a linked profile is a lead.
+        Tool("chess", "Chess.com profile", SOCMINT, "username", "text", DIRECT,
+            "Declared name, city, country and Twitch link from a Chess.com profile.",
+            "https://www.chess.com"),
+        Tool("lichess", "Lichess profile", SOCMINT, "username", "text", DIRECT,
+            "Declared name, country, bio and self-listed social links, plus when " +
+                "the account was last seen.",
+            "https://lichess.org"),
+        Tool("codeforces", "Codeforces profile", SOCMINT, "username", "text", DIRECT,
+            "Declared name, city, country and employer or university from a " +
+                "competitive-programming profile.",
+            "https://codeforces.com"),
+        Tool("wikiuser", "Wikimedia account", SOCMINT, "username", "text", DIRECT,
+            "Every Wikipedia and sister project this account has edited, with " +
+                "counts and dates — the wikis' own records, not self-declared.",
+            "https://meta.wikimedia.org"),
+        Tool("codeberg", "Codeberg profile", SOCMINT, "username", "text", DIRECT,
+            "Name, location, bio and site from the Git host people use when " +
+                "they are deliberately not on GitHub.",
+            "https://codeberg.org"),
+        Tool("huggingface", "Hugging Face profile", SOCMINT, "username", "text", DIRECT,
+            "Name, bio, published models and the organisations an ML account " +
+                "belongs to.",
+            "https://huggingface.co"),
+        Tool("libravatar", "Libravatar", SOCMINT, "email", "text", DIRECT,
+            "Whether a federated or self-hosted avatar is published for this " +
+                "address — the people who avoid Gravatar on purpose.",
+            "https://www.libravatar.org"),
+        Tool("ubuntukeys", "Ubuntu keyserver", FORENSICS, "email", "text", DIRECT,
+            "PGP keys on the unverified SKS keyserver, which holds what " +
+                "keys.openpgp.org will not — and proves only that somebody " +
+                "uploaded one.",
+            "https://keyserver.ubuntu.com"),
         Tool("keybase", "Keybase proofs", SOCMINT, "username", "text", DIRECT,
             "Cryptographically proven links from a username to Twitter, GitHub, Reddit, HN and websites.",
             "https://keybase.io"),
@@ -460,7 +500,10 @@ object ToolRegistry {
             "wikinearby", "osmrecon", "osmuser", "overpass_turbo",
             "milsites", "photosnear", "ukcrime", "fbi", "histweather",
             "sunterrain", "outages", "cctvnear", "reddit", "hackernews",
-            "telegram", "gdelt", "breaches", "tar1090", "exif", "exiftool"
+            "telegram", "gdelt", "breaches", "tar1090", "exif", "exiftool",
+            // Edit counts and registration dates are the wikis' own
+            // records about an account, not claims by its holder.
+            "wikiuser"
         ).forEach { put(it, Grading.Reliability.USUALLY) }
 
         // C — a third party reporting what it saw.
@@ -475,7 +518,19 @@ object ToolRegistry {
             // owner typed, and a Crossref author query is fuzzy — a
             // third party reporting what it holds, not a record of
             // who anybody is.
-            "ghname", "bskyname", "publications"
+            "ghname", "bskyname", "publications",
+            // A profile field is a claim its subject typed about
+            // themselves and nobody checked it, which is exactly
+            // what C means. The account's existence and its dates
+            // are harder than that, but the dossier grades a source
+            // and not a line.
+            "chess", "lichess", "codeforces", "codeberg", "huggingface",
+            "libravatar",
+            // And this keyserver verifies nothing at all: a key here
+            // is a claim that somebody uploaded, not a confirmed
+            // address, which is the whole difference from pgpkey
+            // above at B.
+            "ubuntukeys"
         ).forEach { put(it, Grading.Reliability.FAIRLY) }
 
         // D — derived, of unclear provenance.

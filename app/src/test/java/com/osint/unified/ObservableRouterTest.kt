@@ -188,6 +188,26 @@ class ObservableRouterTest {
         assertTrue(router.classifyAs("anything", "name") is Observable.Name)
     }
 
+    /**
+     * Every id a router list names has to resolve, or the tool is
+     * dropped by mapNotNull without a word and the search quietly
+     * runs one fewer source than it says it does.
+     */
+    @Test
+    fun theHandleSourcesAreRegisteredAndDispatched() {
+        val handles = router.suggestTools(Observable.Username("octocat")).map { it.id }
+        listOf("chess", "lichess", "codeforces", "wikiuser", "codeberg", "huggingface")
+            .forEach {
+                assertNotNull(it, ToolRegistry.byId(it))
+                assertTrue(it, it in handles)
+            }
+        val emails = router.suggestTools(Observable.Email("a@b.com")).map { it.id }
+        listOf("libravatar", "ubuntukeys").forEach {
+            assertNotNull(it, ToolRegistry.byId(it))
+            assertTrue(it, it in emails)
+        }
+    }
+
     @Test
     fun newToolsRegistered() {
         assertNotNull(ToolRegistry.byId("websearch"))

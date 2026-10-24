@@ -296,8 +296,34 @@ class ObservableRouter {
      */
     fun suggestTools(observable: Observable): List<Tool> {
         val ids = when (observable) {
-            is Observable.Email -> listOf("breaches", "breachcat", "gravatar", "pgpkey", "emailaccounts", "hudsonrock", "emailgithub", "mailsec", "websearch", "dorks", "toolrun", "framework", "holehe", "ghunt", "h8mail")
-            is Observable.Username -> listOf("keybase", "socialsweep", "github", "ghactivity", "sherlock", "maigret", "blackbird", "reddit", "hackernews", "telegram", "osmuser", "wikidata", "websearch", "dorks", "toolrun", "framework")
+            is Observable.Email -> listOf(
+                "breaches", "breachcat", "gravatar",
+                // The avatar question asked of the service people
+                // use when they are avoiding the first one.
+                "libravatar",
+                "pgpkey",
+                // And the keyserver that holds what the verified one
+                // will not.
+                "ubuntukeys",
+                "emailaccounts", "hudsonrock", "emailgithub", "mailsec",
+                "websearch", "dorks", "toolrun", "framework",
+                "holehe", "ghunt", "h8mail"
+            )
+            // Eight of these answered "does an account exist here"
+            // and nothing else, which is a tick rather than a lead.
+            // The six added below return what the account holder
+            // wrote about themselves — a city, an employer, a real
+            // name, a link to another identity — and the Wikimedia
+            // one returns what the wikis recorded rather than what
+            // anybody claimed.
+            is Observable.Username -> listOf(
+                "keybase", "socialsweep", "github", "ghactivity",
+                "wikiuser", "chess", "lichess", "codeforces",
+                "codeberg", "huggingface",
+                "sherlock", "maigret", "blackbird", "reddit", "hackernews",
+                "telegram", "osmuser", "wikidata",
+                "websearch", "dorks", "toolrun", "framework"
+            )
             is Observable.Domain -> listOf("subfinder", "breachcat", "crtsh", "subsweep", "commoncrawl", "dns", "tlscert", "mailsec", "headers", "sitefiles", "rdap", "hostintel", "otx", "typosquat", "httpx", "shodan", "urlscan", "waybackurls", "gau", "webcrawl", "wayback", "archive", "dorks", "toolrun", "framework", "nuclei")
             is Observable.IpAddress -> listOf("ipinfo", "ptr", "iprep", "torexit", "torrelay", "shodan", "bgpview", "asnintel", "otx", "rdap", "hostintel", "dorks", "toolrun", "framework", "httpx", "nuclei")
             // Four tools, and not one of them asked anything about

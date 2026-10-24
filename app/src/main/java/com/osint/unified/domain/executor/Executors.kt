@@ -268,6 +268,7 @@ class DirectToolExecutor(
     private val apis: OsintApis = OsintApis(),
     private val deep: DeepApis = DeepApis({ settings.secContactEmail }),
     private val people: PeopleApis = PeopleApis(),
+    private val handles: HandleApis = HandleApis(),
     /** Held, not rebuilt: it owns a six-hour inventory cache. */
     private val cctv: com.osint.unified.data.CctvDataSource =
         com.osint.unified.data.CctvDataSource(),
@@ -443,6 +444,28 @@ class DirectToolExecutor(
                 ) -> Findings.Kind.ABSENT
                 else -> null
             }
+            // Each of these opens with the account either existing
+            // or not, in its own words.
+            "chess", "lichess", "codeforces", "codeberg", "huggingface",
+            "wikiuser" -> when {
+                head.startsWith("No ") -> Findings.Kind.ABSENT
+                head.contains("could not be asked") ||
+                    head.contains("could not be reached") -> Findings.Kind.UNREACHABLE
+                head.contains(" exists") -> Findings.Kind.HIT
+                else -> null
+            }
+            "libravatar" -> when {
+                starts("Libravatar has an avatar") -> Findings.Kind.HIT
+                starts("No Libravatar avatar") -> Findings.Kind.ABSENT
+                else -> Findings.Kind.UNREACHABLE
+            }
+            "ubuntukeys" -> when {
+                starts("No PGP key on the Ubuntu keyserver") -> Findings.Kind.ABSENT
+                starts("The Ubuntu keyserver could not be reached") ->
+                    Findings.Kind.UNREACHABLE
+                head.contains("on the Ubuntu keyserver mentioning") -> Findings.Kind.HIT
+                else -> null
+            }
             "phoneinfoga" -> when {
                 head.contains("is a valid") -> Findings.Kind.HIT
                 head.contains("is not a valid number") -> Findings.Kind.ABSENT
@@ -540,6 +563,14 @@ class DirectToolExecutor(
                 "pgpkey" -> deep.pgpKey(input)
                 "commoncrawl" -> deep.commonCrawl(input)
                 "photosnear" -> deep.photosNear(input)
+                "chess" -> handles.chess(input)
+                "lichess" -> handles.lichess(input)
+                "codeforces" -> handles.codeforces(input)
+                "wikiuser" -> handles.wikimediaUser(input)
+                "codeberg" -> handles.codeberg(input)
+                "huggingface" -> handles.huggingFace(input)
+                "libravatar" -> handles.libravatar(input)
+                "ubuntukeys" -> handles.ubuntuKeyserver(input)
                 "orcid" -> people.orcid(input)
                 "publications" -> people.publications(input)
                 "ghname" -> people.codeAccounts(input)
