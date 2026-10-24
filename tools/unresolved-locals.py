@@ -140,10 +140,66 @@ def parameter_names(text):
     # lines down inside the iteration loop, was left behind. CI
     # found it six minutes later, which is what this file exists to
     # prevent.
-    out.update(LAMBDA_PARAM.findall(text))
+    #
+    # Split, not added whole: findall returns the one group, so
+    # `{ a, b -> }` came back as the single string "a, b" and neither
+    # name was ever learned — the fix for rule 8 only covered lambdas
+    # with one parameter.
+    for group in LAMBDA_PARAM.findall(text):
+        out.update(n.strip() for n in group.split(",") if n.strip())
     for m in LAMBDA_DESTRUCTURE.finditer(text):
         out.update(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", m.group(1)))
+    # The four other ways a name is declared without val, var or fun in
+    # front of it, each the same blind spot as the lambda parameter:
+    #   { e: Throwable -> }     a typed lambda parameter
+    #   for (x in xs), for ((k, v) in m)
+    #   val (lat, lon) = …      a destructuring declaration
+    #   when (val x = f())  and  catch (e: IOException)
+    for m in LAMBDA_HEAD.finditer(text):
+        for part in _top_level_split(m.group(1)):
+            name = part.split(":", 1)[0].strip()
+            if IDENT.fullmatch(name):
+                out.add(name)
+    for m in FOR_LOOP.finditer(text):
+        out.update(IDENT_ANY.findall(m.group(1) or m.group(2) or ""))
+    for m in DESTRUCTURE_DECL.finditer(text):
+        for part in _top_level_split(m.group(1)):
+            name = part.split(":", 1)[0].strip()
+            if IDENT.fullmatch(name):
+                out.add(name)
+    out.update(WHEN_VAL.findall(text))
+    out.update(CATCH_PARAM.findall(text))
+    out.discard("_")
     return out
+
+
+IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+IDENT_ANY = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+# `{ name: Type ->`, `{ a: A, b: B ->` — the parameters of a typed lambda.
+LAMBDA_HEAD = re.compile(r"\{\s*([A-Za-z_][A-Za-z0-9_]*\s*:[^{}\n]{1,200}?)->")
+FOR_LOOP = re.compile(
+    r"\bfor\s*\(\s*(?:\(([^)]{1,120})\)|([A-Za-z_][A-Za-z0-9_]*))\s*(?::[^)]{1,80}?)?\s+in\b"
+)
+DESTRUCTURE_DECL = re.compile(r"\b(?:val|var)\s*\(([^)]{1,200})\)\s*(?::[^=]{1,80})?=")
+WHEN_VAL = re.compile(r"\bwhen\s*\(\s*val\s+([A-Za-z_][A-Za-z0-9_]*)")
+CATCH_PARAM = re.compile(r"\bcatch\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*:")
+
+
+def _top_level_split(s):
+    """Split on commas that are not inside <>, () or []."""
+    parts, depth, cur = [], 0, []
+    for c in s:
+        if c in "<([":
+            depth += 1
+        elif c in ">)]":
+            depth -= 1
+        if c == "," and depth == 0:
+            parts.append("".join(cur))
+            cur = []
+        else:
+            cur.append(c)
+    parts.append("".join(cur))
+    return parts
 # Both spellings on purpose.
 #
 # Kotlin 1.9 wrote "unresolved reference: Place" and Kotlin 2.0 writes

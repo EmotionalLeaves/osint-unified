@@ -764,16 +764,24 @@ class UsernameChecker(private val appContext: Context) {
                 if (!merged.containsKey(key)) merged[key] = r
             }
         }
+        // Missing means "contributed no rules", not "the file was blank".
+        //
+        // Only a blank file used to count. A ruleset that was present and
+        // did not parse — a truncated download, or the upstream changing
+        // its shape — came back from its parser as an empty list, was not
+        // named as missing, and the sweep ran a third short while the
+        // caveat that exists to say so stayed silent. The parsers return
+        // empty on purpose; this is the one place that reads that as a gap.
         val missing = ArrayList<String>()
-        val wmn = asset("wmn-data.json") ?: downloadWmn()
-        if (wmn.isNullOrBlank()) missing.add("WhatsMyName")
-        add(parseWhatsMyName(wmn))
-        val sherlock = asset("sherlock.json")
-        if (sherlock.isNullOrBlank()) missing.add("Sherlock")
-        add(parseSherlock(sherlock))
-        val maigret = asset("maigret.json")
-        if (maigret.isNullOrBlank()) missing.add("Maigret")
-        add(parseMaigret(maigret))
+        val wmnRules = parseWhatsMyName(asset("wmn-data.json") ?: downloadWmn())
+        if (wmnRules.isEmpty()) missing.add("WhatsMyName")
+        add(wmnRules)
+        val sherlockRules = parseSherlock(asset("sherlock.json"))
+        if (sherlockRules.isEmpty()) missing.add("Sherlock")
+        add(sherlockRules)
+        val maigretRules = parseMaigret(asset("maigret.json"))
+        if (maigretRules.isEmpty()) missing.add("Maigret")
+        add(maigretRules)
         val all = merged.values.toList()
         // The gaps first, then the rules.
         //
@@ -823,6 +831,8 @@ class UsernameChecker(private val appContext: Context) {
         appContext.assets.open(name).bufferedReader().use { it.readText() }
     }.getOrNull()?.takeIf { it.length > 1000 }
 
+    // empty-is-an-answer: an empty ruleset is reported by loadRules as a
+    // missing ruleset, by name, in the sweep's own caveat.
     private fun parseWhatsMyName(text: String?): List<SiteRule> {
         if (text.isNullOrBlank()) return emptyList()
         return runCatching {
@@ -850,6 +860,8 @@ class UsernameChecker(private val appContext: Context) {
         }.getOrDefault(emptyList())
     }
 
+    // empty-is-an-answer: an empty ruleset is reported by loadRules as a
+    // missing ruleset, by name, in the sweep's own caveat.
     private fun parseSherlock(text: String?): List<SiteRule> {
         if (text.isNullOrBlank()) return emptyList()
         return runCatching {
@@ -897,6 +909,8 @@ class UsernameChecker(private val appContext: Context) {
         }.getOrDefault(emptyList())
     }
 
+    // empty-is-an-answer: an empty ruleset is reported by loadRules as a
+    // missing ruleset, by name, in the sweep's own caveat.
     private fun parseMaigret(text: String?): List<SiteRule> {
         if (text.isNullOrBlank()) return emptyList()
         return runCatching {

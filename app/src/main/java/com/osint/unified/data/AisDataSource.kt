@@ -200,6 +200,10 @@ class AisDataSource(
                 .build()
             client.newCall(request).execute().use { resp ->
                 val body = resp.body?.string()
+                // empty-is-an-answer: vessel names are enrichment, not the
+                // layer. A refused register leaves vessels drawn and unnamed,
+                // and the cache is only replaced by a non-empty answer, so a
+                // refusal never wipes names already known.
                 if (!resp.isSuccessful || body.isNullOrBlank()) return@runCatching emptyMap()
                 json.parseToJsonElement(body).jsonArray.mapNotNull { element ->
                     val o = element as? JsonObject ?: return@mapNotNull null

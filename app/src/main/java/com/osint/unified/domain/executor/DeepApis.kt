@@ -1026,7 +1026,11 @@ class DeepApis(
         asked.of {
             // RapidDNS publishes an HTML table; each row's first cell is a host.
             val html = get("https://rapiddns.io/subdomain/$d?full=1", browserUa)
-            Regex("""<td[^>]*>([A-Za-z0-9_.*-]+\.${Regex.escape(d)})</td>""", RegexOption.IGNORE_CASE)
+            // Bounded to a hostname's length. The class includes `.` and is
+            // followed by `\.`, so an unbounded run backtracks over every
+            // split of it — the email pattern's quadratic shape, on a page
+            // somebody else serves.
+            Regex("""<td[^>]*>([A-Za-z0-9_.*-]{1,253}\.${Regex.escape(d)})</td>""", RegexOption.IGNORE_CASE)
                 .findAll(html).forEach { record(it.groupValues[1], "rapiddns") }
         }
         asked.of {
@@ -2774,6 +2778,8 @@ class DeepApis(
     private fun JsonObject?.dbl(k: String) = (this?.get(k) as? JsonPrimitive)?.doubleOrNull
 
     /** Every string-valued claim for a Wikidata property. */
+    // empty-is-an-answer: an entity without this property has no claims
+    // for it; the entity itself was already found or refused upstream.
     private fun JsonObject?.stringValues(prop: String): List<String> {
         val arr = this?.get(prop) as? JsonArray ?: return emptyList()
         return arr.mapNotNull { st ->
@@ -2783,6 +2789,7 @@ class DeepApis(
     }
 
     /** Every entity (Q-id) claim for a Wikidata property. */
+    // empty-is-an-answer: as above — an absent property is no claims.
     private fun JsonObject?.entityIds(prop: String): List<String> {
         val arr = this?.get(prop) as? JsonArray ?: return emptyList()
         return arr.mapNotNull { st ->

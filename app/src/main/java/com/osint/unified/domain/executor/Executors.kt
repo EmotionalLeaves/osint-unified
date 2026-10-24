@@ -1061,6 +1061,9 @@ class DirectToolExecutor(
         val notAsked = executed.filter { it.why != null }
 
         // The wider directory, pointed at this target.
+        // empty-is-an-answer: these are links for a person to run, from a
+        // bundled file; without them the section is left out, and nothing
+        // is claimed about the target.
         val derived = runCatching {
             com.osint.unified.domain.ToolTemplates.derived(
                 appContext,

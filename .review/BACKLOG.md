@@ -104,7 +104,7 @@ closed; their headings say so.
   URL the code can emit is public; without the actual link this is
   guesswork.
 
-### Verification of the second batch, 9125be2..HEAD (r18, 24 Oct) — all 22 closed
+### Verification of the second batch, 9125be2..HEAD (r18, 24 Oct) — all 22 closed (V20–V22 after being wrongly bulk-closed and reopened)
 
 A fourth pass, over the nineteen commits that fixed r13–r17. It
 found the same thing the three before it found: **rule 1 recurs
