@@ -44,9 +44,20 @@ class WatchDigestTest {
 
     @Test
     fun whitespaceAloneIsNeverAChange() {
+        // Spacing within a line, and blank lines, are formatting.
         assertEquals(
-            WatchDigest.normalise("one\n\n  two   three"),
-            WatchDigest.normalise("one two three")
+            WatchDigest.normalise("one\n\n  two   three  "),
+            WatchDigest.normalise("one\ntwo three")
+        )
+        // A line break between two tokens is NOT the same as a space,
+        // and this test used to say it was — which was a side effect
+        // of collapsing the whole answer onto one line, and is the
+        // thing that had to go for a reordered answer to stop
+        // reading as a change. The line is the unit now, so what is
+        // on a line matters and the order of the lines does not.
+        assertNotEquals(
+            WatchDigest.normalise("one\ntwo"),
+            WatchDigest.normalise("one two")
         )
     }
 
