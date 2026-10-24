@@ -112,6 +112,11 @@ private val EXAMPLES = listOf("example.com", "8.8.8.8", "40.7128,-74.0060", "+14
 // as a wallet, because those guesses are wrong more often than
 // they are right. Forcing the type is the answer to exactly that,
 // and for three of the twelve there was no way to.
+/** The questions, in the order somebody is likeliest to ask them. */
+private val LAYER_PRESETS = listOf(
+    "AVIATION", "MARITIME", "DISASTER", "CONFLICT", "INFRASTRUCTURE", "SPACE WX"
+)
+
 private val SEARCH_TYPES = listOf(
     "auto" to "AUTO", "name" to "NAME", "email" to "EMAIL", "username" to "USER",
     "domain" to "DOMAIN", "ip" to "IP", "phone" to "PHONE", "coordinate" to "COORD",
@@ -821,6 +826,52 @@ fun GodEyeViewScreen(
                 showWorldWarnings = false
             }
 
+            // Six questions, instead of thirty-three switches.
+            //
+            // The layer list is a list of feeds, and nobody arrives
+            // wanting a feed: they arrive wanting to know what is
+            // happening in the air, or at sea, or where something has
+            // just gone wrong. Finding the six or seven pills that
+            // answer one of those, out of thirty-three in a flat row
+            // with a search box to find a pill, is the work the app
+            // should have done. Each of these clears everything and
+            // turns on the set that answers one question, including
+            // the on-demand ones, which have to be asked as well as
+            // switched on.
+            val applyPreset: (String) -> Unit = { preset ->
+                clearLayers()
+                when (preset) {
+                    "AVIATION" -> {
+                        showAircraft = true; showMil = true; showAirports = true
+                        showMetar = true; showAirportStatus = true
+                        showAirspace = true; viewModel.ensureAirspace()
+                    }
+                    "MARITIME" -> {
+                        showVessels = true; showPorts = true; showBuoys = true
+                        showSeaLevel = true; showCables = true
+                    }
+                    "DISASTER" -> {
+                        showQuakes = true; showVolcanoes = true; showGdacs = true
+                        showCyclones = true; showTsunami = true; showFires = true
+                        showWorldWarnings = true; showWeather = true
+                    }
+                    "CONFLICT" -> {
+                        showConflict = true; showMil = true; showNews = true
+                        showSites = true; viewModel.ensureSites()
+                        showAirspace = true; viewModel.ensureAirspace()
+                    }
+                    "INFRASTRUCTURE" -> {
+                        showPower = true; showCables = true; showPorts = true
+                        showAirports = true; showStations = true; showOutages = true
+                        showCameras = true; viewModel.ensureCameras()
+                    }
+                    "SPACE WX" -> {
+                        showAurora = true; showSats = true; showLaunches = true
+                        showRadiation = true; viewModel.ensureRadiation(true)
+                    }
+                }
+            }
+
             // The pill row shows what is on, and nothing else.
             //
             // Thirty-three of them at once is clutter whichever way they
@@ -1000,6 +1051,7 @@ fun GodEyeViewScreen(
                 LayerPicker(
                     filter = layerFilter,
                     onFilter = { layerFilter = it },
+                    onPreset = applyPreset,
                     onClose = { picking = false }
                 ) {
                     CompositionLocalProvider(
@@ -2224,6 +2276,7 @@ private val LocalShowAllLayers = compositionLocalOf { false }
 private fun LayerPicker(
     filter: String,
     onFilter: (String) -> Unit,
+    onPreset: (String) -> Unit,
     onClose: () -> Unit,
     content: @Composable () -> Unit
 ) {
@@ -2260,10 +2313,38 @@ private fun LayerPicker(
                         .padding(horizontal = 14.dp, vertical = 6.dp)
                 )
             }
+            Text(
+                "START WITH A QUESTION",
+                style = MaterialTheme.typography.labelSmall,
+                color = Intel.Cyan,
+                modifier = Modifier.padding(horizontal = 12.dp, bottom = 4.dp)
+            )
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)
+            ) {
+                LAYER_PRESETS.forEach { preset ->
+                    Text(
+                        preset,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Intel.Base,
+                        modifier = Modifier
+                            .minimumInteractiveComponentSize()
+                            .clip(RoundedCornerShape(50))
+                            .background(Intel.Cyan)
+                            .clickable {
+                                onPreset(preset)
+                                onClose()
+                            }
+                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                    )
+                }
+            }
             LayerFilterField(filter, onFilter)
             Text(
-                "Tap one to turn it on. A layer only fetches while it is " +
-                    "on, so an empty map costs nothing.",
+                "Or tap one below to turn it on. A layer only fetches while " +
+                    "it is on, so an empty map costs nothing.",
                 style = MaterialTheme.typography.labelSmall,
                 color = Intel.TextLow,
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
