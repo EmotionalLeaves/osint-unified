@@ -333,6 +333,11 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
         }
     }
 
+    /** For reading a handshake: the first response is the one that has it. */
+    private val noRedirects: OkHttpClient by lazy {
+        client.newBuilder().followRedirects(false).followSslRedirects(false).build()
+    }
+
     private fun hostOf(input: String) =
         input.removePrefix("https://").removePrefix("http://").substringBefore('/').trim()
 
@@ -341,13 +346,29 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
     fun tlsCert(input: String): Result<String> = runCatching {
         val host = hostOf(input)
         val request = Request.Builder().url("https://$host").head().header("User-Agent", ua).build()
-        client.newCall(request).execute().use { resp ->
+        // Not following redirects: the certificate is the first answer's.
+        //
+        // The client followed them, and a site that sent HTTPS visitors
+        // to plain http:// took the request somewhere Android's network
+        // policy refuses to go — so the tool died with "CLEARTEXT
+        // communication not permitted" after the handshake it was asked
+        // for had already happened, and the dossier filed the host as
+        // unreachable. The redirect is itself worth saying.
+        noRedirects.newCall(request).execute().use { resp ->
             val hs = resp.handshake ?: return@runCatching "No TLS handshake with $host."
             val cert = hs.peerCertificates.firstOrNull() as? java.security.cert.X509Certificate
                 ?: return@runCatching "No certificate presented by $host."
             val days = (cert.notAfter.time - System.currentTimeMillis()) / 86_400_000L
             buildString {
                 append("Host: $host\n")
+                if (resp.isRedirect) {
+                    val to = resp.header("Location").orEmpty()
+                    if (to.startsWith("http://", ignoreCase = true)) {
+                        append("⚠ Redirects HTTPS visitors to plain HTTP: $to\n")
+                    } else if (to.isNotBlank()) {
+                        append("Redirects to: $to\n")
+                    }
+                }
                 append("Issuer: ${cert.issuerX500Principal.name}\n")
                 append("Subject: ${cert.subjectX500Principal.name}\n")
                 append("Valid from: ${cert.notBefore}\n")

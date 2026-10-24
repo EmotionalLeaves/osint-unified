@@ -1639,6 +1639,13 @@ class GodEyeViewModel(
         }
     }
 
+    /**
+     * A tool that asks thousands of hosts or runs for a minute: the
+     * username sweeps, and anything given more than the default time.
+     */
+    private fun isSweep(tool: Tool): Boolean =
+        tool.id in SWEEP_IDS || tool.timeoutMs > SWEEP_THRESHOLD_MS
+
     /** Runs the given tools concurrently so findings appear as fast as each
      *  tool returns, rather than trickling in one at a time. */
     private fun runToolsInParallel(
@@ -1669,10 +1676,40 @@ class GodEyeViewModel(
             val investigationId = ensureInvestigation(observable)
             if (run != searchRun) return@launch
             _state.update { it.copy(runningTools = it.runningTools.plusRunning(fresh.map { t -> t.id })) }
+            // The sweeps wait for the quick lookups.
+            //
+            // Everything used to start in the same instant, so a username
+            // sweep asking 2,800 sites began alongside lookups that have
+            // thirty seconds to answer — and in a real case five of them
+            // (the infostealer check, the keyserver, email-to-GitHub, mail
+            // security, the search pivots), on five unrelated hosts, all
+            // died at the thirty-second cap during the sweep's window.
+            // What they share with it is the phone: one radio and one
+            // resolver, with thousands of lookups queued in front of
+            // theirs. The quick tools get the network first; a sweep
+            // starts when they are done, or after a fixed hold if one of
+            // them hangs. A sweep runs for a minute anyway, so the hold
+            // costs little and the thirty-second tools stop timing out.
+            val quick = fresh.filterNot { isSweep(it) }
+            val quickDone = kotlinx.coroutines.CompletableDeferred<Unit>()
             val produced = coroutineScope {
+                // Cancelled below once every tool is done: coroutineScope
+                // waits for its children, and a timer left running would
+                // hold the follow-up pass for the whole hold.
+                val hold = launch {
+                    kotlinx.coroutines.delay(SWEEP_HOLD_MS)
+                    quickDone.complete(Unit)
+                }
+                val remaining = java.util.concurrent.atomic.AtomicInteger(quick.size)
+                if (quick.isEmpty()) quickDone.complete(Unit)
                 fresh.map { tool ->
                     async {
+                        val sweep = isSweep(tool)
                         try {
+                            // Inside the try, so a search cancelled during
+                            // the hold still reaches the finally and stops
+                            // listing this tool as running.
+                            if (sweep) quickDone.await()
                             repository.runTool(investigationId, tool, input)
                         } catch (e: CancellationException) {
                             throw e
@@ -1693,6 +1730,7 @@ class GodEyeViewModel(
                             }
                             null
                         } finally {
+                            if (!sweep && remaining.decrementAndGet() == 0) quickDone.complete(Unit)
                             if (run == searchRun) {
                                 _state.update {
                                     it.copy(runningTools = it.runningTools.minusRunning(tool.id))
@@ -1701,7 +1739,10 @@ class GodEyeViewModel(
                             }
                         }
                     }
-                }.map { it.await() }
+                }.map { it.await() }.also {
+                    quickDone.complete(Unit)
+                    hold.cancel()
+                }
             }
             if (thenEnrich) enrich(observable, produced.filterNotNull())
             // Recorded once, after the pass that carries the follow-up.
@@ -2149,6 +2190,15 @@ class GodEyeViewModel(
     }
 
     private companion object {
+        /** The username sweeps, by id: the heaviest thing a dossier runs. */
+        val SWEEP_IDS = setOf("sherlock", "maigret", "blackbird", "socialsweep", "emailaccounts")
+
+        /** Longer than the default thirty seconds marks a long-running tool. */
+        const val SWEEP_THRESHOLD_MS = 45_000L
+
+        /** The longest a sweep waits for the quick lookups to clear. */
+        const val SWEEP_HOLD_MS = 20_000L
+
         /** How often a sleeping feed checks whether its layer came back
          *  on. Short enough to feel immediate, long enough to cost nothing. */
         /** Tool ids that all resolve to the same username sweep, so

@@ -77,6 +77,19 @@ closed; their headings say so.
 - [ ] **U5. A conflict source that records activity** (ACLED or UCDP),
   so "current" stops meaning "no end date on Wikidata". Needs probing
   for a keyless endpoint.
+- [x] **D1. The TLS tool died after it had its answer.** It followed
+  redirects, and a site sending HTTPS visitors to plain http:// took
+  it where Android's cleartext policy refuses to go — "CLEARTEXT
+  communication not permitted", filed as unreachable. The certificate
+  is the first response's; it no longer follows, and a downgrade to
+  plain HTTP is reported as the finding it is.
+- [x] **D2. Five quick tools timed out during the username sweep.**
+  Every tool started in the same instant, so the infostealer check,
+  keyserver, email-to-GitHub, mail security and search pivots — five
+  unrelated hosts — all hit the 30 s cap while a 2,800-site sweep held
+  the radio and the resolver. Sweeps now start when the quick tools are
+  done, or after a 20 s hold. Not reproducible from here; the next real
+  email case is the test.
 - [ ] **U6. Breach values.** No keyless/accountless source returns the
   leaked name/address themselves; decide with the user whether a paid
   key for one service is worth it, or rest on the browser-handoff
