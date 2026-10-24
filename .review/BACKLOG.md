@@ -72,6 +72,26 @@ closed; their headings say so.
   than a hop from the seed no longer corroborates its own input (which
   is how a wiki came out A1 "confirmed").
 
+### Still open after today
+
+- [ ] **U5. A conflict source that records activity** (ACLED or UCDP),
+  so "current" stops meaning "no end date on Wikidata". Needs probing
+  for a keyless endpoint.
+- [ ] **U6. Breach values.** No keyless/accountless source returns the
+  leaked name/address themselves; decide with the user whether a paid
+  key for one service is worth it, or rest on the browser-handoff
+  links. GitHub commit-name search is in.
+- [ ] **TB1. thinBy can strand a layer at zero.** `thinBy`'s loop is
+  `while (contenders.isNotEmpty() && remaining > 0)`. When many tiny
+  layers (size 1) are satisfied in one iteration and their sizes sum
+  to exactly the remaining budget, the loop exits with a large layer
+  still a contender and no quota entry — so it is dropped to zero
+  rather than sampled. Reachable only with budget small relative to
+  the number of layers (ALL LAYERS, a narrow view), and it deletes
+  the *biggest* layer, which is the opposite of fair. Fix with a
+  reproducing test; hold until U1a is green, since thinBy was just
+  rewritten.
+
 ### Blocked on the tester
 - [x] **T1.** Did their APK come from the CI artifact or a local build?
   `assets/` and `jniLibs/` are empty in the tree and filled by the
