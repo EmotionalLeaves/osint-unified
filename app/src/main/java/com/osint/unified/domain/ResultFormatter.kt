@@ -32,7 +32,7 @@ object ResultFormatter {
             .filterNot { it.startsWith(MACHINE_FIELD) }
             .joinToString("\n")
         if (raw.isBlank()) return Summary("No output", emptyList())
-        return try {
+        val parsed = try {
             when (toolId) {
                 "subfinder" -> ndjson(raw) { it.str("host") ?: it.str("input") ?: "" }
                     .let { Summary("${it.size} subdomains", it) }
@@ -81,6 +81,19 @@ object ResultFormatter {
         } catch (e: Exception) {
             fallback(raw)
         }
+        // An empty parse is a failed parse.
+        //
+        // The header says "any failure falls back to the raw text so
+        // the user always sees something", and fallback only ran on a
+        // thrown exception. ndjson filters to lines starting with "{",
+        // so output that is not NDJSON — subfinder invoked without
+        // -json emits bare hostnames, and a pretty-printed object or
+        // a top-level array both miss — parses to an empty list with
+        // nothing thrown. The card then read "0 subdomains" over
+        // fifty hostnames sitting in the raw text, the graph got no
+        // leaves, and the workflow's host extraction came back empty
+        // so the next step was skipped.
+        return if (parsed.lines.isEmpty() && raw.isNotBlank()) fallback(raw) else parsed
     }
 
     private fun fallback(raw: String): Summary {
