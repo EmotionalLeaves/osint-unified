@@ -21,11 +21,13 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -1451,7 +1453,13 @@ fun GodEyeViewScreen(
                                     style = MaterialTheme.typography.labelSmall,
                                     color = Intel.TextLow,
                                     fontFamily = FontFamily.Monospace,
-                                    modifier = Modifier.width(58.dp)
+                                    // A minimum, not a width. The same
+                                    // column in the dossier already
+                                    // says why: at a large font size a
+                                    // fixed 58dp either wraps the
+                                    // distance onto two lines or loses
+                                    // its end.
+                                    modifier = Modifier.widthIn(min = 58.dp)
                                 )
                                 Text(
                                     item.label,
@@ -2375,7 +2383,13 @@ private fun SettingsDialog(
         textContentColor = Intel.TextMid,
         title = { Text("LIVE FEEDS", style = MaterialTheme.typography.titleSmall, color = Intel.TextHi) },
         text = {
-            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+            // Six fields, and the last of them was behind the
+            // keyboard.
+            Column(
+                modifier = Modifier
+                    .imePadding()
+                    .verticalScroll(rememberScrollState())
+            ) {
                 FeedNote(
                     "Several layers cover a region rather than the world, and " +
                         "the pill says which. Add your own feed to widen one."

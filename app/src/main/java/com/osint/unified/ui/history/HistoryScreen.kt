@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -121,7 +122,10 @@ fun HistoryScreen(
             )
         }
     ) { pad ->
-        Column(Modifier.padding(pad).fillMaxSize()) {
+        // Tags, the new-case name and the search field all live
+        // under here, and the keyboard covered whichever one was
+        // being typed into.
+        Column(Modifier.padding(pad).fillMaxSize().imePadding()) {
             val case = openCase
             if (selectedId == null && openCaseId != null && case != null) {
                 LazyColumn(

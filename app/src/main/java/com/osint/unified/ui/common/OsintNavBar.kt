@@ -6,6 +6,9 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -13,6 +16,7 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.style.TextOverflow
 import com.osint.unified.ui.theme.Intel
 
 /**
@@ -41,6 +45,7 @@ private val destinations = listOf(
     Destination("more", "MORE", Icons.Filled.MoreHoriz, "Forensics, self-test, sources")
 )
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OsintNavBar(current: String, badge: Int, onSelect: (String) -> Unit) {
     NavigationBar(containerColor = Intel.Surface, contentColor = Intel.TextMid) {
@@ -53,17 +58,36 @@ fun OsintNavBar(current: String, badge: Int, onSelect: (String) -> Unit) {
                 selected = selected,
                 onClick = { onSelect(destination.screen) },
                 icon = {
-                    Icon(
-                        destination.icon,
-                        contentDescription = destination.description
-                    )
+                    // The unseen count used to be appended to the
+                    // label, which made "WATCH 12" the longest word
+                    // in a 64dp slot: at a large system font size it
+                    // wrapped to two lines, and the bar is a fixed
+                    // 80dp tall, so the icon above it was clipped. A
+                    // badge sits on the icon and costs no width.
+                    if (destination.screen == "watch" && badge > 0) {
+                        BadgedBox(badge = {
+                            Badge(containerColor = Intel.Amber, contentColor = Intel.Base) {
+                                Text(if (badge > 99) "99+" else badge.toString())
+                            }
+                        }) {
+                            Icon(
+                                destination.icon,
+                                contentDescription = destination.description
+                            )
+                        }
+                    } else {
+                        Icon(
+                            destination.icon,
+                            contentDescription = destination.description
+                        )
+                    }
                 },
                 label = {
                     Text(
-                        if (destination.screen == "watch" && badge > 0)
-                            "${destination.label} $badge"
-                        else destination.label,
-                        style = androidx.compose.material3.MaterialTheme.typography.labelSmall
+                        destination.label,
+                        style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 },
                 alwaysShowLabel = true,

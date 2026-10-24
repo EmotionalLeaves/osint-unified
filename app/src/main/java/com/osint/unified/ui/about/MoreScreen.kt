@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -20,6 +21,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.MaterialTheme as M3
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -99,6 +101,9 @@ fun MoreScreen(
             Modifier
                 .padding(pad)
                 .fillMaxSize()
+                // The proxy host and port are near the bottom of
+                // this scroll, and the keyboard covered both.
+                .imePadding()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 12.dp)
         ) {
@@ -306,7 +311,11 @@ private fun PrivacyControls(settings: AppSettings, lockAvailable: Boolean) {
                     ),
                     keyboardActions = KeyboardActions(onDone = { applyProxy() }),
                     modifier = Modifier
-                        .width(110.dp)
+                        // A five-digit port plus the field's own
+                        // padding is more than 110dp once the system
+                        // font is scaled up, and the number was
+                        // clipped in a box the user was typing into.
+                        .widthIn(min = 110.dp)
                         .onFocusChanged { if (!it.isFocused) applyProxy() }
                 )
             }

@@ -19,10 +19,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -32,11 +33,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.osint.unified.data.db.Result as ResultRow
 import com.osint.unified.domain.Findings
@@ -390,7 +391,12 @@ private fun PivotChip(value: String, onClick: () -> Unit) {
             value,
             style = MaterialTheme.typography.labelMedium,
             color = Intel.CyanBright,
-            maxLines = 1
+            maxLines = 1,
+            // Pivot values are hashes, URLs and addresses. Clipped
+            // at one line with no ellipsis, a long one ends flush
+            // against the chip's edge and reads as a complete value
+            // that happens to be odd, rather than a truncated one.
+            overflow = TextOverflow.Ellipsis
         )
     }
 }

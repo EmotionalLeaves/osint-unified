@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -21,11 +22,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -37,39 +36,43 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.osint.unified.data.ExportFormat
-import com.osint.unified.domain.GraphBuilder
 import com.osint.unified.data.WatchRepository
+import com.osint.unified.domain.Corroboration
 import com.osint.unified.domain.EntityExtractor
 import com.osint.unified.domain.Findings
-import com.osint.unified.domain.Corroboration
+import com.osint.unified.domain.GraphBuilder
 import com.osint.unified.domain.IntelSummary
 import com.osint.unified.domain.Observable
 import com.osint.unified.domain.Timeline
@@ -81,12 +84,11 @@ import com.osint.unified.ui.godeye.AreaReport
 import com.osint.unified.ui.godeye.GodEyeViewModel
 import com.osint.unified.ui.theme.Intel
 import com.osint.unified.ui.theme.categoryColor
-import androidx.compose.runtime.produceState
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.launch
-import kotlinx.serialization.encodeToString
 import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.encodeToString
 
 /**
  * Everything the dossier shows, computed in one pass off the main
@@ -276,7 +278,16 @@ fun InvestigationScreen(
         val alreadyChased = analysis.alreadyChased
 
         Column(
-            modifier = Modifier.padding(pad).fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp)
+            // The NOTES field sits at the bottom of this scroll
+            // and was behind the keyboard the moment it was tapped:
+            // the app draws edge to edge and Scaffold's default
+            // insets leave the IME out.
+            modifier = Modifier
+                .padding(pad)
+                .fillMaxSize()
+                .imePadding()
+                .verticalScroll(rememberScrollState())
+                .padding(12.dp)
         ) {
             // ---- Dossier header ----
             Column(
@@ -303,6 +314,7 @@ fun InvestigationScreen(
                         color = Intel.TextLow,
                         fontFamily = FontFamily.Monospace,
                         maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
                         modifier = Modifier
                             .padding(top = 4.dp)
                             .clickable { viewModel.onOpenParent() }
@@ -1003,6 +1015,9 @@ private fun PivotChip(
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
+            // Outermost, or it only enlarges the ripple inside a
+            // chip that is still too small to hit.
+            .minimumInteractiveComponentSize()
             .background(Intel.Elevated, RoundedCornerShape(7.dp))
             .border(
                 1.dp,
@@ -1010,7 +1025,6 @@ private fun PivotChip(
                 RoundedCornerShape(7.dp)
             )
             .clickable(onClick = onClick)
-            .minimumInteractiveComponentSize()
             .padding(horizontal = 11.dp, vertical = 10.dp)
     ) {
         // The second pass has already looked this one up, and its results
@@ -1028,7 +1042,14 @@ private fun PivotChip(
             pivot.value,
             style = MaterialTheme.typography.labelMedium,
             color = if (chased) Intel.Cyan else Intel.CyanBright,
-            fontFamily = FontFamily.Monospace
+            fontFamily = FontFamily.Monospace,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            // A long pivot value — a hash, a URL — wrapped to fill
+            // the whole chip and left nothing for the count beside
+            // it, so "x4" was clipped away and four sightings of
+            // the same thing read as one.
+            modifier = Modifier.weight(1f, fill = false)
         )
         if (pivot.count > 1) {
             Spacer(Modifier.width(5.dp))
@@ -1052,7 +1073,13 @@ private fun FactChip(fact: IntelSummary.Fact) {
     ) {
         Text(fact.label, style = MaterialTheme.typography.labelSmall, color = Intel.TextLow)
         Spacer(Modifier.width(6.dp))
-        Text(fact.value, style = MaterialTheme.typography.labelMedium, color = Intel.CyanBright, maxLines = 1)
+        Text(
+            fact.value,
+            style = MaterialTheme.typography.labelMedium,
+            color = Intel.CyanBright,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
