@@ -1,6 +1,7 @@
 package com.osint.unified.domain.executor
 
 import com.osint.unified.domain.PersonName
+import com.osint.unified.domain.andMore
 import com.osint.unified.network.Http
 import com.osint.unified.network.Http.bodyText
 import kotlinx.coroutines.async
@@ -94,6 +95,7 @@ class PeopleApis(
                     append("  Public email: ${it.joinToString(", ")}\n")
                 }
             }
+            andMore(rows.size, 20)
             append("\nAn ORCID record is maintained by the person it describes. ")
             append("Matching names are not the same person until something else agrees.")
         }
@@ -166,11 +168,13 @@ class PeopleApis(
                     }
                 }
             }
+            andMore(kept.size, 15)
             if (coauthors.isNotEmpty()) {
                 append("\nCo-authors, most frequent first — these are the people ")
                 append("this name works with:\n")
                 coauthors.entries.sortedByDescending { it.value }.take(20)
                     .forEach { append("• ${it.key} (${it.value})\n") }
+                andMore(coauthors.size, 20)
             }
         }
     }
@@ -314,6 +318,7 @@ class PeopleApis(
                 }
                 append("\n")
             }
+            andMore(results.size, 20)
             if (count > 20) append("\n…and ${count - 20} more.\n")
             append("\nRECAP holds what somebody has paid to pull out of PACER, ")
             append("so it is a large sample of the federal docket and not all of it. ")
@@ -355,6 +360,7 @@ class PeopleApis(
                 }
                 append("\n")
             }
+            andMore(orgs.size, 20)
             append("\nThe filings behind each of these name their officers and ")
             append("their pay, which is the part worth reading.")
         }
@@ -394,6 +400,7 @@ class PeopleApis(
                 }
                 d.str("key")?.let { append("  https://openlibrary.org/authors/$it\n") }
             }
+            andMore(docs.size, 12)
         }
     }
 

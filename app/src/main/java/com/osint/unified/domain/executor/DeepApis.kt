@@ -1,6 +1,7 @@
 package com.osint.unified.domain.executor
 
 import com.osint.unified.data.Freshness
+import com.osint.unified.domain.andMore
 import com.osint.unified.network.Http
 import com.osint.unified.network.Http.bodyText
 import kotlinx.serialization.json.Json
@@ -241,6 +242,7 @@ class DeepApis(
                     val o = g as? JsonObject ?: return@forEach
                     sb.append("• ${o.str("description")?.take(70) ?: "(no description)"}\n  ${o.str("html_url")}\n")
                 }
+                sb.andMore(gists.size, 10)
             }
         }
         if (emails.isEmpty() && repos.isEmpty()) {
@@ -894,6 +896,7 @@ class DeepApis(
                 val hosts = r.lines().filter { it.isNotBlank() }
                 sb.append("\nOther sites on this IP (${hosts.size}):\n")
                 hosts.take(60).forEach { sb.append("• $it\n") }
+                sb.andMore(hosts.size, 60)
             }
         }
         reached.of {
@@ -1141,6 +1144,7 @@ class DeepApis(
                     o.str("last")?.let { sb.append("  last ${it.substringBefore('T')}") }
                     sb.append("\n")
                 }
+                sb.andMore(arr.size, 30)
             }
         }
 
@@ -1152,6 +1156,7 @@ class DeepApis(
                 arr.take(20).forEach { r ->
                     sb.append("• ${(r as? JsonObject).str("url")?.take(140)}\n")
                 }
+                sb.andMore(arr.size, 20)
             }
         }
         if (sb.length > headerOnly) sb.toString()
@@ -1193,6 +1198,7 @@ class DeepApis(
         }
         sb.append("${seen.size} affected networks/regions:\n\n")
         seen.values.take(60).forEach { sb.append(it).append("\n") }
+        sb.andMore(seen.size, 60)
         sb.append("\nSource: IODA (ioda.inetintel.cc.gatech.edu), keyless.")
         sb.toString()
     }
@@ -1459,6 +1465,7 @@ class DeepApis(
                     info.str("url")?.let { sb.append("\n  $it") }
                     sb.append("\n")
                 }
+                sb.andMore(pages.size, 40)
             }
         }
 
