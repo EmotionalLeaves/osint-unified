@@ -238,5 +238,8 @@ python3 "$ROOT/tools/optin-coverage.py" "$ROOT/app/src/main/java" || exit 1
 
 echo
 python3 "$ROOT/tools/padding-overloads.py" "$ROOT/app/src/main/java" || exit 1
+
+echo
+python3 "$ROOT/tools/classify-prefixes.py" || exit 1
 echo
 python3 "$ROOT/tools/novel-calls.py" || true
