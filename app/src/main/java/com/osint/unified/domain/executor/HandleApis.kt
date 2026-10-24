@@ -328,7 +328,7 @@ class HandleApis(
         val keys = body.lineSequence().filter { it.startsWith("pub:") }.toList()
         val uids = body.lineSequence().filter { it.startsWith("uid:") }
             .mapNotNull { it.split(":").getOrNull(1) }
-            .map { java.net.URLDecoder.decode(it, "UTF-8") }
+            .map { percentDecode(it) }
             .distinct()
             .toList()
         if (keys.isEmpty()) {
@@ -345,6 +345,19 @@ class HandleApis(
                 append("• ${fingerprint.takeLast(16)}")
                 f.getOrNull(3)?.takeIf { it.isNotBlank() }?.let { append("  $it-bit") }
                 created?.let { append("  created ${day(it * 1000)}") }
+                // Field 6 carries the key's state and was never
+                // read, so a revoked key was listed with no
+                // qualification at all — on a source whose entire
+                // framing is "a key here is a claim, not a
+                // confirmation", silently promoting a revoked one is
+                // the wrong direction.
+                val flags = f.getOrNull(6).orEmpty()
+                val state = buildList {
+                    if (flags.contains('r')) add("REVOKED")
+                    if (flags.contains('e')) add("EXPIRED")
+                    if (flags.contains('d')) add("DISABLED")
+                }
+                if (state.isNotEmpty()) append("  ⚠ ${state.joinToString(", ")}")
                 append("\n")
             }
             if (keys.size > 8) append("…and ${keys.size - 8} more.\n")
@@ -449,7 +462,7 @@ class HandleApis(
         // from CDX is a genuine "no captures".
         val body = cdx(
             "https://web.archive.org/cdx/search/cdx?url=" + enc(target) +
-                "&output=json&fl=timestamp,statuscode,digest&limit=40"
+                "&output=json&fl=timestamp,statuscode,digest&limit=$CDX_LIMIT"
         ) ?: return@runCatching "The Wayback Machine has never captured this image."
         val rows = runCatching { json.parseToJsonElement(body).jsonArray }.getOrNull()
             // An empty body is how CDX says "nothing"; a body that is
@@ -464,22 +477,46 @@ class HandleApis(
             return@runCatching "The Wayback Machine has never captured this image, " +
                 "which says nothing about its age — most images are never archived."
         }
-        val captures = rows.drop(1).mapNotNull { row ->
+        val all = rows.drop(1).mapNotNull { row ->
             val cells = (row as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
             if (cells == null || cells.size < 3) null else Triple(cells[0], cells[1], cells[2])
         }
+        // The status column was asked for in `fl=` and never read,
+        // so an archived 404 or redirect counted as a capture of the
+        // image and its digest counted as the file having been
+        // replaced — in the one tool whose purpose is noticing a
+        // quietly swapped picture.
+        val captures = all.filter { it.second.startsWith("2") || it.second == "-" }
         if (captures.isEmpty()) {
-            return@runCatching "The Wayback Machine has never captured this image."
+            return@runCatching if (all.isEmpty()) {
+                "The Wayback Machine has never captured this image."
+            } else {
+                "The Wayback Machine has ${all.size} records for this URL and none " +
+                    "of them is a successful capture — they are errors and " +
+                    "redirects, so nothing can be said about the file itself."
+            }
         }
         val first = captures.first()
         val last = captures.last()
         val digests = captures.map { it.third }.distinct()
+        // `limit=40` returns the EARLIEST forty, so "the latest" was
+        // the fortieth capture — years ago for a frequently archived
+        // image — and "the bytes have not changed since 2011" was a
+        // claim about the present made from the oldest rows.
+        val capped = all.size >= CDX_LIMIT
         buildString {
             append("This image has been online since at least ${stamp(first.first)}.\n")
-            append("${captures.size} captures, the latest ${stamp(last.first)}.\n")
+            if (capped) {
+                append("The first $CDX_LIMIT captures were read, the last of them ")
+                append("${stamp(last.first)} — the archive may hold more since.\n")
+            } else {
+                append("${captures.size} captures, the latest ${stamp(last.first)}.\n")
+            }
             if (digests.size == 1) {
-                append("\nEvery capture has the same digest, so the bytes under this ")
-                append("URL have not changed since ${stamp(first.first)}.\n")
+                append("\nEvery one of those captures has the same digest, so the ")
+                append("bytes under this URL did not change between ")
+                append("${stamp(first.first)} and ${stamp(last.first)}")
+                append(if (capped) " — which is not a statement about now.\n" else ".\n")
             } else {
                 append("\n⚠ ${digests.size} different digests across those captures: ")
                 append("the file at this URL has been replaced at least ")
@@ -493,6 +530,48 @@ class HandleApis(
             append("was taken.\n")
         }
     }
+
+    /**
+     * `%XX` only, because HKP is not a form.
+     *
+     * `URLDecoder.decode` treats `+` as an encoded space, which HKP
+     * does not — so a UID of `jane+keys@example.com` was printed as
+     * `jane keys@example.com`: a corrupted identifier presented as
+     * an observation about a person.
+     */
+    private fun percentDecode(v: String): String {
+        if (!v.contains('%')) return v
+        val out = StringBuilder(v.length)
+        val bytes = java.io.ByteArrayOutputStream()
+        var i = 0
+        fun flush() {
+            if (bytes.size() > 0) {
+                out.append(String(bytes.toByteArray(), Charsets.UTF_8))
+                bytes.reset()
+            }
+        }
+        while (i < v.length) {
+            val c = v[i]
+            val hex = if (c == '%' && i + 2 < v.length) {
+                v.substring(i + 1, i + 3).toIntOrNull(16)
+            } else {
+                null
+            }
+            if (hex != null) {
+                bytes.write(hex)
+                i += 3
+            } else {
+                flush()
+                out.append(c)
+                i++
+            }
+        }
+        flush()
+        return out.toString()
+    }
+
+    /** How many CDX rows are asked for. They come earliest first. */
+    private val CDX_LIMIT = 40
 
     /** CDX timestamps are yyyyMMddHHmmss. */
     private fun stamp(v: String): String =

@@ -979,7 +979,7 @@ class DeepApis(
     }
 
     /** This app's page size against the Common Crawl index. */
-    private const val COMMON_CRAWL_LIMIT = 300
+    private val COMMON_CRAWL_LIMIT = 300
 
     /** A marker, because this one is not a prefix. */
     private val MASTODON = "\u0000mastodon"
@@ -1744,12 +1744,49 @@ class DeepApis(
             runCatching {
                 val o = json.parseToJsonElement(get("https://hexdb.io/api/v1/aircraft/$hex")).jsonObject
                 reg = o.str("Registration")
-                sb.append("Registration: ${o.str("Registration")}\n")
-                sb.append("Type: ${o.str("Manufacturer")} ${o.str("Type")} (${o.str("ICAOTypeCode")})\n")
-                o.str("RegisteredOwners")?.let { sb.append("Registered owner: $it\n") }
-                o.str("OperatorFlagCode")?.let { sb.append("Operator code: $it\n") }
-                learned = true
-            }.onFailure { sb.append("hexdb could not be reached for Mode-S $hex.\n") }
+                // `?.let`, like every other field in this file.
+                //
+                // These four interpolated nullables directly, and
+                // `DeepApis.str` does not filter blanks — so a 200
+                // carrying an empty or partial record produced a card
+                // reading "Registration: null" and "Type: null null
+                // (null)", classified as a finding, which then
+                // suppressed the honest "no registration found" path
+                // below. The sibling in HandleApis does it correctly.
+                var any = false
+                o.str("Registration")?.takeIf { it.isNotBlank() }?.let {
+                    sb.append("Registration: $it\n"); any = true
+                }
+                val type = listOfNotNull(
+                    o.str("Manufacturer")?.takeIf { it.isNotBlank() },
+                    o.str("Type")?.takeIf { it.isNotBlank() }
+                ).joinToString(" ")
+                val icao = o.str("ICAOTypeCode")?.takeIf { it.isNotBlank() }
+                if (type.isNotBlank() || icao != null) {
+                    sb.append("Type: $type")
+                    icao?.let { sb.append(" ($it)") }
+                    sb.append("\n")
+                    any = true
+                }
+                o.str("RegisteredOwners")?.takeIf { it.isNotBlank() }?.let {
+                    sb.append("Registered owner: $it\n"); any = true
+                }
+                o.str("OperatorFlagCode")?.takeIf { it.isNotBlank() }?.let {
+                    sb.append("Operator code: $it\n"); any = true
+                }
+                if (any) learned = true
+            }.onFailure { e ->
+                // A 404 from hexdb is an answer: that Mode-S is not
+                // in the register. Reporting it as "could not be
+                // reached" is the mirror of this file's main defect
+                // and costs the reader a true negative.
+                val code = httpCode(e)
+                if (code == 404 || code == 410) {
+                    sb.append("Mode-S $hex is not in the hexdb register.\n")
+                } else {
+                    sb.append("hexdb could not be reached for Mode-S $hex.\n")
+                }
+            }
         }
         // Live position from adsb.lol (keyless, open ADS-B aggregation).
         val path = if (hex != null) "icao/$hex" else "registration/${reg ?: t}"
@@ -2418,7 +2455,13 @@ class DeepApis(
         val t = input.trim().uppercase()
         if (Regex("^CVE-\\d{4}-\\d{4,}$").matches(t)) {
             val sb = StringBuilder("$t\n")
-            runCatching {
+            // Both sources failing used to leave the id and two
+            // links, classified as a finding — and "a tool that
+            // returns a list of places to look is not a source and
+            // must not be counted as one" is the standing frame
+            // this project is built on.
+            val cve = Reached()
+            cve.of {
                 val o = json.parseToJsonElement(get("https://cve.circl.lu/api/vulnerability/$t")).jsonObject
                 val cna = ((o["containers"] as? JsonObject)?.get("cna") as? JsonObject)
                 cna.str("title")?.let { sb.append("\n$it\n") }
@@ -2427,16 +2470,28 @@ class DeepApis(
                 ((o["cveMetadata"] as? JsonObject)).str("datePublished")
                     ?.let { sb.append("\nPublished: ${it.substringBefore('T')}") }
             }
-            runCatching {
+            cve.of {
                 val d = (json.parseToJsonElement(get("https://api.first.org/data/v1/epss?cve=$t"))
                     .jsonObject["data"] as? JsonArray)?.firstOrNull()?.jsonObject
-                d?.str("epss")?.let { e ->
-                    val pct = (e.toDoubleOrNull() ?: 0.0) * 100
-                    sb.append("\nEPSS: %.2f%% chance of exploitation in the next 30 days".format(Locale.US, pct))
+                d?.str("epss")?.toDoubleOrNull()?.let { e ->
+                    sb.append(
+                        "\nEPSS: %.2f%% chance of exploitation in the next 30 days"
+                            .format(Locale.US, e * 100)
+                    )
                 }
-                d?.str("percentile")?.let {
-                    sb.append(" — more likely than %.1f%% of all CVEs".format(Locale.US, (it.toDoubleOrNull() ?: 0.0) * 100))
+                d?.str("percentile")?.toDoubleOrNull()?.let {
+                    // Only when it parses. `?: 0.0` printed "0.00%
+                    // chance of exploitation", which is a number,
+                    // where the truth is that the field could not be
+                    // read.
+                    sb.append(" — more likely than %.1f%% of all CVEs".format(Locale.US, it * 100))
                 }
+            }
+            if (!cve.any) {
+                throw IOException(
+                    "neither the CVE index nor the exploit-prediction service " +
+                        "answered for $t"
+                )
             }
             sb.append("\n\nhttps://nvd.nist.gov/vuln/detail/$t")
             sb.append("\nExploits: https://www.exploit-db.com/search?cve=${t.removePrefix("CVE-")}")
@@ -2446,7 +2501,13 @@ class DeepApis(
         // {"results": {"nvd": [[id, record], …]}}.
         val parts = t.lowercase().split("/", " ").filter { it.isNotBlank() }
         val vendor = parts.getOrNull(0) ?: return@runCatching "Give a CVE id or 'vendor product'."
-        val product = parts.getOrNull(1) ?: vendor
+        // Not `vendor` twice: typing "openssl" searched
+        // search/openssl/openssl, which matches nothing, and printed
+        // "No CVEs found for openssl openssl" — a stated absence
+        // under a visibly wrong echo of the input.
+        val product = parts.getOrNull(1)
+            ?: return@runCatching "Give a vendor and a product, e.g. " +
+                "'openssl openssl' or 'microsoft windows' — or a CVE id."
         val results = (json.parseToJsonElement(get("https://cve.circl.lu/api/search/$vendor/$product"))
             .jsonObject["results"] as? JsonObject)
             // Missing is not empty. The comment below is right that
