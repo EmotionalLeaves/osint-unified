@@ -84,8 +84,21 @@ object AppLock {
     private fun noWayIn(context: Context): Boolean {
         val manager = BiometricManager.from(context)
         val answer = runCatching { manager.canAuthenticate(BIOMETRIC_ONLY) }.getOrNull()
-        return answer == BiometricManager.BIOMETRIC_ERROR_NONE_ENROLLED ||
+        val noBiometric = answer == BiometricManager.BIOMETRIC_ERROR_NONE_ENROLLED ||
             answer == BiometricManager.BIOMETRIC_ERROR_NO_HARDWARE
+        if (!noBiometric) return false
+        // And there is no device credential either.
+        //
+        // Below Android 11 the combined set is refused outright, so
+        // this only ever asked about the biometric — and on a phone
+        // where somebody enabled the lock with a fingerprint and
+        // later un-enrolled it, "no biometric" opened the app while
+        // the PIN was sitting there perfectly usable. minSdk is 26,
+        // so that is four supported versions.
+        val keyguard = context.getSystemService(android.app.KeyguardManager::class.java)
+        val hasCredential = runCatching { keyguard?.isDeviceSecure == true }
+            .getOrDefault(false)
+        return !hasCredential
     }
 
     /** Why the prompt could not be shown, in words, or null if it can. */

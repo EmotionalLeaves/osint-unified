@@ -295,13 +295,13 @@ class GodEyeViewModel(
      * The meter reading when this search started, so the dossier can
      * say what it cost rather than what the whole process has.
      */
-    private var dataBaseline = DataMeter.bytes()
+    private var dataBaseline = DataMeter.toolBytes()
 
     /** Recorded once per search, so the next one of this type can be estimated. */
     private var costRecorded = false
 
     private fun noteDataSpent() {
-        val spent = (DataMeter.bytes() - dataBaseline).coerceAtLeast(0)
+        val spent = (DataMeter.toolBytes() - dataBaseline).coerceAtLeast(0)
         _state.update { it.copy(dataSpent = spent) }
     }
 
@@ -1175,7 +1175,7 @@ class GodEyeViewModel(
         // the first pass, the host of a URL, enrichment, a tool run
         // by hand — adds to the same bill, so the baseline belongs
         // where the search begins and nowhere else.
-        dataBaseline = DataMeter.bytes()
+        dataBaseline = DataMeter.toolBytes()
         costRecorded = false
         // Anything still unwinding from the last search belongs to
         // the last search, including its counter decrements.
@@ -1569,7 +1569,7 @@ class GodEyeViewModel(
             // the second pass is most of it.
             if (run == searchRun && !costRecorded) {
                 costRecorded = true
-                val spent = (DataMeter.bytes() - dataBaseline).coerceAtLeast(0)
+                val spent = (DataMeter.toolBytes() - dataBaseline).coerceAtLeast(0)
                 if (spent > 0) settings.recordSearchCost(observable.typeLabel, spent)
             }
         }

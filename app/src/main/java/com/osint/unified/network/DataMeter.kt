@@ -31,9 +31,37 @@ object DataMeter {
     private val byHost = ConcurrentHashMap<String, AtomicLong>()
     private val startedAt = AtomicLong(System.currentTimeMillis())
 
+    /**
+     * Bytes spent by the tools, as opposed to by the twenty-six feed
+     * pollers, the map tiles and the watch worker.
+     *
+     * The dossier's "this cost N" line was the difference of [total]
+     * across the search, so a ten-second username search run with the
+     * globe on screen was charged everything those polled — off by a
+     * large multiple, under a sentence naming the dossier. A tool
+     * marks its own requests, so the two can be told apart.
+     */
+    private val toolTotal = AtomicLong(0)
+
+    private val onToolThread = ThreadLocal.withInitial { false }
+
+    /** Runs [block] with everything it fetches counted as tool traffic. */
+    fun <T> asTool(block: () -> T): T {
+        val was = onToolThread.get()
+        onToolThread.set(true)
+        return try {
+            block()
+        } finally {
+            onToolThread.set(was)
+        }
+    }
+
+    fun toolBytes(): Long = toolTotal.get()
+
     internal fun add(host: String, bytes: Long) {
         if (bytes <= 0) return
         total.addAndGet(bytes)
+        if (onToolThread.get() == true) toolTotal.addAndGet(bytes)
         // Bounded, because a dossier can touch hundreds of hosts and
         // this is a diagnostic rather than a ledger.
         if (byHost.size < MAX_HOSTS || byHost.containsKey(host)) {
@@ -60,6 +88,7 @@ object DataMeter {
 
     fun reset() {
         total.set(0)
+        toolTotal.set(0)
         calls.set(0)
         byHost.clear()
         // The clock restarts too. Without this the rate is the new

@@ -339,7 +339,7 @@ object Http {
      * times the data that was really spent. Down here the bytes are
      * the bytes.
      */
-    private object Meter : Interceptor {
+    private class Meter(private val forTool: Boolean) : Interceptor {
         override fun intercept(chain: Interceptor.Chain): Response {
             val host = chain.request().url.host
             val response = chain.proceed(chain.request())
@@ -349,7 +349,7 @@ object Http {
                 private val source: BufferedSource = object : ForwardingSource(body.source()) {
                     override fun read(sink: Buffer, byteCount: Long): Long {
                         val read = super.read(sink, byteCount)
-                        if (read > 0) DataMeter.add(host, read)
+                        if (read > 0) DataMeter.add(host, read, forTool)
                         return read
                     }
                 }.buffer()
@@ -378,27 +378,54 @@ object Http {
      * nothing for several seconds.
      *
      * A bounded slice of the same pool keeps the rest of the app
-     * moving. It does not slow a sweep that is network-bound rather
-     * than thread-bound, because the work is waiting either way.
+     * moving — but it is a real bound, not a free one. These calls
+     * block, so a waiting call holds a thread AND a slot, and the
+     * sweep's own Semaphore(64) can never exceed this number. The
+     * first version of this comment claimed otherwise and was wrong.
+     *
+     * So it is set above the sweep's own limit rather than below it.
+     * The sweep is the one caller that can occupy everything, its
+     * limit is 64, and leaving the shared pool a third of its threads
+     * is what this is actually for: the export and the feed pollers
+     * must not queue behind a username sweep. The per-host gate still
+     * caps what any one site sees at four.
      */
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val bulk: kotlinx.coroutines.CoroutineDispatcher by lazy {
         kotlinx.coroutines.Dispatchers.IO.limitedParallelism(BULK_PARALLELISM)
     }
 
-    /** Half the shared pool, leaving the other half for everything else. */
-    private const val BULK_PARALLELISM = 32
+    /**
+     * Enough for the sweep's own limit, and not the whole pool.
+     *
+     * Dispatchers.IO is 64 on a phone. At 32 the sweep's Semaphore(64)
+     * was dead and a two-thousand-site sweep took twice as long for a
+     * bound that was never the point; at 64 it would be free to take
+     * every thread there is. 48 leaves a quarter of the pool for the
+     * export, the feed pollers and the watch worker.
+     */
+    private const val BULK_PARALLELISM = 48
 
+    private fun base(): OkHttpClient.Builder = OkHttpClient.Builder()
+        .addInterceptor(Politeness)
+        .proxySelector(Relay)
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(20, TimeUnit.SECONDS)
+        .callTimeout(25, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
+
+    /**
+     * For the tools, and counted as a search's own cost.
+     *
+     * The dossier's "this cost N" line was the difference of the
+     * process-wide meter across the search, so a ten-second username
+     * lookup run with the globe on screen was charged everything the
+     * twenty-six feed pollers fetched in the same ten seconds. They
+     * were already on different clients; only the counting pooled
+     * them.
+     */
     val client: OkHttpClient by lazy {
-        OkHttpClient.Builder()
-            .addInterceptor(Politeness)
-            .addNetworkInterceptor(Meter)
-            .proxySelector(Relay)
-            .connectTimeout(10, TimeUnit.SECONDS)
-            .readTimeout(20, TimeUnit.SECONDS)
-            .callTimeout(25, TimeUnit.SECONDS)
-            .retryOnConnectionFailure(true)
-            .build()
+        base().addNetworkInterceptor(Meter(forTool = true)).build()
     }
 
     /**
@@ -414,7 +441,8 @@ object Http {
         val store = feedCacheDir?.let {
             runCatching { Cache(it, FEED_CACHE_BYTES) }.getOrNull()
         }
-        if (store == null) client else client.newBuilder().cache(store).build()
+        val builder = base().addNetworkInterceptor(Meter(forTool = false))
+        if (store == null) builder.build() else builder.cache(store).build()
     }
 
     /**

@@ -364,7 +364,14 @@ object EntityExtractor {
             }
             "PERSON" -> listOfNotNull(PersonName.normalise(raw)).map { it to false }
             else -> listOfNotNull(
-                raw.lowercase().replace(Regex("\\s+"), " ").trim()
+                raw.lowercase()
+                    // The pipe is the watch digest's own separator,
+                    // so an organisation with one in its name split
+                    // into two identifiers that the next check
+                    // reported as appearing and disappearing.
+                    .replace('|', ' ')
+                    .replace(Regex("\\s+"), " ")
+                    .trim()
                     // A semicolon-joined list of institutions is a
                     // list, and joining it into one name invents an
                     // organisation nobody belongs to.
