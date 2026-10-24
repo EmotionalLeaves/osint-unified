@@ -178,7 +178,15 @@ class FindingsTest {
             "No archive data for that point.",
             "No public traffic-camera feed within 50 km of that point.",
             "1.2.3.4 is not a Tor exit node (checked 2000 known exits).",
-            "Not a recognised BTC or ETH address: abc",
+            // "Not a recognised BTC or ETH address: abc" used to be
+            // in this list and is now in the not-asked test below.
+            // It was never an absence: nothing was looked up,
+            // because the input was not a wallet. It landed here
+            // only because "address" is one of the nouns the shape
+            // matches, while "Not a coordinate: SW1A 1AA" — the same
+            // sentence about a different field — came out a
+            // FINDING. The verdict was being decided by which noun
+            // the validation message happened to use.
             "No CVEs found for acme widget.",
             "Host intel: no data returned for example.com."
         ).forEach {
@@ -265,6 +273,7 @@ class FindingsTest {
             "Give a CVE id or 'vendor product'.",
             "Not a coordinate: SW1A 1AA",
             "Not a Bitcoin address: hello",
+            "Not a recognised BTC or ETH address: abc",
             "IP reputation needs an IPv4 address.",
             "Domain too short to permute.",
             "ORCID holds researchers, not organisations — skipped."
