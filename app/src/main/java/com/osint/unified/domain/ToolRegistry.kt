@@ -326,7 +326,8 @@ object ToolRegistry {
             "Which public breaches an address appears in, what leaked and when (XposedOrNot, keyless).",
             "https://xposedornot.com"),
         Tool("emailgithub", "Email to GitHub", SOCMINT, "email", "text", DIRECT,
-            "Finds GitHub accounts that publicly list this email.",
+            "The account that lists this address, and the name on every public " +
+                "commit authored from it.",
             "https://github.com"),
         Tool("subsweep", "Subdomain sweep", NETINT, "domain", "text", DIRECT,
             "Merges hackertarget, RapidDNS, Cert Spotter and Wayback into one " +

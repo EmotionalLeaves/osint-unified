@@ -838,17 +838,124 @@ class DeepApis(
     }
 
     /** Maps an email to a GitHub account by searching the commit index. */
+    /**
+     * What GitHub knows about an address: the account, and the name.
+     *
+     * This used to ask one question — which account lists this
+     * address on its public profile — and almost nobody does, so
+     * for a real person it answered "no account publicly lists
+     * this" and that was the whole of GitHub's contribution to an
+     * email investigation. Reported as the app returning "a lot of
+     * nothing" for an email, which it was.
+     *
+     * The other question is the useful one. Every commit carries
+     * the author's address and the name they configured in git,
+     * and the commit search is keyless and public. So an address
+     * that has ever been used to commit to a public repository
+     * yields a **real name**, the repositories, when they were
+     * last active, and the account if one is linked — which is
+     * most of what "find me names and accounts for this email"
+     * means.
+     *
+     * It also establishes an absence honestly: an address that
+     * cannot exist returns `total_count: 0` rather than an error,
+     * so zero means zero and not "could not ask". Verified against
+     * the live endpoint rather than assumed.
+     */
     fun emailToGithub(email: String): Result<String> = runCatching {
-        val e = URLEncoder.encode(email.trim(), "UTF-8")
-        val items = json.parseToJsonElement(get("https://api.github.com/search/users?q=$e+in:email"))
-            .jsonObject["items"] as? JsonArray
-        if (items.isNullOrEmpty()) return@runCatching "GitHub: no account publicly lists $email."
-        val sb = StringBuilder("GitHub accounts using $email:\n")
-        items.take(5).forEach {
-            val o = it as? JsonObject ?: return@forEach
-            sb.append("• ${o.str("login")} — ${o.str("html_url")}\n")
+        val address = email.trim()
+        val e = URLEncoder.encode(address, "UTF-8")
+        val asked = Reached()
+        val sb = StringBuilder()
+
+        asked.answering {
+            val items = json.parseToJsonElement(
+                get("https://api.github.com/search/users?q=$e+in:email")
+            ).jsonObject["items"] as? JsonArray
+            if (!items.isNullOrEmpty()) {
+                sb.append("Accounts publicly listing $address:\n")
+                items.take(5).forEach {
+                    val o = it as? JsonObject ?: return@forEach
+                    sb.append("• ${o.str("login")} — ${o.str("html_url")}\n")
+                }
+                sb.append('\n')
+            }
+            items != null
         }
-        sb.toString()
+
+        var commits = 0
+        asked.answering {
+            val found = json.parseToJsonElement(
+                get(
+                    "https://api.github.com/search/commits?q=author-email:$e" +
+                        "&sort=author-date&order=desc&per_page=$COMMIT_PAGE"
+                )
+            ).jsonObjectOrNull()
+                // Missing is not zero. A shape this code does not
+                // understand must not be read as "no commits".
+                ?: throw IOException("GitHub's commit search answered in an unexpected shape")
+            commits = (found["total_count"] as? JsonPrimitive)?.intOrNull
+                ?: throw IOException("GitHub's commit search gave no total")
+            val items = found["items"] as? JsonArray ?: JsonArray(emptyList())
+            if (items.isNotEmpty()) {
+                // The names first, because a name is what somebody
+                // searching an address is usually after. Counted,
+                // because one commit under a name is weaker than
+                // four hundred.
+                val names = LinkedHashMap<String, Int>()
+                val repos = LinkedHashMap<String, String>()
+                var login: String? = null
+                var latest: String? = null
+                items.forEach { el ->
+                    val o = el as? JsonObject ?: return@forEach
+                    val commit = o["commit"] as? JsonObject
+                    val author = commit?.get("author") as? JsonObject
+                    author.str("name")?.trim()?.takeIf { it.isNotBlank() }?.let {
+                        names[it] = (names[it] ?: 0) + 1
+                    }
+                    author.str("date")?.let { if (latest == null) latest = it.take(10) }
+                    (o["author"] as? JsonObject).str("login")?.let { if (login == null) login = it }
+                    val repo = o["repository"] as? JsonObject
+                    repo.str("full_name")?.let { full ->
+                        repos.putIfAbsent(full, repo.str("html_url") ?: "https://github.com/$full")
+                    }
+                }
+                sb.append(
+                    "Committed to public repositories as $address — " +
+                        "$commits commit" + (if (commits == 1) "" else "s")
+                )
+                if (commits > COMMIT_PAGE) sb.append("; the latest $COMMIT_PAGE read")
+                sb.append(":\n")
+                names.forEach { (name, n) ->
+                    sb.append("• Name on the commits: $name")
+                    if (names.size > 1 || n > 1) sb.append(" ($n of ${items.size} read)")
+                    sb.append('\n')
+                }
+                login?.let { sb.append("• Linked account: $it — https://github.com/$it\n") }
+                latest?.let { sb.append("• Most recent commit: $it\n") }
+                repos.entries.take(COMMIT_REPOS).forEach { (full, url) ->
+                    sb.append("• $full — $url\n")
+                }
+                if (repos.size > COMMIT_REPOS) {
+                    sb.append("• …and ${repos.size - COMMIT_REPOS} more repositories\n")
+                }
+                sb.append(
+                    "\nA git author name is whatever its owner configured, " +
+                        "and an address can be shared or spoofed in a commit.\n"
+                )
+            }
+            true
+        }
+
+        if (!asked.any) {
+            throw IOException("GitHub did not answer either search for $address")
+        }
+        if (sb.isEmpty()) {
+            "No GitHub account lists $address, and no public commit was " +
+                "authored from it."
+        } else {
+            sb.toString().trimEnd()
+        }
     }
 
     // ------------------------------------------------------------------
@@ -1017,6 +1124,12 @@ class DeepApis(
 
     /** This app's page size against the Common Crawl index. */
     private val COMMON_CRAWL_LIMIT = 300
+
+    /** Commits read per address. Enough to see a name settle. */
+    private val COMMIT_PAGE = 20
+
+    /** Repositories named before the rest are counted. */
+    private val COMMIT_REPOS = 6
 
     /** A marker, because this one is not a prefix. */
     private val MASTODON = "\u0000mastodon"

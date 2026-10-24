@@ -137,12 +137,12 @@ internal class TileStore(
             "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/"
 
         /**
-         * A hundred and sixty tiles of RGB_565 is about twenty
-         * megabytes — three screenfuls, so panning back the way you
-         * came costs nothing, and bounded well under the whole-Earth
-         * mosaic this sits beside.
+         * A hundred and ninety-two tiles of RGB_565 is about
+         * twenty-four megabytes — two screenfuls of a tall phone, so
+         * panning back the way you came costs nothing, and bounded
+         * near the whole-Earth mosaic this sits beside.
          */
-        private const val MAX_TILES = 160
+        private const val MAX_TILES = 192
 
         /** Enough to fill a screen quickly, few enough to stay polite. */
         private const val MAX_IN_FLIGHT = 6

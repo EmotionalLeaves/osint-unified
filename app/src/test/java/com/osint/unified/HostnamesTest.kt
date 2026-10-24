@@ -111,14 +111,40 @@ class HostnamesTest {
         assertFalse(Hostnames.isEmail(".jane@example.com"))
     }
 
-    /** The guard ObservableExtractor had and Identify did not. */
+    /**
+     * A file name is dropped by the scanner and ranked by the
+     * decoder.
+     *
+     * Two different jobs, and the guard was copied from one to the
+     * other as an `else`. The scanner is picking leads to offer, so
+     * dropping `config.yaml` is right. The decoder's own header
+     * says "where a string is ambiguous every reading is offered
+     * rather than one chosen for you" — and the suffix list holds
+     * live country TLDs, so choosing for you meant `nic.md`,
+     * Moldova's actual registry, stopped being a domain at all.
+     */
     @Test
-    fun aFileNameIsNotOfferedAsADomain() {
+    fun aFileNameIsDroppedByTheScannerAndRankedByTheDecoder() {
         assertEquals(
             emptyList<String>(),
             ObservableExtractor.extract("see config.yaml and index.html", exclude = "")
         )
-        val guesses = Identify.of("config.yaml").map { it.label }
-        assertFalse(guesses.toString(), "Domain name" in guesses)
+        val yaml = Identify.of("config.yaml")
+        val labels = yaml.map { it.label }
+        assertTrue(labels.toString(), "File name" in labels)
+        assertTrue(labels.toString(), "Domain name" in labels)
+        // And the file reading is the one offered first.
+        val file = yaml.first { it.label == "File name" }
+        val domain = yaml.first { it.label == "Domain name" }
+        assertTrue(file.confidence > domain.confidence)
+    }
+
+    /** Moldova's registry is a domain, whatever `.md` usually means. */
+    @Test
+    fun aLiveCountryTldIsStillADomain() {
+        listOf("nic.md", "example.rs", "example.py", "example.so").forEach { host ->
+            val labels = Identify.of(host).map { it.label }
+            assertTrue(host + " " + labels, "Domain name" in labels)
+        }
     }
 }

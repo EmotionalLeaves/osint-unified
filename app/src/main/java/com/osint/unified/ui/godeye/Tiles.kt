@@ -86,7 +86,15 @@ internal object Tiles {
         var z = zoom.coerceIn(MIN_TILE_ZOOM, MAX_TILE_ZOOM)
         while (true) {
             val refs = coverAt(lat, lon, spanDegrees, width, height, z)
-            if (refs.size <= MAX_TILES || z <= MIN_TILE_ZOOM) return refs
+            // The floor is a floor. At the lowest zoom the whole world
+            // is sixteen tiles and a tall screen asks for all of them,
+            // so stepping out again is not available and the cap has
+            // to be applied by truncation — nearest the middle first,
+            // which is what the sort above is for. It only arises at
+            // spans where the imagery is fully transparent anyway, but
+            // a bound that is not a bound is worse than no bound.
+            if (z <= MIN_TILE_ZOOM) return refs.take(MAX_TILES)
+            if (refs.size <= MAX_TILES) return refs
             z--
         }
     }
@@ -155,7 +163,7 @@ internal object Tiles {
     const val TILES_FULL_SPAN = 11.0
 
     /** Below this there is no point asking for tiles at all. */
-    private const val MIN_TILE_ZOOM = 3
+    private const val MIN_TILE_ZOOM = 2
 
     /** Esri's World Imagery stops here. */
     const val MAX_TILE_ZOOM = 19
@@ -163,12 +171,19 @@ internal object Tiles {
     /**
      * At most this many tiles for one view.
      *
-     * Forty-eight 256-pixel tiles is a 4K-ish area, which covers a
-     * tall screen with room for the edges, and about a megabyte of
-     * somebody's data if none of them are cached. More than that and
-     * the limit is not the screen, it is an arithmetic mistake.
+     * Forty-eight was arithmetic done on a square screen, and a
+     * phone is not one: 1080 by 2340 is five columns by eleven rows
+     * at the zoom whose pixels match the screen's, which is
+     * fifty-five. So the cap was hit on every portrait view, the
+     * code stepped out a zoom level to fit, and the globe was
+     * permanently rendering at half the detail it had asked for.
+     * The test that caught it was checking something else.
+     *
+     * Ninety-six covers a tall screen with a margin, and is about
+     * twelve megabytes of bitmap and two of somebody's data if none
+     * of them are cached.
      */
-    private const val MAX_TILES = 48
+    private const val MAX_TILES = 96
 
     /** Where the Mercator projection is cut off, as every slippy map does. */
     private const val MERCATOR_LIMIT = 85.0511
