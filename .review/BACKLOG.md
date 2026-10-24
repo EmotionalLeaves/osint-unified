@@ -437,11 +437,9 @@ Bitmap per frame DONE · AreaReport DONE · landscape handoff DONE ·
 long-press zoom DONE · radiation DONE · on-demand re-query DONE ·
 visibleLayers on dispose DONE · ALL LAYERS off DONE · **WorldBrief
 sorts every layer in composition to take six** · searchJobs DONE ·
-pointerInput DONE · markerIcon allocates a Path per draw ·
-per-frame allocation in drawStars/drawMarkers · thinBy recomputes a
-regex identity per comparison · header vs pill disagree about
-aircraft · the HUD ticker drops the FEED DOWN mark · lastSuccess is
-written and never read.
+pointerInput DONE · markerIcon allocates a Path per draw [done] ·
+per-frame allocation in drawStars [done] · thinBy regex [checked, already fine] · header vs pill disagree about
+aircraft · the HUD ticker drops the FEED DOWN mark · lastSuccess [done].
 
 ### r9 — DeepApis / UsernameChecker
 socialSweep DONE · githubActivity DONE · **seven bare runCatching
@@ -457,7 +455,7 @@ bbox centres and calls it where somebody lives · get() reads every
 body unbounded · headers vs caps · secEdgar DONE · emailPermutations
 case-sensitive domain strip · the ruleset-load failure omits the
 verdict field · Mastodon P4033 URL shape · Panoramax 566 m corner ·
-unencoded CVE path · BTC counterparties DONE · hardcoded CC-MAIN
+CVE path [checked, validated by regex] · BTC counterparties DONE · hardcoded CC-MAIN
 fallback.
 
 ### r10 — ui outside godeye
