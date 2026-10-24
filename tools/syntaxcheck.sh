@@ -74,6 +74,34 @@ grep -iE "error:.*(conflicting declaration|redeclaration|expecting |unexpected t
 grep -iE "error: no value passed for parameter" "$WORK/full.txt" \
   | grep -vE "parameter '(block|value)'" >> "$WORK/real.txt" || true
 
+# An annotation left behind by an insertion.
+#
+# Kotlin requires KDoc *before* annotations, so "@OptIn(...)" followed
+# by "/**" is always an annotation that has become detached from the
+# declaration it was written for — which is exactly what happens when
+# something is inserted above a function. It stays valid Kotlin, so
+# the local compiler says nothing, and CI then fails with one error
+# per experimental call in the whole file. Two builds.
+python3 - <<'PYEOF' >> "$WORK/real.txt" || true
+import os, re, sys
+roots = ["app/src/main/java", "app/src/test/java"]
+for root in roots:
+    for dirpath, _, files in os.walk(root):
+        for f in files:
+            if not f.endswith(".kt"):
+                continue
+            path = os.path.join(dirpath, f)
+            lines = open(path, encoding="utf-8", errors="replace").read().splitlines()
+            for i, line in enumerate(lines[:-1]):
+                if not line.lstrip().startswith("@"):
+                    continue
+                nxt = lines[i + 1].lstrip()
+                if nxt.startswith("/*"):
+                    print("error: annotation detached from its declaration "
+                          "(KDoc may not follow an annotation): "
+                          "{}:{}: {}".format(path, i + 1, line.strip()))
+PYEOF
+
 # ${'$'}{...} — a literal dollar followed by a brace. This is what a string
 # template becomes when it is written out through a shell heredoc that has
 # already escaped the dollar, and the result compiles: Kotlin reads it as the
