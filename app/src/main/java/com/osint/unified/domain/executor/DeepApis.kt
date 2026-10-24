@@ -33,6 +33,7 @@ import kotlin.math.asin
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
+import kotlin.math.sqrt
 import kotlin.math.tan
 
 /**
@@ -653,10 +654,50 @@ class DeepApis(
         }
         total?.let { sb.append("\n\nLifetime changesets: $it") }
         if (centres.isNotEmpty()) {
-            val aLat = centres.sumOf { it.first } / centres.size
-            val aLon = centres.sumOf { it.second } / centres.size
-            sb.append("\nCentre of recent activity: %.4f, %.4f".format(Locale.US, aLat, aLon))
-            sb.append("\n(People overwhelmingly map where they live and travel.)")
+            // Averaged on the sphere, and only reported if it means
+            // anything.
+            //
+            // Two things were wrong with the arithmetic mean. Edits
+            // at +179 and -179 average to zero — the Gulf of Guinea
+            // instead of Fiji — because longitude wraps and nothing
+            // here knew that. And the mean of a set with two
+            // clusters is a place in between that the person has
+            // never been: somebody who maps in Berlin and in Tokyo
+            // got a centre in Siberia, printed under the sentence
+            // "people overwhelmingly map where they live", which
+            // turns a meaningless number into a claim about
+            // somebody's home.
+            //
+            // So: a proper spherical mean, and a spread test before
+            // it is called a centre at all.
+            var x = 0.0; var y = 0.0; var z = 0.0
+            centres.forEach { (la, lo) ->
+                val rLat = Math.toRadians(la)
+                val rLon = Math.toRadians(lo)
+                x += cos(rLat) * cos(rLon)
+                y += cos(rLat) * sin(rLon)
+                z += sin(rLat)
+            }
+            val n = centres.size
+            x /= n; y /= n; z /= n
+            val hyp = sqrt(x * x + y * y)
+            if (hyp > 1e-9 || kotlin.math.abs(z) > 1e-9) {
+                val aLat = Math.toDegrees(atan2(z, hyp))
+                val aLon = Math.toDegrees(atan2(y, x))
+                val spread = centres.maxOf {
+                    com.osint.unified.ui.godeye.AreaReport.distanceKm(aLat, aLon, it.first, it.second)
+                }
+                if (spread <= 300) {
+                    sb.append("\nCentre of recent activity: %.4f, %.4f".format(Locale.US, aLat, aLon))
+                    sb.append("\nEvery recent edit is within ${spread.toInt()} km of it.")
+                    sb.append("\n(People overwhelmingly map where they live and travel.)")
+                } else {
+                    sb.append("\nRecent edits are spread over ${spread.toInt()} km, so ")
+                    sb.append("there is no single centre to give — an average of ")
+                    sb.append("scattered points is a place nobody has been. The ")
+                    sb.append("per-changeset positions above are the usable ones.")
+                }
+            }
         }
         sb.append("\nhttps://www.openstreetmap.org/user/${seg(u)}")
         sb.toString()
