@@ -886,7 +886,23 @@ class DeepApis(
             // distinguish was the one where nothing answered at all —
             // six failed lookups read as six clean sheets.
             val answers = runCatching {
-                val o = json.parseToJsonElement(get("https://dns.google/resolve?name=$reversed.$zone&type=A")).jsonObject
+                val o = json.parseToJsonElement(
+                    get("https://dns.google/resolve?type=A&name=$reversed.$zone")
+                ).jsonObject
+                // The resolver's own status, which was not being read.
+                //
+                // dns.google answers HTTP 200 for SERVFAIL (2) and
+                // REFUSED (5) with no Answer array — which is exactly
+                // what a blocklist returns to a public resolver it is
+                // rate limiting, and the doc comment above promises
+                // that is reported as refused and never as a hit. An
+                // absent Answer was being read as "not listed". 0 is
+                // NOERROR and 3 is NXDOMAIN, and for a blocklist
+                // NXDOMAIN is the answer "not on this list".
+                val status = (o["Status"] as? JsonPrimitive)?.content?.toIntOrNull()
+                if (status != null && status != 0 && status != 3) {
+                    throw IOException("resolver status $status")
+                }
                 (o["Answer"] as? JsonArray)?.mapNotNull { (it as? JsonObject).str("data") } ?: emptyList()
             }.getOrNull()
             when {
@@ -896,14 +912,28 @@ class DeepApis(
                 else -> listed.add("$label → ${answers.joinToString(", ")}")
             }
         }
-        if (clean.isEmpty() && listed.isEmpty() && refused.isEmpty()) {
+        // Refused is not answered.
+        //
+        // The guard needed all three to be empty, so six lists all
+        // refusing a public resolver passed it — and the line below
+        // then printed "Not listed on any blocklist that answered",
+        // a clean verdict out of zero answers, with the qualifying
+        // note twelve lines further down where the classifier never
+        // looks.
+        if (clean.isEmpty() && listed.isEmpty()) {
             return@runCatching "IP reputation could not be reached for $ip: " +
-                "no blocklist answered, so this says nothing either way."
+                "no blocklist gave a usable answer" +
+                (if (refused.isNotEmpty()) {
+                    " (${refused.size} refused the public resolver)"
+                } else {
+                    ""
+                }) +
+                ", so this says nothing either way."
         }
         buildString {
             append("IP reputation — $ip\n")
             if (listed.isEmpty()) {
-                append("\nNot listed on any blocklist that answered.\n")
+                append("\nNot listed on any of the ${clean.size} blocklists that answered.\n")
             } else {
                 append("\nLISTED on ${listed.size} blocklist(s):\n")
                 listed.forEach { append("• $it\n") }
@@ -1783,10 +1813,19 @@ class DeepApis(
                 val a = runCatching {
                     gate.withPermit {
                         val o = json.parseToJsonElement(
-                            get("https://dns.google/resolve?name=$cand&type=A")
+                            get("https://dns.google/resolve?type=A&name=$cand")
                         ).jsonObject
+                        // SERVFAIL and REFUSED arrive as HTTP 200 with
+                        // no Answer, and were being counted as "this
+                        // lookalike does not resolve" — the reassuring
+                        // half of a split this function exists to
+                        // make. NXDOMAIN (3) really is "no such name".
+                        val status = (o["Status"] as? JsonPrimitive)?.content?.toIntOrNull()
+                        if (status != null && status != 0 && status != 3) {
+                            throw IOException("resolver status $status")
+                        }
                         (o["Answer"] as? JsonArray)?.mapNotNull { (it as? JsonObject).str("data") }
-                            ?.filter { Regex("""^(?:\d{1,3}\.){3}\d{1,3}$""").matches(it) } ?: emptyList()
+                            ?.filter { IPV4_ONLY.matches(it) } ?: emptyList()
                     }
                 }.getOrNull()
                 when {
@@ -2173,6 +2212,9 @@ class DeepApis(
      */
     private fun httpCode(e: Throwable): Int? = (e as? IOException)?.message
         ?.takeIf { it.startsWith("HTTP ") }?.removePrefix("HTTP ")?.trim()?.toIntOrNull()
+
+    /** Compiled once: this was being rebuilt per DNS answer. */
+    private val IPV4_ONLY = Regex("""^(?:\d{1,3}\.){3}\d{1,3}$""")
 
     /** Statuses each platform uses to mean "no such user". */
     private val SAYS_NO_DEFAULT = setOf(404, 410)
