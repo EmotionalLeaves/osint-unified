@@ -186,23 +186,37 @@ object Identify {
             // did not: paste `config.yaml` or `index.html` into the
             // decoder and it reported a domain name at confidence
             // 80. Same fix, the place the bug also lives.
-            if (v.substringAfterLast('.').lowercase() in ObservableExtractor.NOT_HOSTS) {
+            // Both, not one.
+            //
+            // The guard arrived as an `else`, and this file's own
+            // header says "where a string is ambiguous every reading
+            // is offered rather than one chosen for you". NOT_HOSTS
+            // is tuned for a scanner, where dropping is right, and
+            // several of its entries are live country TLDs: md, so,
+            // py, rs, sh, and zip since 2023. `nic.md` is Moldova's
+            // actual registry, and the decoder stopped offering it
+            // as a domain at all.
+            val suffix = v.substringAfterLast('.').lowercase()
+            if (suffix in ObservableExtractor.NOT_HOSTS) {
                 out.add(
                     Guess(
                         "File name",
-                        "Dotted labels ending in a file extension, not a TLD.",
+                        "Dotted labels ending in what is usually a file " +
+                            "extension — though .$suffix is also a real TLD.",
                         confidence = 70
                     )
                 )
-            } else {
-                out.add(
-                    Guess(
-                        "Domain name",
-                        "Dotted labels ending in a plausible TLD.",
-                        confidence = 80
-                    )
-                )
             }
+            out.add(
+                Guess(
+                    "Domain name",
+                    "Dotted labels ending in a plausible TLD.",
+                    // Below the file reading when the suffix is one
+                    // people type far more often as a file than as a
+                    // domain, and above it otherwise.
+                    confidence = if (suffix in ObservableExtractor.NOT_HOSTS) 60 else 80
+                )
+            )
         }
 
         if (HEX.matches(v)) {

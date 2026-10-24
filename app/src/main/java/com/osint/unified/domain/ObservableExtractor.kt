@@ -48,7 +48,7 @@ object ObservableExtractor {
         // The comment above names ".next" as the example and it was
         // not in the list. "c" and "h" were, and could never match:
         // the shape requires two letters at the end.
-        "next", "nuxt", "cache", "map", "min", "lock", "iml", "gradle",
+        "next", "nuxt", "cache", "map", "min", "iml", "gradle",
         "properties", "yarn", "npmrc", "dockerignore", "gitignore"
     )
 

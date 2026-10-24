@@ -98,6 +98,53 @@ class GraphAndLayoutTest {
         assertEquals(1, toSeed)
     }
 
+    /**
+     * The third edge insertion, which the dedup fix missed.
+     *
+     * Two rows from one tool, each over the twelve-leaf cap, shared
+     * the node id `more:crtsh`: `getOrPut` kept the first label, so
+     * the second row's overflow was never mentioned, and
+     * `links.add` ran twice, so the edge was drawn twice and pulled
+     * twice as hard.
+     */
+    @Test
+    fun eachRowsOverflowIsItsOwnNodeAndItsOwnEdge() {
+        val many = (1..20).joinToString("\n") { "a$it.example.com" }
+        val other = (1..40).joinToString("\n") { "b$it.example.com" }
+        val graph = GraphBuilder.build("example.com", listOf(row("crtsh", many), row("crtsh", other)))
+        val more = graph.nodes.filter { it.id.startsWith("more:") }
+        assertEquals(2, more.size)
+        assertTrue(more.any { it.label.contains("8 more") })
+        assertTrue(more.any { it.label.contains("28 more") })
+        more.forEach { n ->
+            assertEquals(1, graph.links.count { it.source == "tool:crtsh" && it.target == n.id })
+        }
+    }
+
+    /**
+     * A tool still working is not a tool that could not be asked.
+     *
+     * `Findings.kindOf` maps "running" to UNREACHABLE through its
+     * `else`, so a graph opened during a search said "N could not
+     * be asked" about N tools that were mid-flight — the same
+     * mistake `Findings.sort` carries a comment about avoiding.
+     */
+    @Test
+    fun toolsStillRunningAreNotCountedAsRefused() {
+        val graph = GraphBuilder.build(
+            "example.com",
+            listOf(
+                row("crtsh", "a.example.com"),
+                row("shodan", "", status = "running"),
+                row("censys", "", status = "running")
+            )
+        )
+        val note = graph.nodes.firstOrNull { it.id == "note:coverage" }
+        assertTrue(note != null)
+        assertFalse(note!!.label.contains("could not be asked"))
+        assertTrue(note.label.contains("2 still running"))
+    }
+
     // ---- the layout ----
 
     private fun graph(n: Int): GraphBuilder.Graph {

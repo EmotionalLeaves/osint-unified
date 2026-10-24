@@ -31,7 +31,16 @@ object GraphBuilder {
         // leaf hanging off it, visually identical to a real finding,
         // on the screen most likely to be screenshotted. Timeline
         // already filters this way.
-        val byKind = results.groupBy { Findings.kindOf(it) }
+        //
+        // And rows still in flight belong in none of the three.
+        // `Findings.kindOf` maps "running" through its `else` to
+        // UNREACHABLE, so tapping GRAPH during a search drew "38
+        // could not be asked" about thirty-eight tools that were
+        // working — the defect `Findings.sort` carries a comment
+        // about, in the commit that added this node to close a
+        // different honesty gap. `Findings.pending` exists for it.
+        val running = Findings.pending(results)
+        val byKind = (results - running.toSet()).groupBy { Findings.kindOf(it) }
         byKind[Findings.Kind.HIT].orEmpty().forEach { r ->
             val toolId = "tool:${r.toolId}"
             nodes.getOrPut(toolId) { Node(toolId, r.toolName, 1) }
@@ -76,11 +85,23 @@ object GraphBuilder {
             // the screen its own comment calls the one most likely
             // to be screenshotted.
             if (lines.size > GRAPH_LEAVES) {
-                val moreId = "more:${r.toolId}"
+                // Two of the three insertions above were given a
+                // `links.none` guard and this one, eight lines below
+                // them, was not — so two HIT rows from one tool drew
+                // this edge twice and doubled its pull, which is the
+                // consequence the first guard's comment describes.
+                //
+                // The node is per row, too. `more:crtsh` was shared
+                // between them, `getOrPut` kept the first, and the
+                // second row's twenty-eight were never mentioned
+                // anywhere.
+                val moreId = "more:${r.toolId}:${r.id}"
                 nodes.getOrPut(moreId) {
                     Node(moreId, "…and ${lines.size - GRAPH_LEAVES} more", 2)
                 }
-                links.add(Link(toolId, moreId))
+                if (links.none { it.source == toolId && it.target == moreId }) {
+                    links.add(Link(toolId, moreId))
+                }
             }
         }
 
@@ -96,10 +117,15 @@ object GraphBuilder {
         // caveat on all of it.
         val absent = byKind[Findings.Kind.ABSENT].orEmpty()
         val unreachable = byKind[Findings.Kind.UNREACHABLE].orEmpty()
-        if (absent.isNotEmpty() || unreachable.isNotEmpty()) {
+        if (absent.isNotEmpty() || unreachable.isNotEmpty() || running.isNotEmpty()) {
             val note = buildList {
                 if (absent.isNotEmpty()) add("${absent.size} looked and found nothing")
                 if (unreachable.isNotEmpty()) add("${unreachable.size} could not be asked")
+                // Said, rather than left out: a graph drawn mid-search
+                // is a graph that will look different in a minute, and
+                // the reader should know that before they screenshot
+                // it.
+                if (running.isNotEmpty()) add("${running.size} still running")
             }.joinToString(" · ")
             val id = "note:coverage"
             nodes[id] = Node(id, note, 3)

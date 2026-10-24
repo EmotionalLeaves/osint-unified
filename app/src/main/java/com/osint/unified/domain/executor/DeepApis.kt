@@ -2519,6 +2519,9 @@ class DeepApis(
             // must not be counted as one" is the standing frame
             // this project is built on.
             val cve = Reached()
+            // Where the body ends if neither source has anything to
+            // say about this id.
+            val header = sb.length
             cve.of {
                 val o = json.parseToJsonElement(get("https://cve.circl.lu/api/vulnerability/$t")).jsonObject
                 val cna = ((o["containers"] as? JsonObject)?.get("cna") as? JsonObject)
@@ -2550,6 +2553,21 @@ class DeepApis(
                     "neither the CVE index nor the exploit-prediction service " +
                         "answered for $t"
                 )
+            }
+            // Reaching a source is not learning anything from it.
+            //
+            // EPSS answers HTTP 200 with `{"data":[]}` for an id it
+            // has never heard of, so it never threw, `cve.any` was
+            // always true, and the guard above has never once fired.
+            // A well-formed CVE id that does not exist came back as
+            // the id and two links — "a tool that returns a list of
+            // places to look is not a source", which is what the
+            // guard was written to stop. What settles it is whether
+            // the body grew, not whether a server replied.
+            if (sb.length == header) {
+                return@runCatching "No record of $t in the CVE index or the " +
+                    "exploit-prediction service. Either it does not exist, or " +
+                    "it was published too recently for both of them."
             }
             sb.append("\n\nhttps://nvd.nist.gov/vuln/detail/$t")
             sb.append("\nExploits: https://www.exploit-db.com/search?cve=${t.removePrefix("CVE-")}")
@@ -2807,9 +2825,9 @@ class DeepApis(
         .replace("&quot;", "\"").replace("&#39;", "'").replace("&nbsp;", " ")
         .replace(Regex("\\s+"), " ")
 
+    /** The seventh copy of the quadratic pattern, now the shared one. */
     private fun emailsIn(s: String): List<String> =
-        Regex("""[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}""").findAll(s)
-            .map { it.value }.distinct().toList()
+        Hostnames.emailsIn(s).distinct()
 
     /**
      * A run of sub-lookups, and whether any of them answered.

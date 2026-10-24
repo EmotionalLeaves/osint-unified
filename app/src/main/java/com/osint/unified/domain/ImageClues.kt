@@ -72,6 +72,17 @@ object ImageClues {
                 val d = host.lowercase()
                 // An email's domain is already covered by the email.
                 if (addresses.isNotEmpty() && t.contains("@$d", true)) return@forEach
+                // The guard Identify was given and this, edited in the
+                // same commit, was not. OCR of a screenshot or a
+                // whiteboard reads `logo.png` and `report.pdf`, and
+                // both became a domain to investigate under the words
+                // "a business whose site is painted on its own wall".
+                //
+                // Dropping is right here, unlike in the decoder: this
+                // is a list of leads to offer, and a lead that is
+                // almost always a filename is not worth one of the
+                // few slots.
+                if (d.substringAfterLast('.') in ObservableExtractor.NOT_HOSTS) return@forEach
                 add(
                     Kind.DOMAIN, d,
                     "A business whose site is painted on its own wall is a " +

@@ -1,5 +1,6 @@
 package com.osint.unified.domain.executor
 
+import com.osint.unified.domain.Hostnames
 import com.osint.unified.domain.andMore
 import com.osint.unified.domain.orStop
 import kotlinx.coroutines.coroutineScope
@@ -963,8 +964,21 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
     fun webcrawl(input: String): Result<String> = runCatching {
         val url = withScheme(input)
         val html = getBody(url)
-        val emails = Regex("""[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}""")
-            .findAll(html).map { it.value }.distinct().take(30).toList()
+        // Hostnames.emailsIn, not the pattern that used to be here.
+        //
+        // Five copies of `[A-Za-z0-9._%+-]+@…` were replaced when it
+        // was measured at fifty-odd seconds over a 96 KB body; this
+        // one was missed, and it is the worst-placed of the seven. It
+        // runs over a whole fetched page — content the subject chose,
+        // from a URL pointed at the subject's own site — with no scan
+        // cap at all, and a hundred kilobytes of local-part characters
+        // with no `@` in them makes every start position walk the rest
+        // of the run. The replacement finds the `@` first and grows
+        // outwards, which is linear.
+        //
+        // regex-recursion could not see it: that check hunts unbounded
+        // group repetition and this is a character class.
+        val emails = Hostnames.emailsIn(html).distinct().take(30)
         val links = Regex("""href=["']([^"']+)["']""")
             .findAll(html).map { it.groupValues[1] }.filter { it.startsWith("http") }.distinct().take(40).toList()
         val scripts = Regex("""src=["']([^"']+\.js[^"']*)["']""")
