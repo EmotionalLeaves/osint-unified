@@ -1384,6 +1384,26 @@ class DirectToolExecutor(
     }
 
     /** Public traffic cameras near a coordinate, with live still-image links. */
+    /**
+     * Cameras their operators meant to be public.
+     *
+     * The ask was for a live view of anywhere in the world, and
+     * there is an honest version of that and a dishonest one. The
+     * dishonest one is Insecam and default-credential IP cameras:
+     * those are private people's cameras reached because somebody
+     * left them open, which is unauthorised access to a stranger's
+     * system and very often a camera pointed at a private
+     * individual. This app's own first-run screen rules both of
+     * those out, so they stay out.
+     *
+     * The honest one is the networks that publish their own: roads
+     * authorities, cities, national transport agencies. Four of
+     * them answer with no key and no account, and between them
+     * they cover California, New York, London and Finland. They
+     * are fetched by where you are looking rather than all at once
+     * — London's list alone is a megabyte, and downloading it to
+     * look at Tokyo is data spent on nothing.
+     */
     private suspend fun cctvNear(input: String): Result<String> = runCatching {
         val parts = input.split(",").map { it.trim().toDoubleOrNull() }
         if (parts.size != 2 || parts.any { it == null }) {
@@ -1417,7 +1437,9 @@ class DirectToolExecutor(
             val mapped = runCatching { surveillanceNear(lat, lon) }.getOrNull()
             return@runCatching buildString {
                 append("No public traffic-camera feed within 50 km of %.4f, %.4f ".format(Locale.US, lat, lon))
-                append("(live still images today are Caltrans, California only).\n")
+                append("(live still images come from the operators that publish ")
+                append("them keylessly: Caltrans in California, NYC DOT, ")
+                append("Transport for London and Fintraffic in Finland).\n")
                 if (mapped == null) {
                     append("OpenStreetMap could not be asked about mapped cameras here, ")
                     append("so nothing is claimed about those either.")
