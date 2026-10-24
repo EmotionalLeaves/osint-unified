@@ -3,6 +3,7 @@ package com.osint.unified.domain
 import com.osint.unified.data.db.Result as ResultRow
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 import java.util.Locale
 
 /**
@@ -185,6 +186,132 @@ object Timeline {
         .replace(Regex("""\s+"""), " ")
         .trim()
         .take(140)
+
+    /**
+     * What a reader would notice if they did the subtraction.
+     *
+     * The finding in a timeline is almost never a date. It is a gap:
+     * the domain registered three days before the account was
+     * created, six accounts across different platforms all created in
+     * one fortnight, a certificate issued the week the breach is
+     * dated. Every one of those is a subtraction the app had both
+     * operands for and did not perform — it printed a list in
+     * chronological order and left the reader to spot them.
+     *
+     * Stamped INFERRED, because the app worked these out rather than
+     * reading them anywhere. [Grading.Kind] has had that value since
+     * it was written and nothing had ever put anything on it.
+     */
+    data class Observation(
+        val what: String,
+        val kind: Grading.Kind = Grading.Kind.INFERRED,
+        /** The events it was derived from, newest last. */
+        val from: List<Event> = emptyList()
+    )
+
+    /**
+     * Clusters and intervals over a built timeline.
+     *
+     * Deliberately conservative about what it calls a cluster. Three
+     * dated lines within a fortnight is a coincidence when a dossier
+     * holds two hundred of them and a finding when it holds nine, so
+     * a cluster has to be a real share of the whole as well as close
+     * together.
+     */
+    fun observations(events: List<Event>, limit: Int = 6): List<Observation> {
+        if (events.size < 2) return emptyList()
+        val sorted = events.sortedBy { it.date }
+        val out = ArrayList<Observation>()
+
+        // Events that happened together, across different sources.
+        //
+        // From one source they are one record being read: a
+        // certificate log listing four issuances in a week says
+        // something about a renewal schedule, not about a fortnight
+        // in which several unrelated things happened.
+        var i = 0
+        while (i < sorted.size) {
+            var j = i
+            while (j + 1 < sorted.size &&
+                ChronoUnit.DAYS.between(sorted[i].date, sorted[j + 1].date) <= CLUSTER_DAYS
+            ) {
+                j++
+            }
+            val near = sorted.subList(i, j + 1)
+            val sources = near.map { it.toolId }.distinct()
+            if (near.size >= 3 && sources.size >= 2 &&
+                near.size * 4 >= sorted.size
+            ) {
+                out.add(
+                    Observation(
+                        "${near.size} dated records fall inside " +
+                            "${ChronoUnit.DAYS.between(near.first().date, near.last().date) + 1} " +
+                            "days (${near.first().date.format(FORMAT)} to " +
+                            "${near.last().date.format(FORMAT)}), from " +
+                            "${sources.size} different sources. That is " +
+                            "${near.size} of the ${sorted.size} dates this case holds.",
+                        from = near.toList()
+                    )
+                )
+            }
+            i = j + 1
+        }
+
+        // The span, which is the one interval every timeline has.
+        val span = ChronoUnit.DAYS.between(sorted.first().date, sorted.last().date)
+        if (span >= 1) {
+            out.add(
+                Observation(
+                    "Everything dated in this case falls between " +
+                        "${sorted.first().date.format(FORMAT)} and " +
+                        "${sorted.last().date.format(FORMAT)} — " +
+                        describeGap(span) + " apart."
+                )
+            )
+        }
+
+        // The two closest events from different sources, when they are
+        // close enough to be worth saying.
+        var tightest: Pair<Event, Event>? = null
+        var tightestDays = Long.MAX_VALUE
+        for (a in sorted.indices) {
+            for (b in a + 1 until sorted.size) {
+                if (sorted[a].toolId == sorted[b].toolId) continue
+                val days = ChronoUnit.DAYS.between(sorted[a].date, sorted[b].date)
+                if (days > NEAR_DAYS) break
+                if (days < tightestDays) {
+                    tightestDays = days
+                    tightest = sorted[a] to sorted[b]
+                }
+            }
+        }
+        tightest?.let { (a, b) ->
+            out.add(
+                Observation(
+                    "\"${a.what.take(60)}\" (${a.toolName}) and " +
+                        "\"${b.what.take(60)}\" (${b.toolName}) are " +
+                        describeGap(tightestDays) + " apart.",
+                    from = listOf(a, b)
+                )
+            )
+        }
+        return out.take(limit)
+    }
+
+    private fun describeGap(days: Long): String = when {
+        days == 0L -> "the same day"
+        days == 1L -> "one day"
+        days < 14L -> "$days days"
+        days < 60L -> "${days / 7} weeks"
+        days < 730L -> "${days / 30} months"
+        else -> "${days / 365} years"
+    }
+
+    /** A fortnight: close enough that a reader would ask why. */
+    private const val CLUSTER_DAYS = 14L
+
+    /** Beyond this, two events being near each other means nothing. */
+    private const val NEAR_DAYS = 10L
 
     /** "2019 · 3 events", for a heading. */
     fun byYear(events: List<Event>): List<Pair<Int, List<Event>>> =

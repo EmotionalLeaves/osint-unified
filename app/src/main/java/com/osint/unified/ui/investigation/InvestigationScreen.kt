@@ -148,6 +148,8 @@ private data class Dossier(
     val pivots: List<EntityExtractor.Pivot> = emptyList(),
     val alreadyChased: Set<String> = emptySet(),
     val timeline: List<Timeline.Event> = emptyList(),
+    /** What the dates add up to, which the reader used to work out. */
+    val intervals: List<Timeline.Observation> = emptyList(),
     val sorted: Findings.Sorted = Findings.sort(emptyList()),
     val pending: List<com.osint.unified.data.db.Result> = emptyList(),
     val ready: Boolean = false
@@ -280,6 +282,9 @@ fun InvestigationScreen(
             observable.raw
         ) {
             value = withContext(Dispatchers.Default) {
+                // Built once and used twice: the list, and what the
+                // intervals between its entries add up to.
+                val builtTimeline = Timeline.build(state.results)
                 Dossier(
                     facts = IntelSummary.synthesize(state.results, observable.raw),
                     entities = Corroboration.merge(
@@ -305,7 +310,8 @@ fun InvestigationScreen(
                     alreadyChased = state.results.map { it.input }
                         .filter { it.trim().lowercase() != seedRaw }
                         .toSet(),
-                    timeline = Timeline.build(state.results),
+                    timeline = builtTimeline,
+                    intervals = Timeline.observations(builtTimeline),
                     sorted = Findings.sort(state.results),
                     pending = Findings.pending(state.results),
                     ready = true
@@ -606,6 +612,31 @@ fun InvestigationScreen(
                         if (timelineOpen) "▴" else "▾",
                         style = MaterialTheme.typography.labelMedium,
                         color = Intel.TextLow
+                    )
+                }
+                // What the gaps between them come to.
+                //
+                // The finding in a timeline is almost never a date; it
+                // is an interval — the domain registered three days
+                // before the account, six accounts created in one
+                // fortnight — and every one of those was a subtraction
+                // the app had both operands for and left to the
+                // reader. Shown whether or not the list is open,
+                // because it is the part worth reading.
+                analysis.intervals.forEach { note ->
+                    Text(
+                        note.what,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Intel.CyanBright,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+                if (analysis.intervals.isNotEmpty()) {
+                    Text(
+                        "Worked out from the dates below, not read anywhere.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Intel.TextLow,
+                        modifier = Modifier.padding(top = 2.dp)
                     )
                 }
                 if (!timelineOpen) {
