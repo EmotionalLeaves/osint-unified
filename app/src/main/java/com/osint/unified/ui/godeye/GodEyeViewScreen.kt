@@ -63,6 +63,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -189,9 +190,23 @@ fun GodEyeViewScreen(
     ) {
         com.osint.unified.network.Connectivity.observe(context).collect { value = it }
     }
-    var inspected by remember { mutableStateOf<Inspected?>(null) }
+    // Saveable, all of it.
+    //
+    // These nine sat among saveable neighbours as plain `remember`s,
+    // so a rotation or a tab switch threw away the marker dialog you
+    // had open, the area report a Default-dispatcher pass over every
+    // armed layer had just produced, the coordinate action sheet, and
+    // the map's last centre and zoom — and `zoomNow` resetting to 2.5
+    // made the next WHAT'S HERE use a two-thousand-kilometre radius
+    // instead of the real one.
+    var inspected by rememberSaveable(stateSaver = InspectedSaver) {
+        mutableStateOf<Inspected?>(null)
+    }
     // What a long press on the globe turned up: every loaded layer, swept
     // for a radius around that point.
+    // Not saveable, deliberately: it is rebuilt from `areaWanted`
+    // below, which is, and a whole report in a Bundle is a transaction
+    // the size of the layers it swept.
     var area by remember { mutableStateOf<AreaReport.Report?>(null) }
     // The place a report has been asked for, and the report itself.
     //
@@ -203,7 +218,12 @@ fun GodEyeViewScreen(
     // on a slow phone was an ANR. Every other heavy thing in this
     // package — planMarkers, thinGlobe, the vector load — is already
     // off the main thread; this was the one that was not.
-    var areaWanted by remember { mutableStateOf<Triple<Double, Double, Double>?>(null) }
+    // The standing request, not a one-shot: it used to be cleared the
+    // moment the report was built, which left nothing to rebuild from
+    // after a rotation.
+    var areaWanted by rememberSaveable(stateSaver = TripleDoubleSaver) {
+        mutableStateOf<Triple<Double, Double, Double>?>(null)
+    }
     // Markers on screen, and markers the armed layers hold.
     //
     // Zoom a map in far enough and an empty screen is the correct
@@ -212,18 +232,28 @@ fun GodEyeViewScreen(
     // broken at exactly the moment it is being careful. Reported from
     // a second phone as "zoom in and all the layers stop working",
     // which is what that looks like from the outside.
-    var plotted by remember { mutableStateOf(0 to 0) }
-    LaunchedEffect(areaWanted, state) {
+    var plotted by rememberSaveable(stateSaver = IntPairSaver) { mutableStateOf(0 to 0) }
+    // Keyed on the request alone.
+    //
+    // `state` was a key because the request used to be cleared the
+    // moment the report was built, which made the second key almost
+    // unreachable. Now that the request survives — so the report can
+    // be rebuilt after a rotation — keeping `state` would re-sweep
+    // every armed layer on every poll for as long as the dialog is
+    // open. A report is a snapshot of a moment, and this is that
+    // moment.
+    LaunchedEffect(areaWanted) {
         val want = areaWanted ?: return@LaunchedEffect
         val built = withContext(Dispatchers.Default) {
             AreaReport.build(state, want.first, want.second, want.third)
         }
         area = built
-        areaWanted = null
     }
     // Where the map was last tapped, offered as a choice rather than acted on.
-    var tapped by remember { mutableStateOf<Pair<Double, Double>?>(null) }
-    var zoomNow by remember { mutableDoubleStateOf(2.5) }
+    var tapped by rememberSaveable(stateSaver = DoublePairSaver) {
+        mutableStateOf<Pair<Double, Double>?>(null)
+    }
+    var zoomNow by rememberSaveable { mutableDoubleStateOf(2.5) }
     // The world brief is derived from the same state the globe draws, so it
     // is recomputed rather than fetched, and is never out of step with it.
     var showBrief by rememberSaveable { mutableStateOf(false) }
@@ -344,11 +374,15 @@ fun GodEyeViewScreen(
     // Where the map should jump to when the globe hands over, and the
     // other way about. Not the search focus: that is a different kind
     // of move and the map already has one.
-    var handoff by remember { mutableStateOf<Triple<Double, Double, Double>?>(null) }
+    var handoff by rememberSaveable(stateSaver = TripleDoubleSaver) {
+        mutableStateOf<Triple<Double, Double, Double>?>(null)
+    }
     // Where the flat map is looking, so switching back to the globe
     // lands on what was on screen rather than wherever the globe was
     // left.
-    var mapCentre by remember { mutableStateOf<Pair<Double, Double>?>(null) }
+    var mapCentre by rememberSaveable(stateSaver = DoublePairSaver) {
+        mutableStateOf<Pair<Double, Double>?>(null)
+    }
     // The last zoom the map reported, and when the map was arrived at.
     //
     // Returning to the globe needs both. The map opens at whatever
@@ -369,7 +403,7 @@ fun GodEyeViewScreen(
     // broken. Going in close is the person saying they want tiles;
     // coming back out from there is them saying they are done with
     // them. Arriving wide says nothing either way.
-    var armedForGlobe by remember { mutableStateOf(false) }
+    var armedForGlobe by rememberSaveable { mutableStateOf(false) }
     var flightFilter by rememberSaveable { mutableStateOf("ALL") }
     // Filtered once per change, not twice per recomposition over 11,000
     // aircraft — the pill and the map now also read the same list.
@@ -1735,7 +1769,7 @@ fun GodEyeViewScreen(
 
     area?.let { report ->
         AlertDialog(
-            onDismissRequest = { area = null },
+            onDismissRequest = { area = null; areaWanted = null },
             containerColor = Intel.Surface,
             titleContentColor = Intel.TextHi,
             textContentColor = Intel.TextMid,
@@ -1809,6 +1843,7 @@ fun GodEyeViewScreen(
                                             item.kind, item.label, item.lat, item.lon, item.url
                                         )
                                         area = null
+                                        areaWanted = null
                                     }
                                     .padding(vertical = 2.dp)
                             ) {
@@ -1847,6 +1882,7 @@ fun GodEyeViewScreen(
                 TextButton(onClick = {
                     viewModel.onMapClick(report.lat, report.lon)
                     area = null
+                    areaWanted = null
                 }) {
                     Text(
                         "INVESTIGATE POINT",
@@ -1856,7 +1892,7 @@ fun GodEyeViewScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { area = null }) {
+                TextButton(onClick = { area = null; areaWanted = null }) {
                     Text("CLOSE", style = MaterialTheme.typography.labelMedium, color = Intel.TextMid)
                 }
             }
@@ -2458,6 +2494,49 @@ data class Inspected(
     val lat: Double,
     val lon: Double,
     val url: String? = null
+)
+
+// ---------------------------------------------------------------
+// Savers for the small pieces of screen state that used to be lost
+// on a rotation or a tab switch.
+//
+// listSaver rather than a parcelable: these are a handful of
+// primitives each, a Bundle holds them without ceremony, and nothing
+// outside this file needs the type to be anything in particular. A
+// null is stored as an empty list, which is the one shape listSaver
+// cannot confuse with a value.
+// ---------------------------------------------------------------
+
+internal val InspectedSaver: Saver<Inspected?, Any> = listSaver(
+    save = {
+        if (it == null) emptyList()
+        else listOf(it.kind, it.label, it.lat, it.lon, it.url ?: "")
+    },
+    restore = {
+        if (it.size < 5) null
+        else Inspected(
+            it[0] as String,
+            it[1] as String,
+            it[2] as Double,
+            it[3] as Double,
+            (it[4] as String).ifBlank { null }
+        )
+    }
+)
+
+internal val TripleDoubleSaver: Saver<Triple<Double, Double, Double>?, Any> = listSaver(
+    save = { if (it == null) emptyList() else listOf(it.first, it.second, it.third) },
+    restore = { if (it.size < 3) null else Triple(it[0], it[1], it[2]) }
+)
+
+internal val DoublePairSaver: Saver<Pair<Double, Double>?, Any> = listSaver(
+    save = { if (it == null) emptyList() else listOf(it.first, it.second) },
+    restore = { if (it.size < 2) null else it[0] to it[1] }
+)
+
+internal val IntPairSaver: Saver<Pair<Int, Int>, Any> = listSaver(
+    save = { listOf(it.first, it.second) },
+    restore = { if (it.size < 2) 0 to 0 else it[0] to it[1] }
 )
 
 /** Filters aircraft by callsign pattern: cargo carriers, military-style
