@@ -9,6 +9,79 @@ code reviews filed beside this (r6–r12).
 
 ---
 
+## OPEN — the queue, 24 Oct
+
+Everything below this section is a record of work already done, kept
+for the lessons in it. **This is the list.** Sections A to H are
+closed; their headings say so.
+
+### Blocked on the tester
+- **T1.** Did their APK come from the CI artifact or a local build?
+  `assets/` and `jniLibs/` are empty in the tree and filled by the
+  workflow, so a locally built APK has no sanctions lists, no
+  disposable-domain list and no SQLCipher library — which would
+  present as several unrelated bugs.
+- **T2.** Is the globe smooth now? Their report predates every
+  main-thread fix since.
+- **T3.** Which OpenStreetMap URL asked them to sign in? (A3.) Every
+  URL the code can emit is public; without the actual link this is
+  guesswork.
+
+### Open work, in order
+- **O1. Layers as data** (was C6). One registry, not thirty-four
+  booleans spread across three files. Every layer added since has had
+  to be added in three places, and the header, the pill and the brief
+  have each disagreed with the others at least once because of it.
+- **O2. Search as the spine** (was C8, I1). The globe is the entry
+  point and search is a box on it; the tester's "none of the search
+  features really worked" is partly that.
+- **O3. The subscribe half of the briefing** (was G2). Scheduled
+  collection into the watch worker, clustering across collections
+  rather than within one query, RSS beside GDELT, and a dated
+  briefing with the analyst's notes attached. Worth much more now
+  that a watch diffs entities rather than hashes: a briefing built on
+  entity diffs says what changed, one built on digest diffs says a
+  hash moved.
+- **O4. More camera networks** (was G3). Probed 24 Oct: the CARS/511
+  platform answers keylessly to its own query shape —
+  `/List/GetData/Cameras?query=<url-encoded DataTables JSON>&lang=en`
+  — and Idaho (457), Alaska (128), Wisconsin and Ohio (491) all
+  return real records. **But the list endpoint carries no latitude or
+  longitude**, only a road name and an image path, so they cannot go
+  on a layer that fetches by where the view is without a second
+  lookup per camera. That is the data cost the layer's whole design
+  avoids. Blocked until a coordinate-bearing endpoint is found.
+  Separately: a tap that opens the stream rather than a link —
+  Wisconsin's records carry an HLS `videoUrl`.
+- **O5. The rest of B3.** GitHub commit search by author-email
+  (rate-limit fragile), GBIF, Open-Meteo air quality.
+- **O6. The dossier as a LazyColumn** (deliberately deferred). It is
+  a `verticalScroll` Column; `CardList` caps each section at twelve
+  rows behind a SHOW MORE, which is most of the win. Converting the
+  whole screen is a structural rewrite with no device here to look at
+  the result. Revisit if the tester reports scrolling trouble.
+- **O7. One map engine** (was C10, deliberately deferred). A rewrite
+  of the whole map surface with no device here, and the seam it
+  removes is now a seam crossed once.
+
+### The rules this project has earned
+1. **A fix goes where the bug lives, not where it was noticed.** Six
+   of thirty-five defects in one day were reintroductions, and every
+   one was a change applied at the site the author happened to be
+   reading.
+2. **A signature that cannot express failure will keep producing the
+   same bug.** `migrateIfNeeded` returning `String?` caused the same
+   catastrophic failure twice in a day.
+3. **An absence must be established, never assumed.** "No account
+   found" and "could not ask" support opposite conclusions, and this
+   app exists to keep them apart.
+4. **A header that states a total must not then list fewer.**
+5. **Write first, assert after.** Twice today a script asserted after
+   its replace and threw before its write, so an edit believed to be
+   on disk was not — a quieter failure than a compile error.
+
+---
+
 ## 0. Standing frame
 
 "I want this to be a tool, not a bookmark bar." Everything below is
