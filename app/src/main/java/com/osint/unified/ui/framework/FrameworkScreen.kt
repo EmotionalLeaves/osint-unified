@@ -36,6 +36,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -72,20 +73,65 @@ fun FrameworkScreen(initialTarget: String = "", onBack: () -> Unit) {
             runCatching { ToolTemplates.derived(context) }.getOrDefault(emptyList())
         }
     }
+    // Where in the tree, saved as the folder names rather than the
+    // nodes, because the nodes are parsed from a bundled file and
+    // cannot go in a Bundle. Joined into one string: a List<String>
+    // from listOf is not a type the default saver will take.
+    //
+    // This is the one tab the state holder cannot help with. MainActivity
+    // wraps each tab in a SaveableStateProvider, which preserves
+    // rememberSaveable across a tab switch and does nothing at all for
+    // plain remember — and every piece of state on this screen was plain
+    // remember. Four folders deep in TOOLS, tap GLOBE, tap TOOLS: back at
+    // the root with an empty search box and an empty target. Same on a
+    // rotation, and same on every lock and unlock.
+    var pathKey by rememberSaveable { mutableStateOf("") }
     val stack = remember { mutableStateListOf<ArfNode>() }
-    LaunchedEffect(root) { if (stack.isEmpty()) root?.let { stack.add(it) } }
-    var query by remember { mutableStateOf("") }
+    LaunchedEffect(root) {
+        val tree = root ?: return@LaunchedEffect
+        if (stack.isNotEmpty()) return@LaunchedEffect
+        stack.add(tree)
+        // Walked back down the saved path. A folder that is no longer
+        // there simply stops the walk, which lands on its parent.
+        pathKey.split('\u0000').filter { it.isNotEmpty() }.forEach { name ->
+            val next = stack.last().children.firstOrNull { it.name == name }
+                ?: return@LaunchedEffect
+            stack.add(next)
+        }
+    }
+    fun enter(child: ArfNode) {
+        stack.add(child)
+        pathKey = stack.drop(1).joinToString("\u0000") { it.name }
+    }
+    fun leave() {
+        if (stack.size > 1) stack.removeAt(stack.lastIndex)
+        pathKey = stack.drop(1).joinToString("\u0000") { it.name }
+    }
+    var query by rememberSaveable { mutableStateOf("") }
     // Carried over from whatever the dossier is open on, so arriving here
-    // mid-investigation does not mean retyping the target.
-    var target by remember(initialTarget) { mutableStateOf(initialTarget) }
+    // mid-investigation does not mean retyping the target — once. It was
+    // `remember(initialTarget)`, keyed on the last search, so a search
+    // finishing anywhere else in the app replaced whatever the person had
+    // typed here mid-sentence.
+    var target by rememberSaveable { mutableStateOf(initialTarget) }
+    var targetEdited by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(initialTarget) {
+        if (!targetEdited && initialTarget.isNotBlank()) target = initialTarget
+    }
 
     var loading by remember { mutableStateOf(true) }
     LaunchedEffect(root, templates) {
         if (root != null || templates.isNotEmpty()) loading = false
     }
 
-    // Back goes up one folder; only at the root does it leave the screen.
-    BackHandler(enabled = stack.size > 1) { stack.removeAt(stack.lastIndex) }
+    // Back clears the search first, then goes up one folder; only at
+    // the root with nothing typed does it leave the screen. It used to
+    // pop folders the person could not see, because a search covers the
+    // folder listing: back appeared to do nothing, then dropped them
+    // somewhere else entirely when they cleared the box.
+    BackHandler(enabled = stack.size > 1 || query.isNotBlank()) {
+        if (query.isNotBlank()) query = "" else leave()
+    }
 
     fun open(url: String) = com.osint.unified.ui.common.LinkOpener.open(context, url)
 
@@ -110,7 +156,7 @@ fun FrameworkScreen(initialTarget: String = "", onBack: () -> Unit) {
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = { if (stack.size > 1) stack.removeAt(stack.lastIndex) else onBack() }) {
+                    IconButton(onClick = { if (stack.size > 1) leave() else onBack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
@@ -156,7 +202,7 @@ fun FrameworkScreen(initialTarget: String = "", onBack: () -> Unit) {
 
             OutlinedTextField(
                 value = target,
-                onValueChange = { target = it },
+                onValueChange = { target = it; targetEdited = true },
                 singleLine = true,
                 placeholder = {
                     Text(
@@ -230,7 +276,7 @@ fun FrameworkScreen(initialTarget: String = "", onBack: () -> Unit) {
                 val node = stack.last()
                 LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
                     items(node.children) { child ->
-                        if (child.isFolder) FolderRow(child) { stack.add(child) }
+                        if (child.isFolder) FolderRow(child) { enter(child) }
                         else LeafRow(
                             child.name,
                             null,

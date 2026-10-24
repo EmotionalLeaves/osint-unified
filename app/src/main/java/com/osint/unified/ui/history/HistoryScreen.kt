@@ -88,6 +88,23 @@ fun HistoryScreen(
     val scope = rememberCoroutineScope()
     var caseBusy by remember { mutableStateOf(false) }
 
+    // System back follows the arrow, level for level.
+    //
+    // It did not: the activity's handler had no case for "history", so
+    // back fell to the else branch and jumped straight to the globe
+    // from three levels in. And because the selection lives in the view
+    // model, nothing reset it — so tapping CASES in the navigation bar
+    // afterwards landed back inside the target that had been open, and
+    // there was no route from the bar to the list at all.
+    androidx.activity.compose.BackHandler(
+        enabled = selectedId != null || openCaseId != null
+    ) {
+        when {
+            selectedId != null -> viewModel.select(null)
+            openCaseId != null -> viewModel.openCase(null)
+        }
+    }
+
     Scaffold(
         containerColor = Intel.Base,
         topBar = {

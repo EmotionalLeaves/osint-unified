@@ -582,6 +582,16 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                     // directory. Hiding it there left that tab with no way
                     // out but a system back that closed the app.
                     OsintNavBar(screen, unseenWatches) { target ->
+                        // Tapping the tab you are already on returns it
+                        // to its own root, which is the only way back to
+                        // the CASES list once a target has been opened
+                        // and left by a route that does not clear it:
+                        // the selection lives in the view model and
+                        // outlives the screen.
+                        if (target == screen && target == "history") {
+                            historyViewModel.select(null)
+                            historyViewModel.openCase(null)
+                        }
                         screen = target
                     }
                     }
