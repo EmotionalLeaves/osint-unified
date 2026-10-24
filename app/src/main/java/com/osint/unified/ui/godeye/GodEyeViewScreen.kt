@@ -911,17 +911,17 @@ fun GodEyeViewScreen(
             var layerFilter by rememberSaveable { mutableStateOf("") }
             var picking by rememberSaveable { mutableStateOf(false) }
 
-            // One block of pills, rendered in two places: here, showing
+            // One set of pills, rendered in two places: here, showing
             // only what is on, and inside the picker, showing all of
             // them. Written once, because two copies of thirty-three
             // switches would disagree within a week.
-            val layerPills: @Composable () -> Unit = {
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)
-            ) {
-                // When a callsign filter is on, the feed size is not what is
-                // on screen, and a pill reading 11,000 over a map holding
+            //
+            // A callsign filter makes the aircraft feed's size
+            // different from what is on screen, and a pill reading
+            // 11,000 over a map holding forty dots is the map
+            // disagreeing with itself — so that one counts the
+            // filtered set.
+            //
             // Grouped, because a wall of thirty-three is a wall.
             //
             // The presets answer "what is happening in the air"
@@ -1006,8 +1006,6 @@ fun GodEyeViewScreen(
                 }
                 },
             )
-            }
-            }
 
             Row(
                 verticalAlignment = Alignment.CenterVertically,
