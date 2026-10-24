@@ -1,6 +1,8 @@
 package com.osint.unified.domain.executor
 
 import com.osint.unified.domain.orStop
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.async
 import com.osint.unified.network.Http
 import com.osint.unified.network.Http.bodyText
 import kotlinx.serialization.json.Json
@@ -360,7 +362,7 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
 
     /** robots.txt, security.txt and sitemap — the files a site publishes about
      *  itself, often naming paths it would rather not advertise. */
-    fun siteFiles(input: String): Result<String> = runCatching {
+    suspend fun siteFiles(input: String): Result<String> = runCatching {
         val host = hostOf(input)
         val out = StringBuilder()
         // A 404 is the site saying it does not publish that file; a
@@ -370,8 +372,19 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
         // down — the dossier recorded that the site publishes no
         // security.txt, having never reached it.
         var answered = 0
-        listOf("robots.txt", ".well-known/security.txt", "sitemap.xml").forEach { path ->
-            val attempt = runCatching { getBody("https://$host/$path") }.orStop()
+        // Three requests to one host, asked together rather than in
+        // turn. They are independent, and run serially they were three
+        // round trips deep — on a phone, against a slow host, that is
+        // most of this tool's time for no reason. The per-host gate in
+        // the politeness interceptor still holds them to four at once,
+        // so this is not three times the load on anyone.
+        val paths = listOf("robots.txt", ".well-known/security.txt", "sitemap.xml")
+        val fetched = coroutineScope {
+            paths.map { path ->
+                async { path to runCatching { getBody("https://$host/$path") }.orStop() }
+            }.map { it.await() }
+        }
+        fetched.forEach { (path, attempt) ->
             val code = httpCodeOf(attempt.exceptionOrNull())
             // 404 and 410 are answers. Anything else that threw is not.
             if (attempt.isSuccess || code == 404 || code == 410) answered++
@@ -612,7 +625,7 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
      * it does this returned nothing at all for every IP. RIPEstat carries
      * the same routing facts and is run by an RIR, so it answers instead.
      */
-    fun bgpview(ip: String): Result<String> = runCatching {
+    suspend fun bgpview(ip: String): Result<String> = runCatching {
         val o = runCatching {
             json.parseToJsonElement(getBody("https://api.bgpview.io/ip/$ip"))
                 .jsonObject["data"]?.jsonObject
@@ -636,7 +649,7 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
 
     /** Routing facts for an IP straight from RIPEstat — the fallback when
      *  BGPView is unavailable, which it often is. */
-    private fun ripeRouting(ip: String): String = runCatching {
+    private suspend fun ripeRouting(ip: String): String = runCatching {
         val enc = URLEncoder.encode(ip, "UTF-8")
         val net = json.parseToJsonElement(
             getBody("https://stat.ripe.net/data/network-info/data.json?resource=$enc")
@@ -645,15 +658,25 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
         val asns = (net?.get("asns") as? JsonArray)
             ?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }.orEmpty()
         if (prefix == null && asns.isEmpty()) return@runCatching "No routing data for $ip."
+        // One lookup per ASN, asked together. An address announced
+        // from four autonomous systems meant four round trips in a
+        // row to the same host, which is the whole of this tool's
+        // latency for four independent questions.
+        val holders = coroutineScope {
+            asns.map { a ->
+                async {
+                    a to runCatching {
+                        (json.parseToJsonElement(
+                            getBody("https://stat.ripe.net/data/as-overview/data.json?resource=AS$a")
+                        ).jsonObject["data"]?.jsonObject?.get("holder") as? JsonPrimitive)?.contentOrNull
+                    }.orStop().getOrNull()
+                }
+            }.map { it.await() }
+        }
         buildString {
             append("IP: $ip\n")
             prefix?.let { append("Prefix: $it\n") }
-            asns.forEach { a ->
-                val holder = runCatching {
-                    (json.parseToJsonElement(
-                        getBody("https://stat.ripe.net/data/as-overview/data.json?resource=AS$a")
-                    ).jsonObject["data"]?.jsonObject?.get("holder") as? JsonPrimitive)?.contentOrNull
-                }.getOrNull()
+            holders.forEach { (a, holder) ->
                 append("ASN: AS$a")
                 if (!holder.isNullOrBlank()) append(" $holder")
                 append("\n")
