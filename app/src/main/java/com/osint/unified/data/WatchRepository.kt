@@ -14,6 +14,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
@@ -84,7 +86,26 @@ class WatchRepository(
     data class Change(val watchId: Long, val target: String, val summary: String)
 
     /** A check of every watched target. Returns what changed. */
-    suspend fun checkAll(): List<Change> = checking.withLock {
+    suspend fun checkAll(): List<Change> = withContext(Dispatchers.Default) {
+        checkAllHere()
+    }
+
+    /**
+     * Its own dispatcher, rather than the caller's.
+     *
+     * The executors move the network to IO themselves, so the
+     * requests were fine — everything after them was not.
+     * WatchDigest.normalise is four regex passes over a tool's whole
+     * output and every answer is then SHA-1'd, ten tools deep, for
+     * every watched target. CHECK NOW launches from
+     * rememberCoroutineScope, which is Main.immediate, so twenty
+     * watched targets meant two hundred regex-and-digest passes on
+     * the thread drawing the button. The background worker got this
+     * right by accident, because CoroutineWorker defaults to
+     * Default; the interactive path is the one a person is waiting
+     * on.
+     */
+    private suspend fun checkAllHere(): List<Change> = checking.withLock {
         val changes = ArrayList<Change>()
         dao.all().forEach { watch ->
             val outcome = runCatching { check(watch) }

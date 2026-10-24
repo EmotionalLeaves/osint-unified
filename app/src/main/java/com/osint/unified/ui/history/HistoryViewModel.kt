@@ -18,6 +18,9 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.flowOf
@@ -120,7 +123,24 @@ class HistoryViewModel(
      */
     val caseLinks: StateFlow<List<CaseLinks.Link>> =
         caseTargets
+            // Keyed on the targets' identity, not on the table.
+            //
+            // caseTargets is a Room Flow over `investigations`, and
+            // Room invalidates per table — so setNotes on an
+            // unrelated target, setTags, fileUnder, or the updatedAt
+            // touch that every tool run causes, all re-emitted here.
+            // Each re-emission re-read every result row of every
+            // target and ran the whole corroboration pass again.
+            .distinctUntilChanged { old, new ->
+                old.map { it.id } == new.map { it.id }
+            }
             .mapLatest { targets -> CaseLinks.find(entitiesByTarget(targets)) }
+            // And off the main thread. mapLatest runs in the stateIn
+            // scope, which is viewModelScope — Dispatchers.Main.
+            // immediate — so the regex extraction over every row of
+            // every target in the case ran on the thread drawing the
+            // screen that was waiting for it.
+            .flowOn(Dispatchers.Default)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private suspend fun entitiesByTarget(

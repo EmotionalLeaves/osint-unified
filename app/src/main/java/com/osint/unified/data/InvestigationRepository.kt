@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -340,15 +341,27 @@ class InvestigationRepository(
         url: String,
         title: String,
         html: String
-    ): ResultRow {
+    ): ResultRow = withContext(Dispatchers.Default) {
+        // Off the main thread, because a page is not a small string.
+        //
+        // This runs eight regex passes over the whole document —
+        // including a multiline dot-all scrub of script, style and
+        // noscript — plus a SHA-256 of every byte, all of it before
+        // the first suspending call. On a megabyte page out of the
+        // in-app browser that is hundreds of milliseconds to seconds
+        // on the thread the browser is drawing with, and the caller
+        // launches it on the main scope. Everything else that
+        // touches a result row is already on a dispatcher; this was
+        // the one that was not.
         val now = System.currentTimeMillis()
         val bytes = html.toByteArray()
+        val digest = sha256(bytes)
         val text = readable(html)
         val body = buildString {
             append("Page: ").append(title.ifBlank { url }).append('\n')
             append("URL: ").append(url).append('\n')
             append("Captured: ").append(java.time.Instant.ofEpochMilli(now)).append('\n')
-            append("SHA-256 of the page as served: ").append(sha256(bytes)).append('\n')
+            append("SHA-256 of the page as served: ").append(digest).append('\n')
             append("Size: ").append(bytes.size).append(" bytes\n\n")
             append(text)
         }
@@ -361,12 +374,12 @@ class InvestigationRepository(
             rawOutput = cap(body),
             startedAt = now,
             finishedAt = now,
-            outputSha256 = sha256(bytes),
+            outputSha256 = digest,
             outputBytes = bytes.size.toLong(),
             truncated = body.length > MAX_RESULT_CHARS
         )
         val id = resultDao.insert(row)
-        return row.copy(id = id)
+        row.copy(id = id)
     }
 
     /** HTML reduced to what a person would read off the page. */

@@ -1395,8 +1395,22 @@ class GodEyeViewModel(
                     )
                 }
             }
-            runCatching {
+            val saved = runCatching {
                 repository.recordSnapshot(ensureInvestigation(observable), url, title, html)
+            }
+            saved.exceptionOrNull()?.let { e ->
+                if (e is CancellationException) throw e
+                // Said out loud. A bare runCatching here meant that
+                // a page the person had deliberately kept — a
+                // CursorWindow too small for it, a full disk —
+                // vanished with no error and no row, and the browser
+                // carried on as though it had been saved.
+                _state.update {
+                    it.copy(
+                        feedTrouble = it.feedTrouble +
+                            ("snapshot" to (e.message?.take(90) ?: "could not be saved"))
+                    )
+                }
             }
         }
     }

@@ -67,6 +67,7 @@ fun WatchScreen(
     var events by remember { mutableStateOf<List<WatchEvent>>(emptyList()) }
     var expanded by remember { mutableStateOf(focusWatchId) }
     var checking by remember { mutableStateOf(false) }
+    var trouble by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
 
@@ -148,8 +149,19 @@ fun WatchScreen(
                         .clickable(enabled = canCheck) {
                             checking = true
                             scope.launch {
-                                runCatching { repository.checkAll() }
+                                // The failure is said, not discarded.
+                                //
+                                // This was a bare runCatching whose
+                                // result and exception both went
+                                // nowhere, so a sweep that could not
+                                // reach anything returned the button
+                                // to CHECK NOW with nothing to show
+                                // that it had tried and failed.
+                                val run = runCatching { repository.checkAll() }
                                 checking = false
+                                trouble = run.exceptionOrNull()
+                                    ?.takeIf { it !is kotlinx.coroutines.CancellationException }
+                                    ?.message?.take(120)
                             }
                         }
                         .padding(horizontal = 12.dp, vertical = 7.dp)
@@ -160,6 +172,15 @@ fun WatchScreen(
                         color = if (canCheck) Intel.Base else Intel.TextLow
                     )
                 }
+            }
+
+            trouble?.let { why ->
+                Text(
+                    "The last check did not finish: $why",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Intel.Amber,
+                    modifier = Modifier.padding(top = 6.dp)
+                )
             }
 
             if (list.isEmpty()) {
