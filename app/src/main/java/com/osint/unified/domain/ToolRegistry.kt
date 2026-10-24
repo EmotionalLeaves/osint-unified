@@ -264,6 +264,14 @@ object ToolRegistry {
         // links, so the type that exists to answer "what is this
         // picture" answered almost nothing. These two ask the host
         // and the archive rather than the user.
+        // The keyless answer to GeoSpy, GeoInfer and Picarta, all
+        // three of which want an account this app will not create.
+        Tool("imagetext", "Read the picture", FORENSICS, "image", "text", DIRECT,
+            "Reads the words in a photograph on the device — shop names, street " +
+                "signs, phone numbers, the alphabet itself — and sorts them into " +
+                "leads the other tools can take. Nothing is uploaded.",
+            "https://developers.google.com/ml-kit/vision/text-recognition",
+            touchesTarget = true),
         Tool("imagehead", "What the host serves", FORENSICS, "image", "text", DIRECT,
             "True content type against the claimed extension, exact size and " +
                 "last-modified date — headers only, so it costs nothing to run.",
@@ -519,6 +527,9 @@ object ToolRegistry {
             // The host's own headers about its own file, and the
             // archive's own record of what it captured.
             "imagehead", "imagehistory",
+            // The text is in the picture; reading it adds nothing
+            // and invents nothing.
+            "imagetext",
             "sunterrain", "outages", "cctvnear", "reddit", "hackernews",
             "telegram", "gdelt", "breaches", "tar1090", "exif", "exiftool",
             // Edit counts and registration dates are the wikis' own

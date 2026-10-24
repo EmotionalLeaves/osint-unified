@@ -58,7 +58,12 @@ interface ToolExecutor {
  */
 class CloudToolExecutor(
     private val settings: AppSettings,
-    private val client: OkHttpClient = Http.client
+    private val client: OkHttpClient = Http.client,
+    /** Last, and defaulted: the positional callers pass four
+     *  arguments and a parameter added in the middle of the list
+     *  silently re-binds every one of them. */
+    private val imageText: com.osint.unified.data.ImageText =
+        com.osint.unified.data.ImageText(appContext)
 ) : ToolExecutor {
 
     private val jsonMedia = "application/json; charset=utf-8".toMediaType()
@@ -455,6 +460,12 @@ class DirectToolExecutor(
                 head.contains(" exists") -> Findings.Kind.HIT
                 else -> null
             }
+            "imagetext" -> when {
+                starts("Give the image") -> Findings.Kind.UNREACHABLE
+                starts("No readable text in this image") -> Findings.Kind.ABSENT
+                head.contains("lines of text read from this image") -> Findings.Kind.HIT
+                else -> null
+            }
             "imagehead" -> when {
                 starts("The host answered HTTP", "Give the image") ->
                     Findings.Kind.UNREACHABLE
@@ -599,6 +610,7 @@ class DirectToolExecutor(
                 "gdelt" -> apis.gdeltNews(input)
                 "reverseimage" -> apis.reverseImage(input)
                 "exif" -> runCatching { exifReader.fromUrl(input) }
+                "imagetext" -> imageWords(input)
                 else -> Result.failure(IllegalStateException("${tool.name} has no direct implementation."))
             }
         }
@@ -676,6 +688,93 @@ class DirectToolExecutor(
      * line the app reads to decide whether a source found anything,
      * and this one used to open with "Valid: true".
      */
+    /**
+     * Image geolocation, the keyless way.
+     *
+     * The three services the user asked for — GeoSpy, GeoInfer,
+     * Picarta — all want an account, and this app takes none. But a
+     * model that has seen the whole planet is not how most pictures
+     * actually get placed: they get placed by reading what is
+     * written in them. A shop name, a street sign, a number on a
+     * van, the alphabet itself. Every one of those is a string, and
+     * this app is full of sources that take strings.
+     *
+     * So the words come off the picture on the device — the model
+     * is in the APK and the photograph never leaves the phone,
+     * which for some of these cases is the whole point — and each
+     * line is sorted into the kind of thing it is, with what to do
+     * with it. The conclusion stays with the person; nothing here
+     * claims a location.
+     */
+    private suspend fun imageWords(input: String): Result<String> = runCatching {
+        val url = input.trim()
+        if (!url.startsWith("http://", true) && !url.startsWith("https://", true)) {
+            return@runCatching "Give the image's URL."
+        }
+        val read = imageText.fromUrl(url)
+        if (read.isEmpty) {
+            return@runCatching "No readable text in this image.\n\n" +
+                "That is a result, not a failure: plenty of photographs have " +
+                "no writing in them. The visual cues below are what is left, " +
+                "and they are what a person uses anyway.\n\n" +
+                checklist()
+        }
+        val clues = com.osint.unified.domain.ImageClues.clues(read)
+        val scripts = com.osint.unified.domain.ImageClues.scripts(read)
+        buildString {
+            append("${read.lines.size} lines of text read from this image")
+            append(" (${read.widthPx}x${read.heightPx}, on this device, ")
+            append("nothing uploaded).\n")
+            if (scripts.isNotEmpty()) {
+                append("\nScripts in the frame: ${scripts.joinToString(", ")}\n")
+                append("The alphabet narrows the map before a single word is ")
+                append("understood, and it is the cheapest cue there is.\n")
+            }
+
+            val byKind = clues.groupBy { it.kind }
+            val order = listOf(
+                com.osint.unified.domain.ImageClues.Kind.COORDINATE,
+                com.osint.unified.domain.ImageClues.Kind.DOMAIN,
+                com.osint.unified.domain.ImageClues.Kind.EMAIL,
+                com.osint.unified.domain.ImageClues.Kind.PHONE,
+                com.osint.unified.domain.ImageClues.Kind.ROAD,
+                com.osint.unified.domain.ImageClues.Kind.PLATE,
+                com.osint.unified.domain.ImageClues.Kind.PLACE
+            )
+            var leads = 0
+            order.forEach { kind ->
+                val group = byKind[kind] ?: return@forEach
+                append("\n── ${kind.name} ──\n")
+                append(group.first().why).append("\n")
+                group.take(12).forEach { append("• ${it.value}\n"); leads++ }
+                if (group.size > 12) append("…and ${group.size - 12} more.\n")
+            }
+            if (leads == 0) append("\nNothing in the text sorted into a lead.\n")
+
+            append("\n── EVERY LINE, TOP TO BOTTOM ──\n")
+            read.lines.take(60).forEach { append("• ${it.text}\n") }
+            if (read.lines.size > 60) {
+                append("…and ${read.lines.size - 60} more lines.\n")
+            }
+
+            append("\n")
+            append(checklist())
+        }
+    }
+
+    private fun checklist(): String = buildString {
+        append("── WHAT TO LOOK AT YOURSELF ──\n")
+        append("No model does this part, and it is most of the work.\n")
+        com.osint.unified.domain.ImageClues.CHECKLIST.forEach {
+            append("• ").append(it).append("\n")
+        }
+        append("\nOnce you have a candidate place, run it as a coordinate: ")
+        append("the sun and terrain tool turns a shadow's direction and ")
+        append("length into a bearing, a sun elevation and a local time, ")
+        append("and the historical weather tool says whether the sky in the ")
+        append("picture matches the date it claims.\n")
+    }
+
     private fun phoneInfo(input: String): Result<String> = try {
         val util = PhoneNumberUtil.getInstance()
         val number = util.parse(input, null)

@@ -348,7 +348,7 @@ class ObservableRouter {
             // ask the host what it is actually serving and the
             // archive how long it has been there.
             is Observable.ImageUrl -> listOf(
-                "exif", "imagehead", "imagehistory",
+                "exif", "imagetext", "imagehead", "imagehistory",
                 "reverseimage", "toolrun", "archive", "framework"
             )
             is Observable.Wallet -> listOf("wallet", "websearch", "dorks", "toolrun", "framework")

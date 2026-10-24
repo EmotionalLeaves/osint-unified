@@ -1765,7 +1765,7 @@ class GodEyeViewModel(
 
         /** Tools that touch the target only by reading the one file
          *  the user pasted, which is the thing they asked about. */
-        val IMAGE_ITSELF = setOf("exif", "imagehead")
+        val IMAGE_ITSELF = setOf("exif", "imagetext", "imagehead")
 
         const val POLL_IDLE_MS = 3_000L
 

@@ -196,6 +196,13 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.googlecode.libphonenumber:libphonenumber:8.13.35")
     implementation("androidx.exifinterface:exifinterface:1.3.7")
+    // On-device text recognition, for reading the words in a
+    // photograph. The bundled variant rather than the Play-services
+    // one: the model ships inside the APK, so it works with the
+    // radio off and the picture never leaves the phone — which
+    // matters more here than the size, and size does not matter
+    // here at all.
+    implementation("com.google.mlkit:text-recognition:16.0.1")
     implementation("org.osmdroid:osmdroid-android:6.1.20")
     implementation("androidx.browser:browser:1.8.0")
     // So the in-app browser can be put through the same proxy as
