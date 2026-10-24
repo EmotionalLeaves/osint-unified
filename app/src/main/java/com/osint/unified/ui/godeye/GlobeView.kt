@@ -844,11 +844,23 @@ private fun DrawScope.drawGraticule(
  * put, and holding them still is what makes the Earth look like it is
  * the thing turning.
  */
-private fun DrawScope.drawStars(width: Float, height: Float) {
-    // Batched by brightness band rather than drawn one at a time: the
-    // sky is two hundred and twenty circles that never change, and it
-    // was repainting all of them individually on every frame of every
-    // drag.
+/**
+ * The sky, worked out once per screen size.
+ *
+ * Batching the stars by brightness band stopped them being drawn
+ * one at a time, which was the expensive half. The other half
+ * stayed: the bands and every Offset in them were rebuilt on every
+ * frame of every drag, from a hash that gives the same answer each
+ * time, for a star field that cannot move. Two hundred and twenty
+ * objects and five lists, sixty times a second, all identical to
+ * the last set.
+ */
+private var starCacheKey: Long = -1L
+private var starCache: Array<ArrayList<Offset>>? = null
+
+private fun starsFor(width: Float, height: Float): Array<ArrayList<Offset>> {
+    val key = (width.toInt().toLong() shl 32) or (height.toInt().toLong() and 0xFFFFFFFFL)
+    starCache?.let { if (starCacheKey == key) return it }
     val bands = Array(STAR_BANDS) { ArrayList<Offset>(STAR_COUNT / STAR_BANDS + 8) }
     for (i in 0 until STAR_COUNT) {
         // One hash per star, mixed hard enough that the three values
@@ -865,6 +877,13 @@ private fun DrawScope.drawStars(width: Float, height: Float) {
         val band = (mag * STAR_BANDS).toInt().coerceIn(0, STAR_BANDS - 1)
         bands[band].add(Offset(x - 120f, y - 120f))
     }
+    starCache = bands
+    starCacheKey = key
+    return bands
+}
+
+private fun DrawScope.drawStars(width: Float, height: Float) {
+    val bands = starsFor(width, height)
     for (band in 0 until STAR_BANDS) {
         val stars = bands[band]
         if (stars.isEmpty()) continue

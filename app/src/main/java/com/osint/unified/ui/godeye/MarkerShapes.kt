@@ -72,6 +72,10 @@ fun markerIcon(shape: MarkerShape, color: Int, sizePx: Int): Drawable {
             strokeWidth = (size / 8f).coerceAtLeast(1f)
         }
 
+        /** The outline for the non-rectangular shapes, which never
+         *  changes once this Drawable exists. */
+        private var cached: Path? = null
+
         override fun draw(canvas: Canvas) {
             val w = size.toFloat()
             val h = size.toFloat()
@@ -88,7 +92,16 @@ fun markerIcon(shape: MarkerShape, color: Int, sizePx: Int): Drawable {
                     canvas.drawRect(i, i, w - i, h - i, edge)
                 }
                 else -> {
-                    val path = Path().apply {
+                    // Built once, not once per frame.
+                    //
+                    // Every marker on the map is one of these
+                    // Drawables, and draw() runs for each of them on
+                    // every pan, fling and zoom frame — so a map with
+                    // four hundred triangles allocated four hundred
+                    // Paths sixty times a second, all of them
+                    // identical, all of them garbage. The size and
+                    // shape are fixed when the Drawable is made.
+                    val path = cached ?: Path().apply {
                         when (shape) {
                             MarkerShape.TRIANGLE -> {
                                 moveTo(cx, h * 0.08f)
@@ -116,7 +129,7 @@ fun markerIcon(shape: MarkerShape, color: Int, sizePx: Int): Drawable {
                             }
                         }
                         close()
-                    }
+                    }.also { cached = it }
                     canvas.drawPath(path, fill)
                     canvas.drawPath(path, edge)
                 }
