@@ -416,27 +416,68 @@ object Http {
     const val MAX_BODY_BYTES = 4L * 1024 * 1024
 
     /**
-     * The body, up to a limit, with the rest left on the wire.
+     * Thrown when the cap, not the source, ended the response.
      *
-     * Reads at most one byte past the limit so the caller can tell
-     * that there was more. A multi-byte character split exactly at
-     * the boundary comes back as a replacement character, which is
-     * the last character of a body already being truncated.
+     * The difference matters more than it looks. A caller that
+     * parses JSON gets an incomplete document either way, but one
+     * of those is the source failing and the other is this app
+     * deciding not to read any more — and the certificate
+     * transparency tool turned the second into "no certificates
+     * found for this domain", which is a stated clean sheet
+     * produced by its own byte limit. Nothing in this app is
+     * allowed to do that.
+     */
+    class BodyTooLarge(limit: Long) : IOException(
+        "the response was larger than ${describe(limit)} and this app stopped " +
+            "reading it, so nothing can be concluded from what arrived"
+    )
+
+    private fun describe(limit: Long): String =
+        if (limit >= 1024 * 1024) "${limit / (1024 * 1024)} MB" else "${limit / 1024} KB"
+
+    /**
+     * The body, up to a limit, and an error if there was more.
+     *
+     * For everything that parses what comes back. A truncated
+     * document is not a short document: it is a question with no
+     * answer, and it must not look like one.
      */
     fun ResponseBody.bodyText(limit: Long = MAX_BODY_BYTES): String {
+        val (text, truncated) = read(limit)
+        if (truncated) throw BodyTooLarge(limit)
+        return text
+    }
+
+    /**
+     * The body, up to a limit, saying so in its own last line.
+     *
+     * For the callers that show a prefix to a person rather than
+     * parsing it — a preview of a page is still a preview when it
+     * stops early.
+     */
+    fun ResponseBody.bodyPreview(limit: Long = MAX_BODY_BYTES): String {
+        val (text, truncated) = read(limit)
+        return if (truncated) {
+            text + "\n…truncated at ${describe(limit)} by this app, not by the source."
+        } else {
+            text
+        }
+    }
+
+    private fun ResponseBody.read(limit: Long): Pair<String, Boolean> {
         val src = source()
-        // Fills the buffer up to the limit, or to the end of the
-        // body if that comes first. The return value says which,
-        // and either way nothing past this is downloaded.
+        // Fills the buffer to the limit, or to the end of the body
+        // if that comes first. Either way nothing past this is
+        // downloaded, because the connection closes with the
+        // response. A multi-byte character split exactly at the
+        // boundary comes back as a replacement character, which is
+        // the last character of a body already being cut short.
         src.request(limit + 1)
         val held = src.buffer
         val take = minOf(held.size, limit)
         val text = held.readUtf8(take)
-        return if (held.size > 0) {
-            text + "\n…truncated at ${limit / (1024 * 1024)} MB by this app, " +
-                "not by the source."
-        } else {
-            text
-        }
+        // What is left in the buffer after consuming `take` is the
+        // overflow, so this is exactly "there was more than limit".
+        return text to (held.size > 0)
     }
 }

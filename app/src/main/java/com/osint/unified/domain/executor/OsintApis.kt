@@ -170,6 +170,20 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
             crtFailure != null && spotterFailure != null ->
                 "Certificate transparency unreachable — crt.sh: ${crtFailure.message}; " +
                     "Cert Spotter: ${spotterFailure.message}"
+            // Only a clean sheet when the index actually answered.
+            //
+            // crt.sh failing while Cert Spotter happens to return
+            // nothing used to land here, and "no certificates found"
+            // is a statement about the domain made from a source
+            // that was never read.
+            crtFailure != null ->
+                "Cert Spotter has no certificates for $d, and crt.sh did not " +
+                    "answer (${crtFailure.message}) — so this is half an " +
+                    "answer, not a clean sheet."
+            spotterFailure != null ->
+                "crt.sh has no certificates for $d, and Cert Spotter did not " +
+                    "answer (${spotterFailure.message}) — so this is half an " +
+                    "answer, not a clean sheet."
             else -> "Certificate transparency: no certificates found for $d."
         }
     }

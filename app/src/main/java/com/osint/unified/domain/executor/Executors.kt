@@ -7,7 +7,7 @@ import com.osint.unified.domain.ExecutionMode
 import com.osint.unified.domain.Findings
 import com.osint.unified.domain.Tool
 import com.osint.unified.network.Http
-import com.osint.unified.network.Http.bodyText
+import com.osint.unified.network.Http.bodyPreview
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.Dispatchers
@@ -525,6 +525,21 @@ class DirectToolExecutor(
                 head.contains("on the Ubuntu keyserver mentioning") -> Findings.Kind.HIT
                 else -> null
             }
+            // Half an answer is not an answer.
+            //
+            // Two certificate indexes are asked and either can
+            // fail. With one failing and the other returning
+            // nothing, the old output said "no certificates found"
+            // — a statement about the domain from a source that was
+            // never read — and the prose reader filed it as an
+            // absence to match.
+            "crtsh" -> when {
+                starts("Certificate transparency unreachable") -> Findings.Kind.UNREACHABLE
+                head.contains("so this is half an") -> Findings.Kind.UNREACHABLE
+                starts("Certificate transparency: no certificates") -> Findings.Kind.ABSENT
+                starts("Certificate transparency —") -> Findings.Kind.HIT
+                else -> null
+            }
             "phoneinfoga" -> when {
                 head.contains("is a valid") -> Findings.Kind.HIT
                 // Not an absence: the numbering plan has no opinion
@@ -922,7 +937,7 @@ class DirectToolExecutor(
                                 // Twenty endpoints in parallel, each
                                 // pointed at a different directory's
                                 // idea of a response size.
-                                resp.body?.bodyText()
+                                resp.body?.bodyPreview()
                             }
                         }
                     }.getOrElse {
