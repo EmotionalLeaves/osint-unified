@@ -711,6 +711,7 @@ class DeepApis(
 
     /** Subdomain sweep across three independent keyless sources, merged. */
     fun subdomainSweep(domain: String): Result<String> = runCatching {
+        val asked = Reached()
         val d = domain.trim().lowercase().removePrefix("www.")
         val found = LinkedHashMap<String, MutableSet<String>>()
         fun record(host: String, src: String) {
@@ -726,7 +727,7 @@ class DeepApis(
             val belongs = h == d || h.endsWith(".$d")
             if (belongs && h.isNotEmpty()) found.getOrPut(h) { LinkedHashSet() }.add(src)
         }
-        runCatching {
+        asked.of {
             // Same quota notice as the host-intel path. Here it would
             // be filed as a subdomain — except that the belongs test
             // above throws it out, which is luck rather than design.
@@ -738,13 +739,13 @@ class DeepApis(
                 }
             }
         }
-        runCatching {
+        asked.of {
             // RapidDNS publishes an HTML table; each row's first cell is a host.
             val html = get("https://rapiddns.io/subdomain/$d?full=1", browserUa)
             Regex("""<td[^>]*>([A-Za-z0-9_.*-]+\.${Regex.escape(d)})</td>""", RegexOption.IGNORE_CASE)
                 .findAll(html).forEach { record(it.groupValues[1], "rapiddns") }
         }
-        runCatching {
+        asked.of {
             // Cert Spotter indexes certificate transparency independently of crt.sh.
             val arr = json.parseToJsonElement(
                 get("https://api.certspotter.com/v1/issuances?domain=$d&include_subdomains=true&expand=dns_names")
@@ -755,7 +756,7 @@ class DeepApis(
                 }
             }
         }
-        runCatching {
+        asked.of {
             // Wayback's CDX index knows hosts that no longer resolve.
             get("https://web.archive.org/cdx/search/cdx?url=*.$d&output=text&fl=original&collapse=urlkey&limit=4000")
                 .lineSequence().forEach { line ->
@@ -763,7 +764,17 @@ class DeepApis(
                     if (host.isNotEmpty()) record(host, "wayback")
                 }
         }
-        if (found.isEmpty()) return@runCatching "Subdomain sweep: nothing found for $d."
+        if (found.isEmpty()) {
+            // Four sources, each in its own runCatching, and an empty
+            // result said the domain has no subdomains rather than
+            // that nobody answered. `asked` counts the ones that did.
+            return@runCatching if (asked.any) {
+                "Subdomain sweep: nothing found for $d."
+            } else {
+                "No subdomain source could be reached for $d, so nothing " +
+                    "is claimed about its subdomains."
+            }
+        }
         // Named from what actually answered. The header used to list
         // three fixed sources whatever had run — certspotter was
         // queried too and never credited, and a host found only by one
@@ -814,7 +825,8 @@ class DeepApis(
         // name. Comparing against the header's own length is what
         // those numbers were trying to approximate.
         val headerOnly = sb.length
-        runCatching {
+        val reached = Reached()
+        reached.of {
             val r = get("https://api.hackertarget.com/reverseiplookup/?q=$t").trim()
             if (hackertargetAnswered(r)) {
                 val hosts = r.lines().filter { it.isNotBlank() }
@@ -822,11 +834,11 @@ class DeepApis(
                 hosts.take(60).forEach { sb.append("• $it\n") }
             }
         }
-        runCatching {
+        reached.of {
             val a = get("https://api.hackertarget.com/aslookup/?q=$t").trim()
             if (hackertargetAnswered(a)) sb.append("\nAS: $a\n")
         }
-        runCatching {
+        reached.of {
             val l = get("https://api.hackertarget.com/pagelinks/?q=http://$t").trim()
             if (hackertargetAnswered(l)) {
                 val links = l.lines().filter { it.isNotBlank() }
@@ -835,7 +847,9 @@ class DeepApis(
                 external.take(40).forEach { sb.append("• $it\n") }
             }
         }
-        if (sb.length <= headerOnly) "Host intel: no data returned for $t." else sb.toString()
+        if (sb.length > headerOnly) sb.toString()
+        else if (reached.any) "Host intel: no data returned for $t."
+        else "Could not reach hackertarget for $t, so nothing is claimed either way."
     }
 
     /**
@@ -918,8 +932,9 @@ class DeepApis(
         val t = input.trim().uppercase().removePrefix("AS").let { if (it.all(Char::isDigit)) "AS$it" else input.trim() }
         val sb = StringBuilder("Network intel — $t\n")
         val headerOnly = sb.length
+        val reached = Reached()
 
-        runCatching {
+        reached.of {
             val d = json.parseToJsonElement(
                 get("https://stat.ripe.net/data/abuse-contact-finder/data.json?resource=${URLEncoder.encode(t, "UTF-8")}")
             ).jsonObject["data"]?.jsonObject
@@ -932,7 +947,7 @@ class DeepApis(
         // Resolve an IP to its AS so the PeeringDB lookup has something to use.
         var asn = Regex("""^AS(\d+)$""").find(t)?.groupValues?.get(1)
         if (asn == null) {
-            runCatching {
+            reached.of {
                 val d = json.parseToJsonElement(
                     get("https://stat.ripe.net/data/network-info/data.json?resource=${URLEncoder.encode(t, "UTF-8")}")
                 ).jsonObject["data"]?.jsonObject
@@ -944,13 +959,13 @@ class DeepApis(
 
         asn?.let { a ->
             sb.append("ASN: AS$a\n")
-            runCatching {
+            reached.of {
                 val prefixes = (json.parseToJsonElement(
                     get("https://stat.ripe.net/data/announced-prefixes/data.json?resource=AS$a")
                 ).jsonObject["data"]?.jsonObject?.get("prefixes") as? JsonArray)
                 prefixes?.let { sb.append("Announced prefixes: ${it.size}\n") }
             }
-            runCatching {
+            reached.of {
                 val net = (json.parseToJsonElement(get("https://www.peeringdb.com/api/net?asn=$a"))
                     .jsonObject["data"] as? JsonArray)?.firstOrNull()?.jsonObject
                 if (net != null) {
@@ -967,7 +982,9 @@ class DeepApis(
                 }
             }
         }
-        if (sb.length <= headerOnly) "No network data for $t." else sb.toString()
+        if (sb.length > headerOnly) sb.toString()
+        else if (reached.any) "No network data for $t."
+        else "Could not reach RIPEstat or PeeringDB for $t, so nothing is claimed either way."
     }
 
     /** AlienVault OTX, keyless: passive DNS, hosted URLs and malware seen on
@@ -978,8 +995,9 @@ class DeepApis(
         val base = "https://otx.alienvault.com/api/v1/indicators/$kind/$t"
         val sb = StringBuilder("Threat exchange (OTX) — $t\n")
         val headerOnly = sb.length
+        val reached = Reached()
 
-        runCatching {
+        reached.of {
             val o = json.parseToJsonElement(get("$base/general")).jsonObject
             o.int("pulse_count")?.let { sb.append("Threat reports mentioning it: $it\n") }
             val pulses = ((o["pulse_info"] as? JsonObject)?.get("pulses") as? JsonArray)
@@ -993,7 +1011,7 @@ class DeepApis(
                 ?.takeIf { it.isNotEmpty() }?.let { sb.append("Reputation notes: ${it.joinToString("; ")}\n") }
         }
 
-        runCatching {
+        reached.of {
             val rows = json.parseToJsonElement(get("$base/passive_dns"))
                 .jsonObject["passive_dns"] as? JsonArray
             rows?.takeIf { it.isNotEmpty() }?.let { arr ->
@@ -1009,7 +1027,7 @@ class DeepApis(
             }
         }
 
-        runCatching {
+        reached.of {
             val rows = json.parseToJsonElement(get("$base/url_list?limit=20"))
                 .jsonObject["url_list"] as? JsonArray
             rows?.takeIf { it.isNotEmpty() }?.let { arr ->
@@ -1019,7 +1037,9 @@ class DeepApis(
                 }
             }
         }
-        if (sb.length <= headerOnly) "OTX has nothing on $t." else sb.toString()
+        if (sb.length > headerOnly) sb.toString()
+        else if (reached.any) "OTX has nothing on $t."
+        else "Could not reach AlienVault OTX for $t, so nothing is claimed either way."
     }
 
     /** Internet outages happening right now, worldwide (Georgia Tech IODA). */
@@ -1225,7 +1245,17 @@ class DeepApis(
      *  name and other addresses the person uses. */
     fun pgpKey(email: String): Result<String> = runCatching {
         val e = URLEncoder.encode(email.trim(), "UTF-8")
-        val body = runCatching { get("https://keys.openpgp.org/vks/v1/by-email/$e") }.getOrNull()
+        // The keyserver's own 404 means no key; a DNS failure means
+        // nothing at all. Both used to come out as a statement about
+        // what keys.openpgp.org holds.
+        val attempt = runCatching { get("https://keys.openpgp.org/vks/v1/by-email/$e") }
+        val code = httpCode(attempt.exceptionOrNull() ?: IOException(""))
+        val body = attempt.getOrNull()
+        if (attempt.isFailure && code != 404) {
+            return@runCatching "keys.openpgp.org could not be reached for " +
+                "${email.trim()}, so nothing is claimed about a published key.\n" +
+                "To try by hand: https://keyserver.ubuntu.com/pks/lookup?search=$e&op=index"
+        }
         if (body.isNullOrBlank() || !body.contains("BEGIN PGP")) {
             return@runCatching "No PGP key published for ${email.trim()} on keys.openpgp.org.\n" +
                 "Other keyservers to try by hand: https://keyserver.ubuntu.com/pks/lookup?search=$e&op=index"
@@ -1948,6 +1978,9 @@ class DeepApis(
         val results = (json.parseToJsonElement(get("https://cve.circl.lu/api/search/$vendor/$product"))
             .jsonObject["results"] as? JsonObject) ?: return@runCatching "No CVEs found for $vendor $product."
         val sb = StringBuilder("CVEs for $vendor $product\n")
+        // No Reached() here: the request above is not wrapped, so
+        // reaching this line means the index answered and an empty
+        // result really is an absence.
         val headerOnly = sb.length
         results.forEach { (source, arr) ->
             val rows = arr as? JsonArray ?: return@forEach
@@ -1965,7 +1998,8 @@ class DeepApis(
                 sb.append("\n")
             }
         }
-        if (sb.length <= headerOnly) "No CVEs found for $vendor $product." else sb.toString()
+        if (sb.length <= headerOnly) "No CVEs found for $vendor $product."
+        else sb.toString()
     }
 
     // ------------------------------------------------------------------
@@ -2107,6 +2141,28 @@ class DeepApis(
     private fun emailsIn(s: String): List<String> =
         Regex("""[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}""").findAll(s)
             .map { it.value }.distinct().toList()
+
+    /**
+     * A run of sub-lookups, and whether any of them answered.
+     *
+     * Several tools here ask three or four endpoints, wrap each in a
+     * bare `runCatching`, and then conclude from an empty buffer that
+     * the SOURCE had nothing — so airplane mode mid-lookup came out
+     * as "OTX has nothing on it", which is the most assertive false
+     * absence a tool can produce. An empty buffer means one of two
+     * things and the difference is the whole point of this app.
+     */
+    private class Reached {
+        var any = false
+            private set
+
+        fun <T> of(block: () -> T): T? {
+            val attempt = runCatching(block)
+            attempt.exceptionOrNull()?.let { if (it is CancellationException) throw it }
+            if (attempt.isSuccess) any = true
+            return attempt.getOrNull()
+        }
+    }
 
     /**
      * The status behind a failure from [get], when there was one.
