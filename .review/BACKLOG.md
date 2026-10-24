@@ -166,6 +166,108 @@ outranks everything I found by reading.
   empty or odd input, what the dossier shows when every tool is
   filtered out, and whether the fan-out is silently dropping
   everything.
+
+  Audited end to end, 23 Oct. Seventeen findings; the first two
+  together are most of the reported symptom.
+
+  - **2c-1. The nine type chips and the example pills are still
+    behind `panelOpen`.** Only the text field was lifted out. The
+    comment right beside them says "what folds away is the search
+    box, the type chips and the examples" — the box was moved and
+    they were not. So on a fresh install there is a search box with
+    no way to choose a type, and every search is AUTO for ever
+    unless the user finds the unlabelled chevron. This makes 2c-2
+    unavoidable.
+  - **2c-2. AUTO reads any bare word of 3-30 characters as a
+    username.** The username regex is tested before the name
+    fallback, so "london", "tesla", "gazprom" go to the account
+    sweep — keybase, reddit, hacker news, telegram — which all
+    answer "no account named london", and the dossier reads NOTHING
+    FOUND. The sources that would have answered (orcid, court
+    records, GLEIF, EDGAR, sanctions, GDELT, geocode, FBI) are never
+    dispatched. With 2c-1 there is no override.
+  - **2c-3. PHONE dispatches four tools and none of them asks
+    anything about the number.** phoneinfoga is offline
+    libphonenumber plus two hard-coded Google links; the other three
+    are force-classified ABSENT. One card, a format parse and two
+    links. This is the bookmark-bar complaint literally.
+  - **2c-4. IMAGE never runs EXIF.** `exif` is marked
+    touchesTarget, and autoRun drops every touchesTarget tool while
+    active recon is off — but for an image URL the target IS the
+    image the user pasted. What is left is two link builders and one
+    Wayback call.
+  - **2c-5. `toolrun` is dead twice over.** It is touchesTarget, so
+    it is in no auto set, and it is force-classified ABSENT
+    unconditionally — so even run by hand, "5 of 7 executable
+    endpoints returned data" is filed under NOTHING FOUND. It is
+    the only tool dropped from every single chip.
+  - **2c-6. An empty or whitespace query is a silent no-op.** No
+    toast, no error, no focus, nothing. From the tester's seat the
+    search button is broken.
+  - **2c-7. A second search's progress counter is decremented by
+    the first search's cancelled jobs.** The cancelled job's
+    `finally` runs after a NonCancellable database write, so it
+    commonly lands after the new run has added its own counts, and
+    tool ids overlap almost completely. Result: the progress bar
+    vanishes mid-scan and the dossier prints "No source returned
+    anything on this target" while the tools are still running.
+  - **2c-8. The progress denominator counts tools that will never
+    be dispatched.** Domain shows 15 run of 21, username 11 of 16,
+    image 3 of 5. The counter stops short and the bar disappears,
+    which reads as giving up.
+  - **2c-9. An infrastructure exception out of runTool is
+    swallowed** and the row stays "running" for ever: "N still
+    running", permanently, and history spins on it.
+  - **2c-10. `classifyAs` validates only coordinates.** Pick
+    DOMAIN, type "john smith", and fifteen domain tools fire at a
+    two-word phrase; mailsec's `substringAfter('@')` returns the
+    whole string and it queries DNS for it. Every other chip trusts
+    the input verbatim.
+  - **2c-11. No length cap, and five words makes an
+    "organisation".** A natural-language question — which is what
+    people type into a box labelled "query any target" — goes to
+    GLEIF, EDGAR, OFAC and the UN list as a company name. A very
+    long string becomes a dozen 414s reported as "could not be
+    reached", with no hint that the input was the problem.
+  - **2c-12. "SHOW n MORE" collapses again on every incoming
+    result**, because it is keyed on the row count. Expand a
+    section mid-scan and it snaps shut, which reads as the app
+    discarding results.
+  - **2c-13. The IPv4-only refusals are graded as findings.** Three
+    tools answer an IPv6 search with a careful "this needs an IPv4
+    address", and none of those sentences matches the absence or
+    unreachable shapes, so they are filed as HITs and counted in
+    "returned intel".
+  - **2c-14. Three router types have no chip**: url, wallet,
+    aircraft.
+  - **2c-15. "sources queried" and "returned intel" are counted
+    over different scopes** — one seed-only, the other including
+    the second pass. With follow-up on it reads "15 queried · 22
+    returned intel".
+  - **2c-16. `snapshot` is DIRECT with no executor branch**, so the
+    self-test screen reports a permanent unfixable failure. It is
+    written by the browser, not executed.
+  - **2c-17. Confirm the tester's APK came from CI.** assets/ is
+    empty in the tree and jniLibs/ does not exist; both are filled
+    by the workflow. A build made any other way ships no datasets
+    at all and every bundled source says "not bundled".
+
+  Checked and correct, not to be re-audited: the dossier is never
+  blank when everything is absent or unreachable — it names every
+  tool and offers the full card; no `take(n)` hides a row without
+  an affordance; `Findings.sort` and `kindOf` are sound; no
+  hit-shaped first line in the codebase matches NOTHING_SHAPE
+  (all ~75 matches are genuine absence sentences); absent and
+  unreachable rows render in full; there is no row-clobbering race
+  between two searches, only the counter one; cancellation writes
+  a cancelled row under NonCancellable and rethrows; a failed
+  refresh does not destroy a previous finding; nothing writes a
+  terminal status before the tool runs; every DIRECT tool but
+  `snapshot` has an executor branch and all 92 registry ids
+  cross-check against all 11 router lists; LOCAL and CLOUD gating
+  is honest; held-back active tools are named with a RUN THEM ONCE
+  offer.
+
 - **2d. Not smooth on his device.** Partly addressed by the GPU
   sphere and the main-thread work moved off it; he has not tested
   any of that yet. Re-ask after he has.
