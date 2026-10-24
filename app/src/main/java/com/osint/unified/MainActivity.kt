@@ -645,7 +645,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                     FeedProbe("Satellites (Celestrak)") { app.satellitesDataSource.fetch().size },
                                     FeedProbe("Air quality (Open-Meteo)") { probeAir.fetch().size },
                                     FeedProbe("Seismic stations (IRIS)") { app.seismicStationDataSource.fetch().size },
-                                    FeedProbe("Conflicts (Wikidata)") { app.conflictDataSource.fetch().size },
+                                    FeedProbe("Conflicts (Wikipedia list)") { app.conflictDataSource.fetch().size },
                                     FeedProbe("Airports (bundled)") { app.airportDataSource.fetch().size },
                                     FeedProbe("Power plants (bundled)") { app.powerPlantDataSource.fetch().size },
                                     FeedProbe("Cameras (OpenStreetMap + Caltrans)") { probeCctv.fetch().size },

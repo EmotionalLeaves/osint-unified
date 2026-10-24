@@ -49,7 +49,7 @@ closed; their headings say so.
   rather than the unsupportable "since YYYY"; CURRENT_YEAR read per
   call. The deeper fix — a source with an activity date (ACLED/UCDP)
   rather than "no end date on Wikidata" — is U5.
-- [ ] **U5. Conflict from a source that records whether it is active.**
+- [x] **U5. Conflict from a source that records whether it is active.**
   Wikidata carries no "still going" signal; P580/P582 is all there
   is, which is why "no recorded end" has to stand in for "current"
   and once put the Second World War on the map. ACLED and UCDP both

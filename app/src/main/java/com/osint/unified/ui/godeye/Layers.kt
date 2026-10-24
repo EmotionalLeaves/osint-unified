@@ -52,7 +52,7 @@ internal object Layers {
     val ALL: List<Layer> = listOf(
         // Event feeds: these can honestly be quiet.
         Layer("gdacs", "disaster alerts", brief = "disaster alerts"),
-        Layer("conflicts", "conflict events", brief = "conflicts"),
+        Layer("conflicts", "ongoing conflicts", brief = "conflicts"),
         Layer("volcanoes", "volcanoes", brief = "volcanoes"),
         Layer("fires", "wildfires", brief = "wildfires"),
         Layer("outages", "internet outages", brief = "countries with connectivity down"),

@@ -260,6 +260,15 @@ def main() -> int:
             # private declaration.
             if name in imported[path] or path in wildcard:
                 continue
+            # Or declared in this file as something callable that is not a
+            # fun: a function-typed property or parameter. BundledPoints
+            # takes `private val label: (JsonObject) -> String` and calls
+            # `label(o)`, which is its own value and nothing to do with a
+            # `private fun label` in ConflictDataSource.
+            if re.search(r"\b(?:val|var)\s+%s\b|\b%s\s*:\s*(?:suspend\s*)?\(" % (
+                re.escape(name), re.escape(name)
+            ), text):
+                continue
             for use in re.finditer(r"(?<![A-Za-z0-9_.])%s\s*\(" % re.escape(name), text):
                 line = text.count("\n", 0, use.start()) + 1
                 where = ", ".join(sorted(h.name for h in homes))

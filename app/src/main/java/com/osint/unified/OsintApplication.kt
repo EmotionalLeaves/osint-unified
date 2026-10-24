@@ -158,7 +158,7 @@ class OsintApplication : Application() {
     val milAircraftDataSource: MilAircraftDataSource by lazy { MilAircraftDataSource() }
     val airQualityDataSource: AirQualityDataSource by lazy { AirQualityDataSource() }
     val seismicStationDataSource: SeismicStationDataSource by lazy { SeismicStationDataSource(diskCache) }
-    val conflictDataSource: ConflictDataSource by lazy { ConflictDataSource() }
+    val conflictDataSource: ConflictDataSource by lazy { ConflictDataSource(this) }
     val airportDataSource: BundledPointsDataSource by lazy { BundledPointsDataSource.airports(this) }
     val powerPlantDataSource: BundledPointsDataSource by lazy { BundledPointsDataSource.powerPlants(this) }
     val cctvDataSource: CctvDataSource by lazy { CctvDataSource() }

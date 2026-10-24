@@ -580,7 +580,9 @@ class GodEyeViewModel(
         poll(9_000, 60_000, "milAircraft", { milAircraftDataSource.fetch() }) { s, v -> s.copy(milAircraft = v) }
         poll(3500, 900_000, "airQuality", { airQualityDataSource.fetch() }, gaps = { airQualityDataSource.lastGaps }) { s, v -> s.copy(airQuality = v) }
         poll(3750, 21_600_000, "stations", { seismicStationDataSource.fetch() }) { s, v -> s.copy(stations = v) }
-        poll(4000, 1_800_000, "conflicts", { conflictDataSource.fetch() }) { s, v -> s.copy(conflicts = v) }
+        // Six hours: the list is edited by hand and its counts move by the
+        // week, and the page is a few hundred kilobytes before gzip.
+        poll(4000, 21_600_000, "conflicts", { conflictDataSource.fetch() }, gaps = { conflictDataSource.lastGaps }) { s, v -> s.copy(conflicts = v) }
         poll(300, 3_600_000, "airports", { airportDataSource.fetch() }) { s, v -> s.copy(airports = v) }
         poll(450, 3_600_000, "powerPlants", { powerPlantDataSource.fetch() }) { s, v -> s.copy(powerPlants = v) }
         poll(900, 900_000, "spaceWeather", { spaceWeatherDataSource.fetch() }, gaps = { spaceWeatherDataSource.lastGaps }) { s, v -> s.copy(spaceWeather = v) }
