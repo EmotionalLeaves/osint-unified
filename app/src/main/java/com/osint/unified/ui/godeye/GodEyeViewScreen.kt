@@ -1249,8 +1249,21 @@ fun GodEyeViewScreen(
                         .coerceAtLeast(0.15)).coerceAtMost(180.0)
                     val keyLat = kotlin.math.round(globeCamera.lat / step)
                     val keyLon = kotlin.math.round(globeCamera.lon / lonStep)
+                    // Keyed on the version, not on the layers.
+                    //
+                    // `layers` is a data class holding thirty lists,
+                    // so using it as a key compares every point in
+                    // every one of them, element by element, on the
+                    // main thread, on every recomposition — the cost
+                    // of the thinning again, paid where it hurts
+                    // most. The version changes only when a feed
+                    // returns something genuinely different, and
+                    // `visibleLayers` covers the other thing that
+                    // changes what is drawn: which layers are on.
                     val globePoints by produceState(
-                        emptyList<GlobePoint>(), layers, keyLat, keyLon, step
+                        emptyList<GlobePoint>(),
+                        state.layerVersion, visibleLayers, god,
+                        keyLat, keyLon, step
                     ) {
                         value = withContext(Dispatchers.Default) {
                             thinGlobe(
@@ -1311,6 +1324,8 @@ fun GodEyeViewScreen(
                 } else {
                 GlobeMap(
                     layers = layers,
+                    layerVersion = state.layerVersion,
+                    visibleLayers = visibleLayers,
                     onPlotted = { shown, total -> plotted = shown to total },
                     focus = state.mapFocus,
                     handoff = handoff,
@@ -1875,6 +1890,12 @@ private fun UtcClock() {
 @Composable
 private fun GlobeMap(
     layers: MapLayers,
+    /** Raised when a feed's contents actually change, so the marker
+     *  plan can be keyed on an integer rather than on a deep
+     *  comparison of thirty lists. */
+    layerVersion: Int,
+    /** And which of them are on, which the version does not cover. */
+    visibleLayers: Set<String>,
     focus: Pair<Double, Double>?,
     /** Where the globe handed over: a place and the zoom that shows
      *  the same ground it was showing. Applied once. */
@@ -1942,7 +1963,13 @@ private fun GlobeMap(
     // built them all again, on the thread drawing the keyboard. The
     // result was a map that stuttered whenever anything at all changed,
     // for no new information.
-    val planned by produceState(initialValue = MapPlan(emptyList(), 0), layers, inView) {
+    // The same key as the globe's, for the same reason: comparing
+    // thirty lists of markers element by element is not a cheap way
+    // to find out whether they changed.
+    val planned by produceState(
+        initialValue = MapPlan(emptyList(), 0),
+        layerVersion, visibleLayers, inView
+    ) {
         value = withContext(Dispatchers.Default) { planFor(layers, inView) }
     }
     val plan = planned.markers

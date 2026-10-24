@@ -152,6 +152,29 @@ data class GodEyeUiState(
      *  Published, so the ratio is visible in the app rather than
      *  only in a review file. */
     val plannedLinkLists: Int = 0,
+    /**
+     * Bumped when a feed's contents actually change.
+     *
+     * The globe and the map both recompute their marker plans from
+     * `layers`, which is a data class holding thirty lists — so
+     * using it as a produceState key means comparing every point in
+     * every layer, element by element, on the main thread, on every
+     * recomposition. With the fire detections alone in six figures
+     * that is the cost of the thinning again, paid in the place
+     * where it hurts most.
+     *
+     * Worse, most feeds put how old the reading is into the marker's
+     * own label, so the lists differ at every minute boundary even
+     * when nothing has moved — and the thinning deliberately ignores
+     * that age when deciding identity, so it recomputed a set it
+     * knew would come out the same.
+     *
+     * One integer instead, raised only when a poll returns something
+     * genuinely different from what it returned last. The list is
+     * still written every time, so the ages on screen stay current;
+     * it is the recompute that stops.
+     */
+    val layerVersion: Int = 0,
     /** The second pass is chasing what the first pass turned up. */
     val enrichmentRunning: Boolean = false,
     /** Identifiers the first pass discovered and the second pass is looking
@@ -523,6 +546,8 @@ class GodEyeViewModel(
                 // pills and the world brief go on to assert. A failed fetch
                 // records the trouble and keeps whatever it last had, so
                 // neither of them claims an all-clear during an outage.
+                // Did anything actually change, ignoring the clock.
+                val moved = result != null && !sameAsLast(key, result)
                 _state.update { state ->
                     if (result == null) {
                         val why = attempt.exceptionOrNull()?.message?.take(90)
@@ -534,7 +559,9 @@ class GodEyeViewModel(
                                 loaded = state.loaded + key,
                                 feedTrouble = state.feedTrouble - key,
                                 lastSuccess = state.lastSuccess +
-                                    (key to System.currentTimeMillis())
+                                    (key to System.currentTimeMillis()),
+                                layerVersion =
+                                    if (moved) state.layerVersion + 1 else state.layerVersion
                             ),
                             result
                         )
@@ -550,6 +577,42 @@ class GodEyeViewModel(
                 waitWatching(key, wait)
             }
         }
+    }
+
+    /** What each feed last returned, for the comparison above. */
+    private val lastPolled = java.util.concurrent.ConcurrentHashMap<String, Any>()
+
+    /**
+     * Whether this poll said the same thing as the last one.
+     *
+     * For a list of markers the comparison ignores the age suffix
+     * in each label, because "· 40m ago" becoming "· 41m ago" is
+     * the clock moving and not the world — and the thinning that
+     * this guards already treats those two as the same marker.
+     * Anything else falls back to ordinary equality.
+     */
+    private fun sameAsLast(key: String, result: Any): Boolean {
+        val previous = lastPolled.put(key, result)
+        if (previous == null) return false
+        if (previous === result) return true
+        if (previous is List<*> && result is List<*>) {
+            if (previous.size != result.size) return false
+            val a = previous.firstOrNull()
+            if (a is GeoBlip) {
+                for (i in result.indices) {
+                    val old = previous[i] as? GeoBlip ?: return false
+                    val new = result[i] as? GeoBlip ?: return false
+                    if (old.lat != new.lat || old.lon != new.lon ||
+                        old.url != new.url ||
+                        withoutAge(old.label) != withoutAge(new.label)
+                    ) {
+                        return false
+                    }
+                }
+                return true
+            }
+        }
+        return previous == result
     }
 
     /**
