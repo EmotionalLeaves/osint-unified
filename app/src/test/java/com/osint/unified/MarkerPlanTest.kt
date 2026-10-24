@@ -148,6 +148,25 @@ class MarkerPlanTest {
         assertEquals("Plain label", withoutAge("Plain label"))
     }
 
+    /**
+     * The largest layer cannot be thinned to nothing.
+     *
+     * With more layers than budget left, the share floors to one and
+     * every single-marker layer is satisfied in one pass. If those use
+     * up exactly the budget, the loop used to end with the big layer
+     * still waiting and no quota — so it was dropped entirely, the one
+     * layer most worth sampling.
+     */
+    @Test
+    fun theBiggestLayerIsNeverStrandedAtZero() {
+        fun p(kind: String, i: Int) = GlobePoint(kind, 1.0, 1.0 + i * 0.001, 0, 8, "$kind $i", true)
+        val points = listOf(p("a", 0), p("b", 0), p("c", 0)) + (1..1000).map { p("big", it) }
+        val thinned = thinGlobe(points, budget = 3)
+        assertTrue("the big layer vanished", thinned.any { it.kind == "big" })
+        // And the small ones are still all there.
+        assertEquals(setOf("a", "b", "c", "big"), thinned.map { it.kind }.toSet())
+    }
+
     /** And the consequence: the same reading keeps its bucket as it ages. */
     @Test
     fun aPointKeepsItsBucketAsItAges() {

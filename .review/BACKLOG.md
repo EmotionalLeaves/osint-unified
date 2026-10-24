@@ -81,7 +81,7 @@ closed; their headings say so.
   leaked name/address themselves; decide with the user whether a paid
   key for one service is worth it, or rest on the browser-handoff
   links. GitHub commit-name search is in.
-- [ ] **TB1. thinBy can strand a layer at zero.** `thinBy`'s loop is
+- [x] **TB1. thinBy can strand a layer at zero.** `thinBy`'s loop is
   `while (contenders.isNotEmpty() && remaining > 0)`. When many tiny
   layers (size 1) are satisfied in one iteration and their sizes sum
   to exactly the remaining budget, the loop exits with a large layer

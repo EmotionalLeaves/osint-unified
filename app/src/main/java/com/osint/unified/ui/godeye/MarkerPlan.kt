@@ -123,6 +123,19 @@ private fun <T> thinBy(
         }
         contenders = (contenders - satisfied.toSet()).toMutableSet()
     }
+    // A layer left over when the budget ran out still gets one.
+    //
+    // The loop stops at `remaining > 0`. When the share has been
+    // floored to 1 — more layers left than budget left — the layers of
+    // size one are all "satisfied" in a single pass, and if they use
+    // up exactly what remains, the loop ends with the large layers
+    // still contending and no quota at all. They were then dropped to
+    // zero: the biggest layer on the globe silently vanished, which is
+    // the opposite of what fairness here exists to do. Their share in
+    // that pass was one, so one is what they get — a marker over
+    // budget is a cost; a layer that is switched on and shows nothing
+    // is a lie.
+    contenders.forEach { quotas.putIfAbsent(it, 1) }
     return byKind.flatMap { (kind, markers) ->
         val quota = quotas[kind] ?: 0
         when {
