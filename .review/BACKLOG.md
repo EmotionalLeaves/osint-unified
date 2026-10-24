@@ -594,6 +594,37 @@ observable types (B3).
   layer, which is most of what "live feed of anywhere" actually
   wants and all of what can be done within the app's rules.
 
+## E2. Verified, 24 Oct
+
+A reviewer went over the riskiest changes of 23 Oct and found
+eight defects in them, three severe. All fixed the same day; the
+list is here because the pattern matters more than the items.
+
+- **Three of the eight were reintroductions of the exact bug the
+  change had just fixed.** The panel measurement went back inside
+  the scroller it was added to escape; the globe cull moved the
+  disappearing markers from the centre of the sphere to its
+  edges; the recompute key put the per-frame cost back under a
+  different name. A fix that restates the problem in new terms
+  reads as finished and is not.
+- **A guard applied to one call site out of four.** The search run
+  token went on the main fan-out and not on enrichment, a tool run
+  by hand, or the workflow runner — all three of which sit in jobs
+  the next search cancels. When a guard exists because an
+  interleaving is possible, every site with that interleaving
+  needs it.
+- **A shared counter with three owners.** Set, incremented, and
+  ignored, by three callers that all dispatch tools. It is a set
+  of ids now.
+- **Two classifiers read the first line of an output whose verdict
+  is on the second.** Worth re-checking the rest of `classify`
+  against what each tool can actually print, not against what the
+  happy path prints.
+- **A cap this app chose was reported as a fact about the world.**
+  Truncating a body made "the source said nothing" and "we stopped
+  reading" the same string. Anything that limits what is read has
+  to say so in a way the caller can act on.
+
 ## F. Then
 
 Every issue known, listed and fixed. Every improvement, listed and
