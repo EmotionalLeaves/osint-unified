@@ -8,6 +8,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
 import org.junit.Test
 
 /**
@@ -389,5 +390,44 @@ class CorroborationTest {
         // And BGPView falls through to RIPEstat, which is where
         // asnintel starts.
         assertEquals(1, Corroboration.independentCount(listOf("bgpview", "asnintel")))
+    }
+}
+
+/**
+ * A follow-up cannot corroborate the thing that caused it.
+ *
+ * From a real dossier: the username sweep — an E-rated,
+ * soft-404-prone source — found a wiki with an account of the
+ * searched name on it. The app then ran a subdomain sweep and a
+ * certificate lookup against that wiki, both of which printed the
+ * wiki's own hostname back, because that is what they were asked
+ * about. Three sources, two independence families, "confirmed by
+ * other sources", grade A1. The two follow-ups could not have
+ * disagreed: their input was the claim.
+ */
+class EchoedInputTest {
+
+    @Test
+    fun aToolAskedAboutAHostIsNotAWitnessToIt() {
+        assertTrue(Corroboration.echoesItsOwnInput("en.brickimedia.org", "en.brickimedia.org"))
+        // Scheme and www are noise on both sides: tlscert is asked
+        // for a URL and prints a hostname.
+        assertTrue(
+            Corroboration.echoesItsOwnInput(
+                "www.1001tracklists.com", "https://www.1001tracklists.com/"
+            )
+        )
+        assertTrue(Corroboration.echoesItsOwnInput("fotki.com", "www.fotki.com"))
+    }
+
+    @Test
+    fun anActualDiscoveryStillCounts() {
+        // A subdomain sweep of a host naming a *different* host is
+        // the thing a subdomain sweep is for.
+        assertFalse(
+            Corroboration.echoesItsOwnInput("cdn.1001tracklists.com", "www.1001tracklists.com")
+        )
+        assertFalse(Corroboration.echoesItsOwnInput("shoutwiki.com", "en.brickimedia.org"))
+        assertFalse(Corroboration.echoesItsOwnInput("", "en.brickimedia.org"))
     }
 }

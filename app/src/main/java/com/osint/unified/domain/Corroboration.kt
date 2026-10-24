@@ -135,6 +135,26 @@ object Corroboration {
      * that subsweep and hostintel both returned, from the same API,
      * was graded "confirmed by other sources (2 independent)".
      */
+    /**
+     * Whether a value is just the question the tool was asked.
+     *
+     * Compared with the scheme and a leading `www.` taken off both
+     * sides, because `tlscert` is asked for a URL and prints a
+     * hostname, and `www.example.com` and `example.com` are the
+     * same answer for this purpose — the point is only whether the
+     * tool could have said anything else.
+     */
+    internal fun echoesItsOwnInput(value: String, input: String): Boolean {
+        fun bare(s: String) = s.trim().lowercase()
+            .substringAfter("://")
+            .substringBefore('/')
+            .substringBefore('?')
+            .removePrefix("www.")
+            .trimEnd('.')
+        val v = bare(value)
+        return v.isNotEmpty() && v == bare(input)
+    }
+
     internal fun familiesOf(toolId: String): Set<String> =
         INDEPENDENCE[toolId] ?: setOf(toolId)
 
@@ -329,6 +349,24 @@ object Corroboration {
                     pivot.value.lowercase()
                 }
                 val key = pivot.kind to value
+                // A tool asked about X is not a witness that X
+                // belongs here.
+                //
+                // The username sweep found a wiki with an account
+                // of that name on it, so the app ran a subdomain
+                // sweep and a certificate lookup against that wiki
+                // — and both of them printed the wiki's own
+                // hostname back, because that is what they were
+                // asked about. Three sources, two families,
+                // "confirmed by other sources", grade A1, on one
+                // soft hit from an E-rated sweep. The follow-ups
+                // could not have disagreed: their input was the
+                // claim.
+                //
+                // Hop 0 is exempt because the seed is the question,
+                // not an answer, and EntityExtractor already keeps
+                // it out.
+                if (hop > 0 && echoesItsOwnInput(value, row.input)) return@forEach
                 assertions.getOrPut(key) { mutableListOf() }.add(row.toolId to pivot.count)
                 nearest[key] = minOf(nearest[key] ?: hop, hop)
                 // A value only ever split out of a longer one cannot

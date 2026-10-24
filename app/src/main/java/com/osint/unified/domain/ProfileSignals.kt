@@ -69,7 +69,20 @@ object ProfileSignals {
         "licdn.com", "twimg.com", "fbcdn.net", "cdninstagram.com",
         "akamaized.net", "cloudfront.net", "wordpress.org", "wp.me",
         "discord.gg", "t.co", "creativecommons.org", "gnu.org", "mozilla.org",
-        "player.vimeo.com"
+        "player.vimeo.com",
+        // Namespaces and specifications, which are furniture of the
+        // purest kind: `ogp.me` appears in the opening html tag of
+        // every page that carries an OpenGraph card, so it grouped
+        // a Russian smallholding portal with a DJ tracklist site
+        // under "same link out" and called it a fact about a
+        // person.
+        "ogp.me", "purl.org", "xmlns.com", "gmpg.org", "rdfs.org",
+        "opengraphprotocol.org", "whatwg.org", "unpkg.com", "jsdelivr.net",
+        "cdnjs.cloudflare.com", "jquery.com", "bootstrapcdn.com",
+        // The anti-bot vendors, whose link is on the page precisely
+        // because the page is not a profile.
+        "techaro.lol", "hcaptcha.com", "recaptcha.net", "challenges.cloudflare.com",
+        "perimeterx.net", "datadome.co", "imperva.com"
     )
 
     /** First labels that mark a host as infrastructure. */
@@ -131,8 +144,53 @@ object ProfileSignals {
         "under construction", "welcome", "index of"
     )
 
+    /**
+     * Pages that are a door, not a room.
+     *
+     * A bot challenge, a login wall or an error page is not a
+     * profile, and nothing on it is about the person whose name is
+     * in the URL. The boilerplate list above was the attempt at
+     * this, and it was applied per-signal — only to the display
+     * name and the biography, and only when they matched exactly.
+     *
+     * So the links were never checked, and the links are what did
+     * the damage. Anubis, the anti-bot software, serves "Making
+     * sure you're not a bot!" with a link to its own repository on
+     * every challenge it issues. Two unrelated sites both refusing
+     * the sweep were therefore grouped under "same link out:
+     * github.com/techarohq/anubis", presented as "these profiles
+     * also carry the same details, which is a fact about a person",
+     * and the vendor's own handle and contact address were then
+     * extracted as observables and investigated — Crossref and
+     * CourtListener were run against a bot blocker.
+     *
+     * Judged on the page as a whole now, once, before anything is
+     * read off it. A door tells you nothing about who lives there.
+     */
+    private val CHALLENGE = listOf(
+        // Anubis.
+        "making sure you're not a bot", "making sure you&#39;re not a bot",
+        "techarohq/anubis", "anubis.techaro.lol",
+        // Cloudflare, and the rest of the usual interstitials.
+        "just a moment", "checking your browser before", "cf-browser-verification",
+        "enable javascript and cookies to continue", "ddos protection by",
+        "attention required! | cloudflare", "ray id:",
+        // The generic shapes.
+        "verifying you are human", "please verify you are a human",
+        "one moment, please", "validating your request", "javascript is required",
+        "access to this page has been denied"
+    )
+
+    /** True when the page is a challenge or a wall rather than a profile. */
+    internal fun isChallenge(html: String): Boolean {
+        val head = html.take(CHALLENGE_SCAN).lowercase()
+        return CHALLENGE.any { head.contains(it) }
+    }
+
     fun read(html: String, pageHost: String): Signals {
         if (html.isBlank()) return Signals()
+        // Nothing on a challenge page belongs to anybody.
+        if (isChallenge(html)) return Signals()
         val meta = HashMap<String, String>()
         META.findAll(html).forEach { meta.putIfAbsent(it.groupValues[1].lowercase(), it.groupValues[2]) }
         META_REVERSED.findAll(html).forEach {
@@ -261,6 +319,13 @@ object ProfileSignals {
     private fun normaliseText(s: String): String =
         s.lowercase().replace(Regex("[^a-z0-9 ]+"), " ")
             .replace(Regex("\\s+"), " ").trim()
+
+    /**
+     * A challenge announces itself at the top. Reading the whole
+     * page would also match an ordinary profile that happens to
+     * mention one of these phrases in a comment thread.
+     */
+    private const val CHALLENGE_SCAN = 8_000
 
     private const val MAX_SCANNED = 200_000
     private const val MAX_LINKS = 12

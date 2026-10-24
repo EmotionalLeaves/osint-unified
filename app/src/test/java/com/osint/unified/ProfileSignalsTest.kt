@@ -202,3 +202,105 @@ class ProfileSignalsTest {
         assertEquals(1, clusters.size)
     }
 }
+
+/**
+ * A page that refused the sweep is not a profile.
+ *
+ * Taken from a real dossier. Two unrelated sites served Anubis
+ * challenge pages, and because both of them carry a link to the
+ * software's own repository they were grouped under "same link
+ * out: github.com/techarohq/anubis" and presented as "these
+ * profiles also carry the same details, which is a fact about a
+ * person". The vendor's handle and contact address were then
+ * extracted as observables and investigated — Crossref and
+ * CourtListener were run against a bot blocker.
+ *
+ * The boilerplate list existed and did not catch it: it was
+ * applied to the display name and the biography, and the match
+ * was on a link.
+ */
+class ChallengePageTest {
+
+    private fun anubis(host: String) = """
+        <html><head><title>Making sure you're not a bot!</title>
+        <meta property="og:title" content="Making sure you&#39;re not a bot!">
+        </head><body>
+        <p>Protected by <a href="https://github.com/techarohq/anubis">Anubis</a>
+        from <a href="https://techaro.lol">Techaro</a>.</p>
+        </body></html>
+    """.trimIndent().let { it to host }
+
+    @Test
+    fun anAntiBotChallengeIsRecognised() {
+        assertTrue(ProfileSignals.isChallenge(anubis("example.org").first))
+        assertTrue(ProfileSignals.isChallenge("<title>Just a moment...</title>"))
+        assertTrue(ProfileSignals.isChallenge("<p>Verifying you are human</p>"))
+        assertTrue(ProfileSignals.isChallenge("<div>Checking your browser before accessing</div>"))
+        // And an ordinary profile is not.
+        assertFalse(
+            ProfileSignals.isChallenge(
+                """<html><head><title>Jane Doe (@jdoe)</title></head>
+                   <body><p>Photographer. https://janedoe.example</p></body></html>"""
+            )
+        )
+    }
+
+    @Test
+    fun nothingIsReadOffOne() {
+        val (html, host) = anubis("en.brickimedia.org")
+        val signals = ProfileSignals.read(html, host)
+        assertTrue(signals.isEmpty)
+        assertNull(signals.displayName)
+        assertTrue(signals.links.isEmpty())
+    }
+
+    @Test
+    fun twoRefusalsAreNotOnePerson() {
+        // The exact pairing from the dossier.
+        val accounts = listOf(
+            ProfileSignals.Account(
+                "en.brickimedia.org",
+                "https://en.brickimedia.org/wiki/User:gabebenischek",
+                ProfileSignals.read(anubis("en.brickimedia.org").first, "en.brickimedia.org")
+            ),
+            ProfileSignals.Account(
+                "Fotki",
+                "https://members.fotki.com/gabebenischek/about/",
+                ProfileSignals.read(anubis("members.fotki.com").first, "members.fotki.com")
+            )
+        )
+        assertTrue(ProfileSignals.cluster(accounts, "gabebenischek").isEmpty())
+    }
+
+    /**
+     * `ogp.me` is in the opening html tag of every page carrying an
+     * OpenGraph card, so it grouped a Russian smallholding portal
+     * with a DJ tracklist site and called it a person.
+     */
+    @Test
+    fun aNamespaceIsNotALinkSomebodyChose() {
+        listOf(
+            "https://ogp.me/ns#",
+            "https://purl.org/dc/elements/1.1/",
+            "https://gmpg.org/xfn/11",
+            "https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"
+        ).forEach { assertTrue(it, ProfileSignals.isFurniture(it)) }
+        // A personal site still is one.
+        assertFalse(ProfileSignals.isFurniture("https://janedoe.example/about"))
+    }
+
+    @Test
+    fun aRealProfileStillClusters() {
+        val page = { name: String ->
+            """<html><head><title>$name</title>
+               <meta property="og:title" content="Gabe B">
+               </head><body><a href="https://gabe.example/">site</a></body></html>"""
+        }
+        val accounts = listOf(
+            ProfileSignals.Account("A", "https://a.example/u/g", ProfileSignals.read(page("A"), "a.example")),
+            ProfileSignals.Account("B", "https://b.example/u/g", ProfileSignals.read(page("B"), "b.example"))
+        )
+        val clusters = ProfileSignals.cluster(accounts, "g")
+        assertTrue(clusters.any { it.reason.startsWith("same link out") })
+    }
+}
