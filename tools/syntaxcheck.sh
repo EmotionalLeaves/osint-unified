@@ -232,5 +232,8 @@ python3 "$ROOT/tools/java-keywords.py" || exit 1
 
 echo
 python3 "$ROOT/tools/migration-schema.py" "$ROOT" || exit 1
+
+echo
+python3 "$ROOT/tools/optin-coverage.py" "$ROOT/app/src/main/java" || exit 1
 echo
 python3 "$ROOT/tools/novel-calls.py" || true
