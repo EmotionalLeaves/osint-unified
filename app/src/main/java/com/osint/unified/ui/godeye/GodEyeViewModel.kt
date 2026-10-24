@@ -117,6 +117,18 @@ data class GodEyeUiState(
      *  the last good data it had, or nothing at all, and in neither case
      *  may its count be read as "there is nothing out there". */
     val feedTrouble: Map<String, String> = emptyMap(),
+    /**
+     * Layer key -> who was missing from the last otherwise-successful
+     * answer.
+     *
+     * [feedTrouble] is one boolean per layer, which is the right shape
+     * for a feed with one source and the wrong shape for the six that
+     * merge agencies: two of three seismic agencies down, or one of
+     * twenty-four METAR regions answering, read as a clean layer with
+     * a confident count. A layer in here has real data and incomplete
+     * coverage, which is a third state and needs a third word.
+     */
+    val feedPartial: Map<String, String> = emptyMap(),
     /** Layer key -> when it last answered, for "stale 12m" on the pill. */
     val lastSuccess: Map<String, Long> = emptyMap(),
     val findings: List<FindingPin> = emptyList(),
@@ -442,6 +454,7 @@ class GodEyeViewModel(
         return s.copy(
             loaded = s.loaded - gone,
             feedTrouble = s.feedTrouble - gone,
+            feedPartial = s.feedPartial - gone,
             lastSuccess = s.lastSuccess - gone
         )
     }
@@ -504,7 +517,7 @@ class GodEyeViewModel(
         poll(0, 25_000, "aircraft", { aircraftDataSource.fetch(focus, wideView) }) { s, v -> s.copy(aircraft = v) }
         poll(100, 30_000, "vessels", { aisDataSource.fetch(focus) }) { s, v -> s.copy(vessels = v) }
         poll(200, 15_000, "satellites", { satellitesDataSource.fetch() }) { s, v -> s.copy(satellites = v) }
-        poll(375, 300_000, "quakes", { earthquakeDataSource.fetch() }) { s, v -> s.copy(quakes = v) }
+        poll(375, 300_000, "quakes", { earthquakeDataSource.fetch() }, gaps = { earthquakeDataSource.lastGaps }) { s, v -> s.copy(quakes = v) }
         poll(625, 600_000, "naturalEvents", { naturalEventsDataSource.fetch() }) { s, v -> s.copy(naturalEvents = v) }
         poll(875, 60_000, "overlayPoints", { overlayDataSource.fetch() }) { s, v -> s.copy(overlayPoints = v) }
         poll(1125, 600_000, "fires", { firesDataSource.fetch() }) { s, v -> s.copy(fires = v) }
@@ -519,17 +532,17 @@ class GodEyeViewModel(
         poll(2125, 300_000, "aurora", { auroraDataSource.fetch() }) { s, v -> s.copy(aurora = v) }
         poll(2375, 300_000, "news", { newsDataSource.fetch() }) { s, v -> s.copy(news = v) }
         poll(2750, 600_000, "buoys", { buoyDataSource.fetch() }) { s, v -> s.copy(buoys = v) }
-        poll(3250, 600_000, "metar", { metarDataSource.fetch() }) { s, v -> s.copy(metar = v) }
+        poll(3250, 600_000, "metar", { metarDataSource.fetch() }, gaps = { metarDataSource.lastGaps }) { s, v -> s.copy(metar = v) }
         poll(500, 20_000, "milAircraft", { milAircraftDataSource.fetch() }) { s, v -> s.copy(milAircraft = v) }
-        poll(3500, 900_000, "airQuality", { airQualityDataSource.fetch() }) { s, v -> s.copy(airQuality = v) }
+        poll(3500, 900_000, "airQuality", { airQualityDataSource.fetch() }, gaps = { airQualityDataSource.lastGaps }) { s, v -> s.copy(airQuality = v) }
         poll(3750, 21_600_000, "stations", { seismicStationDataSource.fetch() }) { s, v -> s.copy(stations = v) }
         poll(4000, 1_800_000, "conflicts", { conflictDataSource.fetch() }) { s, v -> s.copy(conflicts = v) }
         poll(300, 3_600_000, "airports", { airportDataSource.fetch() }) { s, v -> s.copy(airports = v) }
         poll(450, 3_600_000, "powerPlants", { powerPlantDataSource.fetch() }) { s, v -> s.copy(powerPlants = v) }
         poll(900, 900_000, "spaceWeather", { spaceWeatherDataSource.fetch() }) { s, v -> s.copy(spaceWeather = v) }
         poll(1200, 86_400_000, "cables", { cableLandingDataSource.fetch() }) { s, v -> s.copy(cables = v) }
-        poll(700, 600_000, "cyclones", { cycloneDataSource.fetch() }) { s, v -> s.copy(cyclones = v) }
-        poll(800, 600_000, "tsunamis", { tsunamiDataSource.fetch() }) { s, v -> s.copy(tsunamis = v) }
+        poll(700, 600_000, "cyclones", { cycloneDataSource.fetch() }, gaps = { cycloneDataSource.lastGaps }) { s, v -> s.copy(cyclones = v) }
+        poll(800, 600_000, "tsunamis", { tsunamiDataSource.fetch() }, gaps = { tsunamiDataSource.lastGaps }) { s, v -> s.copy(tsunamis = v) }
         poll(1500, 180_000, "airportStatus", { airportStatusDataSource.fetch() }) { s, v -> s.copy(airportStatus = v) }
     }
 
@@ -547,6 +560,13 @@ class GodEyeViewModel(
         intervalMs: Long,
         key: String,
         fetch: suspend () -> T,
+        /**
+         * For a feed merged from several agencies: what was missing
+         * from the fetch that just succeeded, or null if nothing was.
+         * Read immediately after [fetch] returns, which is the only
+         * moment it describes this answer rather than the one before.
+         */
+        gaps: (() -> String?)? = null,
         apply: (GodEyeUiState, T) -> GodEyeUiState
     ) {
         viewModelScope.launch {
@@ -567,6 +587,7 @@ class GodEyeViewModel(
                 val attempt = runCatching { fetch() }
                 attempt.exceptionOrNull()?.let { if (it is CancellationException) throw it }
                 val result = attempt.getOrNull()
+                val missing = if (result != null) gaps?.invoke() else null
                 // "loaded" means this feed has answered — only then does a
                 // count of zero mean "nothing out there", which is what the
                 // pills and the world brief go on to assert. A failed fetch
@@ -584,6 +605,9 @@ class GodEyeViewModel(
                             state.copy(
                                 loaded = state.loaded + key,
                                 feedTrouble = state.feedTrouble - key,
+                                feedPartial =
+                                    if (missing == null) state.feedPartial - key
+                                    else state.feedPartial + (key to missing),
                                 lastSuccess = state.lastSuccess +
                                     (key to System.currentTimeMillis()),
                                 layerVersion =

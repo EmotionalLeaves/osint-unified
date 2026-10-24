@@ -48,7 +48,12 @@ import java.io.IOException
  * often enough that averaging them would be inventing a bulletin
  * nobody issued.
  */
-class TsunamiDataSource(private val client: OkHttpClient = Http.feedClient) {
+class TsunamiDataSource(private val client: OkHttpClient = Http.feedClient) :
+    PartlyAnswered {
+
+    @Volatile override var lastGaps: String? = null
+        private set
+
 
     private val feeds = listOf(
         "https://www.tsunami.gov/events/xml/PAAQAtom.xml" to "NTWC",
@@ -95,6 +100,11 @@ class TsunamiDataSource(private val client: OkHttpClient = Http.feedClient) {
             (atom + others).awaitAll()
         }
         val found = answers.mapNotNull { it.getOrNull() }.flatten()
+        lastGaps = gapsFrom(
+            answers.size,
+            answers.filter { it.isFailure }.map { it.exceptionOrNull() },
+            "tsunami centres"
+        )
         // An empty list here is not "no answer", it is the assertion
         // that there is no tsunami bulletin anywhere on Earth — the
         // world brief prints exactly that sentence from it. So it may

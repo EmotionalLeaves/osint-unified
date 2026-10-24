@@ -20,7 +20,11 @@ import java.io.IOException
  * METAR airport-weather observations from the Aviation Weather Center (keyless):
  * station position plus flight category (VFR/MVFR/IFR/LIFR) and temperature.
  */
-class MetarDataSource(private val client: OkHttpClient = Http.feedClient) {
+class MetarDataSource(private val client: OkHttpClient = Http.feedClient) :
+    PartlyAnswered {
+
+    @Volatile override var lastGaps: String? = null
+        private set
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
@@ -32,11 +36,19 @@ class MetarDataSource(private val client: OkHttpClient = Http.feedClient) {
      */
     suspend fun fetch(): List<GeoBlip> = withContext(Dispatchers.IO) {
         val out = java.util.concurrent.ConcurrentHashMap<String, GeoBlip>()
-        val answered = coroutineScope {
+        val tries = coroutineScope {
             BOXES.map { box ->
                 async { runCatching { fetchBox(box, out) } }
-            }.map { it.await() }.any { it.isSuccess }
+            }.map { it.await() }
         }
+        val answered = tries.any { it.isSuccess }
+        // One box of twenty-four answering is not world coverage, and
+        // the layer used to present it as such.
+        lastGaps = gapsFrom(
+            BOXES.size,
+            tries.filter { it.isFailure }.map { it.exceptionOrNull() },
+            "regions"
+        )
         // Two dozen boxes all failing used to return an empty list and
         // report success, which the pill and the world brief then
         // state as a fact: no airport weather report anywhere on

@@ -368,14 +368,31 @@ class UsernameChecker(private val appContext: Context) {
                 append("for a username that cannot exist, so its yes means ")
                 append("something.")
             }
-            val unchecked = hits.count { it.control == Control.NOT_ASKED }
-            if (unchecked > 0) {
-                append("\n? = the page was not read and no control username was ")
-                append("tried ($unchecked of them: the control pass stops at ")
-                append("$CONTROL_PROBE_CAP sites or ${CONTROL_BUDGET_MS / 1000} ")
-                append("seconds, whichever comes first). A site that says yes to ")
-                append("every name would look like this. Treat each as a lead to ")
-                append("open, not as an account.")
+            val skipped = hits.count { it.control == Control.NOT_ASKED }
+            val stuck = hits.count { it.control == Control.COULD_NOT_ASK }
+            if (skipped + stuck > 0) {
+                append("\n? = the page was not read and the yes was not ")
+                append("checked (${skipped + stuck} of them")
+                val why = buildList {
+                    if (skipped > 0) {
+                        add(
+                            "$skipped past the control pass, which stops at " +
+                                "$CONTROL_PROBE_CAP sites or " +
+                                "${CONTROL_BUDGET_MS / 1000} seconds, whichever " +
+                                "comes first"
+                        )
+                    }
+                    if (stuck > 0) {
+                        add(
+                            "$stuck where the control settled nothing: the site " +
+                                "would not accept a username that cannot exist, " +
+                                "or did not answer"
+                        )
+                    }
+                }
+                append(": " + why.joinToString("; ") + "). ")
+                append("A site that says yes to every name would look like ")
+                append("this. Treat each as a lead to open, not as an account.")
             }
         }
     }
@@ -436,10 +453,35 @@ class UsernameChecker(private val appContext: Context) {
         candidates: List<Pair<SiteRule, String>>
     ): List<Checked> {
         if (candidates.isEmpty()) return emptyList()
-        val control = "zq" + java.util.UUID.randomUUID().toString().replace("-", "").take(16)
+        // One control per site, not one control for every site.
+        //
+        // The control used to be a single eighteen-character string,
+        // and a site whose ruleset caps the username below that —
+        // `^[A-Za-z0-9_]{1,15}$` is the commonest shape in Sherlock —
+        // rejected it in `checkSite` before any request was made. That
+        // came back NotApplicable, which the verdict below could not
+        // tell from Absent, so every status-only hit on every
+        // length-capped site was marked as control-verified for free.
+        //
+        // So: several shapes from one random seed, shortest last, and
+        // the first the site will accept is the one asked. Eight
+        // random hex characters is four billion to one against
+        // existing, which is enough.
+        val seed = java.util.UUID.randomUUID().toString().replace("-", "")
+        val lettersOnly = seed.map { c -> if (c.isDigit()) 'g' + (c - '0') else c }
+            .joinToString("")
+        val controls = listOf(
+            "zq" + seed.take(16),
+            "zq" + seed.take(10),
+            "zq" + lettersOnly.take(10),
+            "zq" + seed.take(6),
+            "zq" + lettersOnly.take(4)
+        )
         val semaphore = Semaphore(48)
         // A verdict per candidate, by position: 0 never asked, 1 the
-        // control came back found, 2 the control came back absent.
+        // control came back found, 2 the control came back absent,
+        // 3 the control could not be asked — no shape the site would
+        // accept, or the site did not answer.
         //
         // The old version collected survivors in a list and then kept
         // "anything not in the first CONTROL_PROBE_CAP". Everything
@@ -456,22 +498,34 @@ class UsernameChecker(private val appContext: Context) {
                 candidates.take(CONTROL_PROBE_CAP).forEachIndexed { index, pair ->
                     launch {
                         semaphore.withPermit {
-                            // Survives only if the control is NOT reported
-                            // found. A site that could not be asked about the
-                            // control proves nothing, so the hit stands and
-                            // keeps its unverified mark.
-                            val soft =
-                                checkSite(pair.first, control, control) is SiteAnswer.Found
-                            verdict.set(index, if (soft) 1 else 2)
+                            // Survives only if the control is NOT
+                            // reported found. A site that could not be
+                            // asked about the control proves nothing,
+                            // so the hit stands and keeps its
+                            // unverified mark — which is a different
+                            // mark from the verified one, and used not
+                            // to be.
+                            val control = controls.firstOrNull { pair.first.accepts(it) }
+                            verdict.set(
+                                index,
+                                if (control == null) 3
+                                else when (checkSite(pair.first, control, control)) {
+                                    is SiteAnswer.Found -> 1
+                                    is SiteAnswer.Absent -> 2
+                                    // Unreachable or NotApplicable:
+                                    // nothing was established.
+                                    else -> 3
+                                }
+                            )
                         }
                     }
                 }
             }
         }
         // Dropped only where the control actually came back found.
-        // Past the cap, cut off by the budget, or unreachable: kept,
-        // because an unverified hit is still a lead and it carries the
-        // ~ mark.
+        // Past the cap, cut off by the budget, or unaskable: kept,
+        // because an unverified hit is still a lead — and it carries
+        // the ? mark, not the ~ one, which is the whole point.
         return candidates.mapIndexed { index, pair ->
             Checked(
                 pair.first,
@@ -479,6 +533,7 @@ class UsernameChecker(private val appContext: Context) {
                 when (verdict.get(index)) {
                     1 -> Control.SAYS_YES_TO_ANYTHING
                     2 -> Control.SAYS_NO_TO_CONTROL
+                    3 -> Control.COULD_NOT_ASK
                     else -> Control.NOT_ASKED
                 }
             )
@@ -498,6 +553,16 @@ class UsernameChecker(private val appContext: Context) {
 
         /** Status only, and nothing was tried: past the cap or the budget. */
         NOT_ASKED(" ?"),
+
+        /**
+         * Status only, the control was tried and settled nothing: the
+         * site would not accept any control shape, or it did not
+         * answer. Reads the same to the person as [NOT_ASKED] — the
+         * yes is unverified — but it is a different thing to have
+         * asked and got nowhere, and the two were being counted as a
+         * verified result.
+         */
+        COULD_NOT_ASK(" ?"),
 
         /** Status only, and the control came back found. Dropped. */
         SAYS_YES_TO_ANYTHING(" !"),

@@ -36,14 +36,26 @@ import java.io.IOException
  * agencies number the same earthquake differently, and a map that
  * draws one event three times is telling you there were three.
  */
-class EarthquakeDataSource(private val client: OkHttpClient = Http.feedClient) {
+class EarthquakeDataSource(private val client: OkHttpClient = Http.feedClient) :
+    PartlyAnswered {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
+
+    @Volatile override var lastGaps: String? = null
+        private set
 
     suspend fun fetch(): List<Quake> = withContext(Dispatchers.IO) {
         val usgs = runCatching { usgs() }
         val emsc = runCatching { emsc() }
         val gfz = runCatching { geofon() }
+        // USGS being down is not a quiet day, and until this the layer
+        // had no way to say which of the three was missing: it reported
+        // the EMSC-only set under a clean tick.
+        lastGaps = gapsFrom(
+            3,
+            listOf(usgs, emsc, gfz).filter { it.isFailure }.map { it.exceptionOrNull() },
+            "seismic agencies"
+        )
         if (usgs.isFailure && emsc.isFailure && gfz.isFailure) {
             throw IOException(
                 "No seismic agency could be reached: " +

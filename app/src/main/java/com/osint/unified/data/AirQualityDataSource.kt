@@ -17,7 +17,12 @@ import java.io.IOException
  * Air-quality (European AQI) at major world cities via Open-Meteo (keyless),
  * fetched in one multi-location request and plotted as the AQI layer.
  */
-class AirQualityDataSource(private val client: OkHttpClient = Http.feedClient) {
+class AirQualityDataSource(private val client: OkHttpClient = Http.feedClient) :
+    PartlyAnswered {
+
+    @Volatile override var lastGaps: String? = null
+        private set
+
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
@@ -216,10 +221,16 @@ class AirQualityDataSource(private val client: OkHttpClient = Http.feedClient) {
         val out = ArrayList<GeoBlip>(cities.size)
         // Open-Meteo accepts many coordinates per call but not unlimited,
         // so the list goes in batches.
-        var answered = false
-        cities.chunked(60).forEach { batch ->
-            if (runCatching { fetchBatch(batch, out) }.isSuccess) answered = true
-        }
+        val batches = cities.chunked(60)
+        val tries = batches.map { batch -> runCatching { fetchBatch(batch, out) } }
+        val answered = tries.any { it.isSuccess }
+        // Half the cities missing is not half the world breathing
+        // clean air, and nothing said which half.
+        lastGaps = gapsFrom(
+            batches.size,
+            tries.filter { it.isFailure }.map { it.exceptionOrNull() },
+            "batches of cities"
+        )
         // Every batch failing is not "the air is unmeasured
         // everywhere"; it is the service being down. The layer says
         // the first of those out loud if this returns an empty list.

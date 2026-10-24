@@ -38,7 +38,11 @@ import java.util.Locale
  * with a centre missing is not an all-clear, so an empty result raises
  * unless every centre answered.
  */
-class CycloneDataSource(private val client: OkHttpClient = Http.feedClient) {
+class CycloneDataSource(private val client: OkHttpClient = Http.feedClient) :
+    PartlyAnswered {
+
+    @Volatile override var lastGaps: String? = null
+        private set
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
@@ -65,6 +69,14 @@ class CycloneDataSource(private val client: OkHttpClient = Http.feedClient) {
         val atlantic = runCatching { nhc() }
         val elsewhere = JTWC_ADVISORIES.map { url -> runCatching { jtwc(url) } }
         val answers = listOf(atlantic) + elsewhere
+        // Storms on the map with a centre missing: shown, and said so.
+        // The Atlantic and the west Pacific are different oceans and
+        // the pill could not tell the reader which one it had.
+        lastGaps = gapsFrom(
+            answers.size,
+            answers.filter { it.isFailure }.map { it.exceptionOrNull() },
+            "cyclone centres"
+        )
         val found = atlantic.getOrDefault(emptyList()) +
             elsewhere.flatMap { it.getOrDefault(emptyList()) }
         // Partial data is shown: a storm an answering centre reported

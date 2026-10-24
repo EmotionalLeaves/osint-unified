@@ -217,9 +217,11 @@ object WorldBrief {
             val strong = state.quakes.filter { it.mag >= 4.5 }.sortedByDescending { it.mag }
             val shown = (if (strong.isNotEmpty()) strong else state.quakes.sortedByDescending { it.mag })
                 .take(PER_SECTION)
+            val quakesDown = "quakes" in state.feedTrouble
             sections.add(
                 Section(
-                    "EARTHQUAKES — ${state.quakes.size}",
+                    "EARTHQUAKES — ${state.quakes.size}" +
+                        if (quakesDown) " · LAST KNOWN, FEED DOWN" else "",
                     // A magnitude 6 is a different kind of news from a 3.
                     6 + when {
                         state.quakes.any { it.mag >= 6.0 } -> 3
@@ -257,7 +259,18 @@ object WorldBrief {
         // and whose last answer is the one being counted. A feed that
         // answered an hour ago and has failed since is neither.
         val troubled = ArrayList<String>()
-        fun maybeQuiet(key: String, label: String, size: Int) {
+        val partial = ArrayList<String>()
+        fun maybeQuiet(
+            key: String,
+            label: String,
+            size: Int,
+            /**
+             * False for an inventory. "No ports anywhere in the world"
+             * is not a sentence about today, so a static dataset can be
+             * down or incomplete but never quiet.
+             */
+            canBeQuiet: Boolean = true
+        ) {
             when {
                 // With when it last worked, if it ever did.
                 //
@@ -275,7 +288,15 @@ object WorldBrief {
                         ?.let { "$label — last good $it" }
                         ?: "$label — has not answered this session"
                 )
-                key in state.loaded && size == 0 -> quiet.add(label)
+                // Answered, but not by everyone. This has to come
+                // before the quiet test: a cyclone feed with the whole
+                // west Pacific missing reported zero storms, and zero
+                // storms from a feed that answered is printed as
+                // "all quiet · no tropical cyclones anywhere in the
+                // world".
+                key in state.feedPartial ->
+                    partial.add("$label — ${state.feedPartial[key]}")
+                canBeQuiet && key in state.loaded && size == 0 -> quiet.add(label)
             }
         }
         maybeQuiet("gdacs", "disaster alerts", state.gdacs.size)
@@ -296,6 +317,57 @@ object WorldBrief {
         maybeQuiet("cyclones", "tropical cyclones anywhere in the world", state.cyclones.size)
         maybeQuiet("tsunamis", "tsunami bulletins from any of the four centres", state.tsunamis.size)
         maybeQuiet("airportStatus", "US airport delays", state.airportStatus.size)
+        maybeQuiet("quakes", "earthquakes anywhere in the world", state.quakes.size)
+        maybeQuiet("naturalEvents", "natural events", state.naturalEvents.size)
+        maybeQuiet("news", "news hotspots", state.news.size)
+        maybeQuiet("launches", "rocket launches in the window", state.launches.size)
+        maybeQuiet("aurora", "aurora", state.aurora.size)
+        // Everything below is an inventory or a tracker rather than an
+        // event feed, so it can be down but never quiet — and until
+        // this it could be neither, because `blips` returns early on an
+        // empty list and nothing else read its key. A feed that had
+        // never once succeeded appeared nowhere in a brief whose whole
+        // purpose is saying which layers have not reported.
+        maybeQuiet("aircraft", "aircraft", state.aircraft.size, canBeQuiet = false)
+        maybeQuiet("vessels", "vessels", state.vessels.size, canBeQuiet = false)
+        maybeQuiet("satellites", "satellites", state.satellites.size, canBeQuiet = false)
+        maybeQuiet("seaLevel", "sea-level gauges", state.seaLevel.size, canBeQuiet = false)
+        maybeQuiet("ports", "ports", state.ports.size, canBeQuiet = false)
+        maybeQuiet("buoys", "ocean buoys", state.buoys.size, canBeQuiet = false)
+        maybeQuiet("metar", "airport weather", state.metar.size, canBeQuiet = false)
+        maybeQuiet("airQuality", "air quality", state.airQuality.size, canBeQuiet = false)
+        maybeQuiet("stations", "seismic stations", state.stations.size, canBeQuiet = false)
+        maybeQuiet("airports", "airports", state.airports.size, canBeQuiet = false)
+        maybeQuiet("powerPlants", "power plants", state.powerPlants.size, canBeQuiet = false)
+        maybeQuiet("cables", "submarine cables", state.cables.size, canBeQuiet = false)
+        maybeQuiet("cameras", "public cameras", state.cameras.size, canBeQuiet = false)
+        maybeQuiet("sites", "borders, embassies and prisons", state.sites.size, canBeQuiet = false)
+        maybeQuiet("airspace", "military areas", state.airspace.size, canBeQuiet = false)
+        maybeQuiet("radiation", "radiation monitors", state.radiation.size, canBeQuiet = false)
+        maybeQuiet("overlayPoints", "your own overlay", state.overlayPoints.size, canBeQuiet = false)
+        maybeQuiet(
+            "spaceWeather",
+            "space weather",
+            if (state.spaceWeather == null) 0 else 1,
+            canBeQuiet = false
+        )
+
+        if (partial.isNotEmpty()) {
+            sections.add(
+                Section(
+                    "PARTIAL COVERAGE — ${partial.size}",
+                    // Above NOT REPORTING, below anything happening:
+                    // these layers do have something to show, and what
+                    // they show is true. It is the silence in them that
+                    // means nothing.
+                    TROUBLE_SEVERITY + 1,
+                    partial.map { Entry(it) },
+                    note = "These feeds answered, but not every agency " +
+                        "behind them did. What they show is real; what " +
+                        "they do not show proves nothing."
+                )
+            )
+        }
 
         if (troubled.isNotEmpty()) {
             sections.add(
@@ -327,10 +399,23 @@ object WorldBrief {
      * ticker says so in those words rather than naming a feed.
      */
     fun headline(brief: Brief): String {
-        val top = brief.sections.firstOrNull { it.title.startsWith("NOT REPORTING").not() }
+        // PARTIAL COVERAGE is a sentence about the feeds, like NOT
+        // REPORTING, and reads as an event in the ticker for the same
+        // reason.
+        fun aboutTheFeeds(s: Section) =
+            s.title.startsWith("NOT REPORTING") || s.title.startsWith("PARTIAL COVERAGE")
+        val top = brief.sections.firstOrNull { !aboutTheFeeds(it) }
         if (top == null) {
-            val down = brief.sections.firstOrNull()?.entries?.size ?: 0
+            val down = brief.sections
+                .filter { it.title.startsWith("NOT REPORTING") }
+                .sumOf { it.entries.size }
             if (down > 0) return "$down feed${if (down == 1) "" else "s"} not reporting"
+            val short = brief.sections
+                .filter { it.title.startsWith("PARTIAL COVERAGE") }
+                .sumOf { it.entries.size }
+            if (short > 0) {
+                return "$short feed${if (short == 1) "" else "s"} only partly covered"
+            }
             // Feeds that answered and found nothing are not "nothing
             // loaded yet" — they are the answer, and saying the
             // opposite of it was exactly the confusion the rest of
