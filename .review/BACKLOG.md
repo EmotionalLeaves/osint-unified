@@ -27,6 +27,150 @@ closed; their headings say so.
   URL the code can emit is public; without the actual link this is
   guesswork.
 
+### Verification of the second batch, 9125be2..HEAD (r18, 24 Oct) — OPEN, 0 of 22
+
+A fourth pass, over the nineteen commits that fixed r13–r17. It
+found the same thing the three before it found: **rule 1 recurs
+inside the fixes for rule 1**, five times in this batch alone. And
+two brand-new honesty mechanisms landed inert — nobody on the
+reading end — which is rule 5 with no throw involved.
+
+HIGH
+- [ ] **V1.** The backend's 206 is a success to OkHttp.
+  `Executors.kt:97` is `if (resp.isSuccessful)`, which is `200..299`.
+  `backend/server.js:66` returns the truncated scan as 206 with a
+  `PARTIAL: …` first line and a comment claiming the app reads it as
+  incomplete. Nothing reads it: one `206` in the whole of
+  `app/src/main/java`, and it is `ExifReader`'s own Range request.
+  The prose does not save it either — `partial: subfinder was
+  stopped after 60000 ms.` matches no UNREACHABLE phrase, no
+  NOT_ASKED phrase, and fails NOTHING_SHAPE for want of a `\bno\b`
+  in the first 34 characters. So a half-finished scan is stored as
+  `status = "success"` and counted in "N of M sources returned
+  something", which is exactly the state T5 was meant to end.
+- [ ] **V2.** `DiskCache.write`'s new `Boolean` is dropped by all six
+  callers — WorldWarnings, Satellites, SeaLevel, Launch,
+  SeismicStation, Fires. The docstring says why it stopped returning
+  `Unit`: a full disk meant re-downloading seven and fourteen
+  megabytes every poll with nothing said to the data meter. That is
+  still what happens. Rule 2 answered at the signature only.
+- [ ] **V3.** `ExifReader.describe()` still has T12; only `fromUrl`'s
+  inline copy was fixed. `sb` is never blank, so `"No EXIF metadata
+  found."` at line 106 is dead, and a stripped photograph through
+  `fromUri` prints `GPS: (none)` → **HIT**. The same image through
+  `fromUrl` is correctly ABSENT. Two paths, opposite verdicts, five
+  lines apart.
+- [ ] **V4.** The new coverage node counts running tools as "could not
+  be asked". `GraphBuilder:34` groups by `Findings.kindOf`, which
+  maps `status == "running"` to UNREACHABLE. `Findings.sort` skips
+  running rows and carries the comment saying why — *"counting it as
+  a miss is how the dossier reported 'NOTHING FOUND (38 errored)'
+  while thirty-eight tools were still working."* `Findings.pending()`
+  exists for this. Tap GRAPH mid-investigation to see it.
+
+MEDIUM
+- [ ] **V5.** Two surviving copies of the quadratic email regex the
+  batch rewrote in five files: `OsintApis.kt:966` and
+  `DeepApis.kt:2811`. The first runs over a whole fetched page in
+  `webcrawl` with **no scan cap at all**, on content the subject
+  chose. `regex-recursion.py` cannot see it: character-class
+  repetition, not group repetition.
+- [ ] **V6.** `cveLookup`'s "neither source answered" gate never fires.
+  EPSS answers 200 with `{"data":[]}` for an unknown CVE, so
+  `Reached.of` marks it reached and `if (!cve.any)` is dead. A
+  well-formed non-existent id still returns two links as a finding.
+  `hostIntel`/`subdomainSweep` got `Reached.answering` for exactly
+  this; `cveLookup` did not.
+- [ ] **V7.** `Identify`'s new file-suffix branch is an `else`, and
+  `NOT_HOSTS` holds live ccTLDs — `md`, `so`, `py`, `rs`, `sh`, and
+  `zip`. `nic.md` is Moldova's actual registry and now offers only
+  "File name". The file's own header says every reading is offered
+  rather than one chosen; it should `add` both.
+- [ ] **V8.** The "…and N more" link is the one of three insertions
+  the dedup fix missed (`GraphBuilder:79-84`), and `getOrPut` on
+  `more:${toolId}` means a second row's count is never mentioned
+  while its edge is drawn twice and pulls twice as hard.
+- [ ] **V9.** `DiskCacheAndFindingsTest.kt` contains no DiskCache test
+  — one class, `ExifSentencesTest`. T15 named "a DiskCache round
+  trip against a truncated file" and is marked done. Nothing covers
+  the temp-then-rename or the `coerceAtLeast(0L)`.
+- [ ] **V10.** `OrbitPropagatorTest.theHeightAtThePoleIsNotMinusTheEarth`'s
+  cross-branch assertion is vacuous: at `hyp = 0.001` km both calls
+  take the pole branch. It would stay green with the standard branch
+  deleted. `geodetic(0.01, 6_756.0)` crosses the threshold.
+- [ ] **V11.** `SigningIdentity.lastOrNull()` is right for rotation and
+  flips the multi-signer answer: an APK signed `[published, other]`
+  used to warn and now does not. Wants
+  `signers.any { sha256(it) == PUBLIC_KEY_SHA256 }`.
+- [ ] **V12.** `UsernameChecker.downloadWmn` is a seventh hand-rolled
+  file cache beside the one just hardened: `writeText` truncates in
+  place and the validity test is `length() > 1000` with no mtime.
+  A kill mid-write serves a truncated catalogue for the life of the
+  install. Only reachable in a locally built APK, since CI fills
+  `assets/`.
+
+LOW
+- [ ] **V13.** ProPublica (`PeopleApis:411`) and GitHub
+  (`PeopleApis:239`) keep `?: 0` on their totals while CourtListener,
+  in the same hunk, was made nullable. A missing total prints "0
+  matching" above the results.
+- [ ] **V14.** `ImageClues` is the fifth `Hostnames` caller and the
+  only one with no file-suffix guard; OCR reading `logo.png` still
+  becomes a domain clue. `Identify` was given the guard in the same
+  commit.
+- [ ] **V15.** `ImageText.sampled()` reproduces its sibling's `Int`
+  overflow: 65535×65535 is −131,071, so `inSampleSize` stays 1 and
+  the decode is ~17 GB. `toLong()` on one factor fixes both
+  (`ImageText:83` and `:139`). Also `runCatching` catches the
+  resulting `OutOfMemoryError` and falls back to a full-resolution
+  decode.
+- [ ] **V16.** `ExifReader.imageKind`: a single `read` is not
+  guaranteed to fill twelve bytes, and the magic set rejects Olympus
+  ORF and Panasonic RW2, which `ExifInterface` supports.
+- [ ] **V17.** `HandleApis.percentDecode` accepts a signed escape —
+  `toIntOrNull(16)` takes a leading sign, so `%-1` writes `0xFF`.
+- [ ] **V18.** `imageHistory`'s capped sentence says "the first 40
+  captures were read"; 40 *records* were read and `captures` is the
+  2xx subset, so neither the count nor "the last of them" is exact.
+- [ ] **V19.** `ObservableExtractor.NOT_HOSTS` lists `"lock"` twice.
+
+The pre-flight's own blind spots, found by reading the checkers
+rather than running them
+- [ ] **V20.** `empty-is-an-answer.py` is line-oriented, so the
+  idiomatic spelling of its own bug — `catch (e: Exception) {` then
+  `emptyList()` on the next line — is invisible. Also unmatched:
+  `getOrElse { emptyList() }`, `getOrDefault(emptyList<T>())`,
+  `listOf()`, `emptyMap()`, `emptySet()`, and `null`.
+- [ ] **V21.** …and its scope is two name filters wide: `glob` not
+  `rglob`, plus `"DataSource" in name`. So `domain/executor/**` —
+  where most of this project's false absences actually live — is
+  never looked at, and its own docstring's example
+  (`OsintApis.kt:1052`) is outside the scanned set.
+- [ ] **V22.** `regex-recursion.py` cannot see a character-class
+  repetition (V5's shape, the defect it was written beside), nor a
+  capturing group with no `\d`/`\w`/`[A-Za-z` in it, nor a pattern
+  held as a `const val` in a file with no `Regex(` call. And
+  `unresolved-locals.py` still cannot see a **typed** lambda
+  parameter, a `for (x in xs)` variable, a destructuring `val (a, b)`,
+  or `when (val x = f())` — each one rule 8 again.
+
+Checked and found correct, stated plainly: `Hostnames` and all five
+callers (the new scan is genuinely linear, and `isHostname` enforces
+strictly more than the regex it replaced); every one of the new
+`NOT_ASKED` and UNREACHABLE phrases, traced to every string literal
+that matches them — no real finding and no real absence is
+misclassified; `EarthquakeDataSource`'s rows/unusable arithmetic;
+`OrbitPropagator`'s non-local return and pole branch;
+`ForceLayout.seedIndex`; `MediaWiki` and all seven callers;
+`HandleApis`'s `getOrBody` chain; `PeopleApis`'s seven siblings;
+`DeepApis`'s eleven; `ExifReader.fromUrl`; `ResultCard`;
+`PrivateBrowser`; `ContentCredentials`; the Overpass and rate-limit
+fixes in `server.js`; and every changed test assertion.
+
+One margin worth knowing: `anImageWithNoMetadataIsAnAbsence` passes
+only through the word **camera**, 33 characters into a 44-character
+window. "The device may have written none" would flip it to HIT.
+
 ### The files no pass had ever read (r17, 24 Oct) — CLOSED, 16 for 16
 
 `GraphBuilder`, `ForceLayout`, `OrbitPropagator`, `Identify`,
