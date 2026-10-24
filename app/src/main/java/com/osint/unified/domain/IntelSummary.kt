@@ -16,8 +16,24 @@ object IntelSummary {
     private val locationRegex = Regex("""Location:\s*(.+)""")
     private val numberRegex = Regex("""\d[\d,]*""")
 
-    fun synthesize(results: List<ResultRow>): List<Fact> {
-        val ok = results.filter { it.status == "success" }
+    /**
+     * [seed] is what was searched. Given it, a row looked up because
+     * the first pass named something is barred from setting a
+     * headline fact.
+     *
+     * The dossier's top block speaks in the report's own voice —
+     * LOCATION, COORDINATE, a handful of numbers — and it was built
+     * from every row, including the second pass. So a hosting city
+     * belonging to an IP that the target's domain happens to resolve
+     * to could become "LOCATION: Ashburn, Virginia" at the top of a
+     * dossier about a person. A hop-1 fact is a fact about something
+     * one step away, and the summary is about the target.
+     */
+    fun synthesize(results: List<ResultRow>, seed: String = ""): List<Fact> {
+        val seedInput = seed.trim().lowercase()
+        val ok = results
+            .filter { it.status == "success" }
+            .filter { seedInput.isEmpty() || it.input.trim().lowercase() == seedInput }
         // Rows that speak for themselves, as opposed to rows that
         // quote somebody else's page. Defined here rather than fifty
         // lines down, because the LOCATION block below was reading

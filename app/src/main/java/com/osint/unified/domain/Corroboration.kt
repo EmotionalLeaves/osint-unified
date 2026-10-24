@@ -60,7 +60,23 @@ object Corroboration {
          */
         val contradicted: Int = 0,
         /** What those sources said instead. */
-        val competing: List<String> = emptyList()
+        val competing: List<String> = emptyList(),
+        /**
+         * How far from the seed the nearest source of this assertion
+         * was: 0 when a source was asked about the target itself, 1
+         * when it was only asked about something the first pass named.
+         *
+         * The screen and the exporter both separate first-pass rows
+         * from rows looked up because the first pass named them. The
+         * analysis did not: merge had `row.input` in its hand and
+         * dropped it, so a host found only in a pivoted IP's results
+         * was listed, graded and exported exactly like a host found in
+         * the seed's own certificate log — and IntelSummary could take
+         * a pivot's hosting city as the dossier's headline location.
+         * Degree of separation is the first thing any link analysis
+         * distinguishes.
+         */
+        val hops: Int = 0
     ) {
         val grade: String get() = Grading.code(reliability, credibility)
 
@@ -267,6 +283,11 @@ object Corroboration {
         dismissed: Map<Pair<String, String>, String> = emptyMap()
     ): List<Entity> {
         val assertions = HashMap<Pair<String, String>, MutableList<Pair<String, Int>>>()
+        // The fewest hops any source of this assertion was from the
+        // seed. One source asked about the target itself outweighs
+        // three asked about something it named.
+        val nearest = HashMap<Pair<String, String>, Int>()
+        val seedInput = seed.trim().lowercase()
 
         results.forEach { row ->
             if (Findings.kindOf(row) != Findings.Kind.HIT) return@forEach
@@ -281,11 +302,13 @@ object Corroboration {
             // sources", where one of the two witnesses had invented
             // the string from the thing being investigated.
             if (row.toolId in GENERATED) return@forEach
+            val hop = if (row.input.trim().lowercase() == seedInput) 0 else 1
             EntityExtractor.extract(
                 listOf(row), seed, limitPerKind = 40, seedIsPlace = seedIsPlace
             ).forEach { pivot ->
                 val key = pivot.kind to pivot.value.lowercase()
                 assertions.getOrPut(key) { mutableListOf() }.add(row.toolId to pivot.count)
+                nearest[key] = minOf(nearest[key] ?: hop, hop)
             }
         }
 
@@ -369,7 +392,8 @@ object Corroboration {
                 dismissalReason = wrong.orEmpty(),
                 demoted = demoted && wrong == null,
                 contradicted = contradicted,
-                competing = rivals.keys.sorted()
+                competing = rivals.keys.sorted(),
+                hops = nearest[key] ?: 0
             )
         }.sortedWith(
             compareBy<Entity> { it.dismissed }

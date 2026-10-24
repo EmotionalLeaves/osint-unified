@@ -182,4 +182,94 @@ class DeclaredAttributesTest {
             pivots.none { it.kind == "PLACE" || it.kind == "PERSON" }
         )
     }
+    // ---- Disagreement, and distance from the seed -----------------
+
+    private fun rowFor(tool: String, input: String, output: String) = ResultRow(
+        id = 0,
+        investigationId = 1,
+        toolId = tool,
+        toolName = tool,
+        input = input,
+        status = "success",
+        rawOutput = output,
+        startedAt = 1,
+        finishedAt = 2
+    )
+
+    /**
+     * The verdict that was unreachable in the shipped app: two sources
+     * answering a question that has one answer, differently.
+     */
+    @Test
+    fun twoCountriesForOneSubjectContradictEachOther() {
+        val rows = listOf(
+            row("ipinfo", "1.2.3.4\nCountry: Germany"),
+            row("rdap", "1.2.3.4\nCountry: Netherlands")
+        )
+        val entities = Corroboration.merge(rows, seed = "1.2.3.4")
+        val germany = entities.first { it.value == "germany" }
+        val netherlands = entities.first { it.value == "netherlands" }
+        assertTrue("Germany should know it is disputed", germany.contradicted >= 1)
+        assertTrue(germany.competing.contains("netherlands"))
+        assertTrue(netherlands.competing.contains("germany"))
+    }
+
+    /** A city and the country it sits in are not a contradiction. */
+    @Test
+    fun aCityDoesNotContradictItsCountry() {
+        val rows = listOf(
+            row("chess", "chess.com\nDeclared location: Vienna"),
+            row("lichess", "lichess\nDeclared country: Austria")
+        )
+        val entities = Corroboration.merge(rows, seed = "jdoe")
+        assertTrue(
+            "nothing here disagrees: $entities",
+            entities.none { it.competing.isNotEmpty() }
+        )
+    }
+
+    /** Many hosts for one domain is not a disagreement either. */
+    @Test
+    fun manyValuedKindsNeverContradict() {
+        val rows = listOf(
+            row("crtsh", "a.example.net\nb.example.net"),
+            row("rapiddns", "c.example.net")
+        )
+        val entities = Corroboration.merge(rows, seed = "example.net")
+        assertTrue(entities.none { it.competing.isNotEmpty() })
+    }
+
+    @Test
+    fun aFindingFromAPivotIsMarkedAsOneStepAway() {
+        val rows = listOf(
+            rowFor("crtsh", "example.net", "mail.example.net"),
+            rowFor("otx", "1.2.3.4", "other.example.org")
+        )
+        val entities = Corroboration.merge(rows, seed = "example.net")
+        assertEquals(
+            "found on the target itself",
+            0,
+            entities.first { it.value == "mail.example.net" }.hops
+        )
+        assertEquals(
+            "found only in a pivot's results",
+            1,
+            entities.first { it.value == "other.example.org" }.hops
+        )
+    }
+
+    /**
+     * The nearest source wins: one tool asked about the target itself
+     * outweighs three asked about something it named.
+     */
+    @Test
+    fun theNearestSourceDecidesTheDistance() {
+        val rows = listOf(
+            rowFor("otx", "1.2.3.4", "shared.example.org"),
+            rowFor("crtsh", "example.net", "shared.example.org")
+        )
+        val entities = Corroboration.merge(rows, seed = "example.net")
+        assertEquals(0, entities.first { it.value == "shared.example.org" }.hops)
+    }
+
 }

@@ -280,7 +280,7 @@ fun InvestigationScreen(
         ) {
             value = withContext(Dispatchers.Default) {
                 Dossier(
-                    facts = IntelSummary.synthesize(state.results),
+                    facts = IntelSummary.synthesize(state.results, observable.raw),
                     entities = Corroboration.merge(
                         state.results,
                         observable.raw,
@@ -1370,6 +1370,14 @@ private fun EntityRow(
                     }
                     if (entity.demoted) {
                         append(" · source downgraded for this case")
+                    }
+                    // Said plainly, because it changes what the line
+                    // means: a host found in the seed's own
+                    // certificate log and one found only in the
+                    // results of an address it resolves to were
+                    // printed identically.
+                    if (entity.hops > 0) {
+                        append(" · one step away, not found on the target itself")
                     }
                     entity.caveat?.let { append(" · ").append(it) }
                 },

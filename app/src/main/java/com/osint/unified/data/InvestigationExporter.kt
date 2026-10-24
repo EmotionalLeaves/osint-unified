@@ -661,7 +661,7 @@ class InvestigationExporter(private val appContext: Context) {
     ): String = buildString {
         val seed = observable.raw.trim().lowercase()
         val sorted = Findings.sort(results)
-        val facts = IntelSummary.synthesize(results)
+        val facts = IntelSummary.synthesize(results, observable.raw)
         val pivots = EntityExtractor.extract(
             results,
             observable.raw,
