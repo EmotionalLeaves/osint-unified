@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -302,7 +303,11 @@ private fun LineItem(raw: String, onOpen: (String) -> Unit) {
                     key.uppercase(),
                     style = MaterialTheme.typography.labelSmall,
                     color = Intel.TextLow,
-                    modifier = Modifier.width(96.dp)
+                    // A floor rather than a fixed width: at a large
+                    // system font size a 96dp column holds about five
+                    // characters, and every key in the card was
+                    // wrapping or being cut off.
+                    modifier = Modifier.widthIn(min = 96.dp)
                 )
                 Text(
                     value,

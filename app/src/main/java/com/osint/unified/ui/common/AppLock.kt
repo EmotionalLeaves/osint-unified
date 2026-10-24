@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -123,7 +124,10 @@ fun AppLockScreen(activity: FragmentActivity, onUnlocked: () -> Unit) {
         }
     }
     Box(
-        Modifier.fillMaxSize().background(Intel.Base),
+        // Edge to edge is for the map. This screen replaces the whole
+        // window and has no Scaffold behind it, so without the insets
+        // its buttons sat under the system bars.
+        Modifier.fillMaxSize().safeDrawingPadding().background(Intel.Base),
         contentAlignment = Alignment.Center
     ) {
         Column(

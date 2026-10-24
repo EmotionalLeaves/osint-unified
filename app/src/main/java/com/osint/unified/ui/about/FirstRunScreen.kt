@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -34,6 +35,12 @@ fun FirstRunScreen(onAccept: () -> Unit) {
         Column(
             Modifier
                 .fillMaxSize()
+                // The app draws edge to edge, which is right for a map
+                // and wrong for a page of text: this screen has no
+                // Scaffold to put the insets back, so its heading drew
+                // under the status bar and its last line under the
+                // gesture bar. It is the first thing anyone sees.
+                .safeDrawingPadding()
                 .verticalScroll(rememberScrollState())
                 .padding(24.dp)
         ) {

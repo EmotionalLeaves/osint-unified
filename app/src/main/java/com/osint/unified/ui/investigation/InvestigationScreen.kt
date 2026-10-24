@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -412,7 +413,13 @@ fun InvestigationScreen(
                                     style = MaterialTheme.typography.labelSmall,
                                     color = Intel.TextLow,
                                     fontFamily = FontFamily.Monospace,
-                                    modifier = Modifier.width(62.dp)
+                                    // A floor, not a ceiling. A fixed
+                                    // width is a different number of
+                                    // characters at every system font
+                                    // size, and at a large one the date
+                                    // wrapped onto two lines or lost its
+                                    // end.
+                                    modifier = Modifier.widthIn(min = 62.dp)
                                 )
                                 Column(Modifier.weight(1f)) {
                                     Text(
@@ -503,7 +510,7 @@ fun InvestigationScreen(
                                 style = MaterialTheme.typography.labelSmall,
                                 color = Intel.TextLow,
                                 fontFamily = FontFamily.Monospace,
-                                modifier = Modifier.width(58.dp)
+                                modifier = Modifier.widthIn(min = 58.dp)
                             )
                             Text(
                                 item.label,
@@ -691,7 +698,7 @@ fun InvestigationScreen(
                             style = MaterialTheme.typography.labelSmall,
                             color = Intel.TextLow,
                             fontFamily = FontFamily.Monospace,
-                            modifier = Modifier.width(62.dp).padding(top = 10.dp)
+                            modifier = Modifier.widthIn(min = 62.dp).padding(top = 10.dp)
                         )
                         FlowRow(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),

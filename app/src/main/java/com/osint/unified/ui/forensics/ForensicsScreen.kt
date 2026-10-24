@@ -8,6 +8,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -72,7 +78,23 @@ fun ForensicsScreen(
 
     LaunchedEffect(sharedImage) { sharedImage?.let { readPhoto(it) } }
 
-    Column(modifier = Modifier.fillMaxSize().background(Intel.Base)) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            // Top and sides only: the navigation bar below this screen
+            // already holds the bottom inset, and padding it twice
+            // leaves a band of nothing above the thumb row. The one
+            // screen in the app with no Scaffold to do this for it.
+            .windowInsetsPadding(
+                WindowInsets.safeDrawing.only(
+                    WindowInsetsSides.Top + WindowInsetsSides.Horizontal
+                )
+            )
+            // It has two text fields, and the keyboard covered the
+            // output of whichever one you had just typed into.
+            .imePadding()
+            .background(Intel.Base)
+    ) {
         TopAppBar(
             title = {
                 Text(
