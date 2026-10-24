@@ -54,6 +54,42 @@ object Orthographic {
         return Point(x, y, cosc >= 0.0)
     }
 
+    /**
+     * The same projection, writing into the caller's array.
+     *
+     * [project] returns a Point, and the coastline and border draws
+     * call it once per vertex on every frame — tens of thousands of
+     * short-lived objects a second for an outline that is one Path.
+     * It also recomputed sin and cos of the camera's own latitude
+     * for every vertex, which is two of the six trig calls per
+     * point spent on a value that is the same for the whole shape.
+     *
+     * So the caller hoists the camera's trig out of its loop and
+     * hands this an array to fill. Returns whether the point is on
+     * the near side, which is all the rest of it needs.
+     */
+    fun projectInto(
+        lat: Double,
+        lon: Double,
+        sinLat0: Double,
+        cosLat0: Double,
+        lon0: Double,
+        r: Float,
+        cx: Float,
+        cy: Float,
+        out: FloatArray
+    ): Boolean {
+        val la = Math.toRadians(lat)
+        val dl = Math.toRadians(lon - lon0)
+        val cosLa = cos(la)
+        val sinLa = sin(la)
+        val cosDl = cos(dl)
+        val cosc = sinLat0 * sinLa + cosLat0 * cosLa * cosDl
+        out[0] = cx + r * (cosLa * sin(dl)).toFloat()
+        out[1] = cy - r * (cosLat0 * sinLa - sinLat0 * cosLa * cosDl).toFloat()
+        return cosc >= 0.0
+    }
+
     /** A screen position back to a place, or null if it missed the globe. */
     fun unproject(
         px: Float,

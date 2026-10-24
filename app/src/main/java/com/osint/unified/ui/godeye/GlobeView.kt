@@ -952,6 +952,22 @@ private inline fun DrawScope.strokeArcOfPoints(
  * globe is moving: at two the line is still a coastline and the work
  * halves, and nobody has ever studied a border that is sliding.
  */
+/**
+ * One Path and one array, reused.
+ *
+ * This is the last per-frame trigonometry on the main thread now
+ * that the sphere itself is on the GPU, and it was spending more
+ * of it than it needed to: a Point object allocated for every
+ * vertex of every outline on every frame, a fresh Path each call,
+ * and sin and cos of the camera's latitude recomputed per vertex
+ * for a value that does not change across the whole shape.
+ *
+ * Not thread-safe, and does not need to be: a DrawScope runs on
+ * the one thread that draws.
+ */
+private val linePath = Path()
+private val projected = FloatArray(2)
+
 private fun DrawScope.drawLines(
     lines: List<DoubleArray>,
     cx: Float, cy: Float, r: Float,
@@ -959,19 +975,26 @@ private fun DrawScope.drawLines(
     colour: Color,
     stride: Int = 1
 ) {
-    val path = Path()
+    val path = linePath
+    path.reset()
     val step = (stride.coerceAtLeast(1)) * 2
+    val la0 = Math.toRadians(lat0)
+    val sinLat0 = kotlin.math.sin(la0)
+    val cosLat0 = kotlin.math.cos(la0)
     lines.forEach { line ->
-        var previous: Orthographic.Point? = null
+        var wasVisible = false
+        var started = false
         var i = 0
         while (i + 1 < line.size) {
-            val p = Orthographic.project(line[i + 1], line[i], lat0, lon0, r, cx, cy)
-            val last = previous
-            if (p.visible) {
-                if (last != null && last.visible) path.lineTo(p.x, p.y)
-                else path.moveTo(p.x, p.y)
+            val visible = Orthographic.projectInto(
+                line[i + 1], line[i], sinLat0, cosLat0, lon0, r, cx, cy, projected
+            )
+            if (visible) {
+                if (started && wasVisible) path.lineTo(projected[0], projected[1])
+                else path.moveTo(projected[0], projected[1])
+                started = true
             }
-            previous = p
+            wasVisible = visible
             i += step
         }
     }

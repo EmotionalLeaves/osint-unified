@@ -169,3 +169,41 @@ class SphereShadingTest {
         assertEquals(0.0, SphereShading.smoothstep(1.0, 1.0, 0.5), 1e-9)
     }
 }
+
+/**
+ * The allocation-free projection has to be the projection.
+ *
+ * drawLines calls it once per vertex of every outline on every
+ * frame, so it hoists the camera's own trig out of the loop and
+ * writes into a caller-owned array instead of returning an
+ * object. Neither of those may change where a point lands.
+ */
+class ProjectIntoTest {
+
+    @org.junit.Test
+    fun itAgreesWithTheProjectionItReplaces() {
+        val out = FloatArray(2)
+        val cameras = listOf(0.0 to 0.0, 51.5 to -0.1, -33.9 to 151.2, 89.9 to 10.0, -90.0 to 0.0)
+        val points = listOf(
+            0.0 to 0.0, 10.0 to 20.0, -45.0 to 170.0, 89.0 to -179.0,
+            51.5 to -0.1, -60.0 to 60.0, 0.0 to 180.0
+        )
+        cameras.forEach { (lat0, lon0) ->
+            val la0 = Math.toRadians(lat0)
+            val sin0 = kotlin.math.sin(la0)
+            val cos0 = kotlin.math.cos(la0)
+            points.forEach { (lat, lon) ->
+                val expected = com.osint.unified.ui.godeye.Orthographic.project(
+                    lat, lon, lat0, lon0, 500f, 540f, 960f
+                )
+                val visible = com.osint.unified.ui.godeye.Orthographic.projectInto(
+                    lat, lon, sin0, cos0, lon0, 500f, 540f, 960f, out
+                )
+                val where = "camera $lat0,$lon0 point $lat,$lon"
+                org.junit.Assert.assertEquals(where, expected.visible, visible)
+                org.junit.Assert.assertEquals(where, expected.x, out[0], 1e-3f)
+                org.junit.Assert.assertEquals(where, expected.y, out[1], 1e-3f)
+            }
+        }
+    }
+}
