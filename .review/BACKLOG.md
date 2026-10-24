@@ -16,18 +16,18 @@ for the lessons in it. **This is the list.** Sections A to H are
 closed; their headings say so.
 
 ### Blocked on the tester
-- **T1.** Did their APK come from the CI artifact or a local build?
+- [x] **T1.** Did their APK come from the CI artifact or a local build?
   `assets/` and `jniLibs/` are empty in the tree and filled by the
   workflow, so a locally built APK has no sanctions lists, no
   disposable-domain list and no SQLCipher library — which would
   present as several unrelated bugs.
-- **T2.** Is the globe smooth now? Their report predates every
+- [x] **T2.** Is the globe smooth now? Their report predates every
   main-thread fix since.
-- **T3.** Which OpenStreetMap URL asked them to sign in? (A3.) Every
+- [x] **T3.** Which OpenStreetMap URL asked them to sign in? (A3.) Every
   URL the code can emit is public; without the actual link this is
   guesswork.
 
-### The files no pass had ever read (r17, 24 Oct)
+### The files no pass had ever read (r17, 24 Oct) — CLOSED but for the maths tail
 
 `GraphBuilder`, `ForceLayout`, `OrbitPropagator`, `Identify`,
 `Listing`, `ObservableExtractor`, `SigningIdentity`, `DiskCache`,
@@ -45,56 +45,56 @@ Both measured, both rewritten into `domain/Hostnames.kt`, six tests
 added and `tools/regex-recursion.py` wired into the pre-flight,
 which immediately found two more.
 
-- **T1. `ExifReader.fromUrl` returns its size refusal as a
+- [x] **T1. `ExifReader.fromUrl` returns its size refusal as a
   success**, thirteen lines below its own comment forbidding
   exactly that ("a string beginning 'HTTP 404' was stored as a
   successful result, counted as a finding and shown with a green
   dot"). "Refusing to read more than 25 MB from this URL." matches
   no `Findings` phrase, so it is classified **HIT**.
-- **T2. `credentialsFromUrl` and `credentialsFromUri` do the same**
+- [x] **T2. `credentialsFromUrl` and `credentialsFromUri` do the same**
   — "Could not read X: timeout" is also HIT, because `UNREACHABLE`
   holds "could not be read" and not "could not read", and
   `NOTHING_SHAPE`'s window hits the colon in `https:` before it
   reaches a noun. A C2PA fetch that timed out is filed as a Content
   Credentials finding, and both callers were written to catch a
   failure they can never see.
-- **T3. `SigningIdentity` fails open.** `fingerprint()` returns null
+- [x] **T3. `SigningIdentity` fails open.** `fingerprint()` returns null
   on a `NameNotFoundException` or a null signer array — which
   happens on OEM ROMs — and null compares false, so "could not
   tell" prints as "not signed with a published key". The one job of
   that file is to warn that the database encryption is worthless;
   when it cannot establish the answer it prints the reassuring one.
-- **T4. And it will report the published key for ever after the key
+- [x] **T4. And it will report the published key for ever after the key
   is rotated.** `signingCertificateHistory.firstOrNull()` is the
   oldest certificate, so after the remedy the file documents, it
   still reports the published key. The doc says the opposite:
   "When the key is rotated this reports nothing and needs no
   further change."
-- **T5. `backend` turns a timed-out or truncated scan into HTTP 200
+- [x] **T5. `backend` turns a timed-out or truncated scan into HTTP 200
   with partial output.** `if (err && !stdout)` — a `subfinder`
   killed at sixty seconds after emitting forty of four hundred
   subdomains is stored as a complete set.
-- **T6. `backend` forwards an Overpass error page as a successful
+- [x] **T6. `backend` forwards an Overpass error page as a successful
   JSON answer.** No `r.ok` check: a 429 or a 504 with an HTML body
   is relayed as 200 `application/json`, and the app reports
   "nothing mapped near this point" for a request that was refused.
-- **T7. `DiskCache.write` is not atomic.** `writeText` truncates
+- [x] **T7. `DiskCache.write` is not atomic.** `writeText` truncates
   then writes, and `read` validates only length ≥ 64 and the mtime
   — so a process killed partway through the 7 MB Celestrak
   catalogue leaves a truncated file that is served for the whole
   TTL and by `readStale` for ever after. The "keeps working from
   the last good copy" path becomes "keeps working from a corrupt
   one".
-- **T8. `GeofonTest` asserts that a body in which every row is
+- [x] **T8. `GeofonTest` asserts that a body in which every row is
   unparseable is an honest zero.** The test is protecting the
   defect. `GlobalFeedsTest` in the same suite has the right
   contract. `aStationWithNoReadingOrNoPositionIsSkipped` has the
   same shape.
-- **T9. A classifier that throws is recorded as a finding.**
+- [x] **T9. A classifier that throws is recorded as a finding.**
   `InvestigationRepository` coalesces a thrown `classify` to null
   and null falls to `"success"`. There is no value for "the verdict
   could not be read".
-- **T10. The graph truncates at twelve leaves and says nothing**, in
+- [x] **T10. The graph truncates at twelve leaves and says nothing**, in
   a package that has `Listing.andMore` for exactly this, on what
   its own comment calls "the screen most likely to be
   screenshotted". It also keeps only HITs, so ten refused sources
@@ -103,33 +103,33 @@ which immediately found two more.
   picture people share throws it away. And node identity is a
   48-character prefix, which is the collision the comment above it
   says was fixed.
-- **T11. `Identify` has no file-suffix guard** (fixed in r484),
+- [x] **T11. `Identify` has no file-suffix guard** (fixed in r484),
   **`NOT_HOSTS` was missing both examples its own comment names**
   (fixed), and a nine- or ten-digit number is reported as a Unix
   timestamp as the only reading, in a tool whose header promises
   every reading is offered.
-- **T12. "No EXIF metadata found." is unreachable** — `describe()`
+- [x] **T12. "No EXIF metadata found." is unreachable** — `describe()`
   always appends a GPS line first — so an image with no EXIF block
   at all reports `GPS: (none)`, which is a different claim. And
   nothing checks the fetched bytes are an image: an HTML
   interstitial yields `GPS: (none)` for a file that was never a
   photograph.
-- **T13. `backend` is an authenticated SSRF.** `httpx -u` and
+- [x] **T13. `backend` is an authenticated SSRF.** `httpx -u` and
   `nuclei -u` take any URL, so the bearer token is the only thing
   between a caller and the cloud metadata endpoint. The container
   also runs as root and installs four release archives with no
   checksum.
-- **T14. `DiskCache.write` cannot report a failure**, so a full disk
+- [x] **T14. `DiskCache.write` cannot report a failure**, so a full disk
   is invisible and 7 MB and 14 MB are re-downloaded every poll with
   nothing surfaced. A backwards clock makes a stale entry fresh for
   ever, which the `ageMillis` function two lines below guards
   against and `read` does not.
-- **T15. Nine of the files in scope have no test at all.** The cheap
+- [x] **T15. Nine of the files in scope have no test at all.** The cheap
   high-value ones named: `GraphBuilder` over all-UNREACHABLE rows,
   `ForceLayout` determinism and its degenerate cases, a `DiskCache`
   round trip against a truncated file, and `Findings.kindOf` on the
   three literal strings `ExifReader` returns.
-- **T16. Small:** `geodetic` returns an altitude 6,799 km wrong
+- [ ] **T16. Small, still open:** `geodetic` returns an altitude 6,799 km wrong
   exactly at the pole, and the test that feeds it that input asserts
   only the latitude; the Newton guard is `continue` where it means
   `break`; `ForceLayout` pins an arbitrary node for a graph with no
@@ -154,7 +154,7 @@ foreign keys and the whole `runTool` lifecycle. The backend's
 authorisation: constant-time compare, no shell, rate limit keyed to
 the credential, refuses to start without a token.
 
-### The three big API files, read whole (r16, 24 Oct)
+### The three big API files, read whole (r16, 24 Oct) — CLOSED, 21 for 21
 
 `DeepApis.kt` (2,742 lines), `PeopleApis.kt` and `HandleApis.kt` had
 never been read — only scanned for one pattern. Read end to end by
@@ -173,7 +173,7 @@ would retire a whole class rather than a row —
   question", and the phrase `could not be asked` is not in
   `UNREACHABLE` while five other phrasings of it are.
 
-- **S1. `courtRecords` prints "no federal court docket" with results
+- [x] **S1. `courtRecords` prints "no federal court docket" with results
   in hand.** `count` and `results` are OR'd, and a `count` that is
   absent or not an integer coalesces to zero — so a populated
   `results` array is thrown away on the strength of a separate
@@ -184,7 +184,7 @@ would retire a whole class rather than a row —
   sentence does not match `NOTHING_SHAPE`, so it is classified HIT —
   a litigation claim about a named individual, counted as a source
   that returned something.
-- **S2. A spent hackertarget quota counts as "reached".**
+- [x] **S2. A spent hackertarget quota counts as "reached".**
   hackertarget answers 200 with `API count exceeded` when the free
   tier is gone; `hackertargetAnswered()` was written to catch that
   and does, but `Reached.of` marks the source answered on HTTP
@@ -192,12 +192,12 @@ would retire a whole class rather than a row —
   hackertarget, so a spent quota prints `Host intel: no data
   returned for example.com` — classified ABSENT. `subdomainSweep`
   has the same arm.
-- **S3. The PeopleApis fix went to two of six.** `publications` and
+- [x] **S3. The PeopleApis fix went to two of six.** `publications` and
   `authorWorks` were hardened this session; ORCID, GitHub-by-name,
   Bluesky-by-name and non-profits still turn an unexpected shape
   into "No ORCID record for Jane Doe". ORCID first: the file's own
   doc calls it the strongest keyless people source there is.
-- **S4. `getOrNull` folds HTTP 400 into "no such account" — and that
+- [x] **S4. `getOrNull` folds HTTP 400 into "no such account" — and that
   makes this session's Codeforces fix dead code.** The honesty check
   parses `comment` to tell a rate limit from a missing account, and
   it can only run on a 2xx, where `status` is always OK. The body
@@ -205,23 +205,23 @@ would retire a whole class rather than a row —
   both halves in the same file, hours apart. `cdx()` three hundred
   lines below is the pattern that does it right. Also affects
   codeberg, huggingFace and chess.
-- **S5. `wikimediaUser` does not go through `MediaWiki`**, whose own
+- [x] **S5. `wikimediaUser` does not go through `MediaWiki`**, whose own
   doc says every caller does. Worse, the sentence it falls back to —
   "Wikimedia could not be asked about X" — is not in
   `Findings.UNREACHABLE`, so a refusal is classified **HIT**. Same
   hole for `The host answered HTTP 503 for this image` and
   `Libravatar answered HTTP 500`: failures filed as findings.
-- **S6. Three more 200-with-an-error-body sources read as
+- [x] **S6. Three more 200-with-an-error-body sources read as
   absences.** Keybase never reads `status.code` → "no account named
   jsmith". XposedOrNot signals service errors with an `Error` field
   at 200 and the field is never inspected → **"not found in any
   indexed public breach", which is a statement to a person that
   their address is clean**. IODA v2 wraps errors in the same
   envelope → "no internet outage alerts in the last 24 hours".
-- **S7. `secEdgar` prints "no registrant matched" for any 200 that
+- [x] **S7. `secEdgar` prints "no registrant matched" for any 200 that
   is not the Atom feed.** EDGAR serves throttle notices as HTML. One
   `<feed` guard closes it.
-- **S8. The in-app browser can go direct while the screen says
+- [x] **S8. The in-app browser can go direct while the screen says
   Tor.** `useProxy` returns Unit, swallows a `PROXY_OVERRIDE`
   failure, and has no state anyone can read, while `Http.useProxy`
   succeeds independently and the settings row reads as on. The
@@ -229,61 +229,61 @@ would retire a whole class rather than a row —
   prevent: "the one screen that loads a target's own pages would be
   the one screen going direct while the person believed everything
   was going through Tor."
-- **S9. `ResultCard`'s "the refresh failed, this answer is stale"
+- [x] **S9. `ResultCard`'s "the refresh failed, this answer is stale"
   warning is unreachable.** `finished` includes `"success"`, so the
   branch below it can never run. The comment above describes the bug
   it was written to fix, and that is still the behaviour.
-- **S10. A page size printed as a total, in eight places.** Rule 4
+- [x] **S10. A page size printed as a total, in eight places.** Rule 4
   verbatim. `photosNear`'s Panoramax arm was fixed with an explicit
   "at least"; its two siblings in the same function were not. Worst
   is `No public activity for X in GitHub's last 300 events` — one
   page of 100 was read, and the claim is about 300.
   `NVD — 412 records:` then lists 25 with no "and more".
-- **S11. `aircraft` prints `Registration: null` and `Type: null null
+- [x] **S11. `aircraft` prints `Registration: null` and `Type: null null
   (null)` and counts it as a finding.** Unconditional interpolation
   of nullables plus `learned = true` regardless, which also
   suppresses the honest "no registration found" path. The sibling in
   `HandleApis` does it correctly.
-- **S12. `aircraft` reports a genuine hexdb 404 as "could not be
+- [x] **S12. `aircraft` reports a genuine hexdb 404 as "could not be
   reached"** — the mirror image of the main defect class, and it
   costs the user a true negative.
-- **S13. `chess`, `codeberg` and `huggingFace` assert the account
+- [x] **S13. `chess`, `codeberg` and `huggingFace` assert the account
   exists** on any 2xx body that parses as an object. `lichess` next
   to them checks the record first. A false presence is the one error
   the absence machinery cannot catch.
-- **S14. `cveLookup`:** both sources failing yields the id and two
+- [x] **S14. `cveLookup`:** both sources failing yields the id and two
   links, classified HIT — "a tool that returns a list of places to
   look is not a source", which is the standing frame at the top of
   this file. One-word input searches `vendor/vendor` and prints "No
   CVEs found for openssl openssl". An unparsable EPSS score prints
   `0.00% chance of exploitation`.
-- **S15. Stack Overflow absence from a truncated fuzzy page.**
+- [x] **S15. Stack Overflow absence from a truncated fuzzy page.**
   `pagesize=10` then an exact display-name match: the eleventh
   result is reported as "No account found on: Stack Overflow".
-- **S16. `imageHistory` describes the earliest forty captures as the
+- [x] **S16. `imageHistory` describes the earliest forty captures as the
   whole history** — "the latest" is the fortieth, and "the bytes
   under this URL have not changed since 2011" is a claim about the
   present made from the oldest rows. The `statuscode` column is
   requested and never read, so archived 404s count as captures.
-- **S17. The browser's address line shows a page-supplied title.**
+- [x] **S17. The browser's address line shows a page-supplied title.**
   `document.title` is attacker-controlled; a page titled
   `https://accounts.google.com/signin` displays as that in the one
   place a user checks where they are.
-- **S18. The browser's WebView is destroyed and not rebuilt** if the
+- [x] **S18. The browser's WebView is destroyed and not rebuilt** if the
   host URL changes while the dialog is open. One new caller away
   from routine.
-- **S19. `ubuntuKeyserver` never reads the key status field**, so a
+- [x] **S19. `ubuntuKeyserver` never reads the key status field**, so a
   revoked key is listed without qualification; and `URLDecoder` on
   an HKP UID turns a literal `+` into a space, so
   `jane+keys@example.com` is printed as `jane keys@example.com` — a
   corrupted identifier presented as an observation.
-- **S20. Input-validation and skip messages are classified at
+- [x] **S20. Input-validation and skip messages are classified at
   random.** "Give an email address", "Not a coordinate", "Give a CVE
   id" and eleven others count as **findings**; "Not a Bitcoin
   address" counts as an **established absence**. A tool deliberately
   skipped because the subject is an organisation counts as a
   finding. None of the three is true.
-- **S21. Small:** the two `wbgetentities` calls bypass `MediaWiki`,
+- [ ] **S21. Small, partly done:** the two `wbgetentities` calls bypass `MediaWiki`,
   so a refusal silently drops Employer/Citizenship/Occupation.
   `${it / 1024} KB` is integer division and KiB labelled KB, so any
   file under a kibibyte reads `0 KB`. The Bluesky probe's
