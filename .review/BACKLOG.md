@@ -27,7 +27,7 @@ closed; their headings say so.
   URL the code can emit is public; without the actual link this is
   guesswork.
 
-### The files no pass had ever read (r17, 24 Oct) — CLOSED but for the maths tail
+### The files no pass had ever read (r17, 24 Oct) — CLOSED, 16 for 16
 
 `GraphBuilder`, `ForceLayout`, `OrbitPropagator`, `Identify`,
 `Listing`, `ObservableExtractor`, `SigningIdentity`, `DiskCache`,
@@ -129,7 +129,7 @@ which immediately found two more.
   `ForceLayout` determinism and its degenerate cases, a `DiskCache`
   round trip against a truncated file, and `Findings.kindOf` on the
   three literal strings `ExifReader` returns.
-- [ ] **T16. Small, still open:** `geodetic` returns an altitude 6,799 km wrong
+- [x] **T16.** `geodetic` returns an altitude 6,799 km wrong
   exactly at the pole, and the test that feeds it that input asserts
   only the latitude; the Newton guard is `continue` where it means
   `break`; `ForceLayout` pins an arbitrary node for a graph with no
@@ -283,7 +283,7 @@ would retire a whole class rather than a row —
   address" counts as an **established absence**. A tool deliberately
   skipped because the subject is an organisation counts as a
   finding. None of the three is true.
-- [ ] **S21. Small, partly done:** the two `wbgetentities` calls bypass `MediaWiki`,
+- [x] **S21.** the two `wbgetentities` calls bypass `MediaWiki`,
   so a refusal silently drops Employer/Citizenship/Occupation.
   `${it / 1024} KB` is integer division and KiB labelled KB, so any
   file under a kibibyte reads `0 KB`. The Bluesky probe's
@@ -837,7 +837,13 @@ whole of the view-model's search bookkeeping.
    were rewritten together and the fourth function — the one that
    empties the layer — was not visited, so an on-demand layer
    switched off and on never fetched again.
-8. **Write first, assert after.** Twice today a script asserted after
+8. **A pre-flight that cannot see a name cannot catch its misuse.**
+   `unresolved-locals` learned names from `val`, `var`, `fun`,
+   class, enum entries and function parameters — not from lambda
+   parameters, which have no keyword in front of them. A name that
+   existed only as one was invisible, so using it outside its
+   lambda read as the Android SDK's absence and shipped red.
+9. **Write first, assert after.** Twice today a script asserted after
    its replace and threw before its write, so an edit believed to be
    on disk was not — a quieter failure than a compile error.
 
