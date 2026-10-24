@@ -6,6 +6,7 @@ import com.osint.unified.data.db.CaseCount
 import com.osint.unified.data.db.Dismissal
 import com.osint.unified.data.db.Investigation
 import com.osint.unified.data.db.Result as ResultRow
+import com.osint.unified.domain.orStop
 import com.osint.unified.domain.CaseLinks
 import com.osint.unified.domain.Findings
 import com.osint.unified.domain.Observable
@@ -413,7 +414,7 @@ class InvestigationRepository(
      * life of the database.
      */
     suspend fun markInterruptedRuns() {
-        runCatching { resultDao.markRunningAsInterrupted() }
+        runCatching { resultDao.markRunningAsInterrupted() }.orStop()
     }
 
     private companion object {

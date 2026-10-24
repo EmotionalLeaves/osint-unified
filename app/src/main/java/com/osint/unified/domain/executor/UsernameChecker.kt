@@ -17,6 +17,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
+import com.osint.unified.domain.orStop
 import com.osint.unified.domain.ProfileSignals
 import com.osint.unified.network.Http
 import okhttp3.OkHttpClient
@@ -365,7 +366,7 @@ class UsernameChecker(private val appContext: Context) {
                 hits.take(VERIFY_CAP).map { (site, url) ->
                     async {
                         gate.withPermit {
-                            val html = runCatching { fetchPage(url) }.getOrNull()
+                            val html = runCatching { fetchPage(url) }.orStop().getOrNull()
                             if (!html.isNullOrBlank()) {
                                 val signals = ProfileSignals.read(
                                     html, ProfileSignals.hostOf(url)

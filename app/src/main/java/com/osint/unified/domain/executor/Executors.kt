@@ -3,6 +3,7 @@ package com.osint.unified.domain.executor
 import com.google.i18n.phonenumbers.PhoneNumberUtil
 import com.osint.unified.data.AppSettings
 import com.osint.unified.data.Overpass
+import com.osint.unified.domain.orStop
 import com.osint.unified.domain.ExecutionMode
 import com.osint.unified.domain.Findings
 import com.osint.unified.domain.Tool
@@ -593,7 +594,8 @@ class DirectToolExecutor(
                 "overpass_turbo" -> overpass(input)
                 "milsites" -> militarySites(input)
                 "osmrecon" -> osmRecon(input)
-                "sherlock", "maigret", "blackbird" -> runCatching { usernameChecker.check(input) }
+                "sherlock", "maigret", "blackbird" ->
+                    runCatching { usernameChecker.check(input) }.orStop()
                 "emailaccounts" -> runCatching {
                     // The sweep is a username sweep; the email only
                     // supplies a guess at the username. Everything it finds
@@ -607,7 +609,7 @@ class DirectToolExecutor(
                         "someone. Treat every line as a lead to corroborate, not a " +
                         "finding.\n\n"
                     caveat + usernameChecker.check(local)
-                }
+                }.orStop()
                 "phoneinfoga" -> phoneInfo(input)
                 "webcrawl" -> apis.webcrawl(input)
                 "archive" -> apis.archive(input)
@@ -633,10 +635,10 @@ class DirectToolExecutor(
                 "websearch" -> apis.websearch(input)
                 "github" -> apis.githubUser(input)
                 "ghactivity" -> deep.githubActivity(input)
-                "socialsweep" -> runCatching { deep.socialSweep(input) }
+                "socialsweep" -> runCatching { deep.socialSweep(input) }.orStop()
                 "toolrun" -> directoryRun(input)
                 "emailperm" -> deep.emailPermutations(input)
-                "typosquat" -> runCatching { deep.typosquat(input) }
+                "typosquat" -> runCatching { deep.typosquat(input) }.orStop()
                 "osmuser" -> deep.osmUser(input)
                 "asnintel" -> deep.asnIntel(input)
                 "iprep" -> deep.ipReputation(input)
@@ -690,7 +692,7 @@ class DirectToolExecutor(
                 "wikinearby" -> apis.wikiNearby(input)
                 "gdelt" -> apis.gdeltNews(input)
                 "reverseimage" -> apis.reverseImage(input)
-                "exif" -> runCatching { exifReader.fromUrl(input) }
+                "exif" -> runCatching { exifReader.fromUrl(input) }.orStop()
                 "imagetext" -> imageWords(input)
                 else -> Result.failure(IllegalStateException("${tool.name} has no direct implementation."))
             }
@@ -841,7 +843,7 @@ class DirectToolExecutor(
             append("\n")
             append(checklist())
         }
-    }
+    }.orStop()
 
     private fun checklist(): String = buildString {
         append("── WHAT TO LOOK AT YOURSELF ──\n")
@@ -968,7 +970,7 @@ class DirectToolExecutor(
                                 resp.body?.bodyPreview()
                             }
                         }
-                    }.getOrElse {
+                    }.orStop().getOrElse {
                         skipped = it.message?.take(60) ?: "did not answer"
                         null
                     }
@@ -1039,7 +1041,7 @@ class DirectToolExecutor(
                 }
             }
         }
-    }
+    }.orStop()
 
     /**
      * The catalogue of known public breaches, bundled in the APK.
@@ -1520,7 +1522,7 @@ class DirectToolExecutor(
             // answered anything — they were links for the sake of having
             // links. OSM actually holds mapped cameras, so the query is run
             // rather than described.
-            val mapped = runCatching { surveillanceNear(lat, lon) }.getOrNull()
+            val mapped = runCatching { surveillanceNear(lat, lon) }.orStop().getOrNull()
             return@runCatching buildString {
                 append("No public traffic-camera feed within 50 km of %.4f, %.4f ".format(Locale.US, lat, lon))
                 append("(live still images come from the operators that publish ")
@@ -1547,7 +1549,7 @@ class DirectToolExecutor(
                 cam.url?.let { append("\n  Live still: $it") }
             }
         }
-    }
+    }.orStop()
 
     private fun haversineKm(aLat: Double, aLon: Double, bLat: Double, bLon: Double): Double {
         val r = 6371.0

@@ -1,5 +1,6 @@
 package com.osint.unified.domain.executor
 
+import com.osint.unified.domain.orStop
 import com.osint.unified.domain.PersonName
 import com.osint.unified.domain.andMore
 import com.osint.unified.network.Http
@@ -241,7 +242,7 @@ class PeopleApis(
             }
             append("\nA profile name is whatever its owner typed.")
         }
-    }
+    }.orStop()
 
     /**
      * Bluesky, searched by display name.

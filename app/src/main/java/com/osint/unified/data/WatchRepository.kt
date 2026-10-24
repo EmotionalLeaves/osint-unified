@@ -4,6 +4,7 @@ import com.osint.unified.data.db.AppDatabase
 import com.osint.unified.data.db.UnseenCount
 import com.osint.unified.data.db.Watch
 import com.osint.unified.data.db.WatchEvent
+import com.osint.unified.domain.orStop
 import com.osint.unified.domain.ExecutionMode
 import com.osint.unified.domain.Findings
 import com.osint.unified.domain.Observable
@@ -233,6 +234,14 @@ class WatchRepository(
             async {
                 val output = withTimeoutOrNull(TOOL_TIMEOUT_MS) {
                     runCatching { executors.forTool(tool).execute(tool, observable.raw) }
+                        // Same reason as checkAllHere twelve lines up:
+                        // a cancellation is this job being stopped, not
+                        // a source failing. withTimeoutOrNull and the
+                        // enclosing coroutineScope happen to recover the
+                        // right behaviour today, which is luck, not a
+                        // design — the first statement added after this
+                        // async would run inside a cancelled coroutine.
+                        .orStop()
                         .getOrNull()?.getOrNull()
                 }
                 // null  -> the source could not be reached at all

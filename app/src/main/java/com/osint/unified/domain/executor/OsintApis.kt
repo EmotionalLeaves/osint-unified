@@ -1,5 +1,6 @@
 package com.osint.unified.domain.executor
 
+import com.osint.unified.domain.orStop
 import com.osint.unified.network.Http
 import com.osint.unified.network.Http.bodyText
 import kotlinx.serialization.json.Json
@@ -370,7 +371,7 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
         // security.txt, having never reached it.
         var answered = 0
         listOf("robots.txt", ".well-known/security.txt", "sitemap.xml").forEach { path ->
-            val attempt = runCatching { getBody("https://$host/$path") }
+            val attempt = runCatching { getBody("https://$host/$path") }.orStop()
             val code = httpCodeOf(attempt.exceptionOrNull())
             // 404 and 410 are answers. Anything else that threw is not.
             if (attempt.isSuccess || code == 404 || code == 410) answered++
@@ -1006,7 +1007,7 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
         val url = "https://api.gdeltproject.org/api/v2/doc/doc?query=" +
             URLEncoder.encode(query, "UTF-8") +
             "&mode=artlist&format=json&maxrecords=75&sort=datedesc&timespan=3d"
-        val body = runCatching { getBody(url) }.getOrElse { e ->
+        val body = runCatching { getBody(url) }.orStop().getOrElse { e ->
             return@runCatching if (e.message?.contains("429") == true) {
                 "GDELT is rate limiting (it allows one request every five seconds). Try again shortly."
             } else {
