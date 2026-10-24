@@ -40,6 +40,20 @@ import java.util.concurrent.TimeUnit
  * written to disk by the network layer, which is not somewhere anyone would
  * think to go and clear.
  */
+/**
+ * A host is in cooldown after refusing, and this request was not sent.
+ *
+ * Its own type so a source that knows why its host refuses can still
+ * say so. The first refusal reached the source as a 429 and got its
+ * named explanation; every poll after that was stopped here, in the
+ * interceptor, and got this class's generic sentence instead — so the
+ * explanation was on screen for one poll and then replaced.
+ */
+class RateLimited(val host: String, val waitSeconds: Long) : IOException(
+    "$host asked to be left alone for another ${waitSeconds}s " +
+        "(it answered 429). Not asking again yet."
+)
+
 object Http {
 
     /**
@@ -360,10 +374,7 @@ object Http {
                     sleep(wait)
                     cooldowns.remove(host, until)
                 }
-                else -> throw IOException(
-                    "$host asked to be left alone for another ${wait / 1000}s " +
-                        "(it answered 429). Not asking again yet."
-                )
+                else -> throw RateLimited(host, wait / 1000)
             }
         }
 

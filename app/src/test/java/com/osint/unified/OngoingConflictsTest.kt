@@ -148,4 +148,21 @@ class OngoingConflictsTest {
         // A name that agrees with Natural Earth needs no alias.
         assertNull(OngoingConflicts.isoFor("Sudan"))
     }
+
+    /**
+     * A name with markup inside its link is still its name. Read as
+     * plain-text links only, the italic one was skipped and the row was
+     * named after the next link in the cell — its phase.
+     */
+    @Test
+    fun aNameInItalicsIsStillTheName() {
+        val wrapped = page.replace(
+            """<a href="/wiki/Myanmar_conflict" title="Myanmar conflict">Myanmar civil war</a>""",
+            """<a href="/wiki/Myanmar_conflict" title="Myanmar conflict"><i>Myanmar civil war</i></a>"""
+        )
+        val rows = OngoingConflicts.parse(wrapped, fallbackYear = 2026).rows
+        assertEquals("Myanmar civil war", rows.first().name)
+        assertEquals("since 2021", rows.first().phase)
+        assertEquals(listOf("Myanmar", "India"), rows.first().countries)
+    }
 }

@@ -57,12 +57,7 @@ class NewsDataSource(private val client: OkHttpClient = Http.feedClient) {
                 // discarded. The person saw "GDELT HTTP 429" and no
                 // reason.
                 if (body != null && body.trimStart().startsWith("Please limit")) {
-                    throw IOException(
-                        "GDELT is rate limiting this address — it allows one " +
-                            "request every five seconds across everyone sharing " +
-                            "it. Nothing is wrong with the news; this phone is " +
-                            "in the queue."
-                    )
+                    throw IOException(RATE_LIMITED)
                 }
                 if (!resp.isSuccessful) throw IOException("GDELT HTTP ${resp.code}")
                 if (body.isNullOrBlank()) throw IOException("GDELT returned nothing")
@@ -96,6 +91,10 @@ class NewsDataSource(private val client: OkHttpClient = Http.feedClient) {
                     )
                 }
             }
+        } catch (e: com.osint.unified.network.RateLimited) {
+            // The same explanation on every poll of the wait, not only
+            // the first.
+            throw IOException("$RATE_LIMITED Asking again in ${e.waitSeconds}s.", e)
         } catch (e: Exception) {
             // An empty list is a claim that there is nothing out
             // there, which the pills and the world brief repeat as
@@ -105,6 +104,11 @@ class NewsDataSource(private val client: OkHttpClient = Http.feedClient) {
     }
 
     private companion object {
+        const val RATE_LIMITED =
+            "GDELT is rate limiting this address — it allows one request every " +
+                "five seconds across everyone sharing it. Nothing is wrong with " +
+                "the news; this phone is in the queue."
+
         /**
          * Country centroids for the names GDELT publishes outlets under.
          *

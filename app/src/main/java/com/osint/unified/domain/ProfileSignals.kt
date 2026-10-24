@@ -167,24 +167,44 @@ object ProfileSignals {
      * Judged on the page as a whole now, once, before anything is
      * read off it. A door tells you nothing about who lives there.
      */
+    /** Markers no real profile page carries. Any one is enough. */
     private val CHALLENGE = listOf(
         // Anubis.
         "making sure you're not a bot", "making sure you&#39;re not a bot",
         "techarohq/anubis", "anubis.techaro.lol",
-        // Cloudflare, and the rest of the usual interstitials.
-        "just a moment", "checking your browser before", "cf-browser-verification",
-        "enable javascript and cookies to continue", "ddos protection by",
-        "attention required! | cloudflare", "ray id:",
-        // The generic shapes.
-        "verifying you are human", "please verify you are a human",
-        "one moment, please", "validating your request", "javascript is required",
+        // Cloudflare's interstitial.
+        "checking your browser before", "cf-browser-verification",
+        "attention required! | cloudflare", "ddos protection by",
+        "enable javascript and cookies to continue"
+    )
+
+    /**
+     * Phrases a challenge uses, and a real page sometimes does too.
+     *
+     * "JavaScript is required" is the standard `<noscript>` line on a
+     * single-page app — which a good many real profile pages are — and
+     * "just a moment" and "one moment, please" are ordinary English.
+     * Counted as one, they threw away real profiles. They count only
+     * outside `<noscript>`, and only on a page with no profile metadata:
+     * a challenge page has no og:title, and a profile has one.
+     */
+    private val CHALLENGE_SOFT = listOf(
+        "just a moment", "ray id:", "verifying you are human",
+        "please verify you are a human", "one moment, please",
+        "validating your request", "javascript is required",
         "access to this page has been denied"
     )
+
+    private val NOSCRIPT = Regex("(?is)<noscript\\b.{0,4000}?</noscript>")
+    private val PROFILE_META = Regex("(?i)<meta[^>]{0,200}(?:og:title|og:description|twitter:title|profile:username)")
 
     /** True when the page is a challenge or a wall rather than a profile. */
     internal fun isChallenge(html: String): Boolean {
         val head = html.take(CHALLENGE_SCAN).lowercase()
-        return CHALLENGE.any { head.contains(it) }
+        if (CHALLENGE.any { head.contains(it) }) return true
+        val shown = NOSCRIPT.replace(head, " ")
+        if (CHALLENGE_SOFT.none { shown.contains(it) }) return false
+        return !PROFILE_META.containsMatchIn(head)
     }
 
     fun read(html: String, pageHost: String): Signals {

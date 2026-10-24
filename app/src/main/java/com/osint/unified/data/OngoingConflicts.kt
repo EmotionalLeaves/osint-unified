@@ -91,9 +91,7 @@ internal object OngoingConflicts {
             val phase = PHASE.find(text(nameCell).take(200))?.groupValues?.get(1)
             val article = HREF.find(nameCell)?.groupValues?.get(1)
                 ?.let { "https://en.wikipedia.org$it" }
-            val countries = LINK.findAll(cells[3])
-                .map { decode(it.groupValues[1]).trim() }
-                .filter { it.isNotBlank() && it.any(Char::isLetter) }
+            val countries = linkTexts(cells[3])
                 .distinct()
                 .toList()
             rows.add(
@@ -158,8 +156,21 @@ internal object OngoingConflicts {
         return Deaths(year, n, exact)
     }
 
+    /**
+     * The first link in the cell that has words in it.
+     *
+     * Read through any markup inside the link. A name in italics —
+     * `<a><i>Name</i></a>` — did not match a link of plain text, so the
+     * first link found was the next one, which in this table is the
+     * phase ("Phase 2"), and the conflict was named after that.
+     */
     private fun firstLinkText(cell: String): String? =
-        LINK.find(cell)?.groupValues?.get(1)?.let { decode(it).trim() }?.takeIf { it.isNotBlank() }
+        linkTexts(cell).firstOrNull()
+
+    private fun linkTexts(cell: String): Sequence<String> =
+        LINK.findAll(cell)
+            .map { text(it.groupValues[1]) }
+            .filter { it.isNotBlank() && it.any(Char::isLetter) }
 
     /** A cell's visible text: citations, styles and tags out, entities decoded. */
     internal fun text(html: String): String =
@@ -237,7 +248,7 @@ internal object OngoingConflicts {
     // Spaces allowed inside the brackets: the phase is a link, and the
     // tags around it become spaces when the cell is read as text.
     private val PHASE = Regex("""\(\s{0,3}(since \d{4})\s{0,3}\)""")
-    private val LINK = Regex("""<a\b[^>]*>([^<]{1,120})</a>""")
+    private val LINK = Regex("""(?s)<a\b[^>]*>(.{1,400}?)</a>""")
     private val HREF = Regex("href=\"(/wiki/[^\"#]{1,200})\"")
     private val TH = Regex("""<th\b[^>]*>(.{0,400}?)</th>""", RegexOption.DOT_MATCHES_ALL)
     // Bounded: an unbounded group repetition is compiled recursively by

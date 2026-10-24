@@ -38,13 +38,7 @@ class MilAircraftDataSource(private val client: OkHttpClient = Http.feedClient) 
                 // strangers — so "it does not work" is usually "the
                 // queue for this address is full", which is a
                 // different thing and worth saying.
-                if (resp.code == 429) {
-                    throw IOException(
-                        "adsb.fi is rate limiting this address. It is not that " +
-                            "there are no military aircraft; it is that this " +
-                            "phone has been asked to wait."
-                    )
-                }
+                if (resp.code == 429) throw IOException(RATE_LIMITED)
                 if (!resp.isSuccessful) throw IOException("adsb.fi military HTTP ${resp.code}")
                 if (body.isNullOrBlank()) throw IOException("adsb.fi military returned nothing")
                 val ac = json.parseToJsonElement(body).jsonObject["ac"]?.jsonArray
@@ -63,11 +57,21 @@ class MilAircraftDataSource(private val client: OkHttpClient = Http.feedClient) 
                 }
                 out
             }
+        } catch (e: com.osint.unified.network.RateLimited) {
+            // The same explanation on every poll of the wait, not only
+            // the first.
+            throw IOException("$RATE_LIMITED Asking again in ${e.waitSeconds}s.", e)
         } catch (e: Exception) {
             // An empty list is a claim that there is nothing out
             // there, which the pills and the world brief repeat as
             // fact. A failure is not that claim.
             throw IOException("adsb.fi military unavailable: ${e.message}", e)
         }
+    }
+
+    private companion object {
+        const val RATE_LIMITED =
+            "adsb.fi is rate limiting this address. It is not that there are " +
+                "no military aircraft; it is that this phone has been asked to wait."
     }
 }

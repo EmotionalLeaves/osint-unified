@@ -179,6 +179,14 @@ class UsernameChecker(private val appContext: Context) {
          */
         @Volatile private var sharedMissingRulesets: List<String> = emptyList()
 
+        /**
+         * Why the downloaded WhatsMyName list could not be kept, when it
+         * could not. The DiskCache records a failed write and nothing
+         * read it: a full phone re-downloaded the list on every launch,
+         * a megabyte each time, and said nothing.
+         */
+        @Volatile private var wmnNotKept: String? = null
+
         /** Control probes to run. Beyond this, hits are reported unverified
          *  rather than paying for a second sweep as large as the first. */
         const val CONTROL_PROBE_CAP = 400
@@ -811,8 +819,9 @@ class UsernameChecker(private val appContext: Context) {
     }
 
     /**
-     * One clause naming what this build did not have to ask with, or
-     * null when it had everything.
+     * One clause naming what this build did not have to ask with (and,
+     * if it had to download a ruleset, whether that could be kept), or
+     * null when there is nothing to say.
      */
     private fun narrowedBy(): String? {
         // Not loadRules(): by the time any output is being written
@@ -821,10 +830,15 @@ class UsernameChecker(private val appContext: Context) {
         // it here re-read three assets and made a blocking network
         // request for every line of output.
         val missing = sharedMissingRulesets
-        if (missing.isEmpty()) return null
-        return "This build is missing the " + missing.joinToString(" and ") +
+        val notKept = wmnNotKept?.let {
+            "The downloaded WhatsMyName list could not be saved ($it), " +
+                "so it will be downloaded again next time."
+        }
+        if (missing.isEmpty()) return notKept
+        val short = "This build is missing the " + missing.joinToString(" and ") +
             " ruleset" + (if (missing.size == 1) "" else "s") +
             ", so the list asked is shorter than usual."
+        return if (notKept == null) short else "$short $notKept"
     }
 
     private fun asset(name: String): String? = runCatching {
@@ -981,7 +995,8 @@ class UsernameChecker(private val appContext: Context) {
                 // is several kilobytes of HTML and would have passed
                 // the old test on its way into the cache.
                 if (!body.isNullOrBlank() && body.trimStart().startsWith("{")) {
-                    cache.write(WMN_CACHE, body)
+                    wmnNotKept = if (cache.write(WMN_CACHE, body)) null
+                    else cache.trouble.value ?: "the write failed"
                     body
                 } else {
                     cache.readStale(WMN_CACHE)

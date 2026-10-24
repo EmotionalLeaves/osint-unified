@@ -72,7 +72,7 @@ closed; their headings say so.
   than a hop from the seed no longer corroborates its own input (which
   is how a wiki came out A1 "confirmed").
 
-### Fifth pass, over today's globe and dossier work (r19, 24 Oct) — OPEN
+### Fifth pass, over today's globe and dossier work (r19, 24 Oct) — CLOSED r20
 
 HIGH
 - [x] **P1.** (closed r20: globeZoom clamps to the globe's own range (span ≥1e-4°, zoom ≤48 000); aSearchLandsAtTownScale.) Search fly-to stops ~5x short: `globeZoom` still clamps to
@@ -124,11 +124,11 @@ LOW
   host cooldown.
 - [x] **P20.** (closed r20: cache/osmdroid and the osmdroid prefs deleted at startup on a background thread.) The orphaned osmdroid cache (up to 300 MB) and prefs are
   never deleted.
-- [ ] **P21.** downloadWmn's DiskCache trouble flow is unobserved.
-- [ ] **P22.** The named 429 message shows only on the first refusal.
-- [ ] **P23.** isChallenge may drop a real profile with an early
+- [x] **P21.** (closed r20: a WhatsMyName list that could not be saved is named in the sweep caveat.) downloadWmn's DiskCache trouble flow is unobserved.
+- [x] **P22.** (closed r20: cooldown refusals are their own type (RateLimited); the mil and news layers give their named explanation on every poll of the wait, with the seconds left.) The named 429 message shows only on the first refusal.
+- [x] **P23.** (closed r20: definite markers always; generic phrases only outside noscript and only on a page with no profile metadata. Test added.) isChallenge may drop a real profile with an early
   `<noscript>` notice.
-- [ ] **P24.** OngoingConflicts takes only plain-text links; a wrapped name
+- [x] **P24.** (closed r20: link text is read through inner markup; an italic name is the name, not its phase. Test added.) OngoingConflicts takes only plain-text links; a wrapped name
   falls through to the phase link.
 
 ### Still open after today

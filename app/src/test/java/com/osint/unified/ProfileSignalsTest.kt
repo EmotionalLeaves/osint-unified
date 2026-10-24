@@ -245,6 +245,28 @@ class ChallengePageTest {
         )
     }
 
+    /**
+     * A single-page app's profile says "JavaScript is required" in its
+     * noscript block, and has its profile in the metadata. That page is
+     * a profile, and it was being thrown away as a challenge.
+     */
+    @Test
+    fun anAppsNoscriptLineIsNotAChallenge() {
+        val spa = """<html><head><title>jdoe</title>
+            <meta property="og:title" content="Jane Doe (@jdoe)">
+            </head><body><noscript>JavaScript is required to use this site.</noscript>
+            <div id="root"></div></body></html>"""
+        assertFalse(ProfileSignals.isChallenge(spa))
+        // The same words shown, on a page with nothing else, still are.
+        assertTrue(ProfileSignals.isChallenge("<body><p>JavaScript is required.</p></body>"))
+        // And a profile's metadata does not excuse a definite marker.
+        assertTrue(
+            ProfileSignals.isChallenge(
+                """<meta property="og:title" content="x"><div class="cf-browser-verification">"""
+            )
+        )
+    }
+
     @Test
     fun nothingIsReadOffOne() {
         val (html, host) = anubis("en.brickimedia.org")
