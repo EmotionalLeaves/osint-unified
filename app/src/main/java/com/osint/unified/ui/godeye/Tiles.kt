@@ -147,6 +147,144 @@ internal object Tiles {
     }
 
     /**
+     * Every tile the globe can see at zoom [zoom], found by looking.
+     *
+     * [cover] estimated a rectangle of latitude and longitude from the
+     * centre and the span, which is right at the equator and wrong
+     * everywhere the view is not a rectangle in those terms: the top of
+     * a portrait view near the pole needs more longitude than its centre
+     * does, a whole-Earth view is a disc, and across a pole every
+     * longitude is in view. The corners it missed drew black.
+     *
+     * So the screen is sampled — a grid inside, denser along the edges
+     * and around the planet's rim, where tiles are thin — and each
+     * sample is turned back into a place and then a tile. A tile that is
+     * on screen is hit, whatever shape the view is.
+     *
+     * Bounded like [cover]: more than [MAX_TILES] and it steps out a
+     * level, which covers the same ground with a quarter of the tiles.
+     */
+    fun visible(
+        zoom: Int,
+        width: Int,
+        height: Int,
+        cx: Float,
+        cy: Float,
+        radius: Float,
+        lat0: Double,
+        lon0: Double
+    ): List<Ref> {
+        if (width <= 0 || height <= 0 || radius <= 0f) return emptyList()
+        var z = zoom.coerceIn(MIN_TILE_ZOOM, MAX_TILE_ZOOM)
+        while (true) {
+            val keys = sample(z, width, height, cx, cy, radius, lat0, lon0)
+            if (keys.size <= MAX_TILES || z <= MIN_TILE_ZOOM) {
+                val side = 1 shl z
+                val centreX = tileXOf(lon0, z)
+                val centreY = tileYOf(lat0, z)
+                return keys.map { Ref(z, (it % side).toInt(), (it / side).toInt()) }
+                    .sortedBy { r ->
+                        // Across the date line the nearer way round counts.
+                        var dx = (r.x + 0.5) - centreX
+                        if (dx > side / 2.0) dx -= side
+                        if (dx < -side / 2.0) dx += side
+                        val dy = (r.y + 0.5) - centreY
+                        dx * dx + dy * dy
+                    }
+            }
+            z--
+        }
+    }
+
+    private fun sample(
+        z: Int,
+        width: Int,
+        height: Int,
+        cx: Float,
+        cy: Float,
+        radius: Float,
+        lat0: Double,
+        lon0: Double
+    ): Set<Long> {
+        val side = 1 shl z
+        val out = HashSet<Long>(128)
+        fun hit(px: Float, py: Float) {
+            val place = Orthographic.unproject(px, py, lat0, lon0, radius, cx, cy) ?: return
+            if (place.first > MERCATOR_LIMIT || place.first < -MERCATOR_LIMIT) return
+            val x = floor(tileXOf(place.second, z)).toInt().coerceIn(0, side - 1)
+            val y = floor(tileYOf(place.first, z)).toInt().coerceIn(0, side - 1)
+            out.add(y.toLong() * side + x)
+        }
+        // Inside: a tile is two hundred pixels or more across at the zoom
+        // chosen for it, so a grid finer than that cannot step over one.
+        var py = 0f
+        while (py <= height) {
+            var px = 0f
+            while (px <= width) {
+                hit(px, py)
+                px += GRID_PX
+            }
+            hit(width.toFloat(), py)
+            py += GRID_PX
+        }
+        // The edges, finely: a tile that only just reaches into the view
+        // is a sliver along one of them.
+        var e = 0f
+        while (e <= width) {
+            hit(e, 0f); hit(e, height.toFloat()); e += EDGE_PX
+        }
+        e = 0f
+        while (e <= height) {
+            hit(0f, e); hit(width.toFloat(), e); e += EDGE_PX
+        }
+        // And rings just inside the rim, where a whole-Earth view squeezes
+        // tiles into slivers thinner than the grid. One ring missed about
+        // one pixel in a hundred there; four miss none.
+        if (radius < width + height) {
+            for (ring in RIM_RINGS) {
+                val rimR = radius * ring
+                for (i in 0 until RIM_SAMPLES) {
+                    val a = 2.0 * PI * i / RIM_SAMPLES
+                    val px = cx + rimR * kotlin.math.cos(a).toFloat()
+                    val py2 = cy + rimR * kotlin.math.sin(a).toFloat()
+                    if (px in 0f..width.toFloat() && py2 in 0f..height.toFloat()) hit(px, py2)
+                }
+            }
+        }
+        return out
+    }
+
+    /**
+     * The tiles one or more levels up that contain these.
+     *
+     * A parent holds its four children's ground at half the detail, so
+     * drawing parents first gives every not-yet-arrived tile something
+     * to show — exact, and computed by shifting, not by looking again.
+     */
+    fun ancestors(refs: List<Ref>, level: Int): List<Ref> {
+        if (refs.isEmpty()) return emptyList()
+        return refs.asSequence()
+            .filter { it.z >= level }
+            .map { Ref(level, it.x shr (it.z - level), it.y shr (it.z - level)) }
+            .distinct()
+            .toList()
+    }
+
+    /** The fractional latitude of a tile row, for bending a tile to the sphere. */
+    fun latOfRow(row: Double, z: Int): Double {
+        val n = PI * (1.0 - 2.0 * row / (1 shl z))
+        return Math.toDegrees(atan(sinh(n)))
+    }
+
+    /** Zoom levels bundled with the app, which cost no data and no wait. */
+    const val BUNDLED_MAX_ZOOM = 5
+
+    private const val GRID_PX = 48f
+    private const val EDGE_PX = 16f
+    private const val RIM_SAMPLES = 360
+    private val RIM_RINGS = floatArrayOf(0.999f, 0.995f, 0.985f, 0.96f, 0.92f)
+
+    /**
      * The span below which the bundled mosaic has nothing left to
      * give and tiles are worth their bytes.
      *
@@ -163,7 +301,7 @@ internal object Tiles {
     const val TILES_FULL_SPAN = 11.0
 
     /** Below this there is no point asking for tiles at all. */
-    private const val MIN_TILE_ZOOM = 2
+    private const val MIN_TILE_ZOOM = 1
 
     /** Esri's World Imagery stops here. */
     const val MAX_TILE_ZOOM = 19
@@ -183,7 +321,12 @@ internal object Tiles {
      * twelve megabytes of bitmap and two of somebody's data if none
      * of them are cached.
      */
-    private const val MAX_TILES = 96
+    // Sized so a tall or high-resolution screen never has to step out a
+    // level. At 96 a 1080x2340 portrait screen routinely did — every
+    // tile then drawn at twice its size, which on its own makes the
+    // imagery soft — and a 1440x3120 one needs up to about 190 at the
+    // zoom that rounds up.
+    private const val MAX_TILES = 200
 
     /** Where the Mercator projection is cut off, as every slippy map does. */
     private const val MERCATOR_LIMIT = 85.0511

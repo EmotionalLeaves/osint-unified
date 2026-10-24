@@ -47,6 +47,45 @@ object GlobeShader {
     }
 
     /**
+     * The sunlight alone, to lay over the tiles.
+     *
+     * The globe's imagery is tiles now, at every zoom, so the shader that
+     * painted the planet from one photograph and lit it would light a
+     * picture nobody sees. This is the same geometry and the same sun,
+     * output as an overlay instead: darken by the lighting, add the city
+     * lights on the night side. Composited source-over, the tile under
+     * it comes out as `tile × light + lights` — what the old shader did
+     * to the photograph, done to the tiles.
+     *
+     * [strength] fades it out as the view closes in. At street level a
+     * low morning sun dimming the photograph by half reads as a bad
+     * picture, not as morning.
+     */
+    fun bindShade(night: Bitmap?): Shader? {
+        if (!supported) return null
+        return runCatching { boundShade(night) }.getOrNull()
+    }
+
+    /** Sets how much of the lighting is applied, 0 to 1. */
+    fun strength(shader: Shader, value: Float) {
+        if (!supported) return
+        runCatching { (shader as? RuntimeShader)?.setFloatUniform("strength", value.coerceIn(0f, 1f)) }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    private fun boundShade(night: Bitmap?): Shader? {
+        val shader = RuntimeShader(SHADE_SOURCE)
+        // A sampler must have something bound, so with no night mosaic
+        // a one-pixel black bitmap stands in and hasNight is off.
+        val lights = night ?: Bitmap.createBitmap(1, 1, Bitmap.Config.RGB_565)
+        shader.setInputShader("nightTex", textureShader(lights))
+        shader.setFloatUniform("nightDim", lights.width.toFloat(), lights.height.toFloat())
+        shader.setFloatUniform("hasNight", if (night != null) 1f else 0f)
+        shader.setFloatUniform("strength", 1f)
+        return shader
+    }
+
+    /**
      * Points an already-bound shader at a camera.
      *
      * Called once per frame, immediately before the draw. Twelve
@@ -131,6 +170,61 @@ object GlobeShader {
      * projection and the reason this app has never re-rendered on
      * zoom.
      */
+    private val SHADE_SOURCE = """
+        uniform float2 center;
+        uniform float  radius;
+        uniform float  sinLat0;
+        uniform float  cosLat0;
+        uniform float  lon0;
+        uniform float  sinSun;
+        uniform float  cosSun;
+        uniform float  sunLon;
+        uniform float2 nightDim;
+        uniform float  hasNight;
+        uniform float  strength;
+        uniform shader nightTex;
+
+        const float PI = 3.1415926535897932;
+
+        half4 main(float2 frag) {
+            float2 p = (frag - center) / radius;
+            float x = p.x;
+            float y = -p.y;
+            float rho2 = x * x + y * y;
+            float feather = 2.0 / max(radius, 1.0);
+            if (rho2 > 1.0 + feather) { return half4(0.0); }
+
+            float cosC = sqrt(max(1.0 - rho2, 0.0));
+            float sinLat = clamp(cosC * sinLat0 + y * cosLat0, -1.0, 1.0);
+            float lat = asin(sinLat);
+            float lon = lon0 + atan(x, cosC * cosLat0 - y * sinLat0);
+
+            float cosLat = sqrt(max(1.0 - sinLat * sinLat, 0.0));
+            float lit = sinLat * sinSun + cosLat * cosSun * cos(lon - sunLon);
+            float dayMix = smoothstep(-0.09, 0.13, lit);
+            float lambert = 0.28 + 0.72 * clamp(lit, 0.0, 1.0);
+            float dark = 1.0 - dayMix;
+
+            // How much of the tile survives: the same lighting the
+            // photograph got, as one number.
+            float k = lambert * dayMix + 0.06 * dark;
+            k *= 1.0 - 0.38 * rho2 * rho2;
+            k = mix(1.0, clamp(k, 0.0, 1.0), strength);
+
+            half3 add = half3(0.0);
+            if (dark > 0.0 && hasNight > 0.5) {
+                float u = lon / (2.0 * PI) + 0.5;
+                float v = 0.5 - lat / PI;
+                half4 lights = nightTex.eval(float2(u * nightDim.x, v * nightDim.y));
+                add = lights.rgb * half3(0.95, 0.80, 0.55) * half(dark * strength);
+            }
+
+            float edge = 1.0 - smoothstep(1.0 - feather, 1.0 + feather, rho2);
+            float a = (1.0 - k) * edge;
+            return half4(clamp(add, 0.0, 1.0) * half(edge), half(a));
+        }
+    """.trimIndent()
+
     private val SOURCE = """
         uniform float2 center;
         uniform float  radius;

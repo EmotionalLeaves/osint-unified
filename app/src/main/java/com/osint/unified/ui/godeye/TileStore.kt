@@ -1,5 +1,6 @@
 package com.osint.unified.ui.godeye
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.LruCache
@@ -7,6 +8,7 @@ import com.osint.unified.network.Http
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -17,83 +19,111 @@ import okhttp3.Request
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Satellite tiles for the globe, fetched once and kept in memory.
+ * Imagery for the globe, at every zoom.
  *
- * The imagery is Esri's World Imagery, which is keyless and goes to
- * zoom 19 — the same basemap the separate map view used, so the
- * globe gains exactly the detail the map had rather than something
- * that merely resembles it. Esri's terms require the credit to be
- * shown wherever the imagery is, which [ATTRIBUTION] is for and the
- * globe draws.
+ * Two sources, one scheme. From the whole Earth down to continent
+ * scale (slippy zoom 0–5) the tiles are NASA's Blue Marble, bundled in
+ * the APK by CI from the public-domain GIBS service — they cost no
+ * data, need no network and arrive at once. Below that they are Esri's
+ * World Imagery, fetched live, keyless, to zoom 19. Esri's terms
+ * require the credit wherever its imagery is shown, which
+ * [ESRI_ATTRIBUTION] is for.
  *
- * On [Http.feedClient] deliberately: it carries the forty-eight
- * megabyte HTTP cache, so a tile looked at twice in a session —
- * which is most of them, since zooming in and out crosses the same
- * ground — is paid for once, and the data meter counts it against
- * the map feeds rather than against whatever dossier happens to be
- * running at the time.
+ * This replaced a single 4096-pixel photograph of the planet that was
+ * drawn at every zoom down to a country across, which was at its limit
+ * with the whole Earth in view and two to four times magnified as soon
+ * as anyone zoomed: "very blurry at all levels of zoom".
  *
- * Nothing here blocks the draw. A tile that has not arrived is
- * simply not painted, and the sphere underneath shows through until
- * it does.
+ * Nothing here blocks the draw. A tile that has not arrived is not
+ * painted, and its parent — already here — shows through.
  */
-internal class TileStore(
-    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-) {
+internal class TileStore(context: Context) {
+
+    private val assets = context.applicationContext.assets
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /**
-     * Decoded tiles, by packed z/x/y.
+     * Decoded tiles, by packed z/x/y and layer.
      *
-     * RGB_565 rather than ARGB_8888: this is photography with no
-     * transparency in it, and half the bytes of a tile is half the
-     * bytes of the largest thing this screen holds.
+     * RGB_565: photography with no transparency, at half the bytes of
+     * ARGB. 400 tiles is about 50 MB of bitmap memory, which on Android 8
+     * and later lives outside the Java heap — a full high-resolution
+     * screen at three levels plus room to pan back the way you came.
      */
     private val memory = object : LruCache<Long, Bitmap>(MAX_TILES) {
         override fun sizeOf(key: Long, value: Bitmap) = 1
     }
 
     private val pending = ConcurrentHashMap.newKeySet<Long>()
+
+    /**
+     * What the view wants now.
+     *
+     * Requests queue behind a small gate, and a pinch from continent to
+     * street level used to queue every level it passed through — some
+     * eight hundred fetches, all downloaded, the final view's tiles
+     * waiting behind them. A queued fetch now checks it is still wanted
+     * when its turn comes, and is dropped if the view has moved on.
+     */
+    @Volatile private var wanted: Set<Long> = emptySet()
     private val gate = Semaphore(MAX_IN_FLIGHT)
 
     private val _version = MutableStateFlow(0)
 
-    /**
-     * Bumped whenever a tile arrives.
-     *
-     * The draw reads tiles out of memory and never waits for one, so
-     * something has to tell Compose that the picture changed. A
-     * counter is enough: what changed is always "there is more
-     * imagery than there was".
-     */
+    /** Bumped whenever a tile arrives, so the canvas knows to repaint. */
     val version: StateFlow<Int> = _version.asStateFlow()
 
-    /** A tile if it is already here. Never fetches; safe inside a draw. */
-    fun peek(ref: Tiles.Ref): Bitmap? = memory.get(ref.key)
+    @Volatile var usedLive: Boolean = false
+        private set
+
+    fun peek(ref: Tiles.Ref, layer: Layer = Layer.DAY): Bitmap? = memory.get(key(ref, layer))
 
     /**
-     * Asks for everything in [refs] that is missing.
+     * Asks for what is missing in [refs].
      *
-     * Called from a side effect when the camera settles, not from
-     * the draw: a draw runs on every frame of a pinch, and queueing
-     * work from one would spend a phone's data on ground that was
-     * under the thumb for a sixtieth of a second.
+     * Bundled tiles are read whenever asked, gesture or not: they cost
+     * nothing. Live ones only when [network] is true — the caller passes
+     * false while a thumb is moving the globe, so ground that was under
+     * it for a sixtieth of a second is not paid for.
      */
-    fun request(refs: List<Tiles.Ref>) {
+    fun request(refs: List<Tiles.Ref>, layer: Layer = Layer.DAY, network: Boolean = true) {
+        val live = refs.filter { it.z > Tiles.BUNDLED_MAX_ZOOM }
+        if (network && live.isNotEmpty()) wanted = live.mapTo(HashSet()) { key(it, layer) }
         refs.forEach { ref ->
-            if (memory.get(ref.key) != null) return@forEach
-            if (!pending.add(ref.key)) return@forEach
+            val k = key(ref, layer)
+            if (memory.get(k) != null) return@forEach
+            val bundled = ref.z <= Tiles.BUNDLED_MAX_ZOOM
+            if (!bundled && !network) return@forEach
+            if (!pending.add(k)) return@forEach
             scope.launch {
                 try {
-                    gate.withPermit { fetch(ref) }
+                    val bitmap = if (bundled) {
+                        bundled(ref, layer) ?: if (network) gate.withPermit { live(ref, layer) } else null
+                    } else {
+                        gate.withPermit {
+                            // Superseded while it waited: the view is elsewhere.
+                            if (k in wanted) live(ref, layer) else null
+                        }
+                    }
+                    if (bitmap != null) {
+                        memory.put(k, bitmap)
+                        _version.value = _version.value + 1
+                    }
                 } finally {
-                    pending.remove(ref.key)
+                    pending.remove(k)
                 }
             }
         }
     }
 
-    private fun fetch(ref: Tiles.Ref) {
-        val url = "$BASE${ref.z}/${ref.y}/${ref.x}"
+    private fun bundled(ref: Tiles.Ref, layer: Layer): Bitmap? = runCatching {
+        assets.open("tiles/${layer.dir}/${ref.z}/${ref.x}_${ref.y}.jpg").use { input ->
+            BitmapFactory.decodeStream(input, null, OPTIONS)
+        }
+    }.getOrNull()
+
+    private fun live(ref: Tiles.Ref, layer: Layer): Bitmap? {
+        val url = layer.liveUrl(ref)
         val bitmap = runCatching {
             val request = Request.Builder()
                 .url(url)
@@ -102,49 +132,62 @@ internal class TileStore(
             Http.feedClient.newCall(request).execute().use { resp ->
                 if (!resp.isSuccessful) return@runCatching null
                 val bytes = resp.body?.bytes() ?: return@runCatching null
-                // A zoom past the imagery's coverage answers with a
-                // small "no data" tile rather than a 404, and an
-                // empty body decodes to null — both are "not here",
-                // which is a blank patch and not a crash.
-                BitmapFactory.decodeByteArray(
-                    bytes, 0, bytes.size,
-                    BitmapFactory.Options().apply {
-                        inPreferredConfig = Bitmap.Config.RGB_565
-                    }
-                )
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, OPTIONS)
             }
-        }.getOrNull() ?: return
-        memory.put(ref.key, bitmap)
-        _version.value = _version.value + 1
+        }.getOrNull()
+        if (bitmap != null && ref.z > Tiles.BUNDLED_MAX_ZOOM && layer == Layer.DAY) usedLive = true
+        return bitmap
     }
 
-    /** Dropped when the screen goes away, because this is tens of megabytes. */
+    /** Dropped when the screen goes away: tens of megabytes, and the queue with it. */
     fun clear() {
+        wanted = emptySet()
+        scope.cancel()
         memory.evictAll()
     }
 
+    enum class Layer(val dir: String) {
+        DAY("day") {
+            override fun liveUrl(ref: Tiles.Ref): String =
+                if (ref.z <= Tiles.BUNDLED_MAX_ZOOM) {
+                    "$GIBS/BlueMarble_ShadedRelief_Bathymetry/default/GoogleMapsCompatible_Level8/" +
+                        "${ref.z}/${ref.y}/${ref.x}.jpeg"
+                } else {
+                    // z/y/x with no extension: Esri's path order.
+                    "$ESRI${ref.z}/${ref.y}/${ref.x}"
+                }
+        },
+        NIGHT("night") {
+            override fun liveUrl(ref: Tiles.Ref): String =
+                "$GIBS/VIIRS_CityLights_2012/default/GoogleMapsCompatible_Level8/" +
+                    "${ref.z.coerceAtMost(8)}/${ref.y}/${ref.x}.jpeg"
+        };
+
+        abstract fun liveUrl(ref: Tiles.Ref): String
+    }
+
+    // Bit 63: the packed key uses bits 58-62 for the zoom, and zoom 16
+    // and above reach bit 62.
+    private fun key(ref: Tiles.Ref, layer: Layer): Long =
+        ref.key xor (layer.ordinal.toLong() shl 63)
+
     companion object {
-        /**
-         * Required wherever the imagery appears, and it was being
-         * met by an overlay belonging to the view that this
-         * replaced.
-         */
-        const val ATTRIBUTION =
+        /** Required wherever Esri's imagery appears. */
+        const val ESRI_ATTRIBUTION =
             "Imagery © Esri, Maxar, Earthstar Geographics · Data © OpenStreetMap contributors"
 
-        /** z/y/x with no extension, which is Esri's path order and not the usual one. */
-        private const val BASE =
+        /** NASA's imagery is public domain; the credit is courtesy. */
+        const val NASA_ATTRIBUTION = "Imagery: NASA Blue Marble, VIIRS"
+
+        private const val ESRI =
             "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/"
+        private const val GIBS = "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best"
 
-        /**
-         * A hundred and ninety-two tiles of RGB_565 is about
-         * twenty-four megabytes — two screenfuls of a tall phone, so
-         * panning back the way you came costs nothing, and bounded
-         * near the whole-Earth mosaic this sits beside.
-         */
-        private const val MAX_TILES = 192
-
-        /** Enough to fill a screen quickly, few enough to stay polite. */
+        private const val MAX_TILES = 400
         private const val MAX_IN_FLIGHT = 6
+
+        private val OPTIONS = BitmapFactory.Options().apply {
+            inPreferredConfig = Bitmap.Config.RGB_565
+        }
     }
 }

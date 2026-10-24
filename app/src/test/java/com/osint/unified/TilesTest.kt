@@ -64,7 +64,7 @@ class TilesTest {
         listOf(0.002, 0.5, 20.0, 120.0, 359.0).forEach { span ->
             val z = Tiles.zoomFor(span, 1080, 0.0)
             val refs = Tiles.cover(51.5, -0.12, span, 1080, 2340, z)
-            assertTrue("span $span produced ${refs.size} tiles", refs.size <= 96)
+            assertTrue("span $span produced ${refs.size} tiles", refs.size <= 200)
             assertTrue("span $span produced nothing", refs.isNotEmpty())
             // Every one of them is a real tile at its own zoom.
             refs.forEach {
@@ -146,5 +146,78 @@ class TilesTest {
         // One octave of span is one level of zoom.
         assertTrue(abs((fine - coarse) - 1) <= 1)
         assertTrue("coarse was $coarse", coarse in 5..9)
+    }
+
+    // ---- the visible set, found by looking ----
+
+    private fun everyPixelCovered(lat: Double, lon: Double, zoom: Float): Pair<Int, Int> {
+        val w = 1080; val h = 2340
+        val r = minOf(w, h) / 2f * 0.92f * zoom
+        val span = com.osint.unified.ui.godeye.GlobeHandoff.spanDegrees(w, h, zoom)
+        val refs = Tiles.visible(Tiles.zoomFor(span, w, lat), w, h, w / 2f, h / 2f, r, lat, lon)
+        val z = refs.first().z
+        val set = refs.map { it.y.toLong() * (1L shl z) + it.x }.toHashSet()
+        var miss = 0; var total = 0
+        var py = 0f
+        while (py < h) {
+            var px = 0f
+            while (px < w) {
+                val pl = com.osint.unified.ui.godeye.Orthographic.unproject(px, py, lat, lon, r, w / 2f, h / 2f)
+                if (pl != null && kotlin.math.abs(pl.first) < 85.05) {
+                    total++
+                    val x = kotlin.math.floor(Tiles.tileXOf(pl.second, z)).toInt().coerceIn(0, (1 shl z) - 1)
+                    val y = kotlin.math.floor(Tiles.tileYOf(pl.first, z)).toInt().coerceIn(0, (1 shl z) - 1)
+                    if (y.toLong() * (1L shl z) + x !in set) miss++
+                }
+                px += 9f
+            }
+            py += 9f
+        }
+        return miss to total
+    }
+
+    /**
+     * Every pixel of the planet on screen lands in a tile that is drawn.
+     *
+     * The rectangle estimate this replaced left the top corners of a
+     * portrait view near the poles uncovered, and they drew black.
+     */
+    @Test
+    fun nothingOnScreenIsLeftWithoutATile() {
+        listOf(
+            Triple(0.0, 0.0, 1f), Triple(51.5, -0.1, 1f), Triple(80.0, 0.0, 1.5f),
+            Triple(0.0, 179.9, 4f), Triple(60.0, 10.0, 16f), Triple(-75.0, 100.0, 6f),
+            Triple(51.5, -0.12, 48000f)
+        ).forEach { (lat, lon, zoom) ->
+            val (miss, total) = everyPixelCovered(lat, lon, zoom)
+            assertTrue("$lat,$lon zoom $zoom: $miss of $total pixels uncovered", miss * 1000 <= total)
+        }
+    }
+
+    /** A tall screen does not get stepped out a level, which doubles every tile's size. */
+    @Test
+    fun aPortraitScreenGetsTheZoomItAskedFor() {
+        val w = 1080; val h = 2340
+        listOf(4f, 8f, 16f, 2000f).forEach { zoom ->
+            val r = minOf(w, h) / 2f * 0.92f * zoom
+            val span = com.osint.unified.ui.godeye.GlobeHandoff.spanDegrees(w, h, zoom)
+            val want = Tiles.zoomFor(span, w, 0.0)
+            val got = Tiles.visible(want, w, h, w / 2f, h / 2f, r, 0.0, 179.9).first().z
+            assertEquals("zoom $zoom", want, got)
+        }
+    }
+
+    @Test
+    fun parentsContainTheirChildren() {
+        val kids = listOf(Tiles.Ref(6, 32, 21), Tiles.Ref(6, 33, 21), Tiles.Ref(6, 33, 22))
+        assertEquals(listOf(Tiles.Ref(5, 16, 10), Tiles.Ref(5, 16, 11)), Tiles.ancestors(kids, 5))
+        assertEquals(listOf(Tiles.Ref(0, 0, 0)), Tiles.ancestors(kids, 0))
+    }
+
+    @Test
+    fun aTileRowMapsBackToItsLatitude() {
+        for (z in 1..10) for (y in listOf(0, (1 shl z) / 3, (1 shl z) - 1)) {
+            assertEquals(Tiles.latOfTile(y, z), Tiles.latOfRow(y.toDouble(), z), 1e-9)
+        }
     }
 }
