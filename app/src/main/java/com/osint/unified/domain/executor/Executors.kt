@@ -1530,12 +1530,13 @@ class DirectToolExecutor(
      * look at Tokyo is data spent on nothing.
      */
     private suspend fun cctvNear(input: String): Result<String> = runCatching {
-        val parts = input.split(",").map { it.trim().toDoubleOrNull() }
-        if (parts.size != 2 || parts.any { it == null }) {
-            throw IllegalArgumentException("Expected coordinates as 'lat, lon'.")
-        }
-        val lat = parts[0]!!
-        val lon = parts[1]!!
+        // One parser for all of them. See Coordinates: this used to
+        // demand exactly two comma-separated fields, so the date the
+        // chronolocation tools learned to accept made this throw.
+        val here = com.osint.unified.domain.Coordinates.parse(input)
+            ?: throw IllegalArgumentException("Expected coordinates as 'lat, lon'.")
+        val lat = here.lat
+        val lon = here.lon
         // The shared instance, through the cached client.
         //
         // This built a new CctvDataSource on every call and handed it
@@ -1610,12 +1611,15 @@ class DirectToolExecutor(
      * working out what would have seen something happen.
      */
     private fun osmRecon(input: String): Result<String> {
-        val parts = input.split(",").map { it.trim().toDoubleOrNull() }
-        if (parts.size != 2 || parts.any { it == null }) {
-            return Result.failure(IllegalArgumentException("Expected coordinates as 'lat, lon'."))
-        }
-        val lat = parts[0]!!
-        val lon = parts[1]!!
+        // One parser for all of them. See Coordinates: this used to
+        // demand exactly two comma-separated fields, so the date the
+        // chronolocation tools learned to accept made this throw.
+        val here = com.osint.unified.domain.Coordinates.parse(input)
+            ?: return Result.failure(
+                IllegalArgumentException("Expected coordinates as 'lat, lon'.")
+            )
+        val lat = here.lat
+        val lon = here.lon
         val r = 2000
         val categories = listOf(
             "man_made=surveillance" to "Surveillance camera",
@@ -1701,12 +1705,15 @@ class DirectToolExecutor(
     }
 
     private fun militarySites(input: String): Result<String> {
-        val parts = input.split(",").map { it.trim().toDoubleOrNull() }
-        if (parts.size != 2 || parts.any { it == null }) {
-            return Result.failure(IllegalArgumentException("Expected coordinates as 'lat, lon'."))
-        }
-        val lat = parts[0]!!
-        val lon = parts[1]!!
+        // One parser for all of them. See Coordinates: this used to
+        // demand exactly two comma-separated fields, so the date the
+        // chronolocation tools learned to accept made this throw.
+        val here = com.osint.unified.domain.Coordinates.parse(input)
+            ?: return Result.failure(
+                IllegalArgumentException("Expected coordinates as 'lat, lon'.")
+            )
+        val lat = here.lat
+        val lon = here.lon
         // Sixty seconds, not thirty. A 25 km nwr[military] union is
         // one of the heaviest things anyone asks Overpass for, and
         // the server's own timeout was the thing being hit.
@@ -1748,12 +1755,15 @@ class DirectToolExecutor(
     }
 
     private fun overpass(input: String): Result<String> {
-        val parts = input.split(",").map { it.trim().toDoubleOrNull() }
-        if (parts.size != 2 || parts.any { it == null }) {
-            return Result.failure(IllegalArgumentException("Expected coordinates as 'lat, lon'."))
-        }
-        val lat = parts[0]!!
-        val lon = parts[1]!!
+        // One parser for all of them. See Coordinates: this used to
+        // demand exactly two comma-separated fields, so the date the
+        // chronolocation tools learned to accept made this throw.
+        val here = com.osint.unified.domain.Coordinates.parse(input)
+            ?: return Result.failure(
+                IllegalArgumentException("Expected coordinates as 'lat, lon'.")
+            )
+        val lat = here.lat
+        val lon = here.lon
         val query = "[out:json][timeout:40];(node(around:500,$lat,$lon)[amenity];" +
             "node(around:500,$lat,$lon)[man_made];);out body 60;"
         return when (val answer = Overpass.query(query, client)) {

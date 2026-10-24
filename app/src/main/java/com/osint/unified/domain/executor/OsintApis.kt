@@ -370,6 +370,13 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
 
     /** robots.txt, security.txt and sitemap — the files a site publishes about
      *  itself, often naming paths it would rather not advertise. */
+    // orStop on the OUTER runCatching, which is where a cancellation
+    // actually arrives.
+    //
+    // It was on the inner one, around getBody — a plain blocking
+    // function that cannot throw a CancellationException, so the
+    // guard was a no-op. The cancellation surfaces at it.await()
+    // below, inside this one.
     suspend fun siteFiles(input: String): Result<String> = runCatching {
         val host = hostOf(input)
         val out = StringBuilder()
@@ -410,7 +417,7 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
                     "so nothing is known about what it publishes."
             else -> "No robots.txt, security.txt or sitemap found on $host."
         }
-    }
+    }.orStop()
 
     /** Is this IP a Tor exit node? (official bulk exit list, keyless) */
     fun torExit(ip: String): Result<String> = runCatching {
@@ -550,10 +557,13 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
 
     /** Reverse geocoding (OpenStreetMap Nominatim) + MGRS military grid. */
     fun revgeo(input: String): Result<String> = runCatching {
-        val parts = input.split(",").map { it.trim() }
-        require(parts.size == 2) { "Expected 'lat, lon'." }
-        val lat = parts[0].toDouble()
-        val lon = parts[1].toDouble()
+        // One parser, and a range check this never had: it took
+        // parts[0].toDouble() with no bounds, so "500, 900" was sent
+        // to Nominatim as a place on Earth.
+        val here = com.osint.unified.domain.Coordinates.parse(input)
+        require(here != null) { "Expected 'lat, lon'." }
+        val lat = here.lat
+        val lon = here.lon
         val o = json.parseToJsonElement(
             getBody("https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=$lat&lon=$lon")
         ).jsonObject
@@ -633,6 +643,10 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
      * it does this returned nothing at all for every IP. RIPEstat carries
      * the same routing facts and is run by an RIR, so it answers instead.
      */
+    // Same again: the cancellation arrives at the await inside
+    // ripeRouting, and this is the runCatching that catches it. It was
+    // bare, so pressing STOP during an IP dossier wrote a SUCCESSFUL
+    // row asserting RIPEstat had been consulted and had failed.
     suspend fun bgpview(ip: String): Result<String> = runCatching {
         val o = runCatching {
             json.parseToJsonElement(getBody("https://api.bgpview.io/ip/$ip"))
@@ -653,7 +667,7 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
             }
             if (isBlank()) append(ripeRouting(ip))
         }
-    }
+    }.orStop()
 
     /** Routing facts for an IP straight from RIPEstat — the fallback when
      *  BGPView is unavailable, which it often is. */
@@ -697,7 +711,7 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
         // that RIPEstat had been consulted and the address is not
         // routed. The reason in the parentheses was never read by
         // anything. A failure has to say it could not be reached.
-    }.getOrElse { "RIPEstat could not be reached for $ip (${it.message})." }
+    }.orStop().getOrElse { "RIPEstat could not be reached for $ip (${it.message})." }
 
     /** Hudson Rock infostealer check (keyless): is this email in stealer logs. */
     fun hudsonRock(email: String): Result<String> = runCatching {
@@ -999,13 +1013,13 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
         // straight into the query string, so anything the user typed
         // — an ampersand, a fragment of another parameter — became
         // part of the request.
-        val parts = input.split(",").map { it.trim().toDoubleOrNull() }
-        require(parts.size == 2 && parts.all { it != null }) { "Expected 'lat, lon'." }
-        val lat = parts[0]!!
-        val lon = parts[1]!!
-        require(lat in -90.0..90.0 && lon in -180.0..180.0) {
-            "Latitude must be between -90 and 90, longitude between -180 and 180."
+        val here = com.osint.unified.domain.Coordinates.parse(input)
+        require(here != null) {
+            "Expected 'lat, lon', with latitude in -90..90 and longitude " +
+                "in -180..180."
         }
+        val lat = here.lat
+        val lon = here.lon
         val url = "https://en.wikipedia.org/w/api.php?action=query&list=geosearch" +
             "&gscoord=%.6f%%7C%.6f".format(java.util.Locale.US, lat, lon) +
             "&gsradius=10000&gslimit=25&format=json"

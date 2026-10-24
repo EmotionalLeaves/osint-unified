@@ -2367,14 +2367,10 @@ class DeepApis(
         return t.removePrefix("+").substringBefore("T")
     }
 
-    private fun parseCoord(input: String): Pair<Double, Double>? {
-        val p = input.trim().split(",")
-        if (p.size < 2) return null
-        val lat = p[0].trim().toDoubleOrNull() ?: return null
-        val lon = p[1].trim().toDoubleOrNull() ?: return null
-        if (lat !in -90.0..90.0 || lon !in -180.0..180.0) return null
-        return lat to lon
-    }
+    /** See Coordinates: there were seven of these and six of them
+     *  did not know about the date the other one had learned. */
+    private fun parseCoord(input: String): Pair<Double, Double>? =
+        com.osint.unified.domain.Coordinates.parse(input)?.let { it.lat to it.lon }
 
     /** A moment given after the coordinate, and whether it named a time. */
     internal data class Moment(val instant: Long, val hasTime: Boolean, val asGiven: String)

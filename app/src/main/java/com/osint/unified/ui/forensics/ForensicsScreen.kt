@@ -89,25 +89,48 @@ fun ForensicsScreen(
 
     suspend fun readPhoto(uri: android.net.Uri) {
         exifBusy = true
-        // Both questions, because they are different questions and the
-        // second one has no other way of being asked on a phone. EXIF
-        // says what camera took a photograph; it says nothing at all
-        // about a picture that no camera took.
-        val metadata = runCatching { exifReader.fromUri(uri) }
-            .getOrElse { "Could not read that image: ${it.message}" }
-        val credentials = runCatching { exifReader.credentialsFromUri(uri) }
-            .getOrElse { "" }
-        output = if (credentials.isBlank()) metadata else "$metadata\n\n$credentials"
-        exifBusy = false
+        try {
+            // Both questions, because they are different questions and
+            // the second has no other way of being asked on a phone.
+            // EXIF says what camera took a photograph; it says nothing
+            // at all about a picture that no camera took.
+            val metadata = runCatching { exifReader.fromUri(uri) }
+                .getOrElse { "Could not read that image: ${it.message}" }
+            val credentials = runCatching { exifReader.credentialsFromUri(uri) }
+                .getOrElse { "" }
+            output = if (credentials.isBlank()) metadata else "$metadata\n\n$credentials"
+        } finally {
+            // In a finally, because a cancellation here used to leave
+            // the screen reading "working" with nothing coming.
+            exifBusy = false
+        }
     }
 
-    // A photograph on the phone, read here rather than uploaded somewhere
-    // to be read. The picker needs no storage permission: the system hands
-    // back one image and nothing else.
-    LaunchedEffect(incomingImage) {
+    // A photograph on the phone, read here rather than uploaded
+    // somewhere to be read. The picker needs no storage permission:
+    // the system hands back one image and nothing else.
+    //
+    // Keyed on the moment, and cleared only once the read is done.
+    //
+    // This called onImageHandled() first — which nulls both sources of
+    // incomingImage, and incomingImage is this effect's own key. The
+    // next recomposition therefore cancelled the coroutine at its
+    // first suspension point, which is the read itself, so `output`
+    // was never assigned and `exifBusy` never cleared: the screen sat
+    // busy forever on every pick and every share. The picker was
+    // hoisted above the lock gate so the result would survive, and
+    // the result was thrown away one line later.
+    //
+    // Keyed on the timestamp rather than the pair so that clearing the
+    // Uri cannot restart it, and a marker of its own so a re-entry
+    // after the clear does not read a stale arrival.
+    var handledAt by rememberSaveable { mutableStateOf(0L) }
+    LaunchedEffect(incomingImage?.second) {
         val arrival = incomingImage ?: return@LaunchedEffect
-        onImageHandled()
+        if (arrival.second <= handledAt) return@LaunchedEffect
+        handledAt = arrival.second
         readPhoto(arrival.first)
+        onImageHandled()
     }
 
     Column(

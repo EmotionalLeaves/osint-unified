@@ -263,7 +263,17 @@ object Corroboration {
      * are grouped.
      */
     internal fun exclusiveGroup(kind: String, value: String): String? = when {
-        kind == "COORD" -> "COORD"
+        // COORD was here and must not be.
+        //
+        // The coordinate tools exist to enumerate what is NEAR a
+        // place: cctvNear prints a position per camera, osmRecon and
+        // milsites one per feature, photosNear one per photograph. A
+        // dossier about a place legitimately holds dozens of points,
+        // and grouping them all made nine camera positions declare
+        // each other improbable. The seed's own position is already
+        // excluded by the extractor, and two renderings of one point
+        // now agree rather than compete, because Coordinates.same
+        // compares them as numbers.
         kind == "PERSON" -> "PERSON"
         kind == "PLACE" && Places.isCountry(value) -> "COUNTRY"
         else -> null
@@ -306,7 +316,17 @@ object Corroboration {
             EntityExtractor.extract(
                 listOf(row), seed, limitPerKind = 40, seedIsPlace = seedIsPlace
             ).forEach { pivot ->
-                val key = pivot.kind to pivot.value.lowercase()
+                // One point, however many decimals a source wrote it
+                // to. histweather and ukcrime print four and
+                // photosnear and sunterrain print five, so the same
+                // place arrived as two entities with one witness each
+                // where it should be one with two.
+                val value = if (pivot.kind == "COORD") {
+                    Coordinates.key(pivot.value) ?: pivot.value.lowercase()
+                } else {
+                    pivot.value.lowercase()
+                }
+                val key = pivot.kind to value
                 assertions.getOrPut(key) { mutableListOf() }.add(row.toolId to pivot.count)
                 nearest[key] = minOf(nearest[key] ?: hop, hop)
             }
