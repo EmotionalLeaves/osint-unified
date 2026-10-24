@@ -58,12 +58,18 @@ jobs:
             # than its first three hundred bytes. A capabilities document
             # is a quarter of a megabyte and the layer name is somewhere
             # in the middle of it.
-            GREP=""
             # URL##regex~~N widens the snippet to N characters, for
             # reading the shape of one table row rather than whether a
             # word appears.
             WIDTH=500
             case "$U" in *'~~'*) WIDTH="${U##*~~}"; U="${U%%~~*}";; esac
+            # URL^^literal shows WIDTH characters around the first place
+            # a literal string occurs. A regex like `.{0,1200}word` over a
+            # megabyte of single-line JSON is pathological for grep -E and
+            # ran past the job timeout; finding a fixed string is linear.
+            AROUND=""
+            case "$U" in *'^^'*) AROUND="${U##*^^}"; U="${U%%^^*}";; esac
+            GREP=""
             case "$U" in *'##'*) GREP="${U##*##}"; U="${U%%##*}";; esac
             CODE=$(curl -sSL -o /tmp/body -w '%{http_code}' -m 25 \
               -H "User-Agent: $UA" \
@@ -71,7 +77,15 @@ jobs:
               -H 'Digitraffic-User: EmotionalLeaves/osint-unified' --compressed \
               "$U" 2>/tmp/err)
             SIZE=$(wc -c < /tmp/body 2>/dev/null || echo 0)
-            if [ -n "$GREP" ]; then
+            if [ -n "$AROUND" ]; then
+              SNIP=$(NEEDLE="$AROUND" W="$WIDTH" python3 -c '
+          import os
+          b = open("/tmp/body", "rb").read().decode("utf-8", "replace")
+          n = os.environ["NEEDLE"]; w = int(os.environ["W"])
+          i = b.find(n)
+          print("(not found)" if i < 0 else b[max(0, i - w // 3): i + w].replace("\n", " ").replace("%", "pct"))
+          ' 2>&1 | head -c "$WIDTH")
+            elif [ -n "$GREP" ]; then
               SNIP=$(grep -oE "$GREP" /tmp/body 2>/dev/null | sort -u | head -12 \
                 | tr '\n' ' ' | tr -d '\r' | head -c "$WIDTH" | sed 's/%/pct/g')
               [ -z "$SNIP" ] && SNIP="(no line matched)"
