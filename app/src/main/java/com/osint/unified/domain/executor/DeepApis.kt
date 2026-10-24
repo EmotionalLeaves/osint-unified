@@ -317,9 +317,15 @@ class DeepApis(
         val desc = ((first["display"] as? JsonObject)?.get("description") as? JsonObject)?.str("value")
             ?: first.str("description")
 
-        val claims = (json.parseToJsonElement(
-            get("https://www.wikidata.org/w/api.php?action=wbgetentities&ids=$id&props=claims&format=json")
-        ).jsonObject["entities"] as? JsonObject)?.get(id)?.jsonObject?.get("claims") as? JsonObject
+        // Through MediaWiki, like the rest of the callers. A
+        // refusal here prints no false sentence, but it silently
+        // drops Employer, Citizenship, Occupation and Party from
+        // the card — so the entity looks like one with no such
+        // facts recorded.
+        val claims = (MediaWiki.body(
+            get("https://www.wikidata.org/w/api.php?action=wbgetentities&ids=$id&props=claims&format=json"),
+            "Wikidata claims"
+        )["entities"] as? JsonObject)?.get(id)?.jsonObject?.get("claims") as? JsonObject
 
         val sb = StringBuilder("Wikidata — $label ($id)\n")
         if (!desc.isNullOrBlank()) sb.append("$desc\n")
@@ -381,10 +387,14 @@ class DeepApis(
         val labels = HashMap<String, String>()
         ids.chunked(45).forEach { chunk ->
             runCatching {
-                val ent = json.parseToJsonElement(
-                    get("https://www.wikidata.org/w/api.php?action=wbgetentities&ids=" +
-                        chunk.joinToString("%7C") + "&props=labels&languages=en&format=json")
-                ).jsonObject["entities"] as? JsonObject
+                val ent = MediaWiki.body(
+                    get(
+                        "https://www.wikidata.org/w/api.php?action=wbgetentities&ids=" +
+                            chunk.joinToString("%7C") +
+                            "&props=labels&languages=en&format=json"
+                    ),
+                    "Wikidata labels"
+                )["entities"] as? JsonObject
                 ent?.forEach { (k, v) ->
                     ((v as? JsonObject)?.get("labels") as? JsonObject)
                         ?.get("en")?.jsonObject?.str("value")?.let { labels[k] = it }
