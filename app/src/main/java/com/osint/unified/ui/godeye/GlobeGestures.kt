@@ -48,8 +48,10 @@ internal object GlobeGestures {
      * seven times equator speed, which is fast without being a flick
      * across the date line.
      */
-    fun perPixelLon(radius: Float, lat: Float): Double {
-        val shrink = max(cos(Math.toRadians(lat.toDouble())), MIN_COS)
+    fun perPixelLon(radius: Float, lat: Float): Double = perPixelLon(radius, lat.toDouble())
+
+    fun perPixelLon(radius: Float, lat: Double): Double {
+        val shrink = max(cos(Math.toRadians(lat)), MIN_COS)
         return DEG / (max(radius.toDouble(), 1.0) * shrink)
     }
 
@@ -81,18 +83,34 @@ internal object GlobeGestures {
         centreX: Float,
         centreY: Float
     ): Pair<Float, Float> {
+        val (a, b) = anchorPinch(
+            lat.toDouble(), lon.toDouble(), oldRadius, newRadius, focusX, focusY, centreX, centreY
+        )
+        return a.toFloat() to b.toFloat()
+    }
+
+    /** The same, at the precision the camera is held in. */
+    fun anchorPinch(
+        lat: Double,
+        lon: Double,
+        oldRadius: Float,
+        newRadius: Float,
+        focusX: Float,
+        focusY: Float,
+        centreX: Float,
+        centreY: Float
+    ): Pair<Double, Double> {
         if (oldRadius <= 0f || newRadius <= 0f) return lat to lon
         if (abs(oldRadius - newRadius) < 1e-4f) return lat to lon
         val before = Orthographic.unproject(
-            focusX, focusY, lat.toDouble(), lon.toDouble(), oldRadius, centreX, centreY
+            focusX, focusY, lat, lon, oldRadius, centreX, centreY
         ) ?: return lat to lon
         val after = Orthographic.unproject(
-            focusX, focusY, lat.toDouble(), lon.toDouble(), newRadius, centreX, centreY
+            focusX, focusY, lat, lon, newRadius, centreX, centreY
         ) ?: return lat to lon
         val dLat = before.first - after.first
         val dLon = wrapDegrees(before.second - after.second)
-        return (lat + dLat).toFloat().coerceIn(-89f, 89f) to
-            wrapDegrees(lon + dLon).toFloat()
+        return (lat + dLat).coerceIn(-89.0, 89.0) to wrapDegrees(lon + dLon)
     }
 
     /** Degrees folded back into -180..180, for sums that crossed it. */

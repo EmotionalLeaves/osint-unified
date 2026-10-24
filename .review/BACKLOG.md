@@ -95,12 +95,12 @@ HIGH
   exists as a public fun anywhere. Reproduced.
 
 MEDIUM
-- [ ] **P7.** Float camera quantises at max zoom: 100 drags of 1 px move
+- [x] **P7.** (closed r20: camera lat/lon are Double; 100 one-pixel drags at max zoom move 100.00 px (was 197.67). Test added.) Float camera quantises at max zoom: 100 drags of 1 px move
   0 px. Reproduced.
 - [x] **P8.** (closed r20: Tiles.visible() unprojects a screen grid + edges + rim rings instead of a centre-latitude box.) Tile cover misses top corners away from the equator (uses
   cos of centre latitude); they draw black once tiles are opaque.
   Reproduced, 4–27%.
-- [ ] **P9.** Cooldown checked before the pacing sleep, so one collision
+- [x] **P9.** (closed r20: cooldown re-checked after the pacing wait and the queue; removal only clears the cooldown it waited for.) Cooldown checked before the pacing sleep, so one collision
   escalates the back-off twice.
 - [x] **P10.** (closed r20: base and parent tiles are drawn under the current zoom, so a zoom change shows the previous tiles.) A tile-zoom change flashes to the mosaic / black instead of
   showing the previous zoom's tiles that are still in memory.
@@ -117,7 +117,7 @@ MEDIUM
 
 LOW
 - [ ] **P16.** The tile cap still drops a zoom level on 3–10% of zooms.
-- [ ] **P17.** Flings die above ~zoom 600 (SPIN_FLOOR in degrees).
+- [x] **P17.** (closed r20: the coast stops below 0.2 px a frame, measured with the degrees-per-pixel at the throw.) Flings die above ~zoom 600 (SPIN_FLOOR in degrees).
 - [ ] **P18.** Deep-zoom marker thinning covers ≥1° though the screen is
   ~1 km, so dense layers drop on-screen markers.
 - [ ] **P19.** Tiles share the feeds' 48 MB HTTP cache and the escalating

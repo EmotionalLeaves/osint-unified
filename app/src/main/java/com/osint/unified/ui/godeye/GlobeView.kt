@@ -164,7 +164,10 @@ fun GlobeView(
     // it is written on every frame of a gesture and nothing should
     // recompose because of it.
     var spin by remember { mutableFloatStateOf(0f) }
-    val thrown = remember { floatArrayOf(0f) }
+    // [0] the speed in degrees a frame; [1] degrees per pixel when it
+    // was thrown, so the coast can tell when it has stopped moving on
+    // the screen rather than on the planet.
+    val thrown = remember { floatArrayOf(0f, 0f) }
     // Whether a finger is on the glass at all.
     var touching by remember { mutableStateOf(false) }
 
@@ -218,7 +221,12 @@ fun GlobeView(
         }
         var v = thrown[0]
         thrown[0] = 0f
-        while (abs(v) > SPIN_FLOOR) {
+        // Stopped when it is moving less than a fraction of a pixel a
+        // frame. This was a fixed 0.02 degrees, which on the whole Earth
+        // is a fifth of a pixel and at street level is two thousand
+        // pixels — so above about zoom 600 a flick never started at all.
+        val floor = thrown[1] * SPIN_FLOOR_PX
+        while (abs(v) > floor) {
             withFrameNanos { }
             val now = live
             spin = v
@@ -478,10 +486,11 @@ fun GlobeView(
                     // finger lifts; applying it here turned the globe
                     // twice over for every pixel of the drag.
                     thrown[0] = (pan.x * perLon).toFloat().coerceIn(-4f, 4f)
+                    thrown[1] = perLon.toFloat()
                     val zoomed = (live.zoom * gestureZoom).coerceIn(MIN_ZOOM, MAX_ZOOM)
                     val dragged = GlobeCamera(
-                        lat = (live.lat + pan.y * perLat).toFloat().coerceIn(-89f, 89f),
-                        lon = wrapLon((live.lon - pan.x * perLon).toFloat()),
+                        lat = (live.lat + pan.y * perLat).coerceIn(-89.0, 89.0),
+                        lon = wrapLon(live.lon - pan.x * perLon),
                         zoom = zoomed
                     )
                     // And a pinch zooms about the fingers rather than
@@ -525,8 +534,8 @@ fun GlobeView(
                             spin = 0f
                             thrown[0] = 0f
                             flight = GlobeCamera(
-                                lat = lat.toFloat().coerceIn(-89f, 89f),
-                                lon = lon.toFloat(),
+                                lat = lat.coerceIn(-89.0, 89.0),
+                                lon = lon,
                                 zoom = (live.zoom * DOUBLE_TAP_ZOOM)
                                     .coerceIn(MIN_ZOOM, MAX_ZOOM)
                             )
@@ -826,7 +835,12 @@ private val IDLE_REQUEST = RenderRequest(0.0, 0.0, 0, 0.0, 0.0, false)
  * A value held by the screen, so the flat map can be handed the same
  * place rather than starting over in the middle of the Atlantic.
  */
-data class GlobeCamera(val lat: Float, val lon: Float, val zoom: Float)
+data class GlobeCamera(val lat: Double, val lon: Double, val zoom: Float)
+// Double, not Float, for the position. A Float longitude near 100° moves
+// in steps of 7.6e-6 degrees, which at the deepest zoom is about three
+// pixels — so a slow one-pixel drag rounded to nothing, a hundred times
+// in a row, and the street would not pan. The zoom stays Float: its
+// error is relative, the same at every scale.
 
 /** One thing to put on the globe. */
 data class GlobePoint(
@@ -1003,17 +1017,17 @@ private fun nearest(
  * hundred and forty degrees west, and interpolating the raw numbers
  * takes the long way across the entire Pacific.
  */
-private fun shortestTurn(from: Float, to: Float): Float {
+private fun shortestTurn(from: Double, to: Double): Double {
     var delta = to - from
-    while (delta > 180f) delta -= 360f
-    while (delta < -180f) delta += 360f
+    while (delta > 180.0) delta -= 360.0
+    while (delta < -180.0) delta += 360.0
     return delta
 }
 
-private fun wrapLon(lon: Float): Float {
+private fun wrapLon(lon: Double): Double {
     var v = lon
-    while (v > 180f) v -= 360f
-    while (v < -180f) v += 360f
+    while (v > 180.0) v -= 360.0
+    while (v < -180.0) v += 360.0
     return v
 }
 
@@ -1612,8 +1626,12 @@ private const val MIN_ZOOM = 0.6f
 private const val MAX_ZOOM = 48_000f
 private const val SPIN_DECAY = 0.94f
 
-/** Below this a flick has stopped, and the globe stops redrawing. */
-private const val SPIN_FLOOR = 0.02f
+/**
+ * Below this many pixels a frame a flick has stopped, and the globe
+ * stops redrawing. A fifth of a pixel: what the old fixed 0.02 degrees
+ * came to with the whole Earth in view.
+ */
+private const val SPIN_FLOOR_PX = 0.2f
 private const val TAP_SLOP_PX = 44f
 
 /** How much smaller the sphere is rendered while it is moving. A

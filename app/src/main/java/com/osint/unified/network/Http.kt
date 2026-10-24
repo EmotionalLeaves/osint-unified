@@ -239,20 +239,7 @@ object Http {
                 .build()
             val host = request.url.host
 
-            cooldowns[host]?.let { until ->
-                val wait = until - System.currentTimeMillis()
-                when {
-                    wait <= 0 -> cooldowns.remove(host)
-                    wait <= MAX_WAIT_MS -> {
-                        sleep(wait)
-                        cooldowns.remove(host)
-                    }
-                    else -> throw IOException(
-                        "$host asked to be left alone for another ${wait / 1000}s " +
-                            "(it answered 429). Not asking again yet."
-                    )
-                }
-            }
+            awaitCooldown(host)
 
             // Hosts that stated an interval are held to it, one caller at
             // a time, so two polls arriving together queue instead of
@@ -292,6 +279,15 @@ object Http {
                 throw IOException("Too many requests already queued for $host.")
             }
             try {
+                // And again, now that this caller has waited its turn.
+                //
+                // The check above ran before the pacing wait and the
+                // queue, which can be several seconds. If the caller
+                // ahead was refused in that time, this one went straight
+                // at a host that had just said stop — collected a second
+                // refusal for the same collision, and doubled the
+                // back-off twice for it.
+                awaitCooldown(host)
                 var response = chain.proceed(request)
                 if (response.isSuccessful) refusals.remove(host)
                 if (response.code == 429 || response.code == 503) {
@@ -328,6 +324,25 @@ object Http {
                 // Released before the body is read, so a slow download does
                 // not hold a slot the whole time.
                 gate.release()
+            }
+        }
+
+        /**
+         * Waits out a short cooldown on [host], or refuses for a long one.
+         */
+        private fun awaitCooldown(host: String) {
+            val until = cooldowns[host] ?: return
+            val wait = until - System.currentTimeMillis()
+            when {
+                wait <= 0 -> cooldowns.remove(host, until)
+                wait <= MAX_WAIT_MS -> {
+                    sleep(wait)
+                    cooldowns.remove(host, until)
+                }
+                else -> throw IOException(
+                    "$host asked to be left alone for another ${wait / 1000}s " +
+                        "(it answered 429). Not asking again yet."
+                )
             }
         }
 

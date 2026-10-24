@@ -170,4 +170,28 @@ class GlobeGesturesTest {
         assertEquals(20f, lat, 1e-6f)
         assertEquals(10f, lon, 1e-6f)
     }
+
+    /**
+     * At the deepest zoom a one-pixel drag is a few millionths of a
+     * degree, and a Float longitude near 100 moves in steps of 7.6e-6.
+     * The camera was Float: a hundred one-pixel drags moved the street
+     * twice as far as the thumb, or not at all, depending on rounding.
+     * Held in Double, a hundred pixels is a hundred pixels.
+     */
+    @Test
+    fun aSlowDragAtStreetLevelMovesExactlyAsFarAsTheThumb() {
+        val deep = 1080 / 2f * 0.92f * 48_000f
+        var lon = 100.0
+        repeat(100) { lon -= GlobeGestures.perPixelLon(deep, 51.5) }
+        val moved = (100.0 - lon) / GlobeGestures.perPixelLon(deep, 51.5)
+        assertEquals(100.0, moved, 0.01)
+    }
+
+    @Test
+    fun theDoublePinchAgreesWithTheFloatOne() {
+        val (a, b) = GlobeGestures.anchorPinch(20f, 10f, r, r * 1.2f, cx + 100f, cy, cx, cy)
+        val (c, d) = GlobeGestures.anchorPinch(20.0, 10.0, r, r * 1.2f, cx + 100f, cy, cx, cy)
+        assertEquals(c, a.toDouble(), 1e-4)
+        assertEquals(d, b.toDouble(), 1e-4)
+    }
 }

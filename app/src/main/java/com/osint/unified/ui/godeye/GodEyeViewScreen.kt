@@ -328,14 +328,16 @@ fun GodEyeViewScreen(
             restore = {
                 mutableStateOf(
                     GlobeCamera(
-                        (it.getOrNull(0) as? Float) ?: 20f,
-                        (it.getOrNull(1) as? Float) ?: 0f,
-                        (it.getOrNull(2) as? Float) ?: 1f
+                        // Number, not Double: a state saved by the
+                        // build before this one holds Floats.
+                        (it.getOrNull(0) as? Number)?.toDouble() ?: 20.0,
+                        (it.getOrNull(1) as? Number)?.toDouble() ?: 0.0,
+                        (it.getOrNull(2) as? Number)?.toFloat() ?: 1f
                     )
                 )
             }
         )
-    ) { mutableStateOf(GlobeCamera(20f, 0f, 1f)) }
+    ) { mutableStateOf(GlobeCamera(20.0, 0.0, 1f)) }
     var globeSize by remember { mutableStateOf(0 to 0) }
 
     // The globe tells the app where it is looking, the same way the
@@ -410,8 +412,8 @@ fun GodEyeViewScreen(
         if (w <= 0 || focus == appliedFocus) return@LaunchedEffect
         appliedFocus = focus
         globeCamera = GlobeCamera(
-            focus.first.toFloat().coerceIn(-89f, 89f),
-            focus.second.toFloat(),
+            focus.first.coerceIn(-89.0, 89.0),
+            focus.second,
             GlobeHandoff.globeZoom(
                 GlobeHandoff.mapSpanDegrees(FOCUS_TILE_ZOOM, w, focus.first), w, h
             )
