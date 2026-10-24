@@ -1898,10 +1898,57 @@ class DeepApis(
         sb.append("Azimuth: %.1f° (compass bearing to the sun)\n".format(Locale.US, sun.second))
         if (sun.first > 0) {
             val shadowBearing = (sun.second + 180.0) % 360.0
-            val ratio = 1.0 / tan(Math.toRadians(sun.first))
-            sb.append("Shadows fall toward %.0f° and are %.2f× the object's height.\n".format(Locale.US, shadowBearing, ratio))
+            // The cotangent runs away near the horizon.
+            //
+            // At an elevation of 0.1 degrees the ratio is 573, and
+            // at 0.01 it is 5,730 — printed to two decimal places
+            // as though it were a measurement. Within a few degrees
+            // of the horizon the number is also meaningless in
+            // practice: terrain, refraction and the length of the
+            // shadow itself all swamp it. So it is given as a bound
+            // rather than a figure.
+            if (sun.first < 3.0) {
+                sb.append(
+                    "The sun is %.1f° above the horizon, so shadows fall toward "
+                        .format(Locale.US, sun.first)
+                )
+                sb.append("%.0f° and are more than twenty times the object's "
+                    .format(Locale.US, shadowBearing))
+                sb.append("height — too close to the horizon for the ratio to ")
+                sb.append("mean anything, because terrain and refraction ")
+                sb.append("dominate it.\n")
+            } else {
+                val ratio = 1.0 / tan(Math.toRadians(sun.first))
+                sb.append("Shadows fall toward %.0f° and are %.2f× the object's height.\n".format(Locale.US, shadowBearing, ratio))
+            }
         } else {
             sb.append("The sun is below the horizon here — it is night.\n")
+        }
+
+        // What the clock says at that place.
+        //
+        // Chronolocation is matching a timestamp to a place and
+        // every number above this line is UTC, so the one piece the
+        // reader has to supply themselves was the offset. Nominatim
+        // does not return a timezone and nothing else here did
+        // either; Open-Meteo resolves it from the coordinate, on a
+        // client this function already uses.
+        runCatching {
+            val o = json.parseToJsonElement(
+                get("https://api.open-meteo.com/v1/forecast?latitude=$lat&longitude=$lon" +
+                    "&timezone=auto&forecast_days=1")
+            ).jsonObject
+            val zone = (o["timezone"] as? JsonPrimitive)?.contentOrNull
+            val offset = (o["utc_offset_seconds"] as? JsonPrimitive)?.doubleOrNull?.toLong()
+            if (zone != null && offset != null) {
+                val sign = if (offset < 0) "-" else "+"
+                val abs = kotlin.math.abs(offset)
+                sb.append("\nLocal time zone: $zone (UTC$sign%02d:%02d)\n"
+                    .format(Locale.US, abs / 3600, (abs % 3600) / 60))
+                sb.append("Local time now: ${wallClock(now.time + offset * 1000)}\n")
+                sb.append("Everything above this line is UTC; a timestamp on a ")
+                sb.append("photograph taken here would read local.\n")
+            }
         }
 
         // Sunrise/sunset and today's weather, for verifying a claimed timestamp.
@@ -2167,6 +2214,12 @@ class DeepApis(
 
     private fun isoHour(ts: String): Int? =
         ts.substringAfter("T", "").substringBefore(":").toIntOrNull()
+
+    /** The same instant with the offset already added, so the
+     *  label must not say UTC. */
+    private fun wallClock(millis: Long): String =
+        SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US)
+            .apply { timeZone = TimeZone.getTimeZone("UTC") }.format(Date(millis))
 
     private fun utc(millis: Long): String =
         SimpleDateFormat("yyyy-MM-dd HH:mm 'UTC'", Locale.US)
