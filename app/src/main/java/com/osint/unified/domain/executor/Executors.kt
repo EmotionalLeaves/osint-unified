@@ -315,7 +315,7 @@ class DirectToolExecutor(
         Regex("""^[\[{]\s*(?:"[\w.]+"\s*:\s*(?:\[\s*\]|\{\s*\}|null|0|false)\s*,?\s*)*[\]}]$""")
 
     private val DIRECTORY_TALLY =
-        Regex("""^(\d+) of \d+ executable endpoints returned data""", RegexOption.MULTILINE)
+        Regex("""^(\d+) of (\d+) executable endpoints returned data""", RegexOption.MULTILINE)
 
     private val formUrlEncoded = "application/x-www-form-urlencoded".toMediaType()
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
@@ -413,9 +413,22 @@ class DirectToolExecutor(
                 // Its first line names the target, so the verdict is
                 // the line after it, which it writes itself.
                 val tally = DIRECTORY_TALLY.find(output)
+                val ran = tally?.groupValues?.get(1)?.toIntOrNull()
+                val outOf = tally?.groupValues?.get(2)?.toIntOrNull()
                 when {
                     tally == null -> null
-                    tally.groupValues[1].toIntOrNull() == 0 -> Findings.Kind.ABSENT
+                    // "0 of 0" is not a search that found nothing.
+                    //
+                    // Three observable types — image, phone and an
+                    // unrecognised one — have no fetchable templates
+                    // in the directory at all, so the tally is
+                    // always zero of zero while the rest of the
+                    // output is a page of runnable links. Grading
+                    // that ABSENT buries it under NOTHING FOUND,
+                    // which is the thing this case was added to
+                    // stop, for three types out of eleven.
+                    outOf == 0 -> null
+                    ran == 0 -> Findings.Kind.ABSENT
                     else -> Findings.Kind.HIT
                 }
             }
@@ -437,18 +450,38 @@ class DirectToolExecutor(
             // begins with "No" but is not any of the phrases the
             // absence list holds, and "0 mapped features" is not the
             // word no at all.
-            "milsites", "osmrecon", "overpass_turbo", "cctvnear" -> when {
-                starts(
-                    "Overpass could not be reached",
-                    "Public camera inventories could not be reached",
-                    "OpenStreetMap could not be asked"
-                ) -> Findings.Kind.UNREACHABLE
+            "milsites", "osmrecon", "overpass_turbo" -> when {
+                starts("Overpass could not be reached") -> Findings.Kind.UNREACHABLE
                 starts(
                     "No military-tagged sites",
                     "No mapped infrastructure",
-                    "No mapped places or structures",
-                    "No public traffic-camera feed"
+                    "No mapped places or structures"
                 ) -> Findings.Kind.ABSENT
+                head.contains("within") || head.contains("Infrastructure within") ->
+                    Findings.Kind.HIT
+                else -> null
+            }
+            // This one does not state its verdict on the first line.
+            //
+            // When there is no camera feed nearby, cctvNear says so
+            // and then says what OpenStreetMap holds — so a result
+            // listing seven mapped surveillance cameras, which is
+            // real intel about the place, opens with "No public
+            // traffic-camera feed within 50 km" and was filed under
+            // NOTHING FOUND and collapsed. The sentence about
+            // OpenStreetMap not answering is on the second line too,
+            // so the unreachable prefix could never match at all.
+            // Read the whole output for this tool.
+            "cctvnear" -> when {
+                starts("Public camera inventories could not be reached") ->
+                    Findings.Kind.UNREACHABLE
+                output.contains("OpenStreetMap could not be asked") ->
+                    Findings.Kind.UNREACHABLE
+                output.contains("OpenStreetMap has no surveillance cameras") ->
+                    Findings.Kind.ABSENT
+                output.contains("surveillance camera") -> Findings.Kind.HIT
+                head.contains("Public cameras within") -> Findings.Kind.HIT
+                starts("No public traffic-camera feed") -> Findings.Kind.ABSENT
                 else -> null
             }
             // Each of these opens with the account either existing
@@ -485,6 +518,7 @@ class DirectToolExecutor(
                 else -> Findings.Kind.UNREACHABLE
             }
             "ubuntukeys" -> when {
+                starts("Give an email address") -> Findings.Kind.UNREACHABLE
                 starts("No PGP key on the Ubuntu keyserver") -> Findings.Kind.ABSENT
                 starts("The Ubuntu keyserver could not be reached") ->
                     Findings.Kind.UNREACHABLE
@@ -493,7 +527,10 @@ class DirectToolExecutor(
             }
             "phoneinfoga" -> when {
                 head.contains("is a valid") -> Findings.Kind.HIT
-                head.contains("is not a valid number") -> Findings.Kind.ABSENT
+                // Not an absence: the numbering plan has no opinion
+                // about a string that is not a number, which is the
+                // same shape as the three IPv4 refusals below.
+                head.contains("is not a valid number") -> Findings.Kind.UNREACHABLE
                 else -> null
             }
             "ptr", "torexit", "iprep" -> when {

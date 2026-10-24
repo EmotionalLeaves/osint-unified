@@ -1089,6 +1089,13 @@ class GodEyeViewModel(
         searchJobs.clear()
         resultsJob?.cancel()
         dispatched.clear()
+        // The denominator belongs to the target, like everything
+        // else cleared here. Without this a share-handled search —
+        // which does not call autoRun — and a case opened from
+        // history both inherited the last live search's counts and
+        // its "· 4 link lists, not counted" footnote.
+        planned.clear()
+        plannedLinks.clear()
         // The notes belong to the case that was open, not to the next one.
         // Left in place they appeared under the new target, were saved
         // into its row and were printed in its exported report — one
@@ -1119,6 +1126,8 @@ class GodEyeViewModel(
                 findings = emptyList(),
                 mapFocus = focus,
                 runningTools = emptyMap(),
+                plannedTools = 0,
+                plannedLinkLists = 0,
                 enrichmentRunning = false,
                 enriching = emptyList(),
                 breadcrumb = emptyList(),
@@ -1172,12 +1181,8 @@ class GodEyeViewModel(
         // output is a useful section — but a Google dork is not a
         // source that looked, and counting it as one is how "15 of
         // 21 sources" came to include four lists of places to go.
-        _state.update {
-            it.copy(
-                plannedTools = tools.count { t -> t.id !in ToolRegistry.LINK_LISTS },
-                plannedLinkLists = tools.count { t -> t.id in ToolRegistry.LINK_LISTS }
-            )
-        }
+        planned.clear()
+        notePlanned(tools)
         runToolsInParallel(tools, thenEnrich = settings.followUpEnabled)
     }
 
@@ -1186,13 +1191,7 @@ class GodEyeViewModel(
         val tools = _state.value.suggestedTools.filter {
             it.executionMode != ExecutionMode.CLOUD && it.touchesTarget
         }
-        // Added to the denominator, or the counter reads 18 of 15.
-        _state.update {
-            it.copy(
-                plannedTools = it.plannedTools +
-                    tools.count { t -> t.id !in ToolRegistry.LINK_LISTS }
-            )
-        }
+        notePlanned(tools)
         runToolsInParallel(tools, force = true)
     }
 
@@ -1216,6 +1215,7 @@ class GodEyeViewModel(
     fun onRunWorkflow() {
         val observable = _state.value.observable ?: return
         val workflow = Workflows.forObservable(observable) ?: return
+        val run = searchRun
         // Tracked, so STOP stops it. It was launched straight into the
         // view model's scope, outside the list STOP cancels — the button
         // set the state to "stopped" while the workflow carried on firing
@@ -1256,9 +1256,12 @@ class GodEyeViewModel(
                     val input =
                         if (step.fromPreviousHosts) previousHosts.joinToString("\n")
                         else observable.raw
+                    if (run != searchRun) return@launch
                     _state.update { it.copy(runningTools = it.runningTools.plusRunning(listOf(tool.id))) }
                     val row = repository.runTool(investigationId, tool, input)
-                    _state.update { it.copy(runningTools = it.runningTools.minusRunning(tool.id)) }
+                    if (run == searchRun) {
+                        _state.update { it.copy(runningTools = it.runningTools.minusRunning(tool.id)) }
+                    }
                     if (row.status == "success") {
                         previousHosts = Workflows.extractHosts(tool.id, row.rawOutput)
                         brokenAt = null
@@ -1286,13 +1289,17 @@ class GodEyeViewModel(
         val observable = _state.value.observable ?: return
         // Also tracked: a single source run by hand is still a request in
         // flight, and STOP meant all of them.
+        val run = searchRun
         searchJobs addAndForget viewModelScope.launch {
             val investigationId = ensureInvestigation(observable)
+            if (run != searchRun) return@launch
             _state.update { it.copy(runningTools = it.runningTools.plusRunning(listOf(tool.id))) }
             try {
                 repository.runTool(investigationId, tool, observable.raw)
             } finally {
-                _state.update { it.copy(runningTools = it.runningTools.minusRunning(tool.id)) }
+                if (run == searchRun) {
+                    _state.update { it.copy(runningTools = it.runningTools.minusRunning(tool.id)) }
+                }
             }
         }
     }
@@ -1307,7 +1314,35 @@ class GodEyeViewModel(
      * person, so this bypasses it.
      */
     fun onRunAll() {
+        // This never touched the denominator at all, and it runs
+        // everything the router named — including the tools autoRun
+        // filtered out of it. Press RUN ALL after a passive scan and
+        // the header read "scanning · 23/12 sources".
+        notePlanned(_state.value.suggestedTools)
         runToolsInParallel(_state.value.suggestedTools, force = true)
+    }
+
+    /**
+     * Which sources this case has been told to run, counted once
+     * each.
+     *
+     * Three callers dispatch tools and each of them used to do
+     * something different with the denominator: autoRun set it,
+     * onRunActive added to it — so pressing twice doubled it while
+     * the numerator could not move, because force re-runs the same
+     * rows — and onRunAll ignored it. A set of ids, cleared when the
+     * target changes, is the only version of this that cannot drift.
+     */
+    private val planned = HashSet<String>()
+    private val plannedLinks = HashSet<String>()
+
+    private fun notePlanned(tools: List<Tool>) {
+        tools.forEach {
+            if (it.id in ToolRegistry.LINK_LISTS) plannedLinks.add(it.id) else planned.add(it.id)
+        }
+        _state.update {
+            it.copy(plannedTools = planned.size, plannedLinkLists = plannedLinks.size)
+        }
     }
 
     /** Runs the given tools concurrently so findings appear as fast as each
@@ -1385,6 +1420,7 @@ class GodEyeViewModel(
      */
     private suspend fun enrich(seed: Observable, firstPass: List<ResultRow> = emptyList()) {
         if (!settings.followUpEnabled) return
+        val run = searchRun
         // The rows from the pass that just finished, handed over directly.
         // This used to sleep 400ms and then read UI state, hoping the Room
         // flow had caught up — on a slow phone it read a partial set and
@@ -1440,6 +1476,7 @@ class GodEyeViewModel(
                     .take(TOOLS_PER_PIVOT)
                     .filter { dispatched.add("${it.id}|${pivot.value}") }
                 if (tools.isEmpty()) continue
+                if (run != searchRun) return
                 _state.update { it.copy(runningTools = it.runningTools.plusRunning(tools.map { t -> t.id })) }
                 coroutineScope {
                     tools.forEach { tool ->
@@ -1447,8 +1484,23 @@ class GodEyeViewModel(
                             try {
                                 repository.runTool(investigationId, tool, pivot.value)
                             } finally {
-                                _state.update { st ->
-                                    st.copy(runningTools = st.runningTools.minusRunning(tool.id))
+                                // The same guard the first pass
+                                // carries. A cancelled job writes a
+                                // cancelled row under NonCancellable
+                                // before it rethrows, so this lands
+                                // after the next search has added
+                                // its own counts — and the first
+                                // pass and the enrichment set share
+                                // most of their tool ids, so it
+                                // removed counts belonging to the
+                                // run in flight. Where the count was
+                                // one, the progress bar stopped and
+                                // the dossier said there was nothing
+                                // while the scan was still going.
+                                if (run == searchRun) {
+                                    _state.update { st ->
+                                        st.copy(runningTools = st.runningTools.minusRunning(tool.id))
+                                    }
                                 }
                             }
                         }
@@ -1547,6 +1599,10 @@ class GodEyeViewModel(
             notesJob?.cancel()
             notesJob = null
             dispatched.clear()
+            // And its counts, which were the last live search's.
+            searchRun++
+            planned.clear()
+            plannedLinks.clear()
             pendingParentId = null
             pendingPivot = null
             currentInvestigationId = id
@@ -1560,6 +1616,8 @@ class GodEyeViewModel(
                     results = emptyList(),
                     findings = emptyList(),
                     runningTools = emptyMap(),
+                    plannedTools = 0,
+                    plannedLinkLists = 0,
                     enrichmentRunning = false,
                     enriching = emptyList(),
                     notes = "",

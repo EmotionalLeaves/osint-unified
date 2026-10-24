@@ -488,8 +488,16 @@ class HandleApis(
 
     private fun JsonObject?.long(k: String) = (this?.get(k) as? JsonPrimitive)?.longOrNull
 
-    /** Null for a 404, which every one of these uses to mean "no such
-     *  account"; thrown for anything else, which is a failure. */
+    /**
+     * Null for the codes that mean "no such account"; thrown for
+     * anything else, which is a failure.
+     *
+     * 400 is in the list because of Codeforces: it answers an
+     * unknown handle with 400 and a body saying status FAILED, not
+     * with a 404. Treating that as an error made both of the "no
+     * such account" branches in codeforces() unreachable and filed
+     * every absence there as the source being broken.
+     */
     private fun getOrNull(url: String): String? {
         val request = Request.Builder().url(url)
             .header("User-Agent", Http.defaultUserAgent)
@@ -497,7 +505,7 @@ class HandleApis(
             .build()
         client.newCall(request).execute().use { resp ->
             val body = resp.body?.bodyText().orEmpty()
-            if (resp.code == 404 || resp.code == 410) return null
+            if (resp.code == 404 || resp.code == 410 || resp.code == 400) return null
             if (!resp.isSuccessful) throw IOException("HTTP ${resp.code}")
             return body
         }

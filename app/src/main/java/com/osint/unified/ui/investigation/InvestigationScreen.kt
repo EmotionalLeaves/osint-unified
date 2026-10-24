@@ -1023,10 +1023,22 @@ fun InvestigationScreen(
                 if (misses.isNotEmpty()) {
                     var showMisses by remember { mutableStateOf(false) }
                     SectionHeader(
-                        "NOTHING FOUND — $lookedAndFoundNothing looked and found nothing" +
-                            if (unreachable > 0)
-                                ", $unreachable could not be reached"
-                            else "",
+                        // Both halves conditional. With every miss a
+                        // failure it read "0 looked and found
+                        // nothing, 3 could not be reached", which
+                        // states a clean sheet and then says there
+                        // was not one.
+                        buildString {
+                            append("NOTHING FOUND")
+                            val parts = ArrayList<String>(2)
+                            if (lookedAndFoundNothing > 0) {
+                                parts.add("$lookedAndFoundNothing looked and found nothing")
+                            }
+                            if (unreachable > 0) {
+                                parts.add("$unreachable could not be reached")
+                            }
+                            if (parts.isNotEmpty()) append(" — ").append(parts.joinToString(", "))
+                        },
                         Intel.TextLow
                     )
                     Text(
