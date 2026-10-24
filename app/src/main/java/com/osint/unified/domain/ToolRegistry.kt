@@ -34,6 +34,24 @@ object ToolRegistry {
         "commoncrawl", "dorks", "framework", "toolrun", "reverseimage"
     )
 
+    /**
+     * Tools that hand you somewhere to look, not an answer.
+     *
+     * They are already graded F and already classified ABSENT so
+     * that they cannot inflate the findings. What they were still
+     * doing was occupying the source count: "15 of 21 sources" and
+     * "NOTHING FOUND — 9 looked and found nothing" both counted a
+     * Google dork as a source that looked. It did not look. A
+     * dossier that reports four of its nine failures as searches
+     * that came back empty is telling the reader the target is
+     * clean when a third of the evidence for that was a list of
+     * links.
+     *
+     * toolrun is deliberately not here: it runs the directory
+     * rather than printing it.
+     */
+    val LINK_LISTS = setOf("framework", "dorks", "websearch", "reverseimage")
+
     val all: List<Tool> get() = graded
 
     private val declared: List<Tool> = listOf(

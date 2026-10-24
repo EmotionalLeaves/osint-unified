@@ -148,6 +148,10 @@ data class GodEyeUiState(
      * number unfinished, which reads as the scan giving up.
      */
     val plannedTools: Int = 0,
+    /** And how many of the dispatched tools only hand over links.
+     *  Published, so the ratio is visible in the app rather than
+     *  only in a review file. */
+    val plannedLinkLists: Int = 0,
     /** The second pass is chasing what the first pass turned up. */
     val enrichmentRunning: Boolean = false,
     /** Identifiers the first pass discovered and the second pass is looking
@@ -1164,7 +1168,16 @@ class GodEyeViewModel(
                 (!it.touchesTarget || settings.activeReconEnabled ||
                     (isTheImage && it.id == "exif"))
         }
-        _state.update { it.copy(plannedTools = tools.size) }
+        // Counted as sources. The link lists still run — their
+        // output is a useful section — but a Google dork is not a
+        // source that looked, and counting it as one is how "15 of
+        // 21 sources" came to include four lists of places to go.
+        _state.update {
+            it.copy(
+                plannedTools = tools.count { t -> t.id !in ToolRegistry.LINK_LISTS },
+                plannedLinkLists = tools.count { t -> t.id in ToolRegistry.LINK_LISTS }
+            )
+        }
         runToolsInParallel(tools, thenEnrich = settings.followUpEnabled)
     }
 
@@ -1174,7 +1187,12 @@ class GodEyeViewModel(
             it.executionMode != ExecutionMode.CLOUD && it.touchesTarget
         }
         // Added to the denominator, or the counter reads 18 of 15.
-        _state.update { it.copy(plannedTools = it.plannedTools + tools.size) }
+        _state.update {
+            it.copy(
+                plannedTools = it.plannedTools +
+                    tools.count { t -> t.id !in ToolRegistry.LINK_LISTS }
+            )
+        }
         runToolsInParallel(tools, force = true)
     }
 

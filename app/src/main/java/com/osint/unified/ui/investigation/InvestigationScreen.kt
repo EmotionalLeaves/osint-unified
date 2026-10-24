@@ -230,7 +230,8 @@ fun InvestigationScreen(
         // seed's tool list, or it reads "34/12 sources".
         val seedRaw = observable.raw.trim().lowercase()
         val done = state.results.count {
-            it.input.trim().lowercase() == seedRaw && it.status != "running"
+            it.input.trim().lowercase() == seedRaw && it.status != "running" &&
+                it.toolId !in com.osint.unified.domain.ToolRegistry.LINK_LISTS
         }
         val found = state.results.count { Findings.isHit(it) }
         // Counted over the same rows as `done`.
@@ -365,6 +366,14 @@ fun InvestigationScreen(
                             append("$done sources queried · $foundSeed returned intel")
                             val chased = found - foundSeed
                             if (chased > 0) append(" · $chased more from follow-up")
+                            // The ratio, in the app rather than in a
+                            // review file: how much of this search
+                            // was a tool and how much was a link.
+                            if (state.plannedLinkLists > 0) {
+                                append(" · ${state.plannedLinkLists} link ")
+                                append(if (state.plannedLinkLists == 1) "list" else "lists")
+                                append(", not counted")
+                            }
                         }
                         else -> "ready — run all, or tap a source below"
                     },
@@ -928,7 +937,26 @@ fun InvestigationScreen(
                 val sorted = analysis.sorted
                 val pending = analysis.pending
                 val hits = sorted.hits
-                val misses = sorted.empty + sorted.failed
+                // Places to look are not sources that looked.
+                //
+                // These were counted in "N looked and found
+                // nothing", which told the reader that a Google dork
+                // had searched and come back clean. They get their
+                // own section, under their own heading, and the
+                // tally above counts only sources.
+                val allMisses = sorted.empty + sorted.failed
+                val misses = allMisses.filter {
+                    it.toolId !in com.osint.unified.domain.ToolRegistry.LINK_LISTS
+                }
+                val places = allMisses.filter {
+                    it.toolId in com.osint.unified.domain.ToolRegistry.LINK_LISTS
+                }
+                val lookedAndFoundNothing = sorted.empty.count {
+                    it.toolId !in com.osint.unified.domain.ToolRegistry.LINK_LISTS
+                }
+                val unreachable = sorted.failed.count {
+                    it.toolId !in com.osint.unified.domain.ToolRegistry.LINK_LISTS
+                }
 
                 // What you asked about, and what the app went on to look up
                 // because the first pass named it, are two different kinds of
@@ -995,9 +1023,9 @@ fun InvestigationScreen(
                 if (misses.isNotEmpty()) {
                     var showMisses by remember { mutableStateOf(false) }
                     SectionHeader(
-                        "NOTHING FOUND — ${sorted.empty.size} looked and found nothing" +
-                            if (sorted.failed.isNotEmpty())
-                                ", ${sorted.failed.size} could not be reached"
+                        "NOTHING FOUND — $lookedAndFoundNothing looked and found nothing" +
+                            if (unreachable > 0)
+                                ", $unreachable could not be reached"
                             else "",
                         Intel.TextLow
                     )
@@ -1021,6 +1049,42 @@ fun InvestigationScreen(
                     )
                     if (showMisses) {
                         misses.forEach { row ->
+                            ResultCard(row, onPivot = null)
+                            Spacer(Modifier.height(10.dp))
+                        }
+                    }
+                }
+
+                // The link lists, said to be what they are.
+                if (places.isNotEmpty()) {
+                    var showPlaces by remember { mutableStateOf(false) }
+                    SectionHeader(
+                        "PLACES TO LOOK — ${places.size} directories and searches, " +
+                            "not sources",
+                        Intel.TextLow
+                    )
+                    Text(
+                        "These hand you somewhere to go rather than an answer, so " +
+                            "they are not counted above and nothing they contain is " +
+                            "a finding about this target.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Intel.TextLow,
+                        modifier = Modifier.padding(bottom = 6.dp)
+                    )
+                    Text(
+                        if (showPlaces) "hide" else "show " +
+                            places.joinToString(", ") { row ->
+                                com.osint.unified.domain.ToolRegistry.byId(row.toolId)?.name
+                                    ?: row.toolId
+                            },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Intel.Cyan,
+                        modifier = Modifier
+                            .padding(bottom = 8.dp)
+                            .clickable { showPlaces = !showPlaces }
+                    )
+                    if (showPlaces) {
+                        places.forEach { row ->
                             ResultCard(row, onPivot = null)
                             Spacer(Modifier.height(10.dp))
                         }
