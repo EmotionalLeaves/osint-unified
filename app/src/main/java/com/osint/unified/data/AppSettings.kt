@@ -117,6 +117,21 @@ class AppSettings(context: Context) {
         get() = prefs.getBoolean(KEY_APP_LOCK, false)
         set(value) = prefs.edit().putBoolean(KEY_APP_LOCK, value).apply()
 
+    /**
+     * Whether the background watch check waits for an unmetered
+     * network.
+     *
+     * The worker's only constraint was CONNECTED, so ten passive
+     * tools per watched target ran four times a day on mobile data
+     * with no way anywhere in the app to say no. Off by default,
+     * because a watch that never fires is a watch that is not
+     * watching — but it is a choice now, and it is on the screen
+     * that owns it.
+     */
+    var watchOnWifiOnly: Boolean
+        get() = prefs.getBoolean(KEY_WATCH_WIFI, false)
+        set(value) = prefs.edit().putBoolean(KEY_WATCH_WIFI, value).apply()
+
     /** Any GeoJSON points URL the user wants plotted as a custom globe layer. */
     var overlayUrl: String
         get() = prefs.getString(KEY_OVERLAY, "").orEmpty()
@@ -179,6 +194,7 @@ class AppSettings(context: Context) {
         const val KEY_PROXY_HOST = "proxy_host"
         const val KEY_PROXY_PORT = "proxy_port"
         const val KEY_APP_LOCK = "app_lock_enabled"
+        const val KEY_WATCH_WIFI = "watch_wifi_only"
         const val KEY_SEARCH_COSTS = "search_costs"
 
         /** After twenty searches the oldest stop moving the mean,

@@ -751,10 +751,24 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
 
     /** urlscan.io recent scans for a domain (keyless search API). */
     fun urlscan(domain: String): Result<String> = runCatching {
-        val results = json.parseToJsonElement(
+        val body = json.parseToJsonElement(
             getBody("https://urlscan.io/api/v1/search/?q=domain:" + URLEncoder.encode(domain, "UTF-8") + "&size=10")
-        ).jsonObject["results"]?.jsonArray
-        if (results == null || results.isEmpty()) "No urlscan.io scans for $domain." else
+        ).jsonObject
+        // Same shape as wikiNearby: urlscan answers 200 with a
+        // `message`/`status` body for a refused or rate-limited
+        // query, and a missing `results` was being printed as "no
+        // scans for this domain" — an absence the service never
+        // asserted.
+        val results = body["results"]?.jsonArray
+        if (results == null) {
+            val why = (body["message"] as? JsonPrimitive)?.contentOrNull
+                ?: (body["description"] as? JsonPrimitive)?.contentOrNull
+            throw java.io.IOException(
+                "urlscan.io did not answer with results" +
+                    if (why.isNullOrBlank()) "" else ": $why"
+            )
+        }
+        if (results.isEmpty()) "No urlscan.io scans for $domain." else
             "urlscan.io — ${results.size} recent scans:\n" + results.take(10).joinToString("\n") { r ->
                 val ro = r.jsonObject
                 val pageUrl = ((ro["page"] as? JsonObject)?.get("url") as? JsonPrimitive)?.contentOrNull ?: ""
@@ -1023,9 +1037,28 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
         val url = "https://en.wikipedia.org/w/api.php?action=query&list=geosearch" +
             "&gscoord=%.6f%%7C%.6f".format(java.util.Locale.US, lat, lon) +
             "&gsradius=10000&gslimit=25&format=json"
-        val arr = json.parseToJsonElement(getBody(url))
-            .jsonObject["query"]?.jsonObject?.get("geosearch")?.jsonArray
-        if (arr == null || arr.isEmpty()) "No Wikipedia places within 10 km." else
+        val body = json.parseToJsonElement(getBody(url)).jsonObject
+        // An error is not an absence.
+        //
+        // The MediaWiki action API answers HTTP 200 with an `error`
+        // object and no `query` key for a parameter or module error,
+        // which getBody does not throw on — so a missing `query`
+        // printed "No Wikipedia places within 10 km.", which
+        // Findings.NOTHING_SHAPE classifies as ABSENT and counts in
+        // "N of M sources returned something" as a source that looked.
+        (body["error"] as? JsonObject)?.let { err ->
+            val code = (err["code"] as? JsonPrimitive)?.contentOrNull ?: "unknown"
+            val info = (err["info"] as? JsonPrimitive)?.contentOrNull.orEmpty()
+            throw java.io.IOException(
+                "Wikipedia refused the query ($code)" +
+                    if (info.isBlank()) "" else ": $info"
+            )
+        }
+        val arr = body["query"]?.jsonObject?.get("geosearch")?.jsonArray
+        // No `query` and no `error` either: the answer is a shape this
+        // does not understand, which is also not an absence.
+        if (arr == null) throw java.io.IOException("Wikipedia returned no geosearch block")
+        if (arr.isEmpty()) "No Wikipedia places within 10 km." else
             "Nearby notable places (${arr.size}):\n\n" + arr.joinToString("\n") { el ->
                 val o = el.jsonObject
                 fun s(k: String) = (o[k] as? JsonPrimitive)?.contentOrNull

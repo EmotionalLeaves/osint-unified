@@ -166,6 +166,14 @@ class UsernameChecker(private val appContext: Context) {
         // does not compile.
         @Volatile private var sharedRules: List<SiteRule>? = null
 
+        /**
+         * Rulesets that are not in this build, recorded when the
+         * merged set is first assembled. Empty means all three are
+         * present. Shared with [sharedRules], because it describes
+         * the same assembly.
+         */
+        @Volatile private var sharedMissingRulesets: List<String> = emptyList()
+
         /** Control probes to run. Beyond this, hits are reported unverified
          *  rather than paying for a second sweep as large as the first. */
         const val CONTROL_PROBE_CAP = 400
@@ -319,6 +327,7 @@ class UsernameChecker(private val appContext: Context) {
                 }
                 if (verdict == VERDICT_ABSENT) {
                     append("\nEvery site that was asked said no.")
+                    narrowedBy()?.let { append(" ").append(it) }
                 } else {
                     append("\nThis is not a clean sheet: only the $said sites that ")
                     append("answered said no.")
@@ -728,12 +737,45 @@ class UsernameChecker(private val appContext: Context) {
                 if (!merged.containsKey(key)) merged[key] = r
             }
         }
-        add(parseWhatsMyName(asset("wmn-data.json") ?: downloadWmn()))
-        add(parseSherlock(asset("sherlock.json")))
-        add(parseMaigret(asset("maigret.json")))
+        val missing = ArrayList<String>()
+        val wmn = asset("wmn-data.json") ?: downloadWmn()
+        if (wmn.isNullOrBlank()) missing.add("WhatsMyName")
+        add(parseWhatsMyName(wmn))
+        val sherlock = asset("sherlock.json")
+        if (sherlock.isNullOrBlank()) missing.add("Sherlock")
+        add(parseSherlock(sherlock))
+        val maigret = asset("maigret.json")
+        if (maigret.isNullOrBlank()) missing.add("Maigret")
+        add(parseMaigret(maigret))
         val all = merged.values.toList()
-        if (all.isNotEmpty()) sharedRules = all
+        if (all.isNotEmpty()) {
+            sharedRules = all
+            // Which rulesets this build is actually sweeping with.
+            //
+            // sherlock.json and maigret.json are both optional in CI
+            // and are deleted when they fail their size floor, so a
+            // shipped build can be sweeping a list two thirds shorter
+            // than the one the output describes — and the output said
+            // "Every site that was asked said no" over it without
+            // naming what had not been asked. rulesetSummary() has
+            // held this all along and was only ever shown in the
+            // self-test.
+            sharedMissingRulesets = missing.toList()
+        }
         return all
+    }
+
+    /**
+     * One clause naming what this build did not have to ask with, or
+     * null when it had everything.
+     */
+    private fun narrowedBy(): String? {
+        loadRules()
+        val missing = sharedMissingRulesets
+        if (missing.isEmpty()) return null
+        return "This build is missing the " + missing.joinToString(" and ") +
+            " ruleset" + (if (missing.size == 1) "" else "s") +
+            ", so the list asked is shorter than usual."
     }
 
     private fun asset(name: String): String? = runCatching {

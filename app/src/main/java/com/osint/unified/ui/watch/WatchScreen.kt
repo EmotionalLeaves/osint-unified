@@ -25,6 +25,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -79,6 +81,9 @@ fun WatchScreen(
     val trouble by repository.trouble.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val settings = remember(context) { com.osint.unified.data.AppSettings(context) }
+    var wifiOnly by remember { mutableStateOf(settings.watchOnWifiOnly) }
 
     LaunchedEffect(Unit) { repository.observeAll().collect { list = it } }
     LaunchedEffect(Unit) {
@@ -191,6 +196,41 @@ fun WatchScreen(
                         color = if (canCheck) Intel.Base else Intel.TextLow
                     )
                 }
+            }
+
+            // Ten passive tools per watched target, four times a
+            // day, and until now no way anywhere in the app to say
+            // "not on mobile data". Here rather than in the feed
+            // settings, because this is the screen that spends it.
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .minimumInteractiveComponentSize()
+                    .clip(RoundedCornerShape(6.dp))
+                    .toggleable(value = wifiOnly, role = Role.Switch) { on ->
+                        wifiOnly = on
+                        settings.watchOnWifiOnly = on
+                        com.osint.unified.work.WatchWorker.reschedule(context)
+                    }
+                    .padding(vertical = 6.dp)
+            ) {
+                Text(
+                    if (wifiOnly) {
+                        "Background checks: Wi-Fi only. They will wait for an " +
+                            "unmetered network."
+                    } else {
+                        "Background checks: any network, including mobile data."
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (wifiOnly) Intel.Cyan else Intel.TextMid,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(
+                    if (wifiOnly) "ON" else "OFF",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (wifiOnly) Intel.Cyan else Intel.TextLow
+                )
             }
 
             trouble?.let { why ->

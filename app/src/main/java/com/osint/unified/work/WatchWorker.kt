@@ -137,9 +137,18 @@ class WatchWorker(
         )
     }
 
-    /** Stable per target, and clear of the summary's own id. */
+    /**
+     * Clear of the summary's own id, and of every other watch's at
+     * any row count this app will ever see.
+     *
+     * It was modulo 100,000, and the comment above it claimed the id
+     * was stable per target — rows 1 and 100,001 shared one, so a
+     * change on the second replaced the first's notification. Not
+     * reachable in practice; the claim was wrong, which is the part
+     * worth fixing.
+     */
     private fun idFor(watchId: Long): Int =
-        NOTIFICATION_BASE + (watchId % 100_000L).toInt()
+        NOTIFICATION_BASE + (watchId % 1_000_000L).toInt()
 
     companion object {
         private const val CHANNEL = "watched-targets"
@@ -160,16 +169,35 @@ class WatchWorker(
          * uninstalls. KEEP, so re-opening the app does not reset the clock
          * and thereby stop it ever firing.
          */
-        fun schedule(context: Context) {
+        fun schedule(context: Context) = enqueue(context, ExistingPeriodicWorkPolicy.KEEP)
+
+        /**
+         * Same work, re-enqueued because the Wi-Fi-only choice
+         * changed. UPDATE rather than KEEP, since KEEP would leave
+         * the old constraint in place and the switch would appear to
+         * do nothing.
+         */
+        fun reschedule(context: Context) =
+            enqueue(context, ExistingPeriodicWorkPolicy.UPDATE)
+
+        private fun enqueue(context: Context, policy: ExistingPeriodicWorkPolicy) {
+            // Ten passive tools per watched target, four times a day.
+            // CONNECTED was the only constraint and there was no
+            // setting anywhere that could say otherwise.
+            val wifiOnly = runCatching {
+                com.osint.unified.data.AppSettings(context).watchOnWifiOnly
+            }.getOrDefault(false)
             val request = PeriodicWorkRequestBuilder<WatchWorker>(6, TimeUnit.HOURS)
                 .setConstraints(
                     Constraints.Builder()
-                        .setRequiredNetworkType(NetworkType.CONNECTED)
+                        .setRequiredNetworkType(
+                            if (wifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED
+                        )
                         .build()
                 )
                 .build()
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(
-                WORK_NAME, ExistingPeriodicWorkPolicy.KEEP, request
+                WORK_NAME, policy, request
             )
         }
     }

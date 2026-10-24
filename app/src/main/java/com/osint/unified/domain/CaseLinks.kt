@@ -60,7 +60,21 @@ object CaseLinks {
         data class Acc(
             val targets: LinkedHashSet<String> = LinkedHashSet(),
             val sources: LinkedHashSet<String> = LinkedHashSet(),
-            var reliability: Grading.Reliability = Grading.Reliability.UNJUDGED
+            var reliability: Grading.Reliability = Grading.Reliability.UNJUDGED,
+            /**
+             * The grade each target's dossier put on this value,
+             * after that case's own demotions.
+             *
+             * `agreeingSource` used to be read straight out of
+             * ToolRegistry, which is the catalogue grade — so a
+             * source this case had already caught being wrong twice,
+             * and which Corroboration had demoted for every finding
+             * in the case, went on corroborating at full strength in
+             * the SHARED BETWEEN TARGETS grade. The investigator's
+             * judgement outranks the catalogue's everywhere else in
+             * the app and did not here.
+             */
+            val grades: MutableList<Grading.Reliability> = ArrayList()
         )
 
         val found = LinkedHashMap<Pair<String, String>, Acc>()
@@ -77,6 +91,7 @@ object CaseLinks {
                 acc.targets.add(target)
                 acc.sources.addAll(e.sources)
                 if (e.reliability < acc.reliability) acc.reliability = e.reliability
+                acc.grades.add(e.reliability)
             }
         }
 
@@ -120,9 +135,9 @@ object CaseLinks {
                         // of agreeing sources that ignores how good
                         // they are lets an unreliable one promote a
                         // certificate record to "confirmed".
-                        agreeingSource = acc.sources
-                            .mapNotNull { ToolRegistry.byId(it)?.reliability }
-                            .sorted()
+                        // The second-best grade among the targets
+                        // that assert it, as THIS case grades them.
+                        agreeingSource = acc.grades.sorted()
                             .getOrNull(1) ?: acc.reliability
                     ),
                     isTarget = value.trim().lowercase() in seeds
