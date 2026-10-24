@@ -73,6 +73,27 @@ object EntityExtractor {
         "cloudflare.com", "amazonaws.com", "akamaized.net", "cloudfront.net"
     )
 
+    /**
+     * Whether two written coordinates are the same place.
+     *
+     * Compared as numbers, rounded to four decimals — about eleven
+     * metres, which is finer than any of these tools claims and
+     * coarser than the difference between two spellings of one point.
+     */
+    private fun sameCoordinate(a: String, b: String): Boolean {
+        fun parse(v: String): Pair<Double, Double>? {
+            val parts = v.split(',').map { it.trim() }
+            if (parts.size != 2) return null
+            val lat = parts[0].toDoubleOrNull() ?: return null
+            val lon = parts[1].toDoubleOrNull() ?: return null
+            return lat to lon
+        }
+        val one = parse(a) ?: return false
+        val two = parse(b) ?: return false
+        return Math.round(one.first * 10000) == Math.round(two.first * 10000) &&
+            Math.round(one.second * 10000) == Math.round(two.second * 10000)
+    }
+
     /** The registrable part of a host, roughly — enough to match a family
      *  of subdomains without shipping a public-suffix list. */
     private fun registrable(host: String): String {
@@ -133,6 +154,21 @@ object EntityExtractor {
             regex.findAll(text).forEach { m ->
                 val v = transform(m)?.trim()?.trimEnd('.', ',', ')', ';') ?: return@forEach
                 if (v.isBlank() || v.lowercase() == seedLower) return@forEach
+                // The seed, written to a different number of places,
+                // is still the seed.
+                //
+                // Several coordinate tools echo the point back in
+                // their own header at their own precision —
+                // histweather and ukcrime at four decimals,
+                // photosnear and sunterrain at five — and the guard
+                // above is an exact string match. Type
+                // "51.5074,-0.1278" with no space and they print
+                // "51.5074, -0.1278", so the user's own input came
+                // back as a COORD entity asserted by two independent
+                // B-grade sources and was graded B1, "confirmed by
+                // other sources": the dossier reporting the question
+                // as one of its findings.
+                if (kind == "COORD" && sameCoordinate(v, seedLower)) return@forEach
                 counts[v] = (counts[v] ?: 0) + 1
             }
             counts.entries.sortedByDescending { it.value }.take(limit).forEach {

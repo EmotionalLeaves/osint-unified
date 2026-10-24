@@ -111,7 +111,12 @@ object Findings {
     fun saysNothing(output: String): Boolean {
         val head = output.trimStart().lineSequence()
             .firstOrNull { it.isNotBlank() }?.lowercase().orEmpty()
-        if (head.isBlank()) return true
+        // A tool that returned nothing at all has not reported an
+        // absence. It has said nothing, which is what UNREACHABLE is
+        // for — a blank answer was being filed as "looked and found
+        // nothing", which is a claim about the world made out of
+        // silence.
+        if (head.isBlank()) return false
         if (UNREACHABLE.any { hasPhrase(head, it) }) return false
         // A sweep that says in its own words that it is not a clean sheet
         // is not reporting an absence; it is reporting partial coverage.
@@ -161,6 +166,8 @@ object Findings {
      */
     fun kindOf(row: ResultRow): Kind = when (row.status) {
         "success" -> when {
+            // Nothing at all is not a finding and not an absence.
+            row.rawOutput.isBlank() -> Kind.UNREACHABLE
             saysUnreachable(row.rawOutput) -> Kind.UNREACHABLE
             saysNothing(row.rawOutput) -> Kind.ABSENT
             else -> Kind.HIT
