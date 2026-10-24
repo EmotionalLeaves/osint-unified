@@ -240,9 +240,36 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
 
     /** Reverse DNS (PTR) for an IPv4 via DoH. */
     fun reverseDns(ip: String): Result<String> = runCatching {
-        val arpa = ip.trim().split('.').reversed().joinToString(".") + ".in-addr.arpa"
-        val ptr = dohTxt(arpa, "PTR")
-        if (ptr.isEmpty()) "No PTR record for $ip." else "PTR: ${ptr.joinToString(", ")}"
+        val v = ip.trim()
+        // A reverse lookup needs a single IPv4 address, and the router
+        // classifies IPv6 and CIDR as IpAddress too. "8.8.8.0/24"
+        // became the query "0/24.8.8.8.in-addr.arpa" and
+        // "2001:4860::8888" became itself with ".in-addr.arpa" glued
+        // on the end — malformed questions whose non-answer was then
+        // reported as "No PTR record for …", an established absence
+        // from a question nobody could have answered.
+        if (!ipRegex.matches(v)) {
+            return@runCatching "A reverse lookup needs one IPv4 address; " +
+                "\"$v\" is not one, so no PTR query was made." +
+                if (v.contains(':')) {
+                    " IPv6 reverse records live under ip6.arpa, which this " +
+                        "tool does not build yet."
+                } else {
+                    ""
+                }
+        }
+        val arpa = v.split('.').reversed().joinToString(".") + ".in-addr.arpa"
+        // Null and empty are different answers, and this used the
+        // helper that conflates them — so a blocked resolver was
+        // reported as the address having no reverse record.
+        val ptr = dohOrNull(arpa, "PTR")
+        when {
+            ptr == null ->
+                "The DNS resolver could not be reached for $v, so nothing " +
+                    "is known about its reverse record."
+            ptr.isEmpty() -> "No PTR record for $v."
+            else -> "PTR: ${ptr.joinToString(", ")}"
+        }
     }
 
     private fun hostOf(input: String) =
@@ -310,9 +337,16 @@ class OsintApis(private val client: OkHttpClient = Http.client) {
     /** Is this IP a Tor exit node? (official bulk exit list, keyless) */
     fun torExit(ip: String): Result<String> = runCatching {
         val target = ip.trim()
+        // The bulk exit list is IPv4. Saying "is not a Tor exit node"
+        // about an IPv6 address on the strength of searching an IPv4
+        // list is a clean sheet from the wrong question.
+        if (!ipRegex.matches(target)) {
+            return@runCatching "The Tor bulk exit list is IPv4 only, so " +
+                "nothing is claimed about \"$target\"."
+        }
         val list = getBody("https://check.torproject.org/torbulkexitlist")
-        val exits = list.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.toList()
-        if (exits.contains(target)) "⚠ $target IS a Tor exit node (anonymised traffic)."
+        val exits = list.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+        if (target in exits) "⚠ $target IS a Tor exit node (anonymised traffic)."
         else "$target is not a Tor exit node (checked ${exits.size} known exits)."
     }
 
