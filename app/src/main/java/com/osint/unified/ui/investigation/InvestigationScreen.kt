@@ -232,9 +232,18 @@ fun InvestigationScreen(
         // coordinate dossier redid the whole sweep on the thread
         // drawing it every time any feed polled. The globe's own call
         // was moved to a produceState and this one was missed.
+        // Keyed on the whole state, as the globe's copy is.
+        //
+        // Moving this to a background thread was right and the keys
+        // were copied across unexamined: three layer lists, for a
+        // function that sweeps thirty-five — so arming TSUNAMI or
+        // CONFLICT, or GDACS polling, never refreshed the dossier's
+        // live-area block, and it would not until an aircraft happened
+        // to move. The globe keys on `state`, which is the whole
+        // point of the fix.
         val liveNow by androidx.compose.runtime.produceState<AreaReport.Report?>(
             initialValue = null,
-            observable.raw, state.aircraft, state.vessels, state.quakes
+            observable.raw, state
         ) {
             val here = observable as? Observable.Coordinate
             value = if (here == null) {
@@ -612,6 +621,34 @@ fun InvestigationScreen(
 
             // ---- When it happened ----
             val timeline = analysis.timeline
+            val intervalNotes = analysis.intervals
+            // What was worked out, shown even when there is no
+            // timeline to show it under.
+            //
+            // The whole block sat inside `if (timeline.isNotEmpty())`,
+            // and the activity-hours comparison was folded into the
+            // same list — so a dossier holding a declared city and a
+            // contradicting posting pattern, and no dated events,
+            // printed nothing at all. That is the case the comparison
+            // exists for.
+            if (timeline.isEmpty() && intervalNotes.isNotEmpty()) {
+                SectionHeader("WHAT THE ANSWERS ADD UP TO", Intel.CyanBright)
+                intervalNotes.forEach { note ->
+                    Text(
+                        note.what,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Intel.CyanBright,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+                Text(
+                    "Worked out from what the sources already said, not read " +
+                        "anywhere.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Intel.TextLow,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+            }
             if (timeline.isNotEmpty()) {
                 var timelineOpen by rememberSaveable { mutableStateOf(false) }
                 Row(
@@ -643,7 +680,7 @@ fun InvestigationScreen(
                 // the app had both operands for and left to the
                 // reader. Shown whether or not the list is open,
                 // because it is the part worth reading.
-                analysis.intervals.forEach { note ->
+                intervalNotes.forEach { note ->
                     Text(
                         note.what,
                         style = MaterialTheme.typography.labelSmall,
@@ -651,9 +688,10 @@ fun InvestigationScreen(
                         modifier = Modifier.padding(top = 4.dp)
                     )
                 }
-                if (analysis.intervals.isNotEmpty()) {
+                if (intervalNotes.isNotEmpty()) {
                     Text(
-                        "Worked out from the dates below, not read anywhere.",
+                        "Worked out from what the sources already said, not " +
+                            "read anywhere.",
                         style = MaterialTheme.typography.labelSmall,
                         color = Intel.TextLow,
                         modifier = Modifier.padding(top = 2.dp)

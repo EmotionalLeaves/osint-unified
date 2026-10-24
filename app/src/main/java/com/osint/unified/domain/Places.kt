@@ -103,7 +103,10 @@ object Places {
         "deutschland" to "germany", "brd" to "germany",
         "osterreich" to "austria", "oesterreich" to "austria",
         "suomi" to "finland", "sverige" to "sweden", "norge" to "norway",
-        "danmark" to "denmark", "island" to "iceland",
+        "danmark" to "denmark",
+        // "island", the Danish and German name for Iceland, is not
+        // here: it is also an ordinary English word, and "Long
+        // Island" and "Rhode Island" both contain it.
         "nederland" to "netherlands", "holland" to "netherlands",
         "the netherlands" to "netherlands",
         "belgie" to "belgium", "belgique" to "belgium",
@@ -140,12 +143,13 @@ object Places {
         "ar" to "arkansas", "ca" to "california", "co" to "colorado",
         "ct" to "connecticut", "de" to "delaware", "fl" to "florida",
         "ga" to "georgia", "hi" to "hawaii", "id" to "idaho",
-        "il" to "illinois", "ia" to "iowa", "ks" to "kansas",
+        "il" to "illinois", "in" to "indiana", "ia" to "iowa", "ks" to "kansas",
         "ky" to "kentucky", "la" to "louisiana", "me" to "maine",
         "md" to "maryland", "ma" to "massachusetts", "mi" to "michigan",
         "mn" to "minnesota", "ms" to "mississippi", "mo" to "missouri",
         "mt" to "montana", "ne" to "nebraska", "nv" to "nevada",
         "nh" to "new hampshire", "nj" to "new jersey", "nm" to "new mexico",
+        "ny" to "new york state",
         "nc" to "north carolina", "nd" to "north dakota", "oh" to "ohio",
         "ok" to "oklahoma", "or" to "oregon", "pa" to "pennsylvania",
         "ri" to "rhode island", "sc" to "south carolina", "sd" to "south dakota",
@@ -170,13 +174,99 @@ object Places {
      * Endonyms, the common abbreviations, and the spellings that differ
      * only by a diacritic once the diacritics are gone anyway.
      */
+    /**
+     * Cities whose English name differs from the local one, or whose
+     * shorthand people write. Hoisted out of the alias map so the
+     * ambiguity check can see the names as well as the codes.
+     */
+    private val CITY_ALIASES: List<Pair<String, String>> = listOf(
+        "wien" to "vienna", "muenchen" to "munich", "munchen" to "munich",
+        "koeln" to "cologne", "koln" to "cologne", "nurnberg" to "nuremberg",
+        "nuernberg" to "nuremberg", "frankfurt am main" to "frankfurt",
+        "praha" to "prague", "moskva" to "moscow", "moskwa" to "moscow",
+        "sankt peterburg" to "saint petersburg",
+        "st petersburg" to "saint petersburg",
+        "st. petersburg" to "saint petersburg",
+        "roma" to "rome", "firenze" to "florence", "milano" to "milan",
+        "napoli" to "naples", "torino" to "turin", "venezia" to "venice",
+        "genova" to "genoa", "lisboa" to "lisbon", "porto" to "oporto",
+        "sevilla" to "seville", "zaragoza" to "saragossa",
+        "warszawa" to "warsaw", "krakow" to "cracow", "gdansk" to "danzig",
+        "beograd" to "belgrade", "zagreb" to "zagreb",
+        "bucuresti" to "bucharest", "kobenhavn" to "copenhagen",
+        "goteborg" to "gothenburg", "malmo" to "malmo",
+        "zurich" to "zurich", "geneve" to "geneva", "genf" to "geneva",
+        "basel" to "basel", "bern" to "berne",
+        "den haag" to "the hague", "s-gravenhage" to "the hague",
+        "'s-gravenhage" to "the hague", "antwerpen" to "antwerp",
+        "anvers" to "antwerp", "gent" to "ghent", "gand" to "ghent",
+        "brugge" to "bruges", "bruxelles" to "brussels",
+        "brussel" to "brussels", "liege" to "liege", "luik" to "liege",
+        "athina" to "athens", "athinai" to "athens",
+        "thessaloniki" to "salonica", "istanbul" to "istanbul",
+        "izmir" to "izmir", "kyiv" to "kyiv", "kiev" to "kyiv",
+        "lviv" to "lviv", "lvov" to "lviv", "odesa" to "odesa",
+        "odessa" to "odesa", "minsk" to "minsk", "tallinn" to "tallinn",
+        "riga" to "riga", "vilnius" to "vilnius", "helsinki" to "helsinki",
+        "helsingfors" to "helsinki", "oslo" to "oslo",
+        "reykjavik" to "reykjavik", "dublin" to "dublin",
+        "baile atha cliath" to "dublin", "edinburgh" to "edinburgh",
+        "beijing" to "beijing", "peking" to "beijing",
+        "guangzhou" to "guangzhou",
+        // "canton" is also a town in Ohio, Michigan, Georgia and
+        // Massachusetts, and the word for a Swiss subdivision.
+
+        "shanghai" to "shanghai", "hong kong" to "hong kong",
+        "hongkong" to "hong kong", "hk" to "hong kong",
+        "tokyo" to "tokyo", "tokio" to "tokyo", "kyoto" to "kyoto",
+        "osaka" to "osaka", "seoul" to "seoul",
+        "mumbai" to "mumbai", "bombay" to "mumbai",
+        "kolkata" to "kolkata", "calcutta" to "kolkata",
+        "chennai" to "chennai", "madras" to "chennai",
+        "bengaluru" to "bengaluru", "bangalore" to "bengaluru",
+        "delhi" to "delhi", "new delhi" to "delhi",
+        "al qahirah" to "cairo", "cairo" to "cairo",
+        "mexico city" to "mexico city", "ciudad de mexico" to "mexico city",
+        "cdmx" to "mexico city", "sao paulo" to "sao paulo",
+        "rio de janeiro" to "rio de janeiro", "rio" to "rio de janeiro",
+        "buenos aires" to "buenos aires", "nyc" to "new york",
+        "new york city" to "new york", "ny" to "new york",
+        "sf" to "san francisco", "san fran" to "san francisco",
+        "bay area" to "san francisco bay area",
+        "la" to "los angeles", "l.a." to "los angeles",
+        "dc" to "washington", "washington dc" to "washington",
+        "washington d.c." to "washington",
+        )
+
     /** The two-letter city shorthands, which collide most. */
     private val SHORT_CITY_CODES = setOf("la", "ny", "sf", "dc", "hk")
 
-    /** Short codes with more than one plausible meaning in this table. */
+    /**
+     * Anything in this table with more than one plausible meaning.
+     *
+     * Codes AND names. The first version intersected codes only, so a
+     * collision between a US state's NAME and a country's name was
+     * invisible to it: `SUBDIVISIONS` maps "ga" to "georgia", which
+     * is also a country, so "Atlanta, GA" was filed as a claim about
+     * the Caucasus — graded as corroborated when a second source
+     * mentioned the country, and then contradicted by its own posting
+     * hours, which `ActivityHours` measured against Tbilisi.
+     *
+     * A collision resolves to itself, which merges with another copy
+     * of itself and with nothing else. That is exactly as much as is
+     * actually known, and the alternative — guessing by position —
+     * fails on "Toronto, CA" and on "Atlanta, GA" in opposite
+     * directions.
+     */
     private val AMBIGUOUS: Set<String> = buildSet {
         val subdivisionCodes = SUBDIVISIONS.map { it.first }.toSet()
+        val subdivisionNames = SUBDIVISIONS.map { it.second }.toSet()
+        val cityNames = CITY_ALIASES.map { it.second }.toSet()
         addAll(COUNTRY_CODES.filter { it.length <= 3 && it in subdivisionCodes })
+        // Georgia the state and Georgia the country.
+        addAll(COUNTRY_NAMES.filter { it in subdivisionNames })
+        // Washington the city and Washington the state; Georgia again.
+        addAll(cityNames.filter { it in subdivisionNames || it in COUNTRY_NAMES })
         // And the city abbreviations that collide with a subdivision:
         // LA is Los Angeles and Louisiana.
         addAll(SHORT_CITY_CODES.filter { it in subdivisionCodes || it in COUNTRY_CODES })
@@ -187,62 +277,7 @@ object Places {
         // Cities whose English name differs from the local one. These
         // are the ones that actually turn up in a profile's location
         // field; a complete gazetteer would be a different project.
-        val cities = listOf(
-            "wien" to "vienna", "muenchen" to "munich", "munchen" to "munich",
-            "koeln" to "cologne", "koln" to "cologne", "nurnberg" to "nuremberg",
-            "nuernberg" to "nuremberg", "frankfurt am main" to "frankfurt",
-            "praha" to "prague", "moskva" to "moscow", "moskwa" to "moscow",
-            "sankt peterburg" to "saint petersburg",
-            "st petersburg" to "saint petersburg",
-            "st. petersburg" to "saint petersburg",
-            "roma" to "rome", "firenze" to "florence", "milano" to "milan",
-            "napoli" to "naples", "torino" to "turin", "venezia" to "venice",
-            "genova" to "genoa", "lisboa" to "lisbon", "porto" to "oporto",
-            "sevilla" to "seville", "zaragoza" to "saragossa",
-            "warszawa" to "warsaw", "krakow" to "cracow", "gdansk" to "danzig",
-            "beograd" to "belgrade", "zagreb" to "zagreb",
-            "bucuresti" to "bucharest", "kobenhavn" to "copenhagen",
-            "goteborg" to "gothenburg", "malmo" to "malmo",
-            "zurich" to "zurich", "geneve" to "geneva", "genf" to "geneva",
-            "basel" to "basel", "bern" to "berne",
-            "den haag" to "the hague", "s-gravenhage" to "the hague",
-            "'s-gravenhage" to "the hague", "antwerpen" to "antwerp",
-            "anvers" to "antwerp", "gent" to "ghent", "gand" to "ghent",
-            "brugge" to "bruges", "bruxelles" to "brussels",
-            "brussel" to "brussels", "liege" to "liege", "luik" to "liege",
-            "athina" to "athens", "athinai" to "athens",
-            "thessaloniki" to "salonica", "istanbul" to "istanbul",
-            "izmir" to "izmir", "kyiv" to "kyiv", "kiev" to "kyiv",
-            "lviv" to "lviv", "lvov" to "lviv", "odesa" to "odesa",
-            "odessa" to "odesa", "minsk" to "minsk", "tallinn" to "tallinn",
-            "riga" to "riga", "vilnius" to "vilnius", "helsinki" to "helsinki",
-            "helsingfors" to "helsinki", "oslo" to "oslo",
-            "reykjavik" to "reykjavik", "dublin" to "dublin",
-            "baile atha cliath" to "dublin", "edinburgh" to "edinburgh",
-            "beijing" to "beijing", "peking" to "beijing",
-            "guangzhou" to "guangzhou", "canton" to "guangzhou",
-            "shanghai" to "shanghai", "hong kong" to "hong kong",
-            "hongkong" to "hong kong", "hk" to "hong kong",
-            "tokyo" to "tokyo", "tokio" to "tokyo", "kyoto" to "kyoto",
-            "osaka" to "osaka", "seoul" to "seoul",
-            "mumbai" to "mumbai", "bombay" to "mumbai",
-            "kolkata" to "kolkata", "calcutta" to "kolkata",
-            "chennai" to "chennai", "madras" to "chennai",
-            "bengaluru" to "bengaluru", "bangalore" to "bengaluru",
-            "delhi" to "delhi", "new delhi" to "delhi",
-            "al qahirah" to "cairo", "cairo" to "cairo",
-            "mexico city" to "mexico city", "ciudad de mexico" to "mexico city",
-            "cdmx" to "mexico city", "sao paulo" to "sao paulo",
-            "rio de janeiro" to "rio de janeiro", "rio" to "rio de janeiro",
-            "buenos aires" to "buenos aires", "nyc" to "new york",
-            "new york city" to "new york", "ny" to "new york",
-            "sf" to "san francisco", "san fran" to "san francisco",
-            "bay area" to "san francisco bay area",
-            "la" to "los angeles", "l.a." to "los angeles",
-            "dc" to "washington", "washington dc" to "washington",
-            "washington d.c." to "washington",
-        )
-        cities.forEach { (from, to) -> put(from, to) }
+        CITY_ALIASES.forEach { (from, to) -> put(from, to) }
 
         // Countries: ISO alpha-2, alpha-3 and the names people write,
         // all counted under the English name.

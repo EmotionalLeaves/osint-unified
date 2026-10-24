@@ -109,4 +109,57 @@ class ActivityHoursTest {
             )
         }
     }
+    /**
+     * The one case where the inference is perfectly right, reported
+     * as a discrepancy — because the band was plain integer
+     * containment on a circular quantity, and the sentence named
+     * "UTC-14", which nobody has.
+     */
+    @Test
+    fun anOffsetAcrossTheDatelineStillAgrees() {
+        val note = ActivityHours.compare(
+            listOf(row("ghactivity", "quiet 12:00–18:00 UTC")),
+            listOf("wellington")
+        )
+        requireNotNull(note)
+        assertTrue(note.what, note.what.startsWith("Consistent"))
+        assertTrue("no impossible offset", !note.what.contains("UTC-1") ||
+            note.what.contains("UTC-11") || note.what.contains("UTC-10"))
+        assertTrue(note.what, note.what.contains("UTC+12"))
+    }
+
+    @Test
+    fun anOffsetIsNeverWrittenBeyondTheRealRange() {
+        (0..23).forEach { from ->
+            val band = ActivityHours.offsetsFor(ActivityHours.Quiet(from, (from + 6) % 24, "t"))
+            val centre = (band.first + band.last) / 2
+            val written = ActivityHours.asOffset(centre)
+            val value = written.removePrefix("+").toInt()
+            assertTrue("$written is not an offset anybody has", value in -11..12)
+        }
+    }
+
+    /** The corrected rows. */
+    @Test
+    fun theTableAgreesWithTheWorld() {
+        // Nairobi: East Africa Time is +3, and was written as +2.
+        val nairobi = ActivityHours.compare(
+            listOf(row("ghactivity", "quiet 21:00–3:00 UTC")),
+            listOf("kenya")
+        )
+        requireNotNull(nairobi)
+        assertTrue(nairobi.what, nairobi.what.contains("UTC+3"))
+        // Mexico and Indonesia span three zones each and are excluded,
+        // as the table's own comment says multi-zone countries are.
+        listOf("mexico", "indonesia").forEach { wide ->
+            assertNull(
+                wide,
+                ActivityHours.compare(
+                    listOf(row("ghactivity", "quiet 2:00–8:00 UTC")),
+                    listOf(wide)
+                )
+            )
+        }
+    }
+
 }

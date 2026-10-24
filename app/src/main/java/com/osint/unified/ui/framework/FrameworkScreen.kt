@@ -253,6 +253,9 @@ fun FrameworkScreen(initialTarget: String = "", onBack: () -> Unit) {
                 // the query runs it on Default and cancels the previous
                 // one when the next letter arrives, so a fast typist
                 // pays for the last letter only.
+                // Deduplicated by what the key is made of, because a
+                // key must be unique and the same URL legitimately
+                // appears under several categories.
                 val matches by produceState(
                     initialValue = emptyList<Triple<String, String, String>>(),
                     q, allLeaves
@@ -261,7 +264,7 @@ fun FrameworkScreen(initialTarget: String = "", onBack: () -> Unit) {
                         allLeaves.filter {
                             it.first.contains(q, true) || it.third.contains(q, true) ||
                                 it.second.contains(q, true)
-                        }.take(300)
+                        }.distinctBy { it.second to it.third }.take(300)
                     }
                 }
                 val tmplMatches by produceState(
@@ -271,7 +274,7 @@ fun FrameworkScreen(initialTarget: String = "", onBack: () -> Unit) {
                     value = withContext(Dispatchers.Default) {
                         templates.filter {
                             it.name.contains(q, true) || it.url.contains(q, true)
-                        }.take(300)
+                        }.distinctBy { it.url }.take(300)
                     }
                 }
                 Text(
@@ -280,7 +283,16 @@ fun FrameworkScreen(initialTarget: String = "", onBack: () -> Unit) {
                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp)
                 )
                 LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
-                    items(tmplMatches, key = { it.url }) { t ->
+                    // Prefixed, and deduplicated.
+                    //
+                    // Two items() in one LazyColumn share one key
+                    // space, and the directory's four markdown
+                    // catalogues dedupe URLs within a catalogue and
+                    // not across them — so typing a tool that appears
+                    // in more than one of them (shodan, maltego,
+                    // censys) gave LazyList two rows with one key and
+                    // it threw as the letter landed.
+                    items(tmplMatches, key = { "t\u0000${it.url}" }) { t ->
                         val resolved = if (target.isBlank()) null
                         else ToolTemplates.resolve(t, target.trim())
                         LeafRow(
@@ -289,14 +301,21 @@ fun FrameworkScreen(initialTarget: String = "", onBack: () -> Unit) {
                             resolved?.let { r -> { open(r) } }
                         ) { open(resolved ?: t.url.replace("{}", "")) }
                     }
-                    items(matches, key = { it.second }) { (name, url, path) ->
+                    items(matches, key = { "d\u0000${it.second}\u0000${it.third}" }) { (name, url, path) ->
                         LeafRow(name, path, runnable(url)?.let { r -> { open(r) } }) { open(url) }
                     }
                 }
             } else {
                 val node = stack.last()
                 LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
-                    items(node.children, key = { it.name + "\u0000" + (it.url ?: "") }) { child ->
+                    // Indexed, because two siblings can genuinely
+                    // share a name and a link and a duplicate key is a
+                    // crash rather than a cosmetic problem.
+                    items(
+                        node.children.size,
+                        key = { i -> "c\u0000$i\u0000${node.children[i].name}" }
+                    ) { i ->
+                        val child = node.children[i]
                         if (child.isFolder) FolderRow(child) { enter(child) }
                         else LeafRow(
                             child.name,

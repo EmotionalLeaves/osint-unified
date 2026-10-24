@@ -1,11 +1,13 @@
 package com.osint.unified
 
 import com.osint.unified.data.db.Result as ResultRow
+import com.osint.unified.domain.Coordinates
 import com.osint.unified.domain.Corroboration
 import com.osint.unified.domain.EntityExtractor
 import com.osint.unified.domain.PersonName
 import com.osint.unified.domain.Places
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -270,6 +272,70 @@ class DeclaredAttributesTest {
         )
         val entities = Corroboration.merge(rows, seed = "example.net")
         assertEquals(0, entities.first { it.value == "shared.example.org" }.hops)
+    }
+
+    /**
+     * The collision the first version of the ambiguity rule could not
+     * see, because it intersected codes and this is a clash of names.
+     */
+    @Test
+    fun georgiaTheStateIsNotGeorgiaTheCountry() {
+        assertEquals("georgia", Places.canonical("georgia"))
+        assertFalse(
+            "a state that shares a country's name must not be filed as the country",
+            Places.isCountry(Places.canonical("GA") ?: "")
+        )
+        val parts = Places.parts("Atlanta, GA")
+        assertTrue("$parts", parts.none { Places.isCountry(it) })
+    }
+
+    @Test
+    fun indianaIsNotIndiaAndAlbanyIsNotManhattan() {
+        assertFalse("IN must not resolve to India", Places.canonical("IN") == "india")
+        assertTrue(
+            "NY must not resolve to the city",
+            Places.canonical("NY") != Places.canonical("New York")
+        )
+        val albany = Places.parts("Albany, NY")
+        val manhattan = Places.parts("New York, NY")
+        assertTrue(
+            "$albany and $manhattan should not be the same place",
+            albany.first() != manhattan.first()
+        )
+    }
+
+    /** Two renderings of one point are one point. */
+    @Test
+    fun aCoordinateIsTheSamePlaceAtFourDecimalsAndFive() {
+        assertTrue(Coordinates.same("51.5074, -0.1278", "51.50740, -0.12776"))
+        assertEquals(Coordinates.key("51.5074,-0.1278"), Coordinates.key("51.50740, -0.12780"))
+        assertFalse(Coordinates.same("51.5074, -0.1278", "51.6074, -0.1278"))
+    }
+
+    /** And a date after it does not stop it being a coordinate. */
+    @Test
+    fun aCoordinateWithADateStillParses() {
+        val p = Coordinates.parse("51.5074, -0.1278, 2026-03-02 14:30")
+        requireNotNull(p)
+        assertEquals(51.5074, p.lat, 1e-9)
+        assertEquals(-0.1278, p.lon, 1e-9)
+        assertTrue(Coordinates.same("51.5074, -0.1278, 2026-03-02", "51.50740, -0.12776"))
+        assertNull(Coordinates.parse("500, 900"))
+        assertNull(Coordinates.parse("not a place"))
+    }
+
+    /** A dossier about a place holds many points and none contradicts another. */
+    @Test
+    fun manyCoordinatesInOnePlaceDossierDoNotContradict() {
+        val rows = listOf(
+            row("cctvnear", "Cameras\n• 1.2 km — 51.5100, -0.1300\n• 2.4 km — 51.5200, -0.1400"),
+            row("osmrecon", "Infrastructure\n51.5300, -0.1500")
+        )
+        val entities = Corroboration.merge(rows, seed = "51.5074,-0.1278", seedIsPlace = true)
+        assertTrue(
+            "camera positions are not rival answers: $entities",
+            entities.none { it.kind == "COORD" && it.competing.isNotEmpty() }
+        )
     }
 
 }

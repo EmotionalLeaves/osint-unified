@@ -52,7 +52,33 @@ object ActivityHours {
     fun offsetsFor(quiet: Quiet): IntRange {
         val midpoint = ((quiet.fromHour + 3) % 24)
         val centre = Math.floorMod(3 - midpoint + 12, 24) - 12
-        return (centre - 2)..(centre + 2)
+        return (centre - BAND)..(centre + BAND)
+    }
+
+    /** How far either side of the centre still counts as agreement. */
+    private const val BAND = 2
+
+    /**
+     * Whether a real offset sits inside the band, counting round the
+     * dateline.
+     *
+     * `offset in band` is plain integer containment on a quantity
+     * that is circular, and the band is folded into −12..11. A
+     * Wellington user at UTC+12 whose quiet window is exactly the
+     * model's night produced a centre of −12 and a band of −14..−10,
+     * so the one case where the inference is perfectly right was
+     * reported as a discrepancy — under a sentence naming "UTC−14",
+     * which is not an offset anybody has.
+     */
+    internal fun agrees(offset: Int, centre: Int): Boolean {
+        val apart = Math.floorMod(offset - centre + 12, 24) - 12
+        return kotlin.math.abs(apart) <= BAND
+    }
+
+    /** An offset written the way people write it, folded to −11..+12. */
+    internal fun asOffset(hours: Int): String {
+        val folded = Math.floorMod(hours + 11, 24) - 11
+        return if (folded < 0) "$folded" else "+$folded"
     }
 
     /**
@@ -76,21 +102,21 @@ object ActivityHours {
         val (name, offset) = claimed
         val source = ToolRegistry.byId(quiet.toolId)?.name ?: quiet.toolId
         val gap = "${quiet.fromHour}:00–${quiet.toHour}:00 UTC"
-        val agrees = offset in band
+        val centre = (band.first + band.last) / 2
+        val agrees = agrees(offset, centre)
         return Timeline.Observation(
             what = buildString {
                 append(if (agrees) "Consistent: " else "Worth checking: ")
                 append("$source saw no activity between $gap, which fits ")
                 append("somebody living around UTC")
-                append(if (band.first < 0) "" else "+")
-                append("${band.first} to ")
-                append(if (band.last < 0) "" else "+")
-                append("${band.last}. ")
-                append("The declared location is ")
+                // The centre with a tolerance, not the two ends. The
+                // ends wrap — a band centred on UTC+12 runs from +10
+                // to -10 — and "+10 to -10" reads as nonsense.
+                append(asOffset(centre))
+                append(", give or take $BAND hours. The declared location is ")
                 append(name.replaceFirstChar { it.uppercase() })
                 append(", around UTC")
-                append(if (offset < 0) "" else "+")
-                append("$offset")
+                append(asOffset(offset))
                 append(if (agrees) ", which is inside that band." else ", which is not.")
                 append(" A quiet window is when somebody is not posting — ")
                 append("usually asleep, sometimes at work, and nothing at all ")
@@ -124,23 +150,29 @@ object ActivityHours {
         listOf(
             "finland", "estonia", "latvia", "lithuania", "greece", "romania",
             "bulgaria", "ukraine", "moldova", "israel", "egypt", "south africa",
-            "zimbabwe", "uganda", "kenya", "ethiopia"
+            "zimbabwe", "lebanon"
         ).forEach { put(it, 2) }
-        listOf("turkey", "belarus", "iraq", "saudi arabia", "qatar", "kuwait", "jordan", "lebanon")
+        // East Africa Time, which is +3 and was written as +2.
+        listOf("kenya", "uganda", "ethiopia", "tanzania").forEach { put(it, 3) }
+        listOf("turkey", "belarus", "iraq", "saudi arabia", "qatar", "kuwait", "jordan")
             .forEach { put(it, 3) }
         listOf("united arab emirates", "georgia", "armenia", "azerbaijan").forEach { put(it, 4) }
         listOf("pakistan", "uzbekistan").forEach { put(it, 5) }
         listOf("sri lanka").forEach { put(it, 5) }
         listOf("bangladesh").forEach { put(it, 6) }
-        listOf("thailand", "vietnam", "cambodia", "indonesia").forEach { put(it, 7) }
+        listOf("thailand", "vietnam", "cambodia").forEach { put(it, 7) }
         listOf("china", "singapore", "malaysia", "philippines", "taiwan", "mongolia")
             .forEach { put(it, 8) }
         listOf("japan", "south korea").forEach { put(it, 9) }
         listOf("new zealand").forEach { put(it, 12) }
         listOf("iran").forEach { put(it, 3) }
         listOf("india", "nepal").forEach { put(it, 5) }
-        listOf("mexico", "colombia", "peru", "ecuador", "panama", "costa rica", "cuba")
-            .forEach { put(it, -5) }
+        // Mexico and Indonesia are not here. Both span three zones,
+        // which is the thing the comment below says is excluded, and
+        // both were in the table anyway — Mexico at -5 while its own
+        // capital is at -6 two lines down, disagreeing with itself.
+        listOf("colombia", "peru", "ecuador", "panama", "cuba").forEach { put(it, -5) }
+        listOf("costa rica").forEach { put(it, -6) }
         listOf("chile", "venezuela", "bolivia").forEach { put(it, -4) }
         listOf("argentina", "uruguay").forEach { put(it, -3) }
 
