@@ -327,8 +327,55 @@ else keyed, if the person wants it.
 - [done] **B2. Count what actually runs, per observable type**, and publish
   the number in the app. If a username search runs eleven tools and
   four of them are link lists, the person should be able to see that.
-- **B3. More sources that fetch.** People landed seven. Do the same
-  audit for username, email, phone, image and coordinate.
+- **B3. More sources that fetch.** People landed seven; phone got
+  two on 23 Oct. Audited for the rest, same day. Candidates below,
+  all keyless and all **unverified until the probe run answers** —
+  the research pass could not reach any of them from the sandbox.
+
+  - **B3-1. Image is the weakest type and has the clearest wins.**
+    Two of the three need no network at all, because ExifReader
+    already downloads the bytes:
+    - **C2PA / Content Credentials**: parse the embedded manifest
+      for capture device, edit history, and the
+      `digitalSourceType` flag that marks AI-generated media, with
+      a signing chain behind it. Nothing in the app touches the
+      provenance question and it is the one that matters most now.
+    - **Embedded EXIF thumbnail**: many JPEGs keep a thumbnail that
+      was never re-rendered after a crop, so it shows the
+      uncropped original. One more read on an object already
+      constructed.
+    - **Wayback CDX on the exact image URL**: earliest capture is a
+      floor on the image's age, and a repeated digest across
+      captures proves the bytes are unchanged.
+    - **HTTP HEAD**: true content type against the claimed
+      extension, exact size, last-modified. Headers only, so it
+      costs nothing on mobile data.
+  - **B3-2. Username**: chess.com `pub/player`, lichess
+    `api/user`, Codeforces `user.info`, Wikimedia `globaluserinfo`
+    (every wiki an account touches, the OSM tool's equivalent for
+    Wikimedia), Codeberg/Gitea `api/v1/users`, Hugging Face
+    `api/users/overview`. All return real profile fields — name,
+    city, employer, bio, declared links — not a yes/no.
+  - **B3-3. Email is genuinely scarce keyless.** Everything that
+    answers "what is this address in" is keyed now. Real adds:
+    Libravatar with `d=404` (a 200 means a federated avatar
+    exists, and it catches people who avoid Gravatar);
+    keyserver.ubuntu.com HKP index parsed rather than linked, as a
+    second PGP corpus — graded lower than keys.openpgp.org because
+    it does not verify the address; GitHub commit search by
+    author-email, which leaks a real name from git config even
+    when the profile hides it, but is rate-limited hard; and a
+    bundled disposable-domain list, offline, which reframes
+    everything else in a dossier.
+  - **B3-4. Coordinate is near-saturated** and should not be
+    padded. Two worth adding, both on the Open-Meteo client
+    already here: timezone resolution, which Nominatim does not
+    give and chronolocation needs; and air quality. GBIF species
+    occurrences is the only genuinely new source and it is niche.
+  - **Rejected on safety**: an endpoint returning cleartext
+    email:password pairs. Breach *metadata* — which breach, what
+    fields — is the line this app already draws and it stays
+    drawn.
 
 ## C. The globe audit, remaining items
 
