@@ -15,8 +15,26 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from ktscan import without_prose  # noqa: E402
+
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "app/src"
+
+
+def code(path: Path) -> str:
+    """A file with its comments and string contents blanked out.
+
+    Everything below asks "is this dotted name written anywhere?",
+    and prose answers yes. A doc comment explaining that
+    `AreaReport.LAYER_WORDS` used to exist and was deleted is a
+    sentence about the past, not a call — but it was read as one,
+    and the check failed on the commit that removed the member and
+    said so. The same false positive fired once before on a comment
+    naming a file. Offsets and newlines survive the blanking, so
+    reported line numbers stay true.
+    """
+    return without_prose(path.read_text(errors="replace"))
 
 OBJECT = re.compile(r"^(\s*)(?:private\s+|internal\s+)?object\s+([A-Z][A-Za-z0-9_]*)\s*\{", re.M)
 MEMBER = re.compile(
@@ -49,7 +67,7 @@ def body_of(text: str, open_brace: int) -> str:
 
 def main() -> int:
     files = list(SRC.rglob("*.kt"))
-    whole = "\n".join(p.read_text(errors="replace") for p in files)
+    whole = "\n".join(code(p) for p in files)
 
     objects: dict[str, set[str]] = {}
     for m in OBJECT.finditer(whole):
@@ -74,7 +92,7 @@ def main() -> int:
     # know.
     private_companions: dict[str, tuple[set[str], Path]] = {}
     for path in files:
-        text = path.read_text(errors="replace")
+        text = code(path)
         for m in re.finditer(
             r"\bclass\s+([A-Z][A-Za-z0-9_]*)[\s\S]{0,20000}?"
             r"^\s*private\s+companion\s+object\s*\{", text, re.M
@@ -86,7 +104,7 @@ def main() -> int:
 
     bad: list[str] = []
     for path in files:
-        text = path.read_text(errors="replace")
+        text = code(path)
         for owner, (members, home) in private_companions.items():
             if path == home:
                 continue
@@ -101,7 +119,7 @@ def main() -> int:
                 )
 
     for path in files:
-        text = path.read_text(errors="replace")
+        text = code(path)
         for name, members in objects.items():
             for use in re.finditer(r"\b%s\.([a-zA-Z_][A-Za-z0-9_]*)" % re.escape(name), text):
                 member = use.group(1)
@@ -123,7 +141,7 @@ def main() -> int:
     # it only became reachable when the companion stopped being private —
     # which is how r179 died, one commit after r178 died making it visible.
     for path in files:
-        text = path.read_text(errors="replace")
+        text = code(path)
         private_types = set(
             re.findall(
                 r"\bprivate\s+(?:data\s+|sealed\s+|value\s+|inner\s+|enum\s+)*"

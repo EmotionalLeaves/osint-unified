@@ -299,58 +299,63 @@ object WorldBrief {
                 canBeQuiet && key in state.loaded && size == 0 -> quiet.add(label)
             }
         }
-        maybeQuiet("gdacs", "disaster alerts", state.gdacs.size)
-        maybeQuiet("conflicts", "conflicts", state.conflicts.size)
-        maybeQuiet("volcanoes", "volcanoes", state.volcanoes.size)
-        maybeQuiet("fires", "wildfires", state.fires.size)
-        maybeQuiet("outages", "countries with connectivity down", state.outages.size)
-        maybeQuiet(
-            "worldWarnings",
-            "severe-weather warnings anywhere in the world",
-            state.worldWarnings.size
+        // Every layer, from the one table that describes them.
+        //
+        // This was thirty-four hand-written calls, and before today
+        // it was eleven — so twenty-three layers could not be
+        // reported as down at all, in the section whose entire
+        // purpose is naming the ones that are. A layer added to
+        // Layers.ALL is covered here the moment it is added, and the
+        // test beside that file fails if a polled key is missing
+        // from it.
+        val sizes: Map<String, Int> = mapOf(
+            "gdacs" to state.gdacs.size,
+            "conflicts" to state.conflicts.size,
+            "volcanoes" to state.volcanoes.size,
+            "fires" to state.fires.size,
+            "outages" to state.outages.size,
+            "worldWarnings" to state.worldWarnings.size,
+            "weather" to state.weather.size,
+            "milAircraft" to state.milAircraft.size,
+            "cyclones" to state.cyclones.size,
+            "tsunamis" to state.tsunamis.size,
+            "airportStatus" to state.airportStatus.size,
+            "quakes" to state.quakes.size,
+            "naturalEvents" to state.naturalEvents.size,
+            "news" to state.news.size,
+            "launches" to state.launches.size,
+            "aurora" to state.aurora.size,
+            "aircraft" to state.aircraft.size,
+            "vessels" to state.vessels.size,
+            "satellites" to state.satellites.size,
+            "seaLevel" to state.seaLevel.size,
+            "ports" to state.ports.size,
+            "buoys" to state.buoys.size,
+            "metar" to state.metar.size,
+            "airQuality" to state.airQuality.size,
+            "stations" to state.stations.size,
+            "airports" to state.airports.size,
+            "powerPlants" to state.powerPlants.size,
+            "cables" to state.cables.size,
+            "cameras" to state.cameras.size,
+            "sites" to state.sites.size,
+            "airspace" to state.airspace.size,
+            "radiation" to state.radiation.size,
+            "overlayPoints" to state.overlayPoints.size,
+            "spaceWeather" to if (state.spaceWeather == null) 0 else 1
         )
-        maybeQuiet("weather", "US severe-weather alerts", state.weather.size)
-        maybeQuiet("milAircraft", "military aircraft", state.milAircraft.size)
-        // Named by their real coverage. A regional source reporting nothing
-        // is not the world reporting nothing, and "no tropical cyclones"
-        // during a West Pacific typhoon is a lie the NHC never told.
-        maybeQuiet("cyclones", "tropical cyclones anywhere in the world", state.cyclones.size)
-        maybeQuiet("tsunamis", "tsunami bulletins from any of the four centres", state.tsunamis.size)
-        maybeQuiet("airportStatus", "US airport delays", state.airportStatus.size)
-        maybeQuiet("quakes", "earthquakes anywhere in the world", state.quakes.size)
-        maybeQuiet("naturalEvents", "natural events", state.naturalEvents.size)
-        maybeQuiet("news", "news hotspots", state.news.size)
-        maybeQuiet("launches", "rocket launches in the window", state.launches.size)
-        maybeQuiet("aurora", "aurora", state.aurora.size)
-        // Everything below is an inventory or a tracker rather than an
-        // event feed, so it can be down but never quiet — and until
-        // this it could be neither, because `blips` returns early on an
-        // empty list and nothing else read its key. A feed that had
-        // never once succeeded appeared nowhere in a brief whose whole
-        // purpose is saying which layers have not reported.
-        maybeQuiet("aircraft", "aircraft", state.aircraft.size, canBeQuiet = false)
-        maybeQuiet("vessels", "vessels", state.vessels.size, canBeQuiet = false)
-        maybeQuiet("satellites", "satellites", state.satellites.size, canBeQuiet = false)
-        maybeQuiet("seaLevel", "sea-level gauges", state.seaLevel.size, canBeQuiet = false)
-        maybeQuiet("ports", "ports", state.ports.size, canBeQuiet = false)
-        maybeQuiet("buoys", "ocean buoys", state.buoys.size, canBeQuiet = false)
-        maybeQuiet("metar", "airport weather", state.metar.size, canBeQuiet = false)
-        maybeQuiet("airQuality", "air quality", state.airQuality.size, canBeQuiet = false)
-        maybeQuiet("stations", "seismic stations", state.stations.size, canBeQuiet = false)
-        maybeQuiet("airports", "airports", state.airports.size, canBeQuiet = false)
-        maybeQuiet("powerPlants", "power plants", state.powerPlants.size, canBeQuiet = false)
-        maybeQuiet("cables", "submarine cables", state.cables.size, canBeQuiet = false)
-        maybeQuiet("cameras", "public cameras", state.cameras.size, canBeQuiet = false)
-        maybeQuiet("sites", "borders, embassies and prisons", state.sites.size, canBeQuiet = false)
-        maybeQuiet("airspace", "military areas", state.airspace.size, canBeQuiet = false)
-        maybeQuiet("radiation", "radiation monitors", state.radiation.size, canBeQuiet = false)
-        maybeQuiet("overlayPoints", "your own overlay", state.overlayPoints.size, canBeQuiet = false)
-        maybeQuiet(
-            "spaceWeather",
-            "space weather",
-            if (state.spaceWeather == null) 0 else 1,
-            canBeQuiet = false
-        )
+        Layers.ALL.forEach { layer ->
+            maybeQuiet(
+                layer.key,
+                // The brief's own wording where it has one, and the
+                // area report's where it does not — an inventory
+                // only ever appears here as "not reporting", where
+                // the shorter name reads better anyway.
+                layer.brief ?: layer.area,
+                sizes[layer.key] ?: 0,
+                canBeQuiet = layer.brief != null
+            )
+        }
 
         if (partial.isNotEmpty()) {
             sections.add(

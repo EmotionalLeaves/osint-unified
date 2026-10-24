@@ -63,41 +63,13 @@ object AreaReport {
         val total: Int get() = groups.sumOf { it.total }
     }
 
-    /**
-     * How far from the view centre each on-demand layer actually
-     * asked, in kilometres. Beyond that nothing was queried, which is
-     * not the same as nothing being there.
-     */
-    private val ON_DEMAND_REACH_KM = mapOf(
-        "cameras" to 25.0,
-        "sites" to 120.0,
-        "airspace" to 150.0
-    )
-
-    /** For the caveat lines, in the words the pills use. */
-    private val LAYER_WORDS = mapOf(
-        "aircraft" to "aircraft", "milAircraft" to "military aircraft",
-        "vessels" to "vessels", "quakes" to "earthquakes",
-        "naturalEvents" to "natural events", "weather" to "US weather alerts",
-        "fires" to "wildfires", "satellites" to "satellites",
-        "gdacs" to "disaster alerts", "volcanoes" to "volcanoes",
-        "worldWarnings" to "severe-weather warnings", "seaLevel" to "tide gauges",
-        "ports" to "ports", "sites" to "controlled sites",
-        "launches" to "launches", "outages" to "internet outages",
-        "conflicts" to "conflict events", "airQuality" to "air quality",
-        "stations" to "seismic stations", "airports" to "airports",
-        "powerPlants" to "power plants", "aurora" to "aurora",
-        "buoys" to "ocean buoys", "metar" to "airfield weather",
-        "news" to "news hotspots", "cables" to "cable landings",
-        "cyclones" to "tropical cyclones", "tsunamis" to "tsunami bulletins",
-        "airportStatus" to "US airport status", "overlayPoints" to "your overlay",
-        "cameras" to "traffic cameras", "airspace" to "restricted airspace",
-        "radiation" to "radiation monitors",
-        // The thirty-fourth key. It rides with aurora in
-        // `visibleLayers` and can land in `feedTrouble` on its own,
-        // and without this line the caveat printed the raw key.
-        "spaceWeather" to "space weather"
-    )
+    // The wording and the reach both come from Layers, which is
+    // the one table that describes a layer.
+    //
+    // This file carried its own copy and the copy was missing
+    // `spaceWeather`, so that caveat printed the raw key at the
+    // person. Three places described the same thirty-four layers
+    // and two of them have stopped.
 
     /**
      * Great-circle distance in kilometres.
@@ -214,20 +186,20 @@ object AreaReport {
         // What was not looked at, in the same report as what was.
         val caveats = ArrayList<String>()
         state.feedTrouble.keys.sorted().forEach { key ->
-            val word = LAYER_WORDS[key] ?: key
+            val word = Layers.area(key)
             caveats.add("$word — the feed is not reporting, so nothing here rules them out")
         }
         state.feedPartial.keys.sorted().forEach { key ->
-            val word = LAYER_WORDS[key] ?: key
+            val word = Layers.area(key)
             caveats.add("$word — ${state.feedPartial[key]}")
         }
-        ON_DEMAND_REACH_KM.forEach { (key, reach) ->
+        Layers.REACH.forEach { (key, reach) ->
             // Armed, answered, and asked about somewhere else. The
             // circle these fetch is centred on the view, not on the
             // point long-pressed, and at a wide zoom this radius is
             // forty times it.
             if (key in state.loaded && key !in state.feedTrouble && radiusKm > reach) {
-                val word = LAYER_WORDS[key] ?: key
+                val word = Layers.area(key)
                 caveats.add(
                     "$word — only fetched within ${fmtKm(reach)} of the centre of " +
                         "the view, so most of this ${fmtKm(radiusKm)} was never asked about"
