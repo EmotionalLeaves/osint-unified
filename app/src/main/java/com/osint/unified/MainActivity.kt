@@ -179,7 +179,12 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         // An investigation should start where you found the thing, not
         // after a round trip through the clipboard.
         val text = when (intent.action) {
-            Intent.ACTION_SEND -> intent.getStringExtra(Intent.EXTRA_TEXT)
+            // getCharSequenceExtra, not getStringExtra: plenty of apps
+            // put a SpannableString in EXTRA_TEXT - anything that
+            // shares styled or linkified text does - and getStringExtra
+            // returns null for one, so the share silently did nothing.
+            // PROCESS_TEXT below already got this right.
+            Intent.ACTION_SEND -> intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()
             Intent.ACTION_PROCESS_TEXT ->
                 intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)?.toString()
             else -> null
@@ -190,6 +195,14 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         ) {
             @Suppress("DEPRECATION")
             intent.getParcelableExtra<android.net.Uri>(Intent.EXTRA_STREAM)
+                // content:// only. This activity is exported, so a
+                // hostile app can hand over any Uri it likes - and
+                // file:///data/data/com.osint.unified/... would be
+                // opened with this app's own permissions. There is no
+                // return channel, so it is a confused deputy with
+                // nothing to show for itself, but a content URI is
+                // what a share actually is and anything else is not.
+                ?.takeIf { it.scheme.equals("content", ignoreCase = true) }
         } else {
             null
         }
@@ -221,7 +234,13 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
      * what was meant; failing that, the text itself.
      */
     private fun targetIn(raw: String): String {
-        Regex("""https?://\S+""").find(raw)?.value?.let { return it.trimEnd('.', ',', ')') }
+        Regex("""https?://\S+""").find(raw)?.value?.take(300)
+            // Capped like the fallback below. An unbroken 500 KB token
+            // matches the whole of it, and all of it went into Compose
+            // state and a TextField; MAX_QUERY stops it before any
+            // request, so the cost was text layout rather than traffic
+            // - but laying out half a megabyte on one line is not free.
+            ?.let { return it.trimEnd('.', ',', ')') }
         return raw.lines().firstOrNull { it.isNotBlank() }?.trim()?.take(300) ?: raw
     }
 
@@ -520,6 +539,13 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                         "watch" -> WatchScreen(
                             (application as OsintApplication).watchRepository,
                             focusWatchId = openWatchId.longValue.takeIf { it > 0 },
+                            // Cleared once it has been used. It was
+                            // never cleared, so every later visit to
+                            // WATCH tried to focus whichever row a
+                            // notification had pointed at once, however
+                            // long ago and whether or not it still
+                            // exists.
+                            onFocusHandled = { openWatchId.longValue = -1L },
                             onOpen = { target ->
                                 godEyeViewModel.onQueryChange(target)
                                 godEyeViewModel.onSearch()

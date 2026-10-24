@@ -72,7 +72,63 @@ class HistoryViewModel(
      * app. The same exporter the live dossier uses, so a report built
      * from history and one built at the time are the same document.
      */
+    /**
+     * An export that has finished and not yet been handed to the share
+     * sheet.
+     */
+    data class Exported(val file: File, val format: ExportFormat, val at: Long)
+
+    private val _exported = MutableStateFlow<Exported?>(null)
+    val exported: StateFlow<Exported?> = _exported.asStateFlow()
+
+    private val _exporting = MutableStateFlow(false)
+    val exporting: StateFlow<Boolean> = _exporting.asStateFlow()
+
+    private val _exportTrouble = MutableStateFlow<String?>(null)
+    val exportTrouble: StateFlow<String?> = _exportTrouble.asStateFlow()
+
+    fun consumeExport() { _exported.value = null }
+
+    fun clearExportTrouble() { _exportTrouble.value = null }
+
+    /**
+     * Run in the view model's scope, not the screen's.
+     *
+     * Both export buttons used to launch into rememberCoroutineScope.
+     * A rotation mid-PDF cancelled the job and reset the busy flag, and
+     * nothing was said: the button came back enabled, no file appeared,
+     * and the only clue was that a dossier of any size is exactly when
+     * someone is most likely to turn the phone to read it.
+     */
+    fun exportTarget(format: ExportFormat) = runExport { export(format) }
+
+    fun exportOpenCase(format: ExportFormat) = runExport { exportCase(format) }
+
+    private fun runExport(work: suspend () -> File?) {
+        if (_exporting.value) return
+        _exporting.value = true
+        viewModelScope.launch {
+            val file = runCatching { work() }
+            _exporting.value = false
+            val made = file.getOrNull()
+            when {
+                made != null -> _exported.value =
+                    Exported(made, lastFormat, System.currentTimeMillis())
+                file.isFailure -> _exportTrouble.value =
+                    "The report could not be written: " +
+                        (file.exceptionOrNull()?.message ?: "unknown reason")
+                else -> _exportTrouble.value =
+                    "There is nothing to export here yet \u2014 no source has " +
+                        "answered for this target."
+            }
+        }
+    }
+
+    /** Set by the two wrappers above, read when the file lands. */
+    private var lastFormat: ExportFormat = ExportFormat.PDF
+
     suspend fun export(format: ExportFormat): File? {
+        lastFormat = format
         val investigation = repository.byId(_selectedId.value ?: return null) ?: return null
         // Read for this case, not taken from the flow.
         //
@@ -250,6 +306,7 @@ class HistoryViewModel(
      * after it.
      */
     suspend fun exportCase(format: ExportFormat): File? {
+        lastFormat = format
         val case = repository.caseById(_openCaseId.value ?: return null) ?: return null
         val targets = repository.targetsOf(case.id)
         if (targets.isEmpty()) return null

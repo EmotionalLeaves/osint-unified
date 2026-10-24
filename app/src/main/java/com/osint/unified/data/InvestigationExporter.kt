@@ -425,6 +425,19 @@ class InvestigationExporter(private val appContext: Context) {
     /** Any report as a PDF. The text is built by whoever calls this. */
     private fun writePdf(file: File, text: String) {
         val document = PdfDocument()
+        // close() in a finally, because PdfDocument holds a native
+        // handle and nothing else releases it. It was the last
+        // statement of the method, so anything that threw on the way
+        // — a wrap, a draw, the file itself — leaked the document for
+        // the life of the process.
+        try {
+            renderPdf(document, file, text)
+        } finally {
+            runCatching { document.close() }
+        }
+    }
+
+    private fun renderPdf(document: PdfDocument, file: File, text: String) {
         val paint = Paint().apply {
             textSize = 10f
             typeface = Typeface.MONOSPACE
@@ -459,7 +472,6 @@ class InvestigationExporter(private val appContext: Context) {
 
         document.finishPage(page)
         FileOutputStream(file).use { document.writeTo(it) }
-        document.close()
     }
 
     /** Hard-wraps a line to fit the page width (monospace, char-based). */

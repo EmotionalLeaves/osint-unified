@@ -63,6 +63,8 @@ import kotlinx.coroutines.launch
 fun WatchScreen(
     repository: WatchRepository,
     focusWatchId: Long? = null,
+    /** Said once the focus has been applied; see MainActivity. */
+    onFocusHandled: () -> Unit = {},
     onOpen: (String) -> Unit,
     onBack: () -> Unit
 ) {
@@ -70,6 +72,7 @@ fun WatchScreen(
     var unseen by remember { mutableStateOf<Map<Long, Int>>(emptyMap()) }
     var events by remember { mutableStateOf<List<WatchEvent>>(emptyList()) }
     var expanded by remember { mutableStateOf(focusWatchId) }
+    LaunchedEffect(focusWatchId) { if (focusWatchId != null) onFocusHandled() }
     var checking by remember { mutableStateOf(false) }
     var trouble by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()

@@ -32,6 +32,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -215,16 +216,30 @@ private fun Entry(title: String, body: String, onClick: () -> Unit) {
  */
 @Composable
 private fun PrivacyControls(settings: AppSettings, lockAvailable: Boolean) {
-    var proxyOn by remember { mutableStateOf(settings.proxyEnabled) }
-    var host by remember { mutableStateOf(settings.proxyHost) }
-    var port by remember { mutableStateOf(settings.proxyPort.toString()) }
-    var lockOn by remember { mutableStateOf(settings.appLockEnabled) }
+    // Saveable, because an unapplied edit was lost on a rotation — and
+    // the field is applied on losing focus, which a rotation does not
+    // count as.
+    var proxyOn by rememberSaveable { mutableStateOf(settings.proxyEnabled) }
+    var host by rememberSaveable { mutableStateOf(settings.proxyHost) }
+    var port by rememberSaveable { mutableStateOf(settings.proxyPort.toString()) }
+    var lockOn by rememberSaveable { mutableStateOf(settings.appLockEnabled) }
+    var portTrouble by rememberSaveable { mutableStateOf(false) }
 
     fun applyProxy() {
         val parsed = port.toIntOrNull() ?: 0
+        // Said, rather than quietly ignored.
+        //
+        // The host was persisted unconditionally and the port only if
+        // it parsed, and then settings.proxyPort — the old value — was
+        // what got applied. So a mistyped port left the field showing
+        // one number while every request went to another, with nothing
+        // on screen to say so. On a privacy control that is the worst
+        // kind of silence.
+        portTrouble = parsed !in 1..65535
+        if (portTrouble) return
         settings.proxyEnabled = proxyOn
         settings.proxyHost = host
-        if (parsed in 1..65535) settings.proxyPort = parsed
+        settings.proxyPort = parsed
         if (proxyOn) {
             Http.useProxy(host, settings.proxyPort)
             PrivateBrowserHost.useProxy(host, settings.proxyPort)
@@ -310,6 +325,18 @@ private fun PrivacyControls(settings: AppSettings, lockAvailable: Boolean) {
                         imeAction = ImeAction.Done
                     ),
                     keyboardActions = KeyboardActions(onDone = { applyProxy() }),
+                    isError = portTrouble,
+                    supportingText = if (portTrouble) {
+                        {
+                            Text(
+                                "1-65535",
+                                style = M3.typography.labelSmall,
+                                color = Intel.Danger
+                            )
+                        }
+                    } else {
+                        null
+                    },
                     modifier = Modifier
                         // A five-digit port plus the field's own
                         // padding is more than 110dp once the system

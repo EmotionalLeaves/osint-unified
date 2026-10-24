@@ -31,10 +31,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -85,8 +85,18 @@ fun HistoryScreen(
     // more used of the two, so it opens first.
     var tab by rememberSaveable { mutableStateOf("targets") }
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var caseBusy by remember { mutableStateOf(false) }
+    val exporting by viewModel.exporting.collectAsStateWithLifecycle()
+    val exported by viewModel.exported.collectAsStateWithLifecycle()
+    val exportTrouble by viewModel.exportTrouble.collectAsStateWithLifecycle()
+    // The file is handed to the share sheet from here, because the view
+    // model has no Context — but it is produced in the view model's
+    // scope, so a rotation during a large PDF no longer throws the work
+    // away silently.
+    LaunchedEffect(exported) {
+        val done = exported ?: return@LaunchedEffect
+        viewModel.consumeExport()
+        share(context, done.file, done.format)
+    }
 
     // System back follows the arrow, level for level.
     //
@@ -143,6 +153,20 @@ fun HistoryScreen(
         // under here, and the keyboard covered whichever one was
         // being typed into.
         Column(Modifier.padding(pad).fillMaxSize().imePadding()) {
+            // An export that produced nothing used to produce nothing
+            // visible either: the button came back enabled and no file
+            // appeared.
+            exportTrouble?.let { why ->
+                Text(
+                    why,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Intel.Amber,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { viewModel.clearExportTrouble() }
+                        .padding(horizontal = 14.dp, vertical = 8.dp)
+                )
+            }
             val case = openCase
             if (selectedId == null && openCaseId != null && case != null) {
                 LazyColumn(
@@ -158,15 +182,8 @@ fun HistoryScreen(
                             onSummary = { viewModel.setCaseSummary(case.id, it) },
                             onRename = { viewModel.renameCase(case.id, it) },
                             onDelete = { viewModel.deleteCase(case.id) },
-                            exporting = caseBusy,
-                            onExport = { format ->
-                                caseBusy = true
-                                scope.launch {
-                                    val file = viewModel.exportCase(format)
-                                    caseBusy = false
-                                    if (file != null) share(context, file, format)
-                                }
-                            }
+                            exporting = exporting,
+                            onExport = { format -> viewModel.exportOpenCase(format) }
                         )
                     }
                 }
@@ -277,9 +294,8 @@ private fun CaseHeader(
     viewModel: HistoryViewModel,
     onReopen: (String) -> Unit
 ) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var busy by remember { mutableStateOf(false) }
+    // Owned by the view model, like the export itself: see exportTarget.
+    val busy by viewModel.exporting.collectAsStateWithLifecycle()
 
     Column(
         Modifier
@@ -346,13 +362,7 @@ private fun CaseHeader(
                 "CSV" to ExportFormat.CSV
             ).forEach { (label, format) ->
                 Action(label, if (busy) Intel.TextLow else Intel.TextMid) {
-                    if (busy) return@Action
-                    busy = true
-                    scope.launch {
-                        val file = viewModel.export(format)
-                        busy = false
-                        if (file != null) share(context, file, format)
-                    }
+                    viewModel.exportTarget(format)
                 }
             }
         }

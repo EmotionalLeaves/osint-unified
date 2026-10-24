@@ -57,7 +57,7 @@ fun CaseList(
     onNew: (String) -> Unit
 ) {
     Column(Modifier.fillMaxWidth()) {
-        NewCaseField(onNew)
+        NewCaseField("case-list", onNew)
         if (cases.isEmpty()) {
             Text(
                 "No cases yet. A case is two or more targets you think belong " +
@@ -111,8 +111,11 @@ fun CaseList(
 }
 
 @Composable
-private fun NewCaseField(onNew: (String) -> Unit) {
-    var name by rememberSaveable { mutableStateOf("") }
+private fun NewCaseField(key: Any?, onNew: (String) -> Unit) {
+    // Keyed, like the sibling tags field a few rows down. Without a key
+    // a half-typed case name carried from one target's filing controls
+    // to the next, because the composable is reused.
+    var name by rememberSaveable(key) { mutableStateOf("") }
     Row(verticalAlignment = Alignment.CenterVertically) {
         OutlinedTextField(
             value = name,
@@ -433,7 +436,7 @@ fun FilingControls(
                 ) { onFile(case.id) }
             }
         }
-        NewCaseField { name -> onNewCase(name) }
+        NewCaseField(investigation.id) { name -> onNewCase(name) }
 
         var tags by rememberSaveable(investigation.id) { mutableStateOf(investigation.tags) }
         OutlinedTextField(
