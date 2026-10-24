@@ -533,6 +533,24 @@ class DirectToolExecutor(
             // — a statement about the domain from a source that was
             // never read — and the prose reader filed it as an
             // absence to match.
+            // Read from its own first line, which it writes.
+            //
+            // This tool has four distinct outcomes — rate limited,
+            // unreachable, unreadable, and an answer — and all four
+            // were left to the prose reader. "No news coverage for
+            // X in the last three days" matches an absence shape by
+            // luck; the other three do not, so being rate limited
+            // was filed as a finding.
+            "gdelt" -> when {
+                starts(
+                    "GDELT is rate limiting",
+                    "GDELT could not be reached",
+                    "GDELT could not be read"
+                ) -> Findings.Kind.UNREACHABLE
+                starts("No news coverage for") -> Findings.Kind.ABSENT
+                starts("News coverage for") -> Findings.Kind.HIT
+                else -> null
+            }
             "crtsh" -> when {
                 starts("Certificate transparency unreachable") -> Findings.Kind.UNREACHABLE
                 head.contains("so this is half an") -> Findings.Kind.UNREACHABLE
