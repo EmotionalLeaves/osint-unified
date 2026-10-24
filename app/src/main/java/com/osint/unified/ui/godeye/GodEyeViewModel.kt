@@ -568,7 +568,16 @@ class GodEyeViewModel(
         poll(2375, 300_000, "news", { newsDataSource.fetch() }) { s, v -> s.copy(news = v) }
         poll(2750, 600_000, "buoys", { buoyDataSource.fetch() }) { s, v -> s.copy(buoys = v) }
         poll(3250, 600_000, "metar", { metarDataSource.fetch() }, gaps = { metarDataSource.lastGaps }) { s, v -> s.copy(metar = v) }
-        poll(500, 20_000, "milAircraft", { milAircraftDataSource.fetch() }) { s, v -> s.copy(milAircraft = v) }
+        // Sixty seconds, and started well clear of the aircraft
+        // layer rather than half a second after it.
+        //
+        // This was twenty — the fastest poll in the app, for about a
+        // hundred and twenty aircraft on a map of the whole world,
+        // against the same host the general aircraft layer uses
+        // every twenty-five. The two drifted in and out of phase and
+        // collided, adsb.fi answered 429, and the layer spent the
+        // session empty. Reported as "military does not work".
+        poll(9_000, 60_000, "milAircraft", { milAircraftDataSource.fetch() }) { s, v -> s.copy(milAircraft = v) }
         poll(3500, 900_000, "airQuality", { airQualityDataSource.fetch() }, gaps = { airQualityDataSource.lastGaps }) { s, v -> s.copy(airQuality = v) }
         poll(3750, 21_600_000, "stations", { seismicStationDataSource.fetch() }) { s, v -> s.copy(stations = v) }
         poll(4000, 1_800_000, "conflicts", { conflictDataSource.fetch() }) { s, v -> s.copy(conflicts = v) }

@@ -37,7 +37,7 @@ import java.util.concurrent.ConcurrentHashMap
  * simply not painted, and the sphere underneath shows through until
  * it does.
  */
-class TileStore(
+internal class TileStore(
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 ) {
 

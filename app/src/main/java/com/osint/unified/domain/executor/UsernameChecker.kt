@@ -22,7 +22,6 @@ import com.osint.unified.domain.ProfileSignals
 import com.osint.unified.network.Http
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import java.io.File
 import java.util.Collections
 import java.util.concurrent.TimeUnit
 
@@ -157,6 +156,12 @@ class UsernameChecker(private val appContext: Context) {
     // Not private: the classifier reads the verdict field this sweep
     // writes, and the two have to agree on its spelling.
     companion object {
+        /** The WhatsMyName catalogue, in the shared feed cache. */
+        private const val WMN_CACHE = "wmn-data"
+
+        /** It changes, but not in a week. */
+        private const val WMN_MAX_AGE_MS = 7L * 24 * 60 * 60 * 1000
+
         // Parsing three rulesets costs several megabytes of JSON, so the
         // merged result is shared across every UsernameChecker instance
         // rather than rebuilt per use.
@@ -928,21 +933,51 @@ class UsernameChecker(private val appContext: Context) {
 
     private fun JsonObject?.str(k: String) = (this?.get(k) as? JsonPrimitive)?.contentOrNull
 
+    /**
+     * The site list, when the build did not ship one in assets.
+     *
+     * This was a seventh hand-rolled file cache beside the one
+     * [com.osint.unified.data.DiskCache] exists to be, and it had
+     * the defect that one was hardened against: `writeText`
+     * truncates the file and then writes it, so a process killed
+     * during a kilobyte-per-millisecond download leaves a short
+     * file. The validity test was `length() > 1000` and no more —
+     * no age, no shape — so a truncated catalogue over a kilobyte
+     * was served for the life of the install, `parseWmn` failed on
+     * it, and the username sweep silently checked fewer sites with
+     * nothing said.
+     *
+     * Through [com.osint.unified.data.DiskCache] now, which writes
+     * to a temporary file and renames it over the target, refuses
+     * anything under 64 bytes, and says so when it cannot write at
+     * all. A week, because the list changes but not often, and a
+     * stale copy of it beats no copy.
+     */
     private fun downloadWmn(): String? {
-        val cache = File(appContext.cacheDir, "wmn-data.json")
-        if (cache.exists() && cache.length() > 1000) return cache.readText()
+        val cache = com.osint.unified.data.DiskCache(appContext)
+        cache.read(WMN_CACHE, WMN_MAX_AGE_MS)?.takeIf { it.length > 1000 }?.let { return it }
         return try {
             val request = Request.Builder()
                 .url("https://raw.githubusercontent.com/WebBreacher/WhatsMyName/main/wmn-data.json")
                 .build()
             client.newCall(request).execute().use { resp ->
-                if (!resp.isSuccessful) return null
+                if (!resp.isSuccessful) return cache.readStale(WMN_CACHE)
                 val body = resp.body?.string()
-                if (!body.isNullOrBlank()) runCatching { cache.writeText(body) }
-                body
+                // The shape, not just the length. A GitHub error page
+                // is several kilobytes of HTML and would have passed
+                // the old test on its way into the cache.
+                if (!body.isNullOrBlank() && body.trimStart().startsWith("{")) {
+                    cache.write(WMN_CACHE, body)
+                    body
+                } else {
+                    cache.readStale(WMN_CACHE)
+                }
             }
         } catch (e: Exception) {
-            null
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            // A source that is refusing is exactly when the last good
+            // copy earns its keep.
+            cache.readStale(WMN_CACHE)
         }
     }
 }

@@ -84,6 +84,9 @@ object Http {
     /** What a host that says 429 without a Retry-After gets. */
     private const val DEFAULT_COOLDOWN_MS = 30_000L
 
+    /** Thirty seconds doubled five times is sixteen minutes. */
+    private const val MAX_BACKOFF_DOUBLINGS = 5
+
     /** How long a cooldown will be waited out rather than failed. */
     private const val MAX_WAIT_MS = 5_000L
 
@@ -105,10 +108,42 @@ object Http {
      * happened to coincide is a layer that lies about the world rather
      * than about the feed.
      */
-    private val PACED = mapOf("api.gdeltproject.org" to 6_000L)
+    private val PACED = mapOf(
+        "api.gdeltproject.org" to 6_000L,
+        // Both ADS-B hosts, added after being measured rather than
+        // guessed: six requests from one address, a second or two
+        // apart, went 200, 200, 429, 429, 429, 429. The user agent
+        // made no difference.
+        //
+        // adsb.fi is asked for two different things — the military
+        // layer every twenty seconds and the general aircraft layer's
+        // second provider every twenty-five — so the two drift in and
+        // out of phase and collide on their own, with no help from
+        // anybody else sharing the address. This is what the two
+        // layers reported as "military does not work".
+        "opendata.adsb.fi" to 8_000L,
+        "api.adsb.lol" to 8_000L
+    )
 
     private val pacing = ConcurrentHashMap<String, Any>()
     private val lastCall = ConcurrentHashMap<String, Long>()
+
+    /**
+     * How many times in a row a host has refused.
+     *
+     * The back-off was a flat thirty seconds, which is the right
+     * answer to one unlucky collision and the wrong answer to a host
+     * that is refusing everything. A layer polled every twenty
+     * seconds against a host with nothing left to give spent the
+     * session asking, being refused, waiting half a minute and
+     * asking again — which is both why it never recovered and part
+     * of why it was refused in the first place.
+     *
+     * Doubling instead, to a quarter of an hour. Cleared the moment
+     * the host answers, so a single bad minute costs a minute and a
+     * genuinely exhausted budget is left alone.
+     */
+    private val refusals = ConcurrentHashMap<String, Int>()
 
     @Volatile private var feedCacheDir: File? = null
 
@@ -258,9 +293,10 @@ object Http {
             }
             try {
                 var response = chain.proceed(request)
+                if (response.isSuccessful) refusals.remove(host)
                 if (response.code == 429 || response.code == 503) {
                     val after = retryAfterMillis(response.header("Retry-After"))
-                    cooldowns[host] = System.currentTimeMillis() + (after ?: DEFAULT_COOLDOWN_MS)
+                    cooldowns[host] = System.currentTimeMillis() + (after ?: backoffFor(host))
                     // Worth one wait when the host named a short one; a
                     // longer one belongs to the next poll, not to this
                     // request's deadline.
@@ -279,10 +315,11 @@ object Http {
                         // interceptor is for, against precisely the
                         // services this file's header says to be
                         // polite to.
+                        if (response.isSuccessful) refusals.remove(host)
                         if (response.code == 429 || response.code == 503) {
                             val again = retryAfterMillis(response.header("Retry-After"))
                             cooldowns[host] = System.currentTimeMillis() +
-                                (again ?: DEFAULT_COOLDOWN_MS)
+                                (again ?: backoffFor(host))
                         }
                     }
                 }
@@ -292,6 +329,22 @@ object Http {
                 // not hold a slot the whole time.
                 gate.release()
             }
+        }
+
+        /**
+         * The next wait for a host that just refused, doubling.
+         *
+         * Counted here rather than at the call site so that every
+         * client shares one count per host: the aircraft layer and
+         * the military layer are two pollers against one service,
+         * and backing each of them off separately would leave the
+         * service being asked twice as often as either of them
+         * thinks.
+         */
+        private fun backoffFor(host: String): Long {
+            if (refusals.size > MAX_TRACKED_HOSTS) refusals.clear()
+            val n = refusals.merge(host, 1, Int::plus) ?: 1
+            return DEFAULT_COOLDOWN_MS shl (n - 1).coerceIn(0, MAX_BACKOFF_DOUBLINGS)
         }
 
         private fun sleep(millis: Long) {

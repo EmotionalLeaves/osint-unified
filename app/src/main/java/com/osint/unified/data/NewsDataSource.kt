@@ -46,14 +46,26 @@ class NewsDataSource(private val client: OkHttpClient = Http.feedClient) {
                 .build()
             client.newCall(request).execute().use { resp ->
                 val body = resp.body?.string()
-                // GDELT rate limits with a plain-text body rather than a
-                // code, and being rate limited is emphatically not "there is
-                // no news anywhere in the world".
+                // Before the status, not after it.
+                //
+                // The comment here used to say GDELT rate limits with
+                // a plain-text body "rather than a code". It does
+                // both: the "Please limit requests to one every 5
+                // seconds" text arrives with a 429, so the status
+                // check above threw first and the one source that
+                // says plainly why it refused had that sentence
+                // discarded. The person saw "GDELT HTTP 429" and no
+                // reason.
+                if (body != null && body.trimStart().startsWith("Please limit")) {
+                    throw IOException(
+                        "GDELT is rate limiting this address — it allows one " +
+                            "request every five seconds across everyone sharing " +
+                            "it. Nothing is wrong with the news; this phone is " +
+                            "in the queue."
+                    )
+                }
                 if (!resp.isSuccessful) throw IOException("GDELT HTTP ${resp.code}")
                 if (body.isNullOrBlank()) throw IOException("GDELT returned nothing")
-                if (body.trimStart().startsWith("Please limit")) {
-                    throw IOException("GDELT is rate limiting this device")
-                }
 
                 val articles = json.parseToJsonElement(body).jsonObject["articles"] as? JsonArray
                     ?: throw IOException("GDELT answered in an unexpected shape")

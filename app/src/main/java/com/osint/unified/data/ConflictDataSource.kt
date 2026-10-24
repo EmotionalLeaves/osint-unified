@@ -35,7 +35,7 @@ class ConflictDataSource(private val client: OkHttpClient = Http.feedClient) {
 
     suspend fun fetch(): List<GeoBlip> = withContext(Dispatchers.IO) {
         try {
-            val earliest = CURRENT_YEAR - MAX_AGE_YEARS
+            val earliest = currentYear() - MAX_AGE_YEARS
             val query = """
                 SELECT ?cLabel ?coord ?start WHERE {
                   ?c wdt:P31/wdt:P279* wd:Q350604 .
@@ -45,7 +45,9 @@ class ConflictDataSource(private val client: OkHttpClient = Http.feedClient) {
                   FILTER(!BOUND(?end))
                   FILTER(YEAR(?start) >= $earliest)
                   SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
-                } LIMIT 600
+                }
+                ORDER BY DESC(?start)
+                LIMIT 600
             """.trimIndent()
             val url = "https://query.wikidata.org/sparql?format=json&query=" + URLEncoder.encode(query, "UTF-8")
             val request = Request.Builder()
@@ -71,8 +73,16 @@ class ConflictDataSource(private val client: OkHttpClient = Http.feedClient) {
                         ?.contentOrNull?.take(4)?.toIntOrNull() ?: return@mapNotNull null
                     // Enforced here as well as in the query: an undated or
                     // long-finished conflict must never reach the globe.
-                    if (started < CURRENT_YEAR - MAX_AGE_YEARS) return@mapNotNull null
-                    val full = "$label · since $started"
+                    if (started < currentYear() - MAX_AGE_YEARS) return@mapNotNull null
+                    // "since 2017" is a claim this source cannot
+                    // support. All Wikidata says is when it started
+                    // and that nobody has filled in an end — which
+                    // is not the same as it still going on, and is
+                    // how this layer once put the Second World War
+                    // on a live map. Reported this time as a
+                    // conflict from 2017 beside current ones. The
+                    // label says exactly what is known.
+                    val full = "$label · began $started, no recorded end"
                     GeoBlip(lat, lon, full, "https://www.wikidata.org/w/index.php?search=" + URLEncoder.encode(label, "UTF-8"))
                 }
             }
@@ -85,11 +95,32 @@ class ConflictDataSource(private val client: OkHttpClient = Http.feedClient) {
     }
 
     private companion object {
-        /** How far back a conflict may have started and still count as
-         *  current. Long enough for the wars that are actually running,
-         *  short enough to keep the twentieth century off the map. */
+        /**
+         * How far back a conflict may have started and still be
+         * worth drawing.
+         *
+         * Twenty is long enough for the wars that really are
+         * running — Yemen from 2014, Ukraine from 2022 — and that
+         * is the whole of its justification. It is not a claim that
+         * everything inside it is current, because this source
+         * cannot support that claim about anything: the query asks
+         * for conflicts with no recorded end date, and Wikidata is
+         * full of battles whose end nobody ever filled in. The
+         * ORDER BY above and the wording below are what keep that
+         * honest.
+         */
         const val MAX_AGE_YEARS = 20
-        val CURRENT_YEAR: Int =
+
+        /**
+         * Read per call, not once per process.
+         *
+         * As a companion `val` this was fixed at whatever year the
+         * app first started in. A phone left running across New
+         * Year — or a process that outlives one, which on Android
+         * is normal — would have gone on using the old year, and
+         * the window would have silently slipped to twenty-one.
+         */
+        fun currentYear(): Int =
             java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
                 .get(java.util.Calendar.YEAR)
     }

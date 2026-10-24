@@ -31,10 +31,24 @@ class MilAircraftDataSource(private val client: OkHttpClient = Http.feedClient) 
                 .build()
             client.newCall(request).execute().use { resp ->
                 val body = resp.body?.string()
-                if (!resp.isSuccessful) throw IOException("adsb.lol military HTTP ${resp.code}")
-                if (body.isNullOrBlank()) throw IOException("adsb.lol military returned nothing")
+                // Named, because this is the failure the layer
+                // actually has. adsb.fi refuses a second request
+                // from the same address within a few seconds, and a
+                // phone behind carrier NAT shares that address with
+                // strangers — so "it does not work" is usually "the
+                // queue for this address is full", which is a
+                // different thing and worth saying.
+                if (resp.code == 429) {
+                    throw IOException(
+                        "adsb.fi is rate limiting this address. It is not that " +
+                            "there are no military aircraft; it is that this " +
+                            "phone has been asked to wait."
+                    )
+                }
+                if (!resp.isSuccessful) throw IOException("adsb.fi military HTTP ${resp.code}")
+                if (body.isNullOrBlank()) throw IOException("adsb.fi military returned nothing")
                 val ac = json.parseToJsonElement(body).jsonObject["ac"]?.jsonArray
-                    ?: throw IOException("adsb.lol military answered in an unexpected shape")
+                    ?: throw IOException("adsb.fi military answered in an unexpected shape")
                 val out = ArrayList<GeoBlip>()
                 ac.forEach { el ->
                     if (out.size >= 5000) return@forEach
@@ -53,7 +67,7 @@ class MilAircraftDataSource(private val client: OkHttpClient = Http.feedClient) 
             // An empty list is a claim that there is nothing out
             // there, which the pills and the world brief repeat as
             // fact. A failure is not that claim.
-            throw IOException("adsb.lol military unavailable: ${e.message}", e)
+            throw IOException("adsb.fi military unavailable: ${e.message}", e)
         }
     }
 }

@@ -253,5 +253,6 @@ echo
 python3 "$ROOT/tools/saveable-keys.py" || exit 1
 python3 "$ROOT/tools/empty-is-an-answer.py" || exit 1
 python3 "$ROOT/tools/regex-recursion.py" || exit 1
+python3 "$ROOT/tools/visibility-leak.py" || exit 1
 echo
 python3 "$ROOT/tools/novel-calls.py" || true
