@@ -264,19 +264,24 @@ abstract class AppDatabase : RoomDatabase() {
             val passphrase = DatabaseKey.passphrase(app)
             if (passphrase == null) {
                 val sealed = app.getDatabasePath(DatabaseEncryption.ENCRYPTED_NAME)
-                val plainFile = app.getDatabasePath(DatabaseEncryption.PLAIN_NAME)
-                lockedOut = sealed.exists() && !plainFile.exists()
+                // Opened first, then described — see the same decision at
+                // the end of this method. Whether the plaintext file
+                // exists says nothing, because plain() is what creates
+                // it; whether it has anything in it is the question.
+                val fallback = plain(app)
+                lockedOut = sealed.exists() && (plainRows ?: 0L) <= 0L
                 encryptionNote = if (lockedOut) {
                     "this device's keystore no longer holds the key to your " +
                         "existing cases, so they cannot be opened. They are " +
                         "still on the device, in an encrypted file that only " +
-                        "that key could read. This usually follows a " +
-                        "lock-screen reset or a restore onto a new phone. " +
-                        "Anything from here on goes into a new database."
+                        "that key could read, and reinstalling the app would " +
+                        "delete them. This usually follows a lock-screen " +
+                        "reset or a restore onto a new phone. Anything from " +
+                        "here on goes into a new database."
                 } else {
                     "this device's keystore would not provide a key"
                 }
-                return plain(app)
+                return fallback
             }
             runCatching { System.loadLibrary("sqlcipher") }
 
@@ -293,20 +298,42 @@ abstract class AppDatabase : RoomDatabase() {
                 DatabaseEncryption.migrateIfNeeded(app, passphrase)
             }.getOrNull()
 
-            val attempt = runCatching {
-                val db = Room.databaseBuilder(
+            // Built and probed separately, so the probe's failure can
+            // close what the build opened. Both were inside one
+            // runCatching, and a probe that threw dropped the Room
+            // instance on the floor: the SQLCipher connection, its WAL
+            // and SHM handles and Room's invalidation tracker stayed
+            // open on the encrypted file for the life of the process,
+            // while the app went on to open a second database beside
+            // it.
+            val built = runCatching {
+                Room.databaseBuilder(
                     app, AppDatabase::class.java, DatabaseEncryption.ENCRYPTED_NAME
                 )
                     .openHelperFactory(SupportOpenHelperFactory(passphrase))
                     .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                     .build()
+            }
+            val probe = built.getOrNull()?.let { db ->
                 // Opened and read from here on purpose: a key, a library
                 // or a migration problem has to surface now, while the
                 // plaintext copy is still on disk, and not on the first
                 // query from a screen.
-                db.openHelper.writableDatabase.query("SELECT count(*) FROM investigations")
-                    .use { it.moveToFirst() }
-                db
+                runCatching {
+                    db.openHelper.writableDatabase
+                        .query("SELECT count(*) FROM investigations")
+                        .use { it.moveToFirst() }
+                }
+            }
+            val attempt = when {
+                probe == null -> Result.failure(
+                    built.exceptionOrNull() ?: IllegalStateException("not built")
+                )
+                probe.isFailure -> {
+                    runCatching { built.getOrNull()?.close() }
+                    Result.failure(probe.exceptionOrNull()!!)
+                }
+                else -> Result.success(built.getOrNull()!!)
             }
             attempt.getOrNull()?.let { db ->
                 encrypted = true
@@ -334,7 +361,6 @@ abstract class AppDatabase : RoomDatabase() {
                 runCatching { backup.renameTo(plainFile) }
             }
             val sealed = app.getDatabasePath(DatabaseEncryption.ENCRYPTED_NAME)
-            lockedOut = sealed.exists() && !plainFile.exists()
             // Which failure this was.
             //
             // Three different things open this database — the keystore
@@ -347,21 +373,45 @@ abstract class AppDatabase : RoomDatabase() {
             // the wrong place, and in the worst case makes them
             // reinstall over a database that was fine.
             val blame = whatFailed(why)
+
+            // Opened before the note is written, because the note makes
+            // a claim about what is in it.
+            //
+            // "The unencrypted copy of your cases is being used —
+            // nothing was lost" used to be decided by the plaintext file
+            // merely existing. On the first launch after a failure that
+            // file does not exist, so the note was honest; then plain()
+            // created an empty one. On the second launch the file
+            // existed, so the app told the user nothing had been lost
+            // while showing them an empty case list — with the real
+            // database sitting intact on disk a few bytes away. The
+            // reasonable response to that message is to reinstall, and
+            // reinstalling is the one thing that destroys it.
+            val fallback = plain(app)
+            val rows = plainRows
+            val plainHasCases = rows != null && rows > 0L
+            lockedOut = sealed.exists() && !plainHasCases
             encryptionNote = when {
-                plainFile.exists() ->
+                plainHasCases ->
                     "$blame ($why), so the unencrypted copy of your " +
                         "cases is being used — nothing was lost, but nothing is " +
                         "encrypted either"
+                plainFailure != null ->
+                    "$blame ($why), and the unencrypted database would " +
+                        "not open either ($plainFailure). Your existing cases " +
+                        "cannot be read. They have not been deleted — do not " +
+                        "reinstall, which would delete them."
                 lockedOut ->
                     "the encrypted database on this device would not open " +
                         "— $blame ($why) — so your existing cases cannot be " +
-                        "read. They have not been deleted. Anything from here " +
-                        "on goes into a new database."
+                        "read. They have not been deleted; they are still on " +
+                        "this device, and reinstalling the app would delete " +
+                        "them. Anything from here on goes into a new database."
                 else ->
                     "$blame ($why); the database is readable by " +
                         "anything that can read this app's files"
             }
-            return plain(app)
+            return fallback
         }
 
         /** Names the part that actually failed, from what it threw. */
@@ -382,8 +432,39 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        private fun plain(app: Context): AppDatabase = Room.databaseBuilder(
-            app, AppDatabase::class.java, DatabaseEncryption.PLAIN_NAME
-        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7).build()
+        /**
+         * How many investigations the unencrypted database holds, or
+         * null if it would not open. Set by [plain].
+         */
+        private var plainRows: Long? = null
+
+        /** Why the unencrypted database would not open, if it would not. */
+        private var plainFailure: String? = null
+
+        private fun plain(app: Context): AppDatabase {
+            val db = Room.databaseBuilder(
+                app, AppDatabase::class.java, DatabaseEncryption.PLAIN_NAME
+            ).addMigrations(
+                MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4,
+                MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7
+            ).build()
+            // Pre-flighted exactly as the encrypted path is, and for a
+            // stronger reason: this is the path most likely to be
+            // running a database from an older build, and it used to
+            // hand back an unopened builder. A migration that throws
+            // then surfaced as a crash out of whichever screen queried
+            // first, with the note still blaming the keystore. The count
+            // is also what the note needs to know whether this file has
+            // anything in it.
+            plainRows = runCatching {
+                db.openHelper.writableDatabase
+                    .query("SELECT count(*) FROM investigations")
+                    .use { if (it.moveToFirst()) it.getLong(0) else 0L }
+            }.getOrElse { failure ->
+                plainFailure = failure.message ?: failure::class.java.simpleName
+                null
+            }
+            return db
+        }
     }
 }

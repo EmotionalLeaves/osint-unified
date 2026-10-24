@@ -47,6 +47,18 @@ internal object DatabaseEncryption {
         cleanUp(working)
 
         return try {
+            // Everything in the write-ahead log, folded into the file
+            // itself, before anything is copied or renamed.
+            //
+            // Room runs in WAL mode, so after an unclean shutdown the
+            // committed-but-uncheckpointed pages — which is to say the
+            // last session's work — live in -wal and not in the
+            // database. copyInto ATTACHes a live connection, so the
+            // encrypted copy picked them up; renameTo moves one file,
+            // so the backup did not. The backup was therefore a strictly
+            // older snapshot than the thing it was insuring against, and
+            // the fallback that reads it says "nothing was lost".
+            checkpoint(plain)
             val before = inspectPlaintext(plain)
             copyInto(context, working, passphrase, plain, before.version)
             // Opened at the version the file now has. Opening it at any
@@ -70,23 +82,30 @@ internal object DatabaseEncryption {
                 // the encrypted database and read a row out of it.
                 val backup = File(plain.parentFile, BACKUP_NAME)
                 cleanUp(backup)
-                plain.renameTo(backup)
-                // Whether or not the rename worked, the plaintext file
-                // and its sidecars go.
+                val kept = plain.renameTo(backup)
+                // The sidecars go either way; the main file only once
+                // there is a backup of it.
                 //
-                // The rename moves one file. Room runs in WAL mode, so
-                // the plaintext database has a -wal and a -shm beside
-                // it, and after an unclean shutdown the -wal holds
-                // committed pages that were never checkpointed into
-                // the main file: target names, seed observables, raw
-                // tool output. Only the success path skipped cleanUp,
-                // so those two kept their original names, nothing ever
-                // touched them again, and they sat unencrypted in the
-                // app's databases directory for the life of the
-                // install — while the screen said the rows had been
-                // moved into an encrypted database.
-                cleanUp(plain)
-                "moved ${before.counts.values.sum()} rows into an encrypted database"
+                // cleanUp was unconditional, and renameTo's answer was
+                // discarded. That is right for -wal and -shm, which are
+                // unencrypted copies of case data and must not be left
+                // lying in the databases directory whatever happens. It
+                // was wrong for the database: a rename that failed —
+                // a stale lock, something already at that name — left
+                // the app with no backup and no original, and if Room
+                // then could not open the encrypted copy there was
+                // nothing at all to fall back to.
+                sidecarsOf(plain).forEach { runCatching { it.delete() } }
+                if (kept) {
+                    runCatching { plain.delete() }
+                    "moved ${before.counts.values.sum()} rows into an encrypted database"
+                } else {
+                    // No backup, so the original stays exactly where the
+                    // fallback path looks for it.
+                    cleanUp(encrypted)
+                    "the original database could not be set aside, so it " +
+                        "has been left as it was and nothing is encrypted"
+                }
             }
         } catch (e: Exception) {
             cleanUp(working)
@@ -282,8 +301,31 @@ internal object DatabaseEncryption {
     /** A half-written file is worse than no file. */
     private fun cleanUp(file: File) {
         runCatching { file.delete() }
-        runCatching { File(file.parentFile, "${file.name}-journal").delete() }
-        runCatching { File(file.parentFile, "${file.name}-wal").delete() }
-        runCatching { File(file.parentFile, "${file.name}-shm").delete() }
+        sidecarsOf(file).forEach { runCatching { it.delete() } }
+    }
+
+    /** The journal, write-ahead log and shared-memory files beside a database. */
+    private fun sidecarsOf(file: File): List<File> = listOf(
+        File(file.parentFile, "${file.name}-journal"),
+        File(file.parentFile, "${file.name}-wal"),
+        File(file.parentFile, "${file.name}-shm"),
+    )
+
+    /**
+     * Fold a database's write-ahead log back into the file.
+     *
+     * TRUNCATE rather than PASSIVE: PASSIVE gives up if any other
+     * connection is reading, and the whole point here is that after
+     * this call the single file is the whole database.
+     */
+    private fun checkpoint(file: File) {
+        runCatching {
+            android.database.sqlite.SQLiteDatabase.openDatabase(
+                file.absolutePath, null,
+                android.database.sqlite.SQLiteDatabase.OPEN_READWRITE
+            ).use { db ->
+                db.rawQuery("PRAGMA wal_checkpoint(TRUNCATE)", null).use { it.moveToFirst() }
+            }
+        }
     }
 }
