@@ -23,11 +23,10 @@ object ImageClues {
 
     data class Clue(val kind: Kind, val value: String, val why: String)
 
-    private val DOMAIN = Regex(
-        """\b((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,})\b""",
-        RegexOption.IGNORE_CASE
-    )
-    private val EMAIL = Regex("""\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b""")
+    // Through Hostnames, like the other scanners: OCR text is short
+    // today, but the pattern that was here is the one that crashes
+    // on four kilobytes of dotted labels and there is no reason for
+    // a fifth copy of it.
     // Loose on purpose: the point is to notice that a number is on
     // the van, not to validate it. The phone tool parses it properly.
     private val PHONE = Regex("""(?:\+|00)\s?\d[\d\s().-]{6,18}\d|\b0\d[\d\s().-]{7,16}\d\b""")
@@ -61,17 +60,18 @@ object ImageClues {
                         "matches what is in the picture."
                 )
             }
-            EMAIL.findAll(t).forEach {
+            val addresses = Hostnames.emailsIn(t)
+            addresses.forEach {
                 add(
-                    Kind.EMAIL, it.value,
+                    Kind.EMAIL, it,
                     "An address on a sign belongs to whoever runs the premises. " +
                         "Run it as an email."
                 )
             }
-            DOMAIN.findAll(t).forEach { m ->
-                val d = m.groupValues[1]
+            Hostnames.hostsIn(t).forEach { host ->
+                val d = host.lowercase()
                 // An email's domain is already covered by the email.
-                if (EMAIL.containsMatchIn(t) && t.contains("@$d", true)) return@forEach
+                if (addresses.isNotEmpty() && t.contains("@$d", true)) return@forEach
                 add(
                     Kind.DOMAIN, d,
                     "A business whose site is painted on its own wall is a " +

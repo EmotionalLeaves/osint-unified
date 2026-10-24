@@ -314,14 +314,38 @@ class PeopleApis(
         val o = json.parseToJsonElement(
             get("https://www.courtlistener.com/api/rest/v4/search/?q=$q&type=r&order_by=dateFiled%20desc")
         ).jsonObjectOrNull()
-        val count = (o?.get("count") as? JsonPrimitive)?.intOrNull ?: 0
-        val results = o?.get("results") as? JsonArray
-        if (count == 0 || results.isNullOrEmpty()) {
+        // The absence is judged from `results`, not from `count`.
+        //
+        // The two were OR'd, and a `count` that is absent or is not
+        // an integer coalesced to zero — so a populated `results`
+        // array was thrown away on the strength of a separate field,
+        // and the app printed "no US federal court docket names Jane
+        // Doe". That is a litigation claim about a named individual,
+        // and the sentence does not match NOTHING_SHAPE either, so
+        // it was classified as a finding rather than as an absence.
+        //
+        // Probed 24 Oct: v4 does return `count` as an integer
+        // (7,823 for "John Smith"), so the field is usable — but it
+        // is a total to print, never the test for whether anything
+        // came back.
+        if (o == null) {
+            throw java.io.IOException("CourtListener answered in an unexpected shape")
+        }
+        val results = o["results"] as? JsonArray
+            ?: throw java.io.IOException("CourtListener returned no results block")
+        if (results.isEmpty()) {
             return@runCatching "No US federal court docket names \"$n\" " +
                 "(CourtListener RECAP)."
         }
+        val count = (o["count"] as? JsonPrimitive)?.intOrNull
         buildString {
-            append("US court dockets — $count naming \"$n\"")
+            append("US court dockets — ")
+            // A total the service gave, or the page in hand said as
+            // a page. Never a guess dressed as a total.
+            append(
+                if (count != null) "$count naming \"$n\""
+                else "at least ${results.size} naming \"$n\""
+            )
             append(", most recent first:\n")
             results.mapNotNull { it as? JsonObject }.take(20).forEach { r ->
                 append("\n• ${r.str("caseName") ?: "(unnamed case)"}")

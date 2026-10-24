@@ -1,6 +1,7 @@
 package com.osint.unified.domain.executor
 
 import com.osint.unified.data.Freshness
+import com.osint.unified.domain.Hostnames
 import com.osint.unified.domain.andMore
 import com.osint.unified.network.Http
 import com.osint.unified.network.Http.bodyText
@@ -1890,8 +1891,15 @@ class DeepApis(
      */
     fun emailPermutations(input: String): Result<String> = runCatching {
         val raw = input.trim()
-        val domain = Regex("""[@\s]([a-z0-9-]+(?:\.[a-z0-9-]+)+)\s*$""", RegexOption.IGNORE_CASE)
+        // A bounded character class, not a repeated group: the
+        // group form recurses once per label in java.util.regex and
+        // overflows the stack on a long enough paste. See
+        // the Hostnames file, whose check is then used to confirm
+        // that the thing found really is a host.
+        val tail = Regex("""[@\s]([a-z0-9.\-]{1,253})\s*$""", RegexOption.IGNORE_CASE)
             .find(raw)?.groupValues?.get(1)?.lowercase()
+            ?.takeIf { Hostnames.isHostname(it) }
+        val domain = tail
             ?: return@runCatching "Give a name and a domain, e.g. 'Jane Doe @example.com'."
         // Cut at where the domain actually is, not at a
         // case-sensitive match for its lowercased form.

@@ -313,8 +313,19 @@ class DirectToolExecutor(
     /** The line directoryRun writes under its own header. */
     /** {"results":[]}, {"data":{"items":[]}}, and the rest of the
      *  shapes that mean "nothing" in more than twenty bytes. */
+    // Bounded at thirty fields, because the repetition is of a
+    // GROUP and java.util.regex recurses once per iteration. This
+    // runs over raw tool output, so an envelope of two thousand
+    // empty fields would have thrown StackOverflowError on whatever
+    // thread was classifying the result — the same shape that
+    // crashed the dossier from a stored certificate dump. An
+    // envelope with more than thirty empty fields is not the "this
+    // is an empty answer dressed up" case this is for.
     private val EMPTY_ENVELOPE =
-        Regex("""^[\[{]\s*(?:"[\w.]+"\s*:\s*(?:\[\s*\]|\{\s*\}|null|0|false)\s*,?\s*)*[\]}]$""")
+        Regex(
+            """^[\[{]\s*(?:"[\w.]{1,64}"\s*:\s*""" +
+                """(?:\[\s*\]|\{\s*\}|null|0|false)\s*,?\s*){0,30}[\]}]$"""
+        )
 
     private val DIRECTORY_TALLY =
         Regex("""^(\d+) of (\d+) executable endpoints returned data""", RegexOption.MULTILINE)

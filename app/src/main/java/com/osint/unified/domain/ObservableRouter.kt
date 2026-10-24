@@ -109,7 +109,9 @@ class ObservableRouter {
     private val dottedQuadRegex = Regex("""^\d{1,3}(?:\.\d{1,3}){3}$""")
     // And a decimal number is a number. 3.14159265 was a phone call.
     private val decimalRegex = Regex("""^-?\d+\.\d+$""")
-    private val domainRegex = Regex("""^(?=.{1,253}$)(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$""")
+    // Hostnames.isHostname, not a repeated group: an overlong paste
+    // into the search box overflowed the stack here too. See the
+    // measurements in that file.
     private val usernameRegex = Regex("""^[a-zA-Z0-9_.-]{3,30}$""")
     private val btcRegex = Regex("""^(?:bc1[a-z0-9]{25,62}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})$""")
     private val ethRegex = Regex("""^0x[a-fA-F0-9]{40}$""")
@@ -228,7 +230,7 @@ class ObservableRouter {
             // A domain has to end in a real TLD. "john.doe" matched the
             // shape and was investigated as a domain, ahead of the username
             // check, because "doe" looks like a TLD if you never ask.
-            domainRegex.matches(input) && hasKnownTld(input) -> Observable.Domain(input)
+            Hostnames.isHostname(input) && hasKnownTld(input) -> Observable.Domain(input)
 
             // A handle looks like a handle, and a word is a word.
             //
@@ -298,7 +300,7 @@ class ObservableRouter {
                 else Observable.Name(input)
             "username" -> if (usernameRegex.matches(input)) Observable.Username(input)
                 else Observable.Name(input)
-            "domain" -> if (domainRegex.matches(input) && hasKnownTld(input))
+            "domain" -> if (Hostnames.isHostname(input) && hasKnownTld(input))
                 Observable.Domain(input) else Observable.Name(input)
             "ip" -> if (looksLikeIp(input)) Observable.IpAddress(input)
                 else Observable.Name(input)

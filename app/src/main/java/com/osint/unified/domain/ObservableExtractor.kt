@@ -6,19 +6,26 @@ package com.osint.unified.domain
  */
 object ObservableExtractor {
 
-    private val email = Regex("""[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}""")
+    // The host and address shapes live in Hostnames, which explains
+    // at length why they are not written here as the obvious regex.
+    // Four kilobytes of dotted labels in a stored result used to
+    // crash this app on the composition thread, every time the case
+    // was opened, for ever.
     private val ipv4 = Regex("""\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\b""")
-    private val domain = Regex("""\b(?:[A-Za-z0-9](?:[A-Za-z0-9\-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,}\b""")
 
     /**
      * How much of a result is read looking for pivots.
      *
-     * The domain pattern is quadratic in a run of dotted labels — a
-     * string of "a." repeated six thousand times takes over a second
-     * — and this is called during composition for every card on the
-     * dossier, on raw output that can be a megabyte of JSON. The
-     * pivots worth offering are in the first part of an answer; the
-     * tail of a megabyte is a certificate dump.
+     * This runs during composition for every card on the dossier,
+     * on raw output that can be a megabyte of JSON, and the pivots
+     * worth offering are in the first part of an answer — the tail
+     * of a megabyte is a certificate dump.
+     *
+     * It was written as the mitigation for a quadratic pattern and
+     * was not one: the pattern crashed with a StackOverflowError at
+     * four kilobytes, a twenty-fourth of this. The patterns are
+     * linear now (see [Hostnames]) and this is back to being what it
+     * says it is — a bound on work, not a safety belt.
      */
     private const val MAX_SCANNED = 96 * 1024
 
@@ -31,13 +38,18 @@ object ObservableExtractor {
      * alone would not catch them. These were being offered to the
      * person as a new investigation to launch.
      */
-    private val NOT_HOSTS = setOf(
+    internal val NOT_HOSTS = setOf(
         "yaml", "yml", "json", "xml", "html", "htm", "css", "js", "ts",
         "md", "txt", "log", "csv", "tsv", "png", "jpg", "jpeg", "gif",
         "svg", "webp", "pdf", "zip", "tar", "gz", "exe", "dll", "so",
-        "py", "rb", "go", "rs", "java", "kt", "kts", "c", "h", "cpp",
+        "py", "rb", "go", "rs", "java", "kt", "kts", "cpp",
         "sh", "bat", "ps1", "ini", "conf", "cfg", "toml", "lock",
-        "jar", "apk", "db", "sql", "bak", "tmp", "old", "swp", "env"
+        "jar", "apk", "db", "sql", "bak", "tmp", "old", "swp", "env",
+        // The comment above names ".next" as the example and it was
+        // not in the list. "c" and "h" were, and could never match:
+        // the shape requires two letters at the end.
+        "next", "nuxt", "cache", "map", "min", "lock", "iml", "gradle",
+        "properties", "yarn", "npmrc", "dockerignore", "gitignore"
     )
 
     /** Returns up to [limit] distinct observables found in [raw], minus [exclude]. */
@@ -45,10 +57,10 @@ object ObservableExtractor {
         if (raw.isBlank()) return emptyList()
         val text = if (raw.length > MAX_SCANNED) raw.take(MAX_SCANNED) else raw
         val found = LinkedHashSet<String>()
-        email.findAll(text).forEach { found.add(it.value) }
+        Hostnames.emailsIn(text).forEach { found.add(it) }
         ipv4.findAll(text).forEach { found.add(it.value) }
-        domain.findAll(text).forEach { m ->
-            val v = m.value.lowercase()
+        Hostnames.hostsIn(text).forEach { host ->
+            val v = host.lowercase()
             if (v.substringAfterLast('.') !in NOT_HOSTS) found.add(v)
         }
         return found

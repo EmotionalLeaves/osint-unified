@@ -34,9 +34,19 @@ object EntityExtractor {
         val derived: Boolean = false
     )
 
-    private val email = Regex("""[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,24}""")
+    // Host and address shapes come from Hostnames, which explains
+    // why the obvious regex for them is a crash waiting for four
+    // kilobytes of dotted labels. This file reads tool output too,
+    // and is called from five places including the watch worker.
     private val ipv4 = Regex("""\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\b""")
-    private val host = Regex("""\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+(?:com|net|org|io|dev|app|co|uk|de|fr|ru|cn|jp|edu|gov|mil|info|biz|me|xyz|cloud|ai|tech|site|online|us|ca|au|nl|se|no|ch|it|es|pl|br|in|za)\b""")
+
+    /** The suffixes this extractor is willing to call a host. */
+    private val HOST_TLDS = setOf(
+        "com", "net", "org", "io", "dev", "app", "co", "uk", "de", "fr",
+        "ru", "cn", "jp", "edu", "gov", "mil", "info", "biz", "me", "xyz",
+        "cloud", "ai", "tech", "site", "online", "us", "ca", "au", "nl",
+        "se", "no", "ch", "it", "es", "pl", "br", "in", "za"
+    )
     private val btc = Regex("""\b(?:bc1[a-z0-9]{25,62}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})\b""")
     private val eth = Regex("""\b0x[a-fA-F0-9]{40}\b""")
     private val md5 = Regex("""\b[a-fA-F0-9]{32}\b""")
@@ -148,10 +158,16 @@ object EntityExtractor {
         val seedLower = seed.trim().lowercase()
         val out = ArrayList<Pivot>()
 
-        fun collect(kind: String, regex: Regex, limit: Int = limitPerKind, transform: (MatchResult) -> String? = { it.value }) {
+        fun collect(kind: String, regex: Regex, limit: Int = limitPerKind, transform: (MatchResult) -> String? = { it.value }) =
+            collectValues(kind, regex.findAll(text).map { transform(it) }, limit)
+
+        // Separated so a scan that is not a regex can feed it. The
+        // host and address scans are hand-written now, for the
+        // reasons set out in Hostnames.
+        fun collectValues(kind: String, values: Sequence<String?>, limit: Int = limitPerKind) {
             val counts = LinkedHashMap<String, Int>()
-            regex.findAll(text).forEach { m ->
-                val v = transform(m)?.trim()?.trimEnd('.', ',', ')', ';') ?: return@forEach
+            values.forEach { raw ->
+                val v = raw?.trim()?.trimEnd('.', ',', ')', ';') ?: return@forEach
                 if (v.isBlank() || v.lowercase() == seedLower) return@forEach
                 // The seed, written to a different number of places,
                 // is still the seed.
@@ -175,12 +191,15 @@ object EntityExtractor {
             }
         }
 
-        collect("EMAIL", email)
+        collectValues("EMAIL", Hostnames.emailsIn(text).asSequence())
         collect("HANDLE", handle) { it.groupValues.getOrNull(1) }
         if (!seedIsPlace) {
-            collect("HOST", host, limitPerKind) { m ->
-                val v = m.value.lowercase()
+            collectValues("HOST", Hostnames.hostsIn(text).asSequence().map { host ->
+                val v = host.lowercase()
                 when {
+                    // The suffix allow-list the regex used to carry
+                    // in its own alternation.
+                    v.substringAfterLast('.') !in HOST_TLDS -> null
                     registrable(v) in noiseDomains -> null
                     // The same list Corroboration grades against.
                     //
@@ -196,7 +215,7 @@ object EntityExtractor {
                     v.endsWith(".png") || v.endsWith(".jpg") -> null
                     else -> v
                 }
-            }
+            })
         }
         collect("IP", ipv4) { m ->
             // Drop the obvious non-routables, they are never worth a pivot.

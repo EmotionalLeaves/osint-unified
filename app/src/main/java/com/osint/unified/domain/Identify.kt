@@ -64,8 +64,10 @@ object Identify {
         val groups = v.split(":").count { it.isNotEmpty() }
         return if (compressed) groups <= 7 else groups == 8
     }
-    private val EMAIL = Regex("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,24}$")
-    private val DOMAIN = Regex("^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\\.)+[A-Za-z]{2,24}$")
+    // Anchored, but still a repeated group — and a six-thousand
+    // character paste into the decoder panel overflows the stack
+    // just as the scanning version did. Hostnames does the same job
+    // in one pass with no recursion, and more strictly.
     private val COORD = Regex("^(-?\\d{1,2}(?:\\.\\d+)?)\\s*,\\s*(-?\\d{1,3}(?:\\.\\d+)?)$")
     private val BTC = Regex("^(?:bc1[a-z0-9]{25,62}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})$")
     private val ETH = Regex("^0x[a-fA-F0-9]{40}$")
@@ -99,7 +101,15 @@ object Identify {
             out.add(Guess("JWT", "Three dot-separated base64url segments.", "jwt", 95))
         }
 
-        if (EMAIL.matches(v)) out.add(Guess("Email address", "Local part and a resolvable-looking domain.", confidence = 95))
+        if (Hostnames.isEmail(v)) {
+            out.add(
+                Guess(
+                    "Email address",
+                    "Local part and a resolvable-looking domain.",
+                    confidence = 95
+                )
+            )
+        }
         if (IPV4.matches(v)) out.add(Guess("IPv4 address", "Four octets, each in range.", confidence = 97))
         val looksIpv6 = looksLikeIpv6(v)
         if (looksIpv6) {
@@ -165,8 +175,28 @@ object Identify {
             }
         }
 
-        if (DOMAIN.matches(v) && !EMAIL.matches(v)) {
-            out.add(Guess("Domain name", "Dotted labels ending in a plausible TLD.", confidence = 80))
+        if (Hostnames.isHostname(v) && !Hostnames.isEmail(v)) {
+            // The file-suffix guard ObservableExtractor has and this
+            // did not: paste `config.yaml` or `index.html` into the
+            // decoder and it reported a domain name at confidence
+            // 80. Same fix, the place the bug also lives.
+            if (v.substringAfterLast('.').lowercase() in ObservableExtractor.NOT_HOSTS) {
+                out.add(
+                    Guess(
+                        "File name",
+                        "Dotted labels ending in a file extension, not a TLD.",
+                        confidence = 70
+                    )
+                )
+            } else {
+                out.add(
+                    Guess(
+                        "Domain name",
+                        "Dotted labels ending in a plausible TLD.",
+                        confidence = 80
+                    )
+                )
+            }
         }
 
         if (HEX.matches(v)) {
