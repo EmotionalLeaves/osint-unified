@@ -89,8 +89,15 @@ fun ForensicsScreen(
 
     suspend fun readPhoto(uri: android.net.Uri) {
         exifBusy = true
-        output = runCatching { exifReader.fromUri(uri) }
+        // Both questions, because they are different questions and the
+        // second one has no other way of being asked on a phone. EXIF
+        // says what camera took a photograph; it says nothing at all
+        // about a picture that no camera took.
+        val metadata = runCatching { exifReader.fromUri(uri) }
             .getOrElse { "Could not read that image: ${it.message}" }
+        val credentials = runCatching { exifReader.credentialsFromUri(uri) }
+            .getOrElse { "" }
+        output = if (credentials.isBlank()) metadata else "$metadata\n\n$credentials"
         exifBusy = false
     }
 

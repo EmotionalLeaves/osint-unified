@@ -3,6 +3,7 @@ package com.osint.unified.data
 import android.content.Context
 import android.net.Uri
 import androidx.exifinterface.media.ExifInterface
+import com.osint.unified.domain.ContentCredentials
 import com.osint.unified.network.Http
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -31,6 +32,10 @@ class ExifReader(
         /** Larger than any photograph worth reading EXIF from, and small
          *  enough that an endless response cannot exhaust memory. */
         const val MAX_IMAGE_BYTES = 25L * 1024 * 1024
+
+        /** The front of the file: a manifest and a text chunk both
+         *  live near the start, and the rest is pixels. */
+        const val CREDENTIAL_BYTES = 512 * 1024
     }
 
     /**
@@ -203,4 +208,53 @@ class ExifReader(
             throw e
         }
     }
+    /**
+     * What the file says about who or what made it.
+     *
+     * Separate from the EXIF read, because it answers a different
+     * question and the answer is worth its own card: EXIF says what
+     * camera took a photograph and says nothing at all about a
+     * picture that no camera took.
+     *
+     * Only the front of the file is read. A C2PA manifest sits in an
+     * APP11 segment or a PNG chunk near the start, a generator's text
+     * chunk likewise, and pulling twenty megabytes down a phone
+     * connection to look at a header is the kind of cost this app
+     * exists not to impose.
+     */
+    suspend fun credentialsFromUri(uri: Uri): String = withContext(Dispatchers.IO) {
+        val bytes = runCatching {
+            appContext.contentResolver.openInputStream(uri)
+                ?.use { it.readNBytes(CREDENTIAL_BYTES) }
+        }.getOrNull()
+            ?: return@withContext "Could not read that image."
+        ContentCredentials.describe(ContentCredentials.read(bytes))
+    }
+
+    suspend fun credentialsFromUrl(url: String): String = withContext(Dispatchers.IO) {
+        val target = url.trim()
+        if (!target.startsWith("http://", true) && !target.startsWith("https://", true)) {
+            return@withContext "Give the image's URL."
+        }
+        try {
+            // Range, so the host sends the front of the file and not
+            // all of it. A host that ignores the header costs the read
+            // below its cap instead, which is the same bound.
+            val request = Request.Builder().url(target)
+                .header("Range", "bytes=0-${CREDENTIAL_BYTES - 1}")
+                .build()
+            client.newCall(request).execute().use { resp ->
+                if (!resp.isSuccessful && resp.code != 206) {
+                    throw IOException("HTTP ${resp.code} fetching the image")
+                }
+                val body = resp.body ?: throw IOException("the server sent no body")
+                val bytes = body.byteStream().use { it.readNBytes(CREDENTIAL_BYTES) }
+                if (bytes.isEmpty()) throw IOException("the server sent an empty image")
+                ContentCredentials.describe(ContentCredentials.read(bytes))
+            }
+        } catch (e: IOException) {
+            "Could not read $target: ${e.message}"
+        }
+    }
+
 }

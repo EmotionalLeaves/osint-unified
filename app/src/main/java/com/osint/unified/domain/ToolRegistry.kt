@@ -272,6 +272,9 @@ object ToolRegistry {
                 "leads the other tools can take. Nothing is uploaded.",
             "https://developers.google.com/ml-kit/vision/text-recognition",
             touchesTarget = true),
+        Tool("c2pa", "Content Credentials", FORENSICS, "image", "text", DIRECT,
+            "Does the file say who or what made it: a C2PA manifest, a generator's name, a prompt chunk.",
+            "https://c2pa.org"),
         Tool("imagehead", "What the host serves", FORENSICS, "image", "text", DIRECT,
             "True content type against the claimed extension, exact size and " +
                 "last-modified date — headers only, so it costs nothing to run.",
@@ -563,6 +566,13 @@ object ToolRegistry {
             "holehe", "ghunt", "h8mail", "emailgithub",
             "wikidata", "cve", "aircraftreg", "aircraftdb", "walletalt",
             "bgpview", "asnintel",
+            // The file's own statement about itself, and not B: a
+            // C2PA manifest is signed, this app does not check the
+            // signature — that needs a trust list and a certificate
+            // chain it does not carry — and an unverified claim is a
+            // third party reporting something, not an authoritative
+            // record. The tool's own output says exactly that.
+            "c2pa",
             // A profile name and a display name are whatever their
             // owner typed, and a Crossref author query is fuzzy — a
             // third party reporting what it holds, not a record of

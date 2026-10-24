@@ -406,6 +406,13 @@ class DirectToolExecutor(
                 starts("No web/wiki results for") -> Findings.Kind.ABSENT
                 else -> null
             }
+            // The file's own statement about itself, and the two
+            // sentences it writes when it has nothing to state.
+            "c2pa" -> when {
+                starts("Give the image's URL", "Could not read") -> Findings.Kind.UNREACHABLE
+                output.contains("Nothing found in the first") -> Findings.Kind.ABSENT
+                else -> Findings.Kind.HIT
+            }
             "walletalt" -> when {
                 starts("Not a Bitcoin address") -> Findings.Kind.UNREACHABLE
                 starts("Blockstream could not be reached") -> Findings.Kind.UNREACHABLE
@@ -722,6 +729,7 @@ class DirectToolExecutor(
                 "gdelt" -> apis.gdeltNews(input)
                 "reverseimage" -> apis.reverseImage(input)
                 "exif" -> runCatching { exifReader.fromUrl(input) }.orStop()
+                "c2pa" -> runCatching { exifReader.credentialsFromUrl(input) }.orStop()
                 "imagetext" -> imageWords(input)
                 else -> Result.failure(IllegalStateException("${tool.name} has no direct implementation."))
             }
