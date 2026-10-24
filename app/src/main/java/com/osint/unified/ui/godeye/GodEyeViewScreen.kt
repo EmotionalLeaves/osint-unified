@@ -1423,7 +1423,13 @@ fun GodEyeViewScreen(
                     val visible = GlobeHandoff.visibleRadiusDegrees(
                         globeSize.first, globeSize.second, globeCamera.zoom
                     )
-                    val rawStep = (visible / 3.0).coerceAtLeast(1.0)
+                    // Floored at about ten metres, not a degree. A degree
+                    // was right when the globe stopped at a country across;
+                    // at street level the screen is a kilometre and the
+                    // kept radius was a hundred, so the marker budget was
+                    // spent across a region and dense layers dropped
+                    // markers that were on screen.
+                    val rawStep = (visible / 3.0).coerceAtLeast(MIN_PLAN_STEP)
                     val step = 2.0.pow(ceil(log2(rawStep)))
                     // A degree of longitude is a shorter distance the
                     // further from the equator you are, so a key in
@@ -2053,6 +2059,9 @@ private const val FOCUS_TILE_ZOOM = 9.0
 /** How far the globe has to turn, in degrees, before it is worth
  *  telling the rest of the app about. */
 private const val VIEWPORT_STEP = 2f
+
+/** The finest the marker plan's key grid goes, in degrees: about ten metres. */
+private const val MIN_PLAN_STEP = 1e-4
 
 /** And how long it has to stay there. A drag emits sixty cameras a
  *  second and a viewport report can start a network query. */

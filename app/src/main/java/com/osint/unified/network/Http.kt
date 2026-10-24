@@ -92,6 +92,23 @@ object Http {
 
     private const val FEED_CACHE_BYTES = 48L * 1024 * 1024
 
+    /**
+     * The globe's satellite tiles, on their own disk cache.
+     *
+     * They shared the feeds' 48 MB, and a few minutes of panning at
+     * street level is more than that — so every pan evicted the feeds'
+     * ETags (and the alert feeds went back to downloading in full), and
+     * the tiles themselves were gone by the next visit, paid for again.
+     */
+    private const val TILE_CACHE_BYTES = 200L * 1024 * 1024
+
+    /**
+     * How long a tile is kept when the server does not say. Imagery
+     * changes over years; a month of not paying twice for the same
+     * street is the point.
+     */
+    private const val TILE_MAX_AGE_S = 30L * 24 * 3600
+
     /** Hosts tracked for concurrency at once. */
     private const val MAX_TRACKED_HOSTS = 4_096
 
@@ -146,6 +163,7 @@ object Http {
     private val refusals = ConcurrentHashMap<String, Int>()
 
     @Volatile private var feedCacheDir: File? = null
+    @Volatile private var tileCacheDir: File? = null
 
     /** Where to send everything, or null for straight out of the phone. */
     @Volatile private var relay: InetSocketAddress? = null
@@ -157,6 +175,9 @@ object Http {
     fun init(context: Context) {
         if (feedCacheDir == null) {
             feedCacheDir = File(context.cacheDir, "feed-http")
+        }
+        if (tileCacheDir == null) {
+            tileCacheDir = File(context.cacheDir, "tile-http")
         }
     }
 
@@ -513,6 +534,39 @@ object Http {
         }
         val builder = base().addNetworkInterceptor(Meter(forTool = false))
         if (store == null) builder.build() else builder.cache(store).build()
+    }
+
+    /**
+     * For the globe's imagery tiles.
+     *
+     * Through the same politeness as everything else, so a tile server
+     * that answers 429 is backed off from — but that cooldown is per
+     * host, and only the tile host's. Counted with the feeds, not with
+     * any search.
+     */
+    val tileClient: OkHttpClient by lazy {
+        val store = tileCacheDir?.let {
+            runCatching { Cache(it, TILE_CACHE_BYTES) }.getOrNull()
+        }
+        val builder = base()
+            .addNetworkInterceptor(Meter(forTool = false))
+            .addNetworkInterceptor(KeepTiles)
+        if (store == null) builder.build() else builder.cache(store).build()
+    }
+
+    /** Makes a tile with no stated lifetime cacheable for [TILE_MAX_AGE_S]. */
+    private object KeepTiles : Interceptor {
+        override fun intercept(chain: Interceptor.Chain): Response {
+            val response = chain.proceed(chain.request())
+            if (!response.isSuccessful) return response
+            val stated = response.header("Cache-Control").orEmpty()
+            if ("max-age" in stated && "no-" !in stated) return response
+            return response.newBuilder()
+                .removeHeader("Pragma")
+                .removeHeader("Expires")
+                .header("Cache-Control", "public, max-age=$TILE_MAX_AGE_S")
+                .build()
+        }
     }
 
     /**

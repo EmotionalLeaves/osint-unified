@@ -118,11 +118,11 @@ MEDIUM
 LOW
 - [x] **P16.** (closed r20: bundled levels cap at 360 (they cost no data), the live cap scales with screen pixels (200..300) and tile memory with it (400..560). Measured over 846 views: 0 drops on 1080x2340, 2560x1600 and 720x1600; 4 on 1440x3120, all near-whole-globe z6 falling back to bundled z5.) The tile cap still drops a zoom level on 3–10% of zooms.
 - [x] **P17.** (closed r20: the coast stops below 0.2 px a frame, measured with the degrees-per-pixel at the throw.) Flings die above ~zoom 600 (SPIN_FLOOR in degrees).
-- [ ] **P18.** Deep-zoom marker thinning covers ≥1° though the screen is
+- [x] **P18.** (closed r20: the plan key step floors at 1e-4 degrees (~10 m), not 1 degree, so at street level the budget is spent on the screen.) Deep-zoom marker thinning covers ≥1° though the screen is
   ~1 km, so dense layers drop on-screen markers.
-- [ ] **P19.** Tiles share the feeds' 48 MB HTTP cache and the escalating
+- [x] **P19.** (closed r20: Http.tileClient: own 200 MB disk cache, tiles kept 30 days when the server states no lifetime, per-host politeness kept (cooldown is the tile host's alone). TileStore asks 4 at a time to match the per-host gate.) Tiles share the feeds' 48 MB HTTP cache and the escalating
   host cooldown.
-- [ ] **P20.** The orphaned osmdroid cache (up to 300 MB) and prefs are
+- [x] **P20.** (closed r20: cache/osmdroid and the osmdroid prefs deleted at startup on a background thread.) The orphaned osmdroid cache (up to 300 MB) and prefs are
   never deleted.
 - [ ] **P21.** downloadWmn's DiskCache trouble flow is unobserved.
 - [ ] **P22.** The named 429 message shows only on the first refusal.

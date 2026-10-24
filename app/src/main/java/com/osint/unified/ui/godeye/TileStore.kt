@@ -129,7 +129,7 @@ internal class TileStore(context: Context) {
                 .url(url)
                 .header("User-Agent", Http.defaultUserAgent)
                 .build()
-            Http.feedClient.newCall(request).execute().use { resp ->
+            Http.tileClient.newCall(request).execute().use { resp ->
                 if (!resp.isSuccessful) return@runCatching null
                 val bytes = resp.body?.bytes() ?: return@runCatching null
                 BitmapFactory.decodeByteArray(bytes, 0, bytes.size, OPTIONS)
@@ -198,7 +198,9 @@ internal class TileStore(context: Context) {
         }
 
         private const val MAX_TILES_LARGE = 560
-        private const val MAX_IN_FLIGHT = 6
+        // Http lets four requests at a time reach one host and queues
+        // the rest; asking for more here only moved the queue.
+        private const val MAX_IN_FLIGHT = 4
 
         private val OPTIONS = BitmapFactory.Options().apply {
             inPreferredConfig = Bitmap.Config.RGB_565

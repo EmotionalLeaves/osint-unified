@@ -91,6 +91,15 @@ class OsintApplication : Application() {
             }
             _ready.value = true
         }, "db-warmup").start()
+        // What the flat map left behind when it was removed: a tile cache
+        // allowed to grow to 300 MB and its settings file. Nothing reads
+        // either now, and nothing else would ever delete them — the
+        // phone's storage screen would go on showing this app holding a
+        // third of a gigabyte of street maps it no longer has.
+        Thread({
+            runCatching { File(cacheDir, "osmdroid").deleteRecursively() }
+            runCatching { deleteSharedPreferences("osmdroid") }
+        }, "orphan-cleanup").start()
     }
 
     private val _ready = kotlinx.coroutines.flow.MutableStateFlow(false)
