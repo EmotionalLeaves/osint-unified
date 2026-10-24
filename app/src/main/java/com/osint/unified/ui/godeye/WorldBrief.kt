@@ -259,7 +259,22 @@ object WorldBrief {
         val troubled = ArrayList<String>()
         fun maybeQuiet(key: String, label: String, size: Int) {
             when {
-                key in state.feedTrouble -> troubled.add(label)
+                // With when it last worked, if it ever did.
+                //
+                // The view model has recorded a lastSuccess for
+                // every feed since this section existed and nothing
+                // has ever read it. "Military aircraft — last good
+                // 40m ago" and "military aircraft — never answered
+                // this session" are different situations and the
+                // list said the same thing for both: the first is a
+                // feed that has gone down and whose markers are
+                // stale, the second is one that has never worked
+                // here at all.
+                key in state.feedTrouble -> troubled.add(
+                    com.osint.unified.data.Freshness.ago(state.lastSuccess[key])
+                        ?.let { "$label — last good $it" }
+                        ?: "$label — has not answered this session"
+                )
                 key in state.loaded && size == 0 -> quiet.add(label)
             }
         }
