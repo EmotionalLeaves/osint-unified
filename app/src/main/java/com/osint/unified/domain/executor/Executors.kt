@@ -512,6 +512,15 @@ class DirectToolExecutor(
                 head.contains("has been online since at least") -> Findings.Kind.HIT
                 else -> null
             }
+            "disposable" -> when {
+                starts("Give an email address") -> Findings.Kind.UNREACHABLE
+                starts("The disposable-domain list is not bundled",
+                    "The bundled disposable-domain list could not be read") ->
+                    Findings.Kind.UNREACHABLE
+                head.contains("is a known disposable-mail domain") -> Findings.Kind.HIT
+                head.contains("is not on the bundled list") -> Findings.Kind.ABSENT
+                else -> null
+            }
             "libravatar" -> when {
                 starts("Libravatar has an avatar") -> Findings.Kind.HIT
                 starts("No Libravatar avatar") -> Findings.Kind.ABSENT
@@ -667,6 +676,7 @@ class DirectToolExecutor(
                 "codeberg" -> handles.codeberg(input)
                 "huggingface" -> handles.huggingFace(input)
                 "libravatar" -> handles.libravatar(input)
+                "disposable" -> disposableAddress(input)
                 "ubuntukeys" -> handles.ubuntuKeyserver(input)
                 "orcid" -> people.orcid(input)
                 "publications" -> people.publications(input)
@@ -1040,6 +1050,64 @@ class DirectToolExecutor(
      * needs only the catalogue, and that answer holds for every address
      * at that domain. It works with the radio off.
      */
+    /**
+     * Whether this address is a throwaway, answered offline.
+     *
+     * It reframes every other line in a dossier about an email.
+     * The same address found in three breaches means one thing if
+     * somebody has used it for ten years and another if it was
+     * minted to get past a signup form — and nothing keyless
+     * answers it over the network, because every service that does
+     * wants an account. A flat list of domains answers it with the
+     * radio off, in one comparison.
+     *
+     * A hit is not a verdict about a person. Disposable addresses
+     * are what careful people use to avoid being tracked across
+     * services, which is the same instinct the rest of this app is
+     * built around, and the output says so rather than leaving a
+     * red flag hanging.
+     */
+    private fun disposableAddress(input: String): Result<String> = runCatching {
+        val address = input.trim().lowercase()
+        val domain = address.substringAfterLast('@').removePrefix("www.")
+        if (!address.contains('@') || domain.length < 3) {
+            return@runCatching "Give an email address."
+        }
+        val list = runCatching {
+            appContext.assets.open("disposable-domains.txt").bufferedReader().useLines { lines ->
+                lines.map { it.trim().lowercase() }
+                    .filter { it.isNotEmpty() && !it.startsWith("#") }
+                    .toHashSet()
+            }
+        }.getOrNull()
+            ?: return@runCatching "The disposable-domain list is not bundled in " +
+                "this build, so nothing is claimed either way."
+        if (list.isEmpty()) {
+            return@runCatching "The bundled disposable-domain list could not be read."
+        }
+        // The parent domain too: subdomain throwaways are the
+        // common shape, and a list that holds mailinator.com should
+        // answer for team.mailinator.com.
+        val parentDomain = domain.split('.').let {
+            if (it.size > 2) it.takeLast(2).joinToString(".") else domain
+        }
+        return@runCatching if (domain in list || parentDomain in list) {
+            "$domain is a known disposable-mail domain, from a list of " +
+                "${list.size} bundled in this build.\n\n" +
+                "That changes how everything else about this address reads: an " +
+                "account registered with it was probably meant to be temporary, " +
+                "and the address is unlikely to tie to a long-lived identity.\n" +
+                "It is not a finding about a person. Throwaway addresses are what " +
+                "careful people use to avoid being tracked between services."
+        } else {
+            "$domain is not on the bundled list of ${list.size} known " +
+                "disposable-mail domains.\n" +
+                "New throwaway services appear constantly and the list is a " +
+                "snapshot taken when this build was made, so this is weak " +
+                "evidence that the address is durable — not proof of it."
+        }
+    }
+
     private fun breachCatalogue(input: String): Result<String> = runCatching {
         val raw = input.trim().lowercase()
         // An address is really a question about its domain.

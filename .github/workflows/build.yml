@@ -128,7 +128,16 @@ jobs:
           curl -sSL https://raw.githubusercontent.com/cipher387/osint_stuff_tool_collection/main/README.md -o "$A/osint-stuff.md" || true
           curl -sSL https://raw.githubusercontent.com/Astrosp/Awesome-OSINT-For-Everything/main/README.md -o "$A/osint-everything.md" || true
           curl -sSL https://raw.githubusercontent.com/Ph055a/OSINT_Collection/master/README.md -o "$A/osint-collection.md" || true
-          for f in sherlock.json maigret.json un-sanctions.xml breaches.json awesome-osint.md osint-stuff.md osint-everything.md osint-collection.md; do
+          # Throwaway-mail domains, checked offline.
+          #
+          # Whether an address is disposable reframes everything else
+          # in a dossier about it, and it is a question nothing
+          # keyless answers over the network — every service that
+          # does wants an account. It is a flat list of domains, so
+          # it answers with the radio off and costs one string
+          # comparison.
+          curl -sSL https://raw.githubusercontent.com/disposable-email-domains/disposable-email-domains/master/disposable_email_blocklist.conf -o "$A/disposable-domains.txt" || true
+          for f in sherlock.json maigret.json un-sanctions.xml breaches.json awesome-osint.md osint-stuff.md osint-everything.md osint-collection.md disposable-domains.txt; do
             if [ -s "$A/$f" ]; then
               echo "bundled $f ($(wc -c < "$A/$f") bytes)"
             else

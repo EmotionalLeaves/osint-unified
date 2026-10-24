@@ -297,6 +297,8 @@ class ObservableRouter {
     fun suggestTools(observable: Observable): List<Tool> {
         val ids = when (observable) {
             is Observable.Email -> listOf(
+                // First, because it changes how the rest reads.
+                "disposable",
                 "breaches", "breachcat", "gravatar",
                 // The avatar question asked of the service people
                 // use when they are avoiding the first one.

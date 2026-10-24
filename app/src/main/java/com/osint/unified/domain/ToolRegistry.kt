@@ -285,6 +285,10 @@ object ToolRegistry {
             "Earliest Wayback capture of this exact image URL, and whether the " +
                 "bytes under it have ever been replaced.",
             "https://web.archive.org"),
+        Tool("disposable", "Throwaway address?", FORENSICS, "email", "text", DIRECT,
+            "Whether this address's domain is a known disposable-mail service — " +
+                "offline, against a list bundled in the build.",
+            "https://github.com/disposable-email-domains/disposable-email-domains"),
         Tool("libravatar", "Libravatar", SOCMINT, "email", "text", DIRECT,
             "Whether a federated or self-hosted avatar is published for this " +
                 "address — the people who avoid Gravatar on purpose.",
@@ -561,7 +565,11 @@ object ToolRegistry {
             // is a claim that somebody uploaded, not a confirmed
             // address, which is the whole difference from pgpkey
             // above at B.
-            "ubuntukeys"
+            "ubuntukeys",
+            // A curated community list, which is what C is: a third
+            // party reporting what it has collected, and it is a
+            // snapshot rather than a register.
+            "disposable"
         ).forEach { put(it, Grading.Reliability.FAIRLY) }
 
         // D — derived, of unclear provenance.
