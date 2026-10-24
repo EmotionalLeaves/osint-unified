@@ -105,9 +105,17 @@ import java.util.Locale
 
 private val EXAMPLES = listOf("example.com", "8.8.8.8", "40.7128,-74.0060", "+14155550123", "John Smith")
 
+// The router handles twelve types and nine of them had a chip, so
+// url, wallet and aircraft were reachable only if auto-detection
+// happened to agree with you — and auto-detection deliberately
+// refuses to read six hex characters as an aircraft or a bare word
+// as a wallet, because those guesses are wrong more often than
+// they are right. Forcing the type is the answer to exactly that,
+// and for three of the twelve there was no way to.
 private val SEARCH_TYPES = listOf(
     "auto" to "AUTO", "name" to "NAME", "email" to "EMAIL", "username" to "USER",
-    "domain" to "DOMAIN", "ip" to "IP", "phone" to "PHONE", "coordinate" to "COORD", "image" to "IMAGE"
+    "domain" to "DOMAIN", "ip" to "IP", "phone" to "PHONE", "coordinate" to "COORD",
+    "image" to "IMAGE", "url" to "URL", "wallet" to "WALLET", "aircraft" to "AIRCRAFT"
 )
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)

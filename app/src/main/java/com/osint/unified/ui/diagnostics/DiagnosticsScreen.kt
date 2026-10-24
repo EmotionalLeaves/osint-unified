@@ -160,6 +160,13 @@ fun DiagnosticsScreen(executors: ExecutorFactory, feeds: List<FeedProbe>, onBack
     val probes = remember(feeds) {
         val toolProbes = ToolRegistry.all
             .filter { it.executionMode == ExecutionMode.DIRECT }
+            // snapshot is the one DIRECT tool with no executor
+            // branch, because it is not executed: the private
+            // browser writes it when you tap SNAPSHOT on a page.
+            // Probing it hit the fallthrough and reported a
+            // permanent, unfixable failure on the screen whose
+            // whole job is to say which sources are working.
+            .filter { it.id != "snapshot" }
             .map { tool ->
                 Probe(tool.name, "TOOLS") {
                     val input = sampleFor(tool)
