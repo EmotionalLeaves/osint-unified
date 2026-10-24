@@ -17,15 +17,13 @@ closed; their headings say so.
 
 ### From the person using it, 24 Oct — the queue jumps for these
 
-- [ ] **U1. One globe, no map.** "get rid of map and just make it a
-  high quality globe with the ability to zoom in as far as the map
-  with the same detail." This is O7 promoted and then some: not one
-  engine behind two views, one view. The sphere paints itself with
-  the same Esri satellite tiles the map was showing, fading them in
-  where the bundled mosaic runs out of pixels, and osmdroid, the
-  second camera, the handoff hysteresis and the MAP button all go.
-  In that order, so no commit leaves the globe unable to do what the
-  map could.
+- [x] **U1. One globe, no map.** Done. The sphere fetches Esri
+  satellite tiles itself past 22 degrees across, faded in, each tile
+  drawn as its projected quadrilateral; osmdroid, the second camera,
+  the handoff hysteresis and the MAP button are gone; MAX_ZOOM
+  raised from 8 to tile zoom 19; flying-to-a-focus carried across by
+  hand so a coordinate search still moves the view. `Tiles` +
+  `TileStore`, tested.
 - [ ] **U1a. The dead half of the two-view code.** Deleting the map
   left `planMarkers`, `PendingMarker`, `MapWindow`, `MapPlan`,
   `planFor` and `markerBucket` in `MarkerPlan.kt` alive only through
@@ -35,15 +33,44 @@ closed; their headings say so.
   tests that encode a real rule onto `planGlobe`/`thinGlobe` — some
   of them cover the shared `thinBy` fairness and are worth keeping.
   Kept out of the deletion commit on purpose: a working globe first.
-- [ ] **U2. The military layer does not work.** Reported, not yet
-  reproduced. Find out whether it fetches, whether it parses, and
-  whether anything reaches the screen.
-- [ ] **U3. The news layer does not work.** Same.
-- [ ] **U4. Conflict showed an event from 2017.** Either the feed is
-  being asked for everything and not for recent, or the date is not
-  being read, or it is being read and not filtered. A nine-year-old
-  event presented beside live ones is the kind of wrong this app is
-  supposed to be incapable of.
+- [x] **U2/U3. Military and news do not work.** One bug, measured by
+  probe: both hosts (opendata.adsb.fi, api.gdeltproject.org) answer
+  HTTP 429 by IP after one or two rapid requests. The layers fetched,
+  were refused, and sat empty. Both hosts paced; military poll slowed
+  from 20 s to 60 s and started clear of the aircraft layer it shared
+  a host with; the 429 back-off doubles to a quarter-hour, per host,
+  cleared on an answer. News now shows GDELT's own "Please limit"
+  message instead of "HTTP 429", and the adsb.lol/adsb.fi label was
+  corrected.
+- [x] **U4. Conflict showed 2017.** Not a filter bug — the window is
+  twenty years, deliberately, and the query had no ORDER BY under a
+  LIMIT of 600, so the result set was dominated by 2006–2012. Ordered
+  newest-first now; the label says "began YYYY, no recorded end"
+  rather than the unsupportable "since YYYY"; CURRENT_YEAR read per
+  call. The deeper fix — a source with an activity date (ACLED/UCDP)
+  rather than "no end date on Wikidata" — is U5.
+- [ ] **U5. Conflict from a source that records whether it is active.**
+  Wikidata carries no "still going" signal; P580/P582 is all there
+  is, which is why "no recorded end" has to stand in for "current"
+  and once put the Second World War on the map. ACLED and UCDP both
+  record activity dates. Replacing the source is the only real fix;
+  everything else is narrowing the window.
+- [ ] **U6. The email case returned "a lot of nothing".** Partly
+  addressed. The GitHub layer asked only "which account lists this
+  address publicly", which almost nobody does; it now also searches
+  the commit index, which yields a real name, the repos, the linked
+  account and the latest commit, and establishes a true zero. DONE.
+  Still open: no keyless/accountless source returns breach *values*
+  (names, addresses) — that is paywalled everywhere by design, so it
+  needs either a paid key the user opts into or the browser-handoff
+  links the dossier already carries. Decide with the user.
+- [x] **U7. The dossier believed a bot-check page.** Two sites served
+  Anubis anti-bot challenges; both link to the software's own repo,
+  so the sweep clustered them as one person and then investigated the
+  vendor. Challenge pages are recognised whole and yield no signals;
+  namespaces/CDNs/anti-bot vendors are furniture; and a follow-up more
+  than a hop from the seed no longer corroborates its own input (which
+  is how a wiki came out A1 "confirmed").
 
 ### Blocked on the tester
 - [x] **T1.** Did their APK come from the CI artifact or a local build?
@@ -57,7 +84,7 @@ closed; their headings say so.
   URL the code can emit is public; without the actual link this is
   guesswork.
 
-### Verification of the second batch, 9125be2..HEAD (r18, 24 Oct) — OPEN, 0 of 22
+### Verification of the second batch, 9125be2..HEAD (r18, 24 Oct) — 19 of 22 closed
 
 A fourth pass, over the nineteen commits that fixed r13–r17. It
 found the same thing the three before it found: **rule 1 recurs
@@ -66,7 +93,7 @@ two brand-new honesty mechanisms landed inert — nobody on the
 reading end — which is rule 5 with no throw involved.
 
 HIGH
-- [ ] **V1.** The backend's 206 is a success to OkHttp.
+- [x] **V1.** The backend's 206 is a success to OkHttp.
   `Executors.kt:97` is `if (resp.isSuccessful)`, which is `200..299`.
   `backend/server.js:66` returns the truncated scan as 206 with a
   `PARTIAL: …` first line and a comment claiming the app reads it as
@@ -78,19 +105,19 @@ HIGH
   in the first 34 characters. So a half-finished scan is stored as
   `status = "success"` and counted in "N of M sources returned
   something", which is exactly the state T5 was meant to end.
-- [ ] **V2.** `DiskCache.write`'s new `Boolean` is dropped by all six
+- [x] **V2.** `DiskCache.write`'s new `Boolean` is dropped by all six
   callers — WorldWarnings, Satellites, SeaLevel, Launch,
   SeismicStation, Fires. The docstring says why it stopped returning
   `Unit`: a full disk meant re-downloading seven and fourteen
   megabytes every poll with nothing said to the data meter. That is
   still what happens. Rule 2 answered at the signature only.
-- [ ] **V3.** `ExifReader.describe()` still has T12; only `fromUrl`'s
+- [x] **V3.** `ExifReader.describe()` still has T12; only `fromUrl`'s
   inline copy was fixed. `sb` is never blank, so `"No EXIF metadata
   found."` at line 106 is dead, and a stripped photograph through
   `fromUri` prints `GPS: (none)` → **HIT**. The same image through
   `fromUrl` is correctly ABSENT. Two paths, opposite verdicts, five
   lines apart.
-- [ ] **V4.** The new coverage node counts running tools as "could not
+- [x] **V4.** The new coverage node counts running tools as "could not
   be asked". `GraphBuilder:34` groups by `Findings.kindOf`, which
   maps `status == "running"` to UNREACHABLE. `Findings.sort` skips
   running rows and carries the comment saying why — *"counting it as
@@ -99,40 +126,40 @@ HIGH
   exists for this. Tap GRAPH mid-investigation to see it.
 
 MEDIUM
-- [ ] **V5.** Two surviving copies of the quadratic email regex the
+- [x] **V5.** Two surviving copies of the quadratic email regex the
   batch rewrote in five files: `OsintApis.kt:966` and
   `DeepApis.kt:2811`. The first runs over a whole fetched page in
   `webcrawl` with **no scan cap at all**, on content the subject
   chose. `regex-recursion.py` cannot see it: character-class
   repetition, not group repetition.
-- [ ] **V6.** `cveLookup`'s "neither source answered" gate never fires.
+- [x] **V6.** `cveLookup`'s "neither source answered" gate never fires.
   EPSS answers 200 with `{"data":[]}` for an unknown CVE, so
   `Reached.of` marks it reached and `if (!cve.any)` is dead. A
   well-formed non-existent id still returns two links as a finding.
   `hostIntel`/`subdomainSweep` got `Reached.answering` for exactly
   this; `cveLookup` did not.
-- [ ] **V7.** `Identify`'s new file-suffix branch is an `else`, and
+- [x] **V7.** `Identify`'s new file-suffix branch is an `else`, and
   `NOT_HOSTS` holds live ccTLDs — `md`, `so`, `py`, `rs`, `sh`, and
   `zip`. `nic.md` is Moldova's actual registry and now offers only
   "File name". The file's own header says every reading is offered
   rather than one chosen; it should `add` both.
-- [ ] **V8.** The "…and N more" link is the one of three insertions
+- [x] **V8.** The "…and N more" link is the one of three insertions
   the dedup fix missed (`GraphBuilder:79-84`), and `getOrPut` on
   `more:${toolId}` means a second row's count is never mentioned
   while its edge is drawn twice and pulls twice as hard.
-- [ ] **V9.** `DiskCacheAndFindingsTest.kt` contains no DiskCache test
+- [x] **V9.** `DiskCacheAndFindingsTest.kt` contains no DiskCache test
   — one class, `ExifSentencesTest`. T15 named "a DiskCache round
   trip against a truncated file" and is marked done. Nothing covers
   the temp-then-rename or the `coerceAtLeast(0L)`.
-- [ ] **V10.** `OrbitPropagatorTest.theHeightAtThePoleIsNotMinusTheEarth`'s
+- [x] **V10.** `OrbitPropagatorTest.theHeightAtThePoleIsNotMinusTheEarth`'s
   cross-branch assertion is vacuous: at `hyp = 0.001` km both calls
   take the pole branch. It would stay green with the standard branch
   deleted. `geodetic(0.01, 6_756.0)` crosses the threshold.
-- [ ] **V11.** `SigningIdentity.lastOrNull()` is right for rotation and
+- [x] **V11.** `SigningIdentity.lastOrNull()` is right for rotation and
   flips the multi-signer answer: an APK signed `[published, other]`
   used to warn and now does not. Wants
   `signers.any { sha256(it) == PUBLIC_KEY_SHA256 }`.
-- [ ] **V12.** `UsernameChecker.downloadWmn` is a seventh hand-rolled
+- [x] **V12.** `UsernameChecker.downloadWmn` is a seventh hand-rolled
   file cache beside the one just hardened: `writeText` truncates in
   place and the validity test is `length() > 1000` with no mtime.
   A kill mid-write serves a truncated catalogue for the life of the
@@ -140,15 +167,15 @@ MEDIUM
   `assets/`.
 
 LOW
-- [ ] **V13.** ProPublica (`PeopleApis:411`) and GitHub
+- [x] **V13.** ProPublica (`PeopleApis:411`) and GitHub
   (`PeopleApis:239`) keep `?: 0` on their totals while CourtListener,
   in the same hunk, was made nullable. A missing total prints "0
   matching" above the results.
-- [ ] **V14.** `ImageClues` is the fifth `Hostnames` caller and the
+- [x] **V14.** `ImageClues` is the fifth `Hostnames` caller and the
   only one with no file-suffix guard; OCR reading `logo.png` still
   becomes a domain clue. `Identify` was given the guard in the same
   commit.
-- [ ] **V15.** `ImageText.sampled()` reproduces its sibling's `Int`
+- [x] **V15.** `ImageText.sampled()` reproduces its sibling's `Int`
   overflow: 65535×65535 is −131,071, so `inSampleSize` stays 1 and
   the decode is ~17 GB. `toLong()` on one factor fixes both
   (`ImageText:83` and `:139`). Also `runCatching` catches the
@@ -162,21 +189,21 @@ LOW
 - [ ] **V18.** `imageHistory`'s capped sentence says "the first 40
   captures were read"; 40 *records* were read and `captures` is the
   2xx subset, so neither the count nor "the last of them" is exact.
-- [ ] **V19.** `ObservableExtractor.NOT_HOSTS` lists `"lock"` twice.
+- [x] **V19.** `ObservableExtractor.NOT_HOSTS` lists `"lock"` twice.
 
 The pre-flight's own blind spots, found by reading the checkers
 rather than running them
-- [ ] **V20.** `empty-is-an-answer.py` is line-oriented, so the
+- [x] **V20.** `empty-is-an-answer.py` is line-oriented, so the
   idiomatic spelling of its own bug — `catch (e: Exception) {` then
   `emptyList()` on the next line — is invisible. Also unmatched:
   `getOrElse { emptyList() }`, `getOrDefault(emptyList<T>())`,
   `listOf()`, `emptyMap()`, `emptySet()`, and `null`.
-- [ ] **V21.** …and its scope is two name filters wide: `glob` not
+- [x] **V21.** …and its scope is two name filters wide: `glob` not
   `rglob`, plus `"DataSource" in name`. So `domain/executor/**` —
   where most of this project's false absences actually live — is
   never looked at, and its own docstring's example
   (`OsintApis.kt:1052`) is outside the scanned set.
-- [ ] **V22.** `regex-recursion.py` cannot see a character-class
+- [x] **V22.** `regex-recursion.py` cannot see a character-class
   repetition (V5's shape, the defect it was written beside), nor a
   capturing group with no `\d`/`\w`/`[A-Za-z` in it, nor a pattern
   held as a `const val` in a file with no `Regex(` call. And
@@ -1041,6 +1068,26 @@ whole of the view-model's search bookkeeping.
 9. **Write first, assert after.** Twice today a script asserted after
    its replace and threw before its write, so an edit believed to be
    on disk was not — a quieter failure than a compile error.
+10. **File-private is not project-visible.** A `private fun` or
+   `private companion` is scoped to its file; the whole family of
+   local checks asks whether a name exists in the project, not
+   whether it is in scope where it is written. `jsonObjectOrNull`,
+   private in PeopleApis, was called from DeepApis, compiled locally
+   and died in CI — the third instance of this exact shape, after the
+   private companion and the private-in-class type. `object-members`
+   now catches a top-level private fun called cross-file too.
+11. **A pre-flight is only worth having if it is trusted, so it must
+   have no false positives.** The cross-file check above produced two
+   before it was right: a `data class` constructor read as a function
+   call, and a library function (`launch`) imported at the call site
+   read as the project's private one. A check that cries wolf is
+   turned off, and then it protects nothing.
+12. **One view, not one engine behind two.** The globe and the map
+   were the same place at two distances, and everything painful —
+   two cameras, a scale conversion, a hysteresis band, an arming
+   flag, a settle timer — existed only to hide the seam between
+   them. The seam was the bundled imagery running out; feeding the
+   globe tiles removed the seam and all of its machinery at once.
 
 ---
 
