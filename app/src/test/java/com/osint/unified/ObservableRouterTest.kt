@@ -119,8 +119,12 @@ class ObservableRouterTest {
     @Test
     fun emailSuggestsKeylessFirst() {
         val tools = router.suggestTools(Observable.Email("a@b.com"))
-        // Keyless tools lead so email works with no backend.
-        assertEquals("breaches", tools.first().id)
+        // Keyless tools lead so email works with no backend. The
+        // first is the throwaway-domain check, which is offline and
+        // deliberately ahead of everything: whether the address was
+        // ever meant to last changes how every line after it reads.
+        assertEquals("disposable", tools.first().id)
+        assertTrue(tools.any { it.id == "breaches" })
         assertTrue(tools.any { it.id == "gravatar" })
         assertTrue(tools.any { it.id == "emailaccounts" })
         // Nothing that needs the Python backend may come before a keyless tool.
