@@ -170,8 +170,10 @@ internal class TileStore(context: Context) {
                     "$GIBS/BlueMarble_ShadedRelief_Bathymetry/default/GoogleMapsCompatible_Level8/" +
                         "${ref.z}/${ref.y}/${ref.x}.jpeg"
                 } else {
-                    // z/y/x with no extension: Esri's path order.
-                    "$ESRI${ref.z}/${ref.y}/${ref.x}"
+                    // z/y/x with no extension: Esri's path order. Two of
+                    // Esri's hostnames serve the same tiles; alternating
+                    // between them doubles how many arrive at once.
+                    (if ((ref.x + ref.y) % 2 == 0) ESRI else ESRI_ALT) + "${ref.z}/${ref.y}/${ref.x}"
                 }
         },
         NIGHT("night") {
@@ -198,6 +200,8 @@ internal class TileStore(context: Context) {
 
         private const val ESRI =
             "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/"
+        private const val ESRI_ALT =
+            "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/"
         private const val GIBS = "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best"
 
         private const val MAX_TILES = 400
@@ -228,9 +232,9 @@ internal class TileStore(context: Context) {
         }
 
         private const val MAX_TILES_LARGE = 720
-        // Http lets four requests at a time reach one host and queues
-        // the rest; asking for more here only moved the queue.
-        private const val MAX_IN_FLIGHT = 4
+        // Matched to what Http lets through to the tile hosts: eight to
+        // each of Esri's two names.
+        private const val MAX_IN_FLIGHT = 14
 
         private val OPTIONS = BitmapFactory.Options().apply {
             inPreferredConfig = Bitmap.Config.RGB_565

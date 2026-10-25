@@ -174,25 +174,34 @@ internal object Tiles {
         lat0: Double,
         lon0: Double,
         /** How much finer than the screen the quality setting asks for. */
-        detail: Float = 1f
+        detail: Float = 1f,
+        /**
+         * The turn and tilt between the flat picture and the screen, if
+         * any. Tipped back, the far ground is smaller on the screen, and
+         * gets coarser tiles: up to four levels coarser at the horizon.
+         */
+        view: ViewTilt.View? = null
     ): List<Ref> {
         if (width <= 0 || height <= 0 || radius <= 0f) return emptyList()
         var z = zoom.coerceIn(MIN_TILE_ZOOM, MAX_TILE_ZOOM)
+        val tilted = view != null && !view.identity
         while (true) {
-            val keys = sample(z, width, height, cx, cy, radius, lat0, lon0)
-            if (keys.size <= capFor(z, (width * detail).toInt(), (height * detail).toInt()) || z <= MIN_TILE_ZOOM) {
-                val side = 1 shl z
-                val centreX = tileXOf(lon0, z)
-                val centreY = tileYOf(lat0, z)
-                return keys.map { Ref(z, (it % side).toInt(), (it / side).toInt()) }
-                    .sortedBy { r ->
-                        // Across the date line the nearer way round counts.
-                        var dx = (r.x + 0.5) - centreX
+            val refs = sample(z, width, height, cx, cy, radius, lat0, lon0, if (tilted) view else null)
+            val cap = capFor(z, (width * detail).toInt(), (height * detail).toInt()) * (if (tilted) 2 else 1)
+            if (refs.size <= cap || z <= MIN_TILE_ZOOM) {
+                // Finest and nearest first, which is the order they are
+                // fetched in; drawn in reverse, so coarse and far go down
+                // first and the detail lands on top.
+                return refs.sortedWith(
+                    compareByDescending<Ref> { it.z }.thenBy { r ->
+                        val side = 1 shl r.z
+                        var dx = (r.x + 0.5) - tileXOf(lon0, r.z)
                         if (dx > side / 2.0) dx -= side
                         if (dx < -side / 2.0) dx += side
-                        val dy = (r.y + 0.5) - centreY
+                        val dy = (r.y + 0.5) - tileYOf(lat0, r.z)
                         dx * dx + dy * dy
                     }
+                )
             }
             z--
         }
@@ -206,16 +215,31 @@ internal object Tiles {
         cy: Float,
         radius: Float,
         lat0: Double,
-        lon0: Double
-    ): Set<Long> {
-        val side = 1 shl z
-        val out = HashSet<Long>(128)
-        fun hit(px: Float, py: Float) {
-            val place = Orthographic.unproject(px, py, lat0, lon0, radius, cx, cy) ?: return
+        lon0: Double,
+        view: ViewTilt.View?
+    ): Set<Ref> {
+        val out = HashSet<Ref>(256)
+        val flat = FloatArray(2)
+        // A point in the flat picture, at a level.
+        fun hitFlat(fx: Float, fy: Float, level: Int) {
+            val place = Orthographic.unproject(fx, fy, lat0, lon0, radius, cx, cy) ?: return
             if (place.first > MERCATOR_LIMIT || place.first < -MERCATOR_LIMIT) return
-            val x = floor(tileXOf(place.second, z)).toInt().coerceIn(0, side - 1)
-            val y = floor(tileYOf(place.first, z)).toInt().coerceIn(0, side - 1)
-            out.add(y.toLong() * side + x)
+            val side = 1 shl level
+            val x = floor(tileXOf(place.second, level)).toInt().coerceIn(0, side - 1)
+            val y = floor(tileYOf(place.first, level)).toInt().coerceIn(0, side - 1)
+            out.add(Ref(level, x, y))
+        }
+        // A point on the screen: through the view, at the level its distance allows.
+        fun hit(px: Float, py: Float) {
+            if (view == null) {
+                hitFlat(px, py, z)
+                return
+            }
+            if (!view.toFlat(px, py, flat)) return
+            val scale = view.scaleAt(px, py)
+            if (scale <= 0f) return
+            val drop = Math.round(-ln(scale.toDouble()) / ln(2.0)).toInt().coerceIn(0, MAX_DROP)
+            hitFlat(flat[0], flat[1], (z - drop).coerceAtLeast(MIN_TILE_ZOOM))
         }
         // Inside: a tile is two hundred pixels or more across at the zoom
         // chosen for it, so a grid finer than that cannot step over one.
@@ -241,19 +265,48 @@ internal object Tiles {
         }
         // And rings just inside the rim, where a whole-Earth view squeezes
         // tiles into slivers thinner than the grid. One ring missed about
-        // one pixel in a hundred there; four miss none.
-        if (radius < width + height) {
+        // one pixel in a hundred there; four miss none. Never tilted: the
+        // tilt has faded out long before the rim is on screen.
+        if (view == null && radius < width + height) {
             for (ring in RIM_RINGS) {
                 val rimR = radius * ring
                 for (i in 0 until RIM_SAMPLES) {
                     val a = 2.0 * PI * i / RIM_SAMPLES
                     val px = cx + rimR * kotlin.math.cos(a).toFloat()
                     val py2 = cy + rimR * kotlin.math.sin(a).toFloat()
-                    if (px in 0f..width.toFloat() && py2 in 0f..height.toFloat()) hit(px, py2)
+                    if (px in 0f..width.toFloat() && py2 in 0f..height.toFloat()) hitFlat(px, py2, z)
                 }
             }
         }
         return out
+    }
+
+    /**
+     * The zoom whose tile pixels are at least as fine as the screen's, at
+     * the middle of the globe.
+     *
+     * Measured at the middle, where an orthographic globe is largest: a
+     * degree there is radius·π/180 pixels. The old choice measured the
+     * span across the screen's width instead, which on a whole-Earth view
+     * is the average over a hemisphere — so the middle of the planet, the
+     * part being looked at, was drawn from tiles a level and a half too
+     * coarse. That was the blur in the Blue Marble.
+     *
+     * Bundled levels, which cost nothing, are rounded up; live ones are
+     * rounded up unless within a third of a level of the one below.
+     */
+    fun zoomForRadius(radius: Float, latitude: Double, detail: Float): Int {
+        if (radius <= 0f) return MIN_TILE_ZOOM
+        val perScreen = 2.0 * PI * radius * detail / 256.0
+        val bundled = ln(perScreen) / ln(2.0)
+        if (kotlin.math.ceil(bundled) <= BUNDLED_MAX_ZOOM) {
+            return kotlin.math.ceil(bundled).toInt().coerceIn(MIN_TILE_ZOOM, MAX_TILE_ZOOM)
+        }
+        // Mercator is finer toward the poles by 1/cos(latitude).
+        val shrink = kotlin.math.max(cos(Math.toRadians(latitude.coerceIn(-85.0, 85.0))), 0.05)
+        val exact = ln(perScreen * shrink) / ln(2.0)
+        return kotlin.math.ceil(exact - LIVE_ROUND_DOWN).toInt()
+            .coerceIn(BUNDLED_MAX_ZOOM, MAX_TILE_ZOOM)
     }
 
     /**
@@ -282,6 +335,12 @@ internal object Tiles {
     const val BUNDLED_MAX_ZOOM = 5
 
     private const val GRID_PX = 48f
+
+    /** The most levels coarser the far distance of a tipped view may go. */
+    private const val MAX_DROP = 4
+
+    /** Within this of the level below, the level below is sharp enough. */
+    private const val LIVE_ROUND_DOWN = 0.33
     private const val EDGE_PX = 16f
     private const val RIM_SAMPLES = 360
     private val RIM_RINGS = floatArrayOf(0.999f, 0.995f, 0.985f, 0.96f, 0.92f)
@@ -340,7 +399,7 @@ internal object Tiles {
      * measured on a 1080 x 2340 phone needs fewer than this; the tile
      * memory holds 400, and bundled levels draw nothing beneath them.
      */
-    private const val MAX_BUNDLED_TILES = 360
+    private const val MAX_BUNDLED_TILES = 600
 
     /**
      * The live cap, scaled to the screen.

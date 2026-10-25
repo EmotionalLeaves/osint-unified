@@ -77,6 +77,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.zIndex
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
@@ -367,7 +368,7 @@ fun GodEyeViewScreen(
     // the rest of the way on its own.
     var globeCamera by rememberSaveable(
         saver = listSaver(
-            save = { listOf(it.value.lat, it.value.lon, it.value.zoom) },
+            save = { listOf(it.value.lat, it.value.lon, it.value.zoom, it.value.bearing, it.value.tilt) },
             restore = {
                 mutableStateOf(
                     GlobeCamera(
@@ -375,7 +376,9 @@ fun GodEyeViewScreen(
                         // build before this one holds Floats.
                         (it.getOrNull(0) as? Number)?.toDouble() ?: 20.0,
                         (it.getOrNull(1) as? Number)?.toDouble() ?: 0.0,
-                        (it.getOrNull(2) as? Number)?.toFloat() ?: 1f
+                        (it.getOrNull(2) as? Number)?.toFloat() ?: 1f,
+                        (it.getOrNull(3) as? Number)?.toFloat() ?: 0f,
+                        (it.getOrNull(4) as? Number)?.toFloat() ?: 0f
                     )
                 )
             }
@@ -459,7 +462,9 @@ fun GodEyeViewScreen(
             focus.second,
             GlobeHandoff.globeZoom(
                 GlobeHandoff.mapSpanDegrees(FOCUS_TILE_ZOOM, w, focus.first), w, h
-            )
+            ),
+            globeCamera.bearing,
+            globeCamera.tilt
         )
     }
     var flightFilter by rememberSaveable { mutableStateOf("ALL") }
@@ -1461,22 +1466,76 @@ fun GodEyeViewScreen(
                         }
                     )
                 }
-                // In and out of full screen. Over the globe, top right,
-                // where neither the attribution nor a tap's card sits.
-                IconButton(
-                    onClick = { fullScreen = !fullScreen },
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(8.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color(0xB30B0E11))
+                // The view's own controls, top right over the globe: full
+                // screen; a compass that says which way is up and puts north
+                // back; and 3D, which tips the camera back so buildings can
+                // be seen standing — the only way to see their height.
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    horizontalAlignment = Alignment.End,
+                    modifier = Modifier.align(Alignment.TopEnd).padding(8.dp)
                 ) {
-                    Icon(
-                        if (fullScreen) Icons.Filled.FullscreenExit
-                        else Icons.Filled.Fullscreen,
-                        contentDescription = if (fullScreen) "Leave full screen" else "Full screen",
-                        tint = Intel.Cyan
-                    )
+                    IconButton(
+                        onClick = { fullScreen = !fullScreen },
+                        modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(Color(0xB30B0E11))
+                    ) {
+                        Icon(
+                            if (fullScreen) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen,
+                            contentDescription = if (fullScreen) "Leave full screen" else "Full screen",
+                            tint = Intel.Cyan
+                        )
+                    }
+                    if (globeCamera.bearing != 0f || globeCamera.tilt != 0f) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color(0xB30B0E11))
+                                .clickable { globeCamera = globeCamera.copy(bearing = 0f, tilt = 0f) }
+                        ) {
+                            androidx.compose.foundation.Canvas(Modifier.size(26.dp)) {
+                                val turn = -globeCamera.bearing
+                                rotate(turn) {
+                                    val c = center
+                                    val r = size.minDimension / 2f
+                                    val north = androidx.compose.ui.graphics.Path().apply {
+                                        moveTo(c.x, c.y - r); lineTo(c.x - r * 0.35f, c.y); lineTo(c.x + r * 0.35f, c.y); close()
+                                    }
+                                    val south = androidx.compose.ui.graphics.Path().apply {
+                                        moveTo(c.x, c.y + r); lineTo(c.x - r * 0.35f, c.y); lineTo(c.x + r * 0.35f, c.y); close()
+                                    }
+                                    drawPath(north, Color(0xFFEA4335))
+                                    drawPath(south, Intel.TextMid)
+                                }
+                            }
+                        }
+                    }
+                    // Only where there is something to see: a street or two
+                    // across. Each tap tips further, then back to flat.
+                    if (zoomNow >= TILT_FROM_TILE_ZOOM || globeCamera.tilt > 0f) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (globeCamera.tilt > 0f) Intel.Cyan else Color(0xB30B0E11))
+                                .clickable {
+                                    val next = when {
+                                        globeCamera.tilt < 1f -> 45f
+                                        globeCamera.tilt < 50f -> ViewTilt.MAX_TILT
+                                        else -> 0f
+                                    }
+                                    globeCamera = globeCamera.copy(tilt = next)
+                                }
+                        ) {
+                            Text(
+                                if (globeCamera.tilt > 0f) "${globeCamera.tilt.roundToInt()}°" else "3D",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = if (globeCamera.tilt > 0f) Intel.Base else Intel.Cyan
+                            )
+                        }
+                    }
                 }
                 // What a tap offers, instead of what it used to do — at the
                 // spot that was tapped, pinned to it, and saying what is
@@ -2657,10 +2716,15 @@ private fun androidx.compose.foundation.layout.BoxScope.TapCard(
 ) {
     val density = LocalDensity.current
     val radius = globeRadius(globeW, globeH, camera.zoom)
-    val spot = if (globeW > 0 && globeH > 0) {
+    val flatSpot = if (globeW > 0 && globeH > 0) {
         Orthographic.project(lat, lon, camera.lat, camera.lon, radius, globeW / 2f, globeH / 2f)
     } else null
-    val onScreen = spot != null && spot.visible &&
+    // Through the turn and tilt, to where it is on the screen.
+    val screenSpot = FloatArray(2)
+    val inFront = flatSpot != null && flatSpot.visible &&
+        viewFor(globeW, globeH, camera).toScreen(flatSpot.x, flatSpot.y, screenSpot)
+    val spot = if (inFront) Offset(screenSpot[0], screenSpot[1]) else null
+    val onScreen = spot != null &&
         spot.x in 0f..globeW.toFloat() && spot.y in 0f..globeH.toFloat()
 
     // What is here, in words. Keyed on the spot, so the next tap asks again
@@ -2733,34 +2797,63 @@ private fun androidx.compose.foundation.layout.BoxScope.TapCard(
                 fontFamily = FontFamily.Monospace,
                 modifier = Modifier.padding(top = 4.dp)
             )
+            // Full-size touch targets. These were bare words, a few pixels
+            // tall, and a thumb aimed at DISMISS landed on the globe or —
+            // with the card at the bottom — on the ALL LAYERS button drawn
+            // over it.
             Row(
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-                modifier = Modifier.padding(top = 6.dp)
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(top = 2.dp)
             ) {
-                Text("WHAT'S HERE", style = MaterialTheme.typography.labelMedium, color = Intel.Cyan,
-                    modifier = Modifier.clickable(onClick = onWhatsHere))
-                Text("INVESTIGATE", style = MaterialTheme.typography.labelMedium, color = Intel.Amber,
-                    modifier = Modifier.clickable(onClick = onInvestigate))
-                Text("DISMISS", style = MaterialTheme.typography.labelMedium, color = Intel.TextMid,
-                    modifier = Modifier.clickable(onClick = onDismiss))
+                CardAction("WHAT'S HERE", Intel.Cyan, onWhatsHere)
+                CardAction("INVESTIGATE", Intel.Amber, onInvestigate)
+                CardAction("DISMISS", Intel.TextMid, onDismiss)
+            }
+        }
+    }
+
+    // The back gesture closes the card before it does anything else.
+    androidx.activity.compose.BackHandler(onBack = onDismiss)
+
+    // The card with a close button on its corner, above everything else
+    // in the view — the layer controls included.
+    val withClose: @Composable () -> Unit = {
+        Box {
+            content()
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(x = 10.dp, y = (-10).dp)
+                    .size(30.dp)
+                    .clip(RoundedCornerShape(15.dp))
+                    .background(Intel.Elevated)
+                    .border(1.5.dp, Intel.Cyan, RoundedCornerShape(15.dp))
+                    .clickable(onClick = onDismiss)
+            ) {
+                Text("✕", style = MaterialTheme.typography.labelMedium, color = Intel.TextHi)
             }
         }
     }
 
     if (!onScreen) {
-        Box(Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp)) { content() }
+        // Clear of the ALL LAYERS button along the bottom edge.
+        Box(Modifier.align(Alignment.BottomCenter).padding(bottom = 64.dp).zIndex(20f)) { withClose() }
         return
     }
 
     Box(
         modifier = Modifier
+            .zIndex(20f)
             .offset { androidx.compose.ui.unit.IntOffset(cardX.roundToInt(), cardY.roundToInt()) }
             .onSizeChanged { cardSize = it }
-    ) { content() }
+    ) { withClose() }
 
     // The pin, the ring and the tail, over the card so the tail's base can
     // cover the card's border where they join, as a speech bubble's does.
-    androidx.compose.foundation.Canvas(Modifier.matchParentSize()) {
+    // Draws only; touches go through it.
+    androidx.compose.foundation.Canvas(Modifier.matchParentSize().zIndex(21f)) {
         // The ping: a ring going out from the spot and fading.
         drawCircle(
             color = Color(0xFFEA4335).copy(alpha = 0.55f * (1f - pulse)),
@@ -2803,3 +2896,21 @@ private fun androidx.compose.foundation.layout.BoxScope.TapCard(
         drawCircle(Color(0xFF8E1410), headR * 0.36f, headC)
     }
 }
+
+/** One of the tap card's actions: a word, with a thumb-sized target around it. */
+@Composable
+private fun CardAction(label: String, colour: Color, onClick: () -> Unit) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .clickable(onClick = onClick)
+            .minimumInteractiveComponentSize()
+            .padding(horizontal = 6.dp)
+    ) {
+        Text(label, style = MaterialTheme.typography.labelMedium, color = colour)
+    }
+}
+
+/** From this tile zoom the 3D button is offered: a few streets across. */
+private const val TILT_FROM_TILE_ZOOM = 14.0

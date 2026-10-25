@@ -88,6 +88,18 @@ object Http {
      *  free service sees this app as a burst of traffic. */
     private const val MAX_PER_HOST = 4
 
+    /**
+     * Map-tile servers, which are built to be asked for dozens of tiles at
+     * once — a browser map does exactly that. Four at a time made the
+     * globe fill in a row at a time.
+     */
+    private val TILE_HOSTS = mapOf(
+        "server.arcgisonline.com" to 8,
+        "services.arcgisonline.com" to 8,
+        "gibs.earthdata.nasa.gov" to 8,
+        "tiles.openfreemap.org" to 6
+    )
+
     /** How long a request will wait for its turn before giving up. The
      *  call timeout would cut it off anyway; this fails with a reason. */
     private const val QUEUE_WAIT_SECONDS = 20L
@@ -289,7 +301,7 @@ object Http {
             // computeIfAbsent rather than getOrPut: two threads arriving
             // together would otherwise each make a semaphore, and the limit
             // this exists to impose would not be imposed.
-            val gate = gates.computeIfAbsent(host) { Semaphore(MAX_PER_HOST, true) }
+            val gate = gates.computeIfAbsent(host) { Semaphore(TILE_HOSTS[host] ?: MAX_PER_HOST, true) }
             if (!gate.tryAcquire(QUEUE_WAIT_SECONDS, TimeUnit.SECONDS)) {
                 throw IOException("Too many requests already queued for $host.")
             }

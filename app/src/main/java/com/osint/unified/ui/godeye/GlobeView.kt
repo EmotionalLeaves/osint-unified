@@ -192,7 +192,9 @@ fun GlobeView(
                     // reaches the map handoff, the stars and the area
                     // report before anything folds it back.
                     lon = wrapLon(from.lon + shortestTurn(from.lon, target.lon) * e),
-                    zoom = from.zoom + (target.zoom - from.zoom) * e
+                    zoom = from.zoom + (target.zoom - from.zoom) * e,
+                    bearing = from.bearing,
+                    tilt = from.tilt
                 )
             )
         }
@@ -413,21 +415,27 @@ fun GlobeView(
     val tileZoom = if (viewport.width > 0) {
         // Chosen for the quality setting's resolution, not the screen's:
         // QHD on a 1080p phone fetches a level finer and draws it down.
-        Tiles.zoomFor(tileSpan, (viewport.width * detail).toInt(), centreLat.toDouble())
+        Tiles.zoomForRadius(globeRadius(viewport.width, viewport.height, zoom), centreLat, detail)
     } else {
         0
     }
     // What is on screen, found by looking rather than estimated from a
     // rectangle — which missed the corners near the poles and drew them
     // black.
-    val tileRefs = remember(viewport, centreLat, centreLon, zoom, tileZoom) {
+    // The turn and tilt, for choosing tiles and for drawing the ground.
+    val view = remember(viewport, camera.bearing, camera.tilt, zoom) {
+        viewFor(viewport.width, viewport.height, camera)
+    }
+    val groundMatrix = remember(view) { android.graphics.Matrix().apply { setValues(view.matrix) } }
+    val tileRefs = remember(viewport, centreLat, centreLon, zoom, tileZoom, view) {
         if (tileZoom == 0) emptyList()
         else Tiles.visible(
             tileZoom, viewport.width, viewport.height,
             viewport.width / 2f, viewport.height / 2f,
             globeRadius(viewport.width, viewport.height, zoom),
             centreLat.toDouble(), centreLon.toDouble(),
-            detail
+            detail,
+            view
         )
     }
     val drawnZoom = tileRefs.firstOrNull()?.z ?: 0
@@ -447,7 +455,15 @@ fun GlobeView(
     // they cost nothing — and live ones only once the globe stops moving,
     // so ground under a thumb for a sixtieth of a second is not paid for.
     LaunchedEffect(baseRefs) { tiles.request(baseRefs) }
-    LaunchedEffect(tileRefs, drifting) { tiles.request(tileRefs, network = !drifting) }
+    // Fetched as soon as the view holds still for a moment, even mid-
+    // gesture — waiting for the finger to lift made every pan land on
+    // a blank view and then fill in. A view passed through in under a
+    // sixth of a second is still not paid for: this restarts on every
+    // change, so the wait only finishes when the view stops changing.
+    LaunchedEffect(tileRefs, drifting) {
+        if (drifting) kotlinx.coroutines.delay(DRIFT_FETCH_MS)
+        tiles.request(tileRefs, network = true)
+    }
 
     // Buildings standing up, at street level. Footprints and heights from
     // OpenStreetMap a zoom-14 tile at a time, downloaded once and kept.
@@ -459,7 +475,10 @@ fun GlobeView(
         if (!buildingsOn || drawnZoom < BUILDINGS_FROM_ZOOM) emptyList()
         else Tiles.ancestors(tileRefs, BuildingStore.ZOOM)
     }
-    LaunchedEffect(buildingRefs, drifting) { if (!drifting) buildingStore.request(buildingRefs) }
+    LaunchedEffect(buildingRefs, drifting) {
+        if (drifting) kotlinx.coroutines.delay(DRIFT_FETCH_MS)
+        buildingStore.request(buildingRefs)
+    }
 
     Canvas(
         modifier = modifier
@@ -490,8 +509,25 @@ fun GlobeView(
                 // a captured camera is the camera as it was when the
                 // screen opened — which made a drag snap back to the
                 // middle of the Atlantic on every frame.
-                detectTransformGestures { centroid, pan, gestureZoom, _ ->
+                detectTransformGestures { screenCentroid, screenPan, gestureZoom, rotation ->
                     val radius = globeRadius(size.width, size.height, live.zoom)
+                    // Through the turn and tilt: the finger is on the
+                    // screen, the arithmetic below is in the flat picture.
+                    val view = viewFor(size.width, size.height, live)
+                    val centroid: Offset
+                    val pan: Offset
+                    if (view.identity) {
+                        centroid = screenCentroid
+                        pan = screenPan
+                    } else {
+                        val now = FloatArray(2)
+                        val before = FloatArray(2)
+                        if (!view.toFlat(screenCentroid.x, screenCentroid.y, now) ||
+                            !view.toFlat(screenCentroid.x - screenPan.x, screenCentroid.y - screenPan.y, before)
+                        ) return@detectTransformGestures
+                        centroid = Offset(now[0], now[1])
+                        pan = Offset(now[0] - before[0], now[1] - before[1])
+                    }
                     // A drag turns the globe by the angle it subtends,
                     // so the point under the thumb stays under the thumb
                     // — dragging by a fixed number of degrees per pixel
@@ -509,7 +545,10 @@ fun GlobeView(
                     val dragged = GlobeCamera(
                         lat = (live.lat + pan.y * perLat).coerceIn(-89.0, 89.0),
                         lon = wrapLon(live.lon - pan.x * perLon),
-                        zoom = zoomed
+                        zoom = zoomed,
+                        // A two-finger twist turns the view with the fingers.
+                        bearing = ((live.bearing + rotation) % 360f + 360f) % 360f,
+                        tilt = live.tilt
                     )
                     // And a pinch zooms about the fingers rather than
                     // about the middle of the screen, so the thing being
@@ -542,7 +581,8 @@ fun GlobeView(
                     // The gesture everybody tries first on a globe.
                     // Without it, closing in means pinching with two
                     // thumbs on a phone held in one hand.
-                    onDoubleTap = { tap ->
+                    onDoubleTap = twice@{ screenTap ->
+                        val tap = flatOf(screenTap, size.width, size.height, live) ?: return@twice
                         val radius = globeRadius(size.width, size.height, live.zoom)
                         val centre = Offset(size.width / 2f, size.height / 2f)
                         Orthographic.unproject(
@@ -555,11 +595,14 @@ fun GlobeView(
                                 lat = lat.coerceIn(-89.0, 89.0),
                                 lon = lon,
                                 zoom = (live.zoom * DOUBLE_TAP_ZOOM)
-                                    .coerceIn(MIN_ZOOM, MAX_ZOOM)
+                                    .coerceIn(MIN_ZOOM, MAX_ZOOM),
+                                bearing = live.bearing,
+                                tilt = live.tilt
                             )
                         }
                     },
-                    onTap = { tap ->
+                    onTap = once@{ screenTap ->
+                        val tap = flatOf(screenTap, size.width, size.height, live) ?: return@once
                         val radius = globeRadius(size.width, size.height, live.zoom)
                         val centre = Offset(size.width / 2f, size.height / 2f)
                         // Projected here rather than remembered from the
@@ -580,7 +623,8 @@ fun GlobeView(
                             )?.let { (lat, lon) -> onPress(lat, lon) }
                         }
                     },
-                    onLongPress = { tap ->
+                    onLongPress = held@{ screenTap ->
+                        val tap = flatOf(screenTap, size.width, size.height, live) ?: return@held
                         val radius = globeRadius(size.width, size.height, live.zoom)
                         val centre = Offset(size.width / 2f, size.height / 2f)
                         Orthographic.unproject(
@@ -628,6 +672,11 @@ fun GlobeView(
         // with the screen, so the sphere reads as an object in a place
         // instead of a disc on a background.
         drawStars(size.width, size.height)
+
+        // From here the ground is drawn in the flat picture, and the
+        // canvas turns and tips it onto the screen.
+        val turned = !view.identity
+        if (turned) drawIntoCanvas { it.nativeCanvas.save(); it.nativeCanvas.concat(groundMatrix) }
 
         // Everything on the sphere is drawn at the camera the picture
         // under it was rendered at, not at the live one.
@@ -711,9 +760,12 @@ fun GlobeView(
             )
             drawTerminator(terminator, cx, cy, radius, lat0, lon0)
         }
-        drawTiles(tiles, baseRefs, cx, cy, radius, lat0, lon0)
-        drawTiles(tiles, parentRefs, cx, cy, radius, lat0, lon0)
-        drawTiles(tiles, tileRefs, cx, cy, radius, lat0, lon0)
+        // Finer meshes when tipped: a perspective is not linear across a
+        // tile, and two triangles per tile would bend straight streets.
+        val mesh = if (turned && view.tilt > 0f) TILTED_MESH else 1
+        drawTiles(tiles, baseRefs, cx, cy, radius, lat0, lon0, mesh)
+        drawTiles(tiles, parentRefs, cx, cy, radius, lat0, lon0, mesh)
+        drawTiles(tiles, tileRefs, cx, cy, radius, lat0, lon0, mesh)
         // The sun, over the tiles. Full strength with the planet in view,
         // gone by street level, where a low sun dimming a photograph
         // reads as a bad photograph.
@@ -738,7 +790,10 @@ fun GlobeView(
             )
         }
         if (buildingRefs.isNotEmpty()) {
-            drawBuildings(buildingStore, buildingRefs, cx, cy, radius, lat0, lon0, drifting)
+            // In screen space, through the camera with their height.
+            if (turned) drawIntoCanvas { it.nativeCanvas.restore() }
+            drawBuildings(buildingStore, buildingRefs, cx, cy, radius, lat0, lon0, drifting, view)
+            if (turned) drawIntoCanvas { it.nativeCanvas.save(); it.nativeCanvas.concat(groundMatrix) }
         }
         // Names only when the camera has settled. Text is the most
         // expensive thing on this canvas and the least useful while
@@ -782,6 +837,7 @@ fun GlobeView(
         // of a sphere you are standing on is not on the screen, and
         // a ring drawn at forty million pixels is nowhere near it.
         if (!tilesCoverIt) drawLimb(cx, cy, radius, textured)
+        if (turned) drawIntoCanvas { it.nativeCanvas.restore() }
         // Esri's terms require the credit wherever the imagery is
         // shown. It used to be an osmdroid overlay on the other
         // view; there is no other view, so it is drawn here, and
@@ -862,7 +918,22 @@ private val IDLE_REQUEST = RenderRequest(0.0, 0.0, 0, 0.0, 0.0, false)
  * A value held by the screen, so the flat map can be handed the same
  * place rather than starting over in the middle of the Atlantic.
  */
-data class GlobeCamera(val lat: Double, val lon: Double, val zoom: Float)
+data class GlobeCamera(
+    val lat: Double,
+    val lon: Double,
+    val zoom: Float,
+    /** Degrees the view is turned, clockwise. Twist with two fingers. */
+    val bearing: Float = 0f,
+    /** Degrees the view is tipped back from straight down; see [ViewTilt]. */
+    val tilt: Float = 0f
+)
+
+/** The turn and tilt this camera puts between the flat picture and a screen this size. */
+internal fun viewFor(width: Int, height: Int, camera: GlobeCamera): ViewTilt.View =
+    ViewTilt.of(
+        width, height, camera.bearing,
+        ViewTilt.effective(camera.tilt, GlobeHandoff.spanDegrees(width, height, camera.zoom))
+    )
 // Double, not Float, for the position. A Float longitude near 100° moves
 // in steps of 7.6e-6 degrees, which at the deepest zoom is about three
 // pixels — so a slow one-pixel drag rounded to nothing, a hundred times
@@ -920,7 +991,8 @@ private fun DrawScope.drawTiles(
     cy: Float,
     radius: Float,
     lat0: Double,
-    lon0: Double
+    lon0: Double,
+    minMesh: Int = 1
 ) {
     if (refs.isEmpty()) return
     val paint = TILE_PAINT
@@ -935,7 +1007,7 @@ private fun DrawScope.drawTiles(
         for (index in refs.indices.reversed()) {
             val ref = refs[index]
             val bitmap = store.peek(ref) ?: continue
-            val n = meshFor(ref.z)
+            val n = maxOf(meshFor(ref.z), minMesh)
             var front = 0
             var k = 0
             for (j in 0..n) {
@@ -983,6 +1055,12 @@ private fun meshFor(z: Int): Int = when {
 
 private const val MAX_MESH = 16
 
+/** How long the view must hold still, mid-gesture, before its tiles are fetched. */
+private const val DRIFT_FETCH_MS = 160L
+
+/** The least a tile is divided into while the view is tipped. */
+private const val TILTED_MESH = 6
+
 /**
  * Buildings, stood up.
  *
@@ -1006,87 +1084,121 @@ private fun DrawScope.drawBuildings(
     radius: Float,
     lat0: Double,
     lon0: Double,
-    drifting: Boolean
+    drifting: Boolean,
+    view: ViewTilt.View
 ) {
     val pxPerDeg = radius * (Math.PI / 180.0)
     val cosLat0 = kotlin.math.cos(Math.toRadians(lat0))
-    val pxPerMetre = radius / EARTH_RADIUS_M
+    val pxPerMetre = (radius / EARTH_RADIUS_M).toFloat()
     val w = size.width
     val h = size.height
-    // Gathered first so they can be ordered, and capped nearest first.
-    val shown = ArrayList<Pair<VectorTile.Building, FloatArray>>()
+    // Tipped back, buildings go through the camera and their height is
+    // simply there. Looking straight down it would not be, so then they
+    // keep the oblique lean.
+    val true3d = view.tilt > 0.5f
+    val scratch = FloatArray(2)
+    // Footprint in the flat picture, then to the screen at a height.
+    fun toScreen(fx: Float, fy: Float, metres: Float, out: FloatArray, at: Int): Boolean {
+        val hp = metres * pxPerMetre
+        if (true3d) {
+            if (!view.project(fx, fy, hp, scratch)) return false
+            out[at] = scratch[0]; out[at + 1] = scratch[1]
+            return true
+        }
+        if (!view.toScreen(fx, fy, scratch)) return false
+        out[at] = scratch[0] + hp * BUILDING_SKEW
+        out[at + 1] = scratch[1] - hp * BUILDING_TILT
+        return true
+    }
+
+    class Shown(val b: VectorTile.Building, val base: FloatArray, val roof: FloatArray, val order: Float, val near: Float)
+    val shown = ArrayList<Shown>()
     for (ref in refs) {
         val list = store.peek(ref) ?: continue
         for (b in list) {
             if (b.flat || b.points < 3) continue
-            val lift = (b.height * pxPerMetre * BUILDING_TILT).toFloat()
-            val pts = FloatArray(b.points * 2)
+            val n = b.points
+            val base = FloatArray(n * 2)
+            val roof = FloatArray(n * 2)
+            var ok = true
             var minX = Float.MAX_VALUE; var maxX = -Float.MAX_VALUE
             var minY = Float.MAX_VALUE; var maxY = -Float.MAX_VALUE
-            for (i in 0 until b.points) {
+            var fx = 0f; var fy = 0f
+            for (i in 0 until n) {
                 val x = (cx + (b.ring[i * 2 + 1] - lon0) * cosLat0 * pxPerDeg).toFloat()
                 val y = (cy - (b.ring[i * 2] - lat0) * pxPerDeg).toFloat()
-                pts[i * 2] = x; pts[i * 2 + 1] = y
-                if (x < minX) minX = x; if (x > maxX) maxX = x
-                if (y < minY) minY = y; if (y > maxY) maxY = y
+                fx += x; fy += y
+                if (!toScreen(x, y, b.minHeight, base, i * 2) || !toScreen(x, y, b.height, roof, i * 2)) {
+                    ok = false; break
+                }
+                for (p in arrayOf(base, roof)) {
+                    val sx = p[i * 2]; val sy = p[i * 2 + 1]
+                    if (sx < minX) minX = sx; if (sx > maxX) maxX = sx
+                    if (sy < minY) minY = sy; if (sy > maxY) maxY = sy
+                }
             }
-            if (maxX < 0 || minX > w || maxY < 0 || minY - lift > h) continue
-            shown.add(b to pts)
+            if (!ok) continue
+            if (maxX < 0 || minX > w || maxY < 0 || minY > h) continue
+            fx /= n; fy /= n
+            // Far first. Tipped, that is distance from the camera; looking
+            // down with the lean, it is how high up the screen.
+            val order = if (true3d) -view.depth(fx, fy) else maxY
+            val dx = (minX + maxX) / 2 - cx; val dy = (minY + maxY) / 2 - cy
+            shown.add(Shown(b, base, roof, order, dx * dx + dy * dy))
         }
     }
     if (shown.isEmpty()) return
     val cap = if (drifting) MAX_BUILDINGS_MOVING else MAX_BUILDINGS
-    val drawn = if (shown.size <= cap) shown else shown.sortedBy { (_, p) ->
-        val dx = p[0] - cx; val dy = p[1] - cy; dx * dx + dy * dy
-    }.take(cap)
-    // Back to front: the roofs lean up the screen, so what is higher on
-    // the screen is further away.
-    val ordered = drawn.sortedBy { (_, p) -> var m = -Float.MAX_VALUE; var i = 1; while (i < p.size) { if (p[i] > m) m = p[i]; i += 2 }; m }
+    val drawn = if (shown.size <= cap) shown else shown.sortedBy { it.near }.take(cap)
+    val ordered = drawn.sortedBy { it.order }
     val path = android.graphics.Path()
     val paint = BUILDING_PAINT
     drawIntoCanvas { canvas ->
         val nc = canvas.nativeCanvas
-        for ((b, p) in ordered) {
+        for (s in ordered) {
+            val b = s.b
             val n = b.points
-            val top = (b.height * pxPerMetre).toFloat()
-            val bottom = (b.minHeight * pxPerMetre).toFloat()
-            val topDx = top * BUILDING_SKEW; val topDy = -top * BUILDING_TILT
-            val botDx = bottom * BUILDING_SKEW; val botDy = -bottom * BUILDING_TILT
-            val base = b.colour ?: BUILDING_DEFAULT
-            // Which way the ring winds decides which side of an edge is out.
-            var area = 0f
+            val base = s.base
+            val roof = s.roof
+            val colour = b.colour ?: BUILDING_DEFAULT
+            // The footprint's winding on the screen decides which walls
+            // face the camera: a wall's own outline winds the same way
+            // when it is seen from the front.
+            var ring = 0f
             for (i in 0 until n) {
                 val j = (i + 1) % n
-                area += p[i * 2] * p[j * 2 + 1] - p[j * 2] * p[i * 2 + 1]
+                ring += base[i * 2] * base[j * 2 + 1] - base[j * 2] * base[i * 2 + 1]
             }
-            val sign = if (area >= 0f) 1f else -1f
-            if (!drifting && top - bottom > 0.5f) {
+            if (!drifting && b.height - b.minHeight > 0.5f) {
                 for (i in 0 until n) {
                     val j = (i + 1) % n
-                    val ax = p[i * 2]; val ay = p[i * 2 + 1]
-                    val bx = p[j * 2]; val by = p[j * 2 + 1]
+                    val ax = base[i * 2]; val ay = base[i * 2 + 1]
+                    val bx = base[j * 2]; val by = base[j * 2 + 1]
+                    val rbx = roof[j * 2]; val rby = roof[j * 2 + 1]
+                    val rax = roof[i * 2]; val ray = roof[i * 2 + 1]
+                    val quad = (ax * by - bx * ay) + (bx * rby - rbx * by) +
+                        (rbx * ray - rax * rby) + (rax * ay - ax * ray)
+                    if (quad * ring <= 0f) continue
+                    // Lit from the upper left of the screen: a wall whose
+                    // edge runs down-right is facing the light.
                     val ex = bx - ax; val ey = by - ay
-                    // Outward normal, then: is this wall facing the viewer,
-                    // who looks from down-screen of the lean?
-                    val nx = sign * ey; val ny = -sign * ex
-                    if (nx * -BUILDING_SKEW + ny * BUILDING_TILT <= 0f) continue
-                    val len = kotlin.math.sqrt(nx * nx + ny * ny).coerceAtLeast(1e-3f)
-                    val light = 0.55f + 0.25f * (-nx / len) + 0.1f * (ny / len)
-                    paint.color = shade(base, light.coerceIn(0.35f, 0.95f))
+                    val len = kotlin.math.sqrt(ex * ex + ey * ey).coerceAtLeast(1e-3f)
+                    val light = 0.62f + 0.22f * ((ey - ex) / len) * (if (ring > 0) 1f else -1f) * 0.7071f
+                    paint.color = shade(colour, light.coerceIn(0.38f, 0.92f))
                     path.rewind()
-                    path.moveTo(ax + botDx, ay + botDy)
-                    path.lineTo(bx + botDx, by + botDy)
-                    path.lineTo(bx + topDx, by + topDy)
-                    path.lineTo(ax + topDx, ay + topDy)
+                    path.moveTo(ax, ay)
+                    path.lineTo(bx, by)
+                    path.lineTo(rbx, rby)
+                    path.lineTo(rax, ray)
                     path.close()
                     nc.drawPath(path, paint)
                 }
             }
             path.rewind()
-            path.moveTo(p[0] + topDx, p[1] + topDy)
-            for (i in 1 until n) path.lineTo(p[i * 2] + topDx, p[i * 2 + 1] + topDy)
+            path.moveTo(roof[0], roof[1])
+            for (i in 1 until n) path.lineTo(roof[i * 2], roof[i * 2 + 1])
             path.close()
-            paint.color = shade(base, 1f)
+            paint.color = shade(colour, 1f)
             nc.drawPath(path, paint)
             if (!drifting) nc.drawPath(path, BUILDING_EDGE)
         }
@@ -1181,6 +1293,14 @@ private fun nearest(
         }
     }
     return best
+}
+
+/** A screen point in the flat picture, or null above the horizon. */
+private fun flatOf(screen: Offset, width: Int, height: Int, camera: GlobeCamera): Offset? {
+    val view = viewFor(width, height, camera)
+    if (view.identity) return screen
+    val out = FloatArray(2)
+    return if (view.toFlat(screen.x, screen.y, out)) Offset(out[0], out[1]) else null
 }
 
 /**
