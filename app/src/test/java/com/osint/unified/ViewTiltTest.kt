@@ -76,9 +76,10 @@ class ViewTiltTest {
 
     @Test
     fun theTiltIsForStreetsNotPlanets() {
-        assertEquals(0f, ViewTilt.effective(45f, 10.0), 0f)
+        assertEquals(0f, ViewTilt.effective(45f, 90.0), 0f)
         assertEquals(45f, ViewTilt.effective(45f, 0.1), 0f)
+        assertEquals(45f, ViewTilt.effective(45f, 10.0), 0f)
         assertEquals(ViewTilt.MAX_TILT, ViewTilt.effective(80f, 0.01), 0f)
-        assertFalse(ViewTilt.effective(45f, 0.6) in listOf(0f, 45f))
+        assertFalse(ViewTilt.effective(45f, 30.0) in listOf(0f, 45f))
     }
 }

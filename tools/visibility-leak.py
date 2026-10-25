@@ -162,6 +162,31 @@ def scopes(code: str) -> list[tuple[int, int, bool, bool]]:
     return out
 
 
+def hidden_headers(code: str) -> list[tuple[int, int]]:
+    """The constructor parentheses of private and internal classes.
+
+    `private data class Vectors(val fine: LineSet?)` declares a property
+    in parentheses, not in braces, so the brace walk never saw that it
+    belongs to a private class — and Kotlin is content for a private
+    class to name an internal type.
+    """
+    spans: list[tuple[int, int]] = []
+    for m in re.finditer(
+        r"^[ \t]*(?:private|internal)\s+(?:[a-z]+\s+)*class\s+[A-Za-z_][A-Za-z0-9_]*\s*(?:<[^>]*>)?\s*\(",
+        code, re.M
+    ):
+        depth = 0
+        for i in range(m.end() - 1, len(code)):
+            if code[i] == "(":
+                depth += 1
+            elif code[i] == ")":
+                depth -= 1
+                if depth == 0:
+                    spans.append((m.end(), i))
+                    break
+    return spans
+
+
 def enclosing(blocks: list[tuple[int, int, bool, bool]], pos: int):
     return [b for b in blocks if b[0] < pos < b[1]]
 
@@ -235,6 +260,7 @@ def main() -> int:
         code = without_prose(raw)
         raw_lines = raw.split("\n")
         blocks = scopes(code)
+        headers = hidden_headers(code)
         for m in DECL.finditer(code):
             if HIDDEN.search(m.group(2)):
                 continue
@@ -244,6 +270,8 @@ def main() -> int:
             if any(not is_type for _, _, is_type, _ in around):
                 continue
             if any(hidden for _, _, _, hidden in around):
+                continue
+            if any(a <= m.start() <= b for a, b in headers):
                 continue
             line = code.count("\n", 0, m.start()) + 1
             if line >= 2 and "visibility-leak:" in raw_lines[line - 2]:

@@ -164,6 +164,20 @@ jobs:
           fi
           test -s "$A/borders.json" || echo "::warning title=globe::borders.json is missing; the globe will show no borders"
 
+          # The same borders in detail for closer in, and the states and
+          # provinces inside countries. Natural Earth's 1:10m sets, packed
+          # into binary (see make-lines-bin.py) because as JSON they are
+          # too big for a phone to read quickly.
+          NE=https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson
+          for pair in "ne_10m_admin_0_boundary_lines_land:borders-10m.bin" "ne_10m_admin_1_states_provinces_lines:states.bin"; do
+            src=${pair%%:*}; dst=${pair##*:}
+            curl -sSL --retry 3 "$NE/$src.geojson" -o "/tmp/$src.geojson" || true
+            if [ -s "/tmp/$src.geojson" ]; then
+              python3 .github/make-lines-bin.py "/tmp/$src.geojson" "$A/$dst" || true
+            fi
+            test -s "$A/$dst" || echo "::warning title=globe::$dst is missing; detailed borders will not be drawn"
+          done
+
           # A real Earth to put on the globe.
           #
           # The sphere has been drawing coastline outlines on a gradient

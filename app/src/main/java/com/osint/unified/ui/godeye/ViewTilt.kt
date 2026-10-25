@@ -33,15 +33,15 @@ internal object ViewTilt {
     const val MAX_TILT = 60f
 
     /** Tilt fades in from this span of view down to [TILT_FULL_SPAN]. */
-    const val TILT_FROM_SPAN = 1.0
-    const val TILT_FULL_SPAN = 0.25
+    const val TILT_FROM_SPAN = 45.0
+    const val TILT_FULL_SPAN = 15.0
 
     /**
      * How much of the asked-for tilt applies at this span of view.
      *
      * A tipped camera is for streets. Tipping the whole planet just
-     * squashes it, so the tilt fades out as the view widens and is gone
-     * by about a hundred kilometres across.
+     * squashes it, so the tilt fades out as the view widens past a
+     * region and is gone by the time a continent is in view.
      */
     fun effective(tilt: Float, spanDegrees: Double): Float {
         if (tilt <= 0f) return 0f

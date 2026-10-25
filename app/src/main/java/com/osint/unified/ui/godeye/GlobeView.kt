@@ -1,5 +1,13 @@
 package com.osint.unified.ui.godeye
 
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateCentroid
+import androidx.compose.foundation.gestures.calculateCentroidSize
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateRotation
+import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -92,7 +100,9 @@ fun GlobeView(
             Vectors(
                 Coastlines.rings(context),
                 Coastlines.borders(context),
-                Places.all(context)
+                Places.all(context),
+                LineSet.asset(context, "borders-10m.bin"),
+                LineSet.asset(context, "states.bin")
             )
         }
     }
@@ -131,14 +141,13 @@ fun GlobeView(
     // Both fall through to exactly what was there before.
     // The sunlight over the tiles: same geometry, same sun, darkening and
     // city lights only. Null below Android 13, where the tiles go unlit.
-    val shade = remember(textured) {
-        if (!textured) null
-        else GlobeShader.bindShade(EarthTexture.nightMap())?.let { GpuSphere(it, ShaderBrush(it)) }
-    }
+    // The sunlight overlay that went over the tiles, with its city
+    // lights: gone with the night side.
+    val shade: GpuSphere? = null
     val gpuSphere = remember(textured) {
         if (!textured) return@remember null
         val day = EarthTexture.dayMap() ?: return@remember null
-        GlobeShader.bind(day, EarthTexture.nightMap())
+        GlobeShader.bind(day, null)
             ?.let { GpuSphere(it, ShaderBrush(it)) }
     }
 
@@ -240,20 +249,12 @@ fun GlobeView(
 
     // The sun moves a degree every four minutes, so this is recomputed
     // on that scale rather than per frame.
-    var sun by remember { mutableStateOf(Orthographic.subsolar(System.currentTimeMillis())) }
-    val sunOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
-    // And only while the screen is there to show it. The composition
-    // survives the Activity stopping, so this went on waking every
-    // four minutes to move a terminator nobody could see.
-    LaunchedEffect(sunOwner) {
-        sunOwner.lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
-            while (true) {
-                sun = Orthographic.subsolar(System.currentTimeMillis())
-                kotlinx.coroutines.delay(4 * 60_000L)
-            }
-        }
-    }
-    val terminator = remember(sun) { Orthographic.terminator(sun.first, sun.second) }
+    // No night side. The globe used to be lit by the real sun — half of
+    // it dark, city lights, a terminator line — and from far out that
+    // was half a planet you could not see. It is lit from the viewer
+    // now: whatever is facing you is in daylight. The sphere keeps its
+    // roundness from the gentle fall-off toward the rim.
+    val sun = centreLat.toDouble() to centreLon.toDouble()
 
     // True while a thumb is on the glass. The sphere is rendered at a
     // third of its size during a drag and scaled up: a hundred
@@ -471,8 +472,12 @@ fun GlobeView(
     DisposableEffect(buildingStore) { onDispose { buildingStore.clear() } }
     val buildingVersion by buildingStore.version.collectAsStateWithLifecycle()
     val buildingsOn = remember(context) { com.osint.unified.data.AppSettings(context).buildings3d }
-    val buildingRefs = remember(tileRefs, buildingsOn) {
-        if (!buildingsOn || drawnZoom < BUILDINGS_FROM_ZOOM) emptyList()
+    // Only once the view is tipped. Looking straight down a building is
+    // its roof and the photograph already shows the roof; standing them
+    // up is what changing the angle is for. Not fetched until then, either.
+    val tipped = view.tilt > 0.5f
+    val buildingRefs = remember(tileRefs, buildingsOn, tipped) {
+        if (!buildingsOn || !tipped || drawnZoom < BUILDINGS_FROM_ZOOM) emptyList()
         else Tiles.ancestors(tileRefs, BuildingStore.ZOOM)
     }
     LaunchedEffect(buildingRefs, drifting) {
@@ -509,7 +514,14 @@ fun GlobeView(
                 // a captured camera is the camera as it was when the
                 // screen opened — which made a drag snap back to the
                 // middle of the Atlantic on every frame.
-                detectTransformGestures { screenCentroid, screenPan, gestureZoom, rotation ->
+                detectGlobeGestures(
+                    // Two fingers dragged up tip the view back, as in a
+                    // maps app; down brings it back toward straight down.
+                    onTilt = { dy ->
+                        emit(live.copy(tilt = (live.tilt - dy * TILT_PER_PX).coerceIn(0f, ViewTilt.MAX_TILT)))
+                        gestures++
+                    }
+                ) { screenCentroid, screenPan, gestureZoom, rotation ->
                     val radius = globeRadius(size.width, size.height, live.zoom)
                     // Through the turn and tilt: the finger is on the
                     // screen, the arithmetic below is in the flat picture.
@@ -524,7 +536,7 @@ fun GlobeView(
                         val before = FloatArray(2)
                         if (!view.toFlat(screenCentroid.x, screenCentroid.y, now) ||
                             !view.toFlat(screenCentroid.x - screenPan.x, screenCentroid.y - screenPan.y, before)
-                        ) return@detectTransformGestures
+                        ) return@detectGlobeGestures
                         centroid = Offset(now[0], now[1])
                         pan = Offset(now[0] - before[0], now[1] - before[1])
                     }
@@ -758,7 +770,6 @@ fun GlobeView(
                 borders, cx, cy, radius, lat0, lon0,
                 BORDER_OVER_OUTLINE, stride = if (drifting) 2 else 1
             )
-            drawTerminator(terminator, cx, cy, radius, lat0, lon0)
         }
         // Finer meshes when tipped: a perspective is not linear across a
         // tile, and two triangles per tile would bend straight streets.
@@ -778,12 +789,25 @@ fun GlobeView(
             )
             drawRect(brush = shade.brush, size = size)
         }
-        // Borders over the imagery while there is a country's worth or
-        // more in view; closer than that the photograph is the map.
-        if (tileSpan > BORDERS_BELOW_SPAN) {
-            if (tileSpan > GRATICULE_BELOW_SPAN) {
-                drawGraticule(drawScratch, cx, cy, radius, lat0, lon0, faint = true)
+        // Borders at every zoom. Photography has none, and knowing which
+        // country — which state — you are looking at is the point of the
+        // map. The coarse world set far out; the detailed one closer in,
+        // with states and provinces; each with a dark edge so it reads
+        // over desert and snow alike.
+        if (tileSpan > GRATICULE_BELOW_SPAN) {
+            drawGraticule(drawScratch, cx, cy, radius, lat0, lon0, faint = true)
+        }
+        val reach = GlobeHandoff.visibleRadiusDegrees(size.width.toInt(), size.height.toInt(), zoom)
+            .let { if (turned) it * 4 else it }
+        val fine = vectors.bordersFine
+        if (tileSpan <= STATES_BELOW_SPAN) {
+            vectors.states?.let {
+                drawLineSet(it, cx, cy, radius, lat0, lon0, reach, STATE_LINE, STATE_HALO, 1.2f, drifting)
             }
+        }
+        if (fine != null && tileSpan <= FINE_BORDERS_BELOW_SPAN) {
+            drawLineSet(fine, cx, cy, radius, lat0, lon0, reach, BORDER_LINE, BORDER_HALO, 2f, drifting)
+        } else {
             drawLines(
                 borders, cx, cy, radius, lat0, lon0,
                 BORDER_OVER_IMAGERY, stride = if (drifting) 2 else 1
@@ -877,7 +901,11 @@ fun GlobeView(
 private data class Vectors(
     val rings: List<DoubleArray>,
     val borders: List<DoubleArray>,
-    val places: List<Places.Place>
+    val places: List<Places.Place>,
+    /** Country borders in detail, for closer in. */
+    val bordersFine: LineSet? = null,
+    /** States and provinces. */
+    val states: LineSet? = null
 )
 
 private val EMPTY_VECTORS = Vectors(emptyList(), emptyList(), emptyList())
@@ -1252,8 +1280,16 @@ private const val SHADE_FULL_SPAN = 40.0
 /** …and gone by this much, where the photograph should just be clear. */
 private const val SHADE_GONE_SPAN = 4.0
 
-/** Country borders drawn over the imagery while more than this is in view. */
-private const val BORDERS_BELOW_SPAN = 3.0
+/** Below this span the detailed country borders replace the world set. */
+private const val FINE_BORDERS_BELOW_SPAN = 40.0
+
+/** States and provinces from this span in: a large country across. */
+private const val STATES_BELOW_SPAN = 30.0
+
+private val BORDER_LINE = Color(0xE6FFE9A8)
+private val BORDER_HALO = Color(0x99000000)
+private val STATE_LINE = Color(0xB3FFFFFF)
+private val STATE_HALO = Color(0x66000000)
 
 /** And the grid of latitude and longitude while more than this is. */
 private const val GRATICULE_BELOW_SPAN = 30.0
@@ -1294,6 +1330,75 @@ private fun nearest(
     }
     return best
 }
+
+/**
+ * Pan, pinch, twist — and two fingers dragged up or down to tilt.
+ *
+ * The stock transform detector reports a two-finger vertical drag as a
+ * pan, so tilting had no gesture at all. This decides once, as the
+ * fingers pass the touch slop, which of the two the gesture is: both
+ * fingers moving together, mostly vertically, neither pinching nor
+ * turning, is a tilt; anything else is the usual pan, zoom and rotate.
+ * Rotation waits for a deliberate twist so a pinch does not turn the map.
+ */
+private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.detectGlobeGestures(
+    onTilt: (Float) -> Unit,
+    onTransform: (centroid: Offset, pan: Offset, zoom: Float, rotation: Float) -> Unit
+) {
+    awaitEachGesture {
+        var zoom = 1f
+        var rotation = 0f
+        var pan = Offset.Zero
+        var pastSlop = false
+        var tilting = false
+        var turning = false
+        val slop = viewConfiguration.touchSlop
+        awaitFirstDown(requireUnconsumed = false)
+        do {
+            val event = awaitPointerEvent()
+            val cancelled = event.changes.any { it.isConsumed }
+            if (!cancelled) {
+                val zoomChange = event.calculateZoom()
+                val rotationChange = event.calculateRotation()
+                val panChange = event.calculatePan()
+                val fingers = event.changes.count { it.pressed }
+                rotation += rotationChange
+                val spread = event.calculateCentroidSize(useCurrent = false)
+                if (!pastSlop) {
+                    zoom *= zoomChange
+                    pan += panChange
+                    val zoomMotion = kotlin.math.abs(1 - zoom) * spread
+                    val turnMotion = kotlin.math.abs(rotation * Math.PI.toFloat() * spread / 180f)
+                    if (zoomMotion > slop || turnMotion > slop || pan.getDistance() > slop) {
+                        pastSlop = true
+                        tilting = fingers >= 2 &&
+                            kotlin.math.abs(pan.y) > kotlin.math.abs(pan.x) * 1.5f &&
+                            zoomMotion < slop && turnMotion < slop
+                    }
+                }
+                if (pastSlop) {
+                    if (tilting) {
+                        if (fingers >= 2 && panChange.y != 0f) onTilt(panChange.y)
+                    } else {
+                        if (!turning && kotlin.math.abs(rotation) > TURN_THRESHOLD_DEG) turning = true
+                        val turn = if (turning) rotationChange else 0f
+                        val centroid = event.calculateCentroid(useCurrent = false)
+                        if (zoomChange != 1f || panChange != Offset.Zero || turn != 0f) {
+                            onTransform(centroid, panChange, zoomChange, turn)
+                        }
+                    }
+                    event.changes.forEach { if (it.positionChanged()) it.consume() }
+                }
+            }
+        } while (!cancelled && event.changes.any { it.pressed })
+    }
+}
+
+/** Degrees of tilt per pixel of two-finger drag. */
+private const val TILT_PER_PX = 0.18f
+
+/** A twist must turn this far before the view turns with it. */
+private const val TURN_THRESHOLD_DEG = 12f
 
 /** A screen point in the flat picture, or null above the horizon. */
 private fun flatOf(screen: Offset, width: Int, height: Int, camera: GlobeCamera): Offset? {
@@ -1644,6 +1749,73 @@ private fun DrawScope.drawLines(
         }
     }
     drawPath(path, colour, style = Stroke(width = 1f))
+}
+
+/**
+ * One of the detailed line sets, only the lines near the view.
+ *
+ * Each line's box is tested against a circle of [reachDeg] around the
+ * centre before any of its points are projected, so a view of one state
+ * projects that state's lines and not the planet's. Drawn twice, a dark
+ * halo under a light line.
+ */
+private fun DrawScope.drawLineSet(
+    set: LineSet,
+    cx: Float, cy: Float, r: Float,
+    lat0: Double, lon0: Double,
+    reachDeg: Double,
+    line: Color,
+    halo: Color,
+    width: Float,
+    drifting: Boolean
+) {
+    val path = linePath
+    path.reset()
+    val la0 = Math.toRadians(lat0)
+    val sinLat0 = kotlin.math.sin(la0)
+    val cosLat0 = kotlin.math.cos(la0)
+    val reachLat = reachDeg.toFloat()
+    // Longitude reach widens toward the poles; past this it is everything.
+    val cosC = kotlin.math.cos(la0).coerceAtLeast(0.05)
+    val reachLon = (reachDeg / cosC).toFloat()
+    val lonAll = reachDeg >= 90.0 || reachLon >= 180f
+    val c = set.coords
+    val step = if (drifting) 2 else 1
+    var drawn = 0
+    for (i in 0 until set.size) {
+        val b = i * 4
+        if (set.boxes[b + 3] < lat0 - reachLat || set.boxes[b + 1] > lat0 + reachLat) continue
+        if (!lonAll) {
+            // Distance from the centre to the box in longitude, round the
+            // short way.
+            val minLon = set.boxes[b]; val maxLon = set.boxes[b + 2]
+            val inside = lon0 >= minLon && lon0 <= maxLon
+            if (!inside) {
+                fun gap(x: Float): Double { var d = kotlin.math.abs(x - lon0) % 360.0; if (d > 180) d = 360 - d; return d }
+                if (minOf(gap(minLon), gap(maxLon)) > reachLon) continue
+            }
+        }
+        val start = set.starts[i]
+        val n = set.counts[i]
+        var wasVisible = false
+        var k = 0
+        while (k < n) {
+            val at = (start + k) * 2
+            val visible = Orthographic.projectInto(
+                c[at + 1].toDouble(), c[at].toDouble(), sinLat0, cosLat0, lon0, r, cx, cy, projected
+            )
+            if (visible) {
+                if (wasVisible) path.lineTo(projected[0], projected[1])
+                else path.moveTo(projected[0], projected[1])
+            }
+            wasVisible = visible
+            k += if (k + step >= n && k != n - 1) (n - 1 - k) else step
+        }
+        drawn++
+    }
+    if (drawn == 0) return
+    drawPath(path, halo, style = Stroke(width = width + 2.2f, join = androidx.compose.ui.graphics.StrokeJoin.Round))
+    drawPath(path, line, style = Stroke(width = width, join = androidx.compose.ui.graphics.StrokeJoin.Round))
 }
 
 private fun DrawScope.drawLand(

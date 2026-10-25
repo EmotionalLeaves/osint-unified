@@ -253,6 +253,9 @@ fun GodEyeViewScreen(
     // every armed layer on every poll for as long as the dialog is
     // open. A report is a snapshot of a moment, and this is that
     // moment.
+    // The request this composition started with: one restored from a
+    // saved state rather than asked for just now.
+    val restoredArea = remember { areaWanted }
     LaunchedEffect(areaWanted, state.loaded.isEmpty()) {
         val want = areaWanted ?: return@LaunchedEffect
         // Not against a state that has not loaded anything yet.
@@ -266,7 +269,13 @@ fun GodEyeViewScreen(
         // report, unasked, saying nothing was anywhere. The second
         // key is a one-shot: it flips once when the first feed
         // answers and never flips back.
-        if (state.loaded.isEmpty() && state.results.isEmpty()) return@LaunchedEffect
+        //
+        // But only for that restored request. A new one, asked for by a
+        // tap, is built whatever is loaded: with every layer off — which
+        // is how the app starts — `loaded` is empty, so WHAT'S HERE did
+        // nothing at all, silently, on a fresh screen. A report with no
+        // layers on still has the place, and says no layers are on.
+        if (want == restoredArea && state.loaded.isEmpty() && state.results.isEmpty()) return@LaunchedEffect
         val built = withContext(Dispatchers.Default) {
             AreaReport.build(state, want.first, want.second, want.third)
         }
@@ -1511,9 +1520,11 @@ fun GodEyeViewScreen(
                             }
                         }
                     }
-                    // Only where there is something to see: a street or two
-                    // across. Each tap tips further, then back to flat.
-                    if (zoomNow >= TILT_FROM_TILE_ZOOM || globeCamera.tilt > 0f) {
+                    // Always here. Each tap tips further, then back to flat;
+                    // two fingers dragged up or down do the same smoothly.
+                    // The tilt shows from a region across inward, and the
+                    // buildings stand up from a few streets across.
+                    run {
                         Box(
                             contentAlignment = Alignment.Center,
                             modifier = Modifier
@@ -2911,6 +2922,3 @@ private fun CardAction(label: String, colour: Color, onClick: () -> Unit) {
         Text(label, style = MaterialTheme.typography.labelMedium, color = colour)
     }
 }
-
-/** From this tile zoom the 3D button is offered: a few streets across. */
-private const val TILT_FROM_TILE_ZOOM = 14.0

@@ -202,7 +202,7 @@ object GlobeShader {
             float cosLat = sqrt(max(1.0 - sinLat * sinLat, 0.0));
             float lit = sinLat * sinSun + cosLat * cosSun * cos(lon - sunLon);
             float dayMix = smoothstep(-0.09, 0.13, lit);
-            float lambert = 0.28 + 0.72 * clamp(lit, 0.0, 1.0);
+            float lambert = 0.72 + 0.28 * clamp(lit, 0.0, 1.0);
             float dark = 1.0 - dayMix;
 
             // How much of the tile survives: the same lighting the
@@ -269,7 +269,7 @@ object GlobeShader {
             float cosLat = sqrt(max(1.0 - sinLat * sinLat, 0.0));
             float lit = sinLat * sinSun + cosLat * cosSun * cos(lon - sunLon);
             float dayMix = smoothstep(-0.09, 0.13, lit);
-            float lambert = 0.28 + 0.72 * clamp(lit, 0.0, 1.0);
+            float lambert = 0.72 + 0.28 * clamp(lit, 0.0, 1.0);
 
             half3 c = base.rgb * half(lambert * dayMix);
 
