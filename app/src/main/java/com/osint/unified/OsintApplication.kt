@@ -98,6 +98,8 @@ class OsintApplication : Application() {
         // third of a gigabyte of street maps it no longer has.
         Thread({
             runCatching { File(cacheDir, "osmdroid").deleteRecursively() }
+            // And the tile HTTP cache, replaced by the globe's own storage.
+            runCatching { File(cacheDir, "tile-http").deleteRecursively() }
             runCatching { deleteSharedPreferences("osmdroid") }
         }, "orphan-cleanup").start()
     }

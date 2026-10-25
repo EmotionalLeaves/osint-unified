@@ -132,6 +132,39 @@ class AppSettings(context: Context) {
         get() = prefs.getBoolean(KEY_WATCH_WIFI, false)
         set(value) = prefs.edit().putBoolean(KEY_WATCH_WIFI, value).apply()
 
+    /**
+     * How sharp the globe's imagery is: the screen resolution, on its
+     * short side, that tiles are chosen for. QHD by default, even on a
+     * 1080p phone — the imagery is fetched a level finer than the screen
+     * and drawn down, which is visibly crisper. Full HD and Data saver
+     * fetch less, for people paying for every megabyte.
+     */
+    var globeQuality: String
+        get() = prefs.getString(KEY_GLOBE_QUALITY, QUALITY_QHD) ?: QUALITY_QHD
+        set(value) = prefs.edit().putString(KEY_GLOBE_QUALITY, value).apply()
+
+    /** The short side, in pixels, that [globeQuality] stands for. */
+    val globeTargetShortSide: Int
+        get() = when (globeQuality) {
+            QUALITY_FHD -> 1080
+            QUALITY_SAVER -> 720
+            else -> 1440
+        }
+
+    /** Buildings drawn standing up at street level. */
+    var buildings3d: Boolean
+        get() = prefs.getBoolean(KEY_BUILDINGS_3D, true)
+        set(value) = prefs.edit().putBoolean(KEY_BUILDINGS_3D, value).apply()
+
+    /**
+     * How much of the phone the globe's downloaded imagery and buildings
+     * may keep. In app storage, not cache, so the system does not throw
+     * it away and the same street is never paid for twice.
+     */
+    var globeStorageMb: Int
+        get() = prefs.getInt(KEY_GLOBE_STORAGE, 1024)
+        set(value) = prefs.edit().putInt(KEY_GLOBE_STORAGE, value).apply()
+
     /** Any GeoJSON points URL the user wants plotted as a custom globe layer. */
     var overlayUrl: String
         get() = prefs.getString(KEY_OVERLAY, "").orEmpty()
@@ -180,7 +213,13 @@ class AppSettings(context: Context) {
             }
             .toMap()
 
-    private companion object {
+    companion object {
+        const val QUALITY_QHD = "qhd"
+        const val QUALITY_FHD = "fhd"
+        const val QUALITY_SAVER = "saver"
+        private const val KEY_GLOBE_QUALITY = "globe_quality"
+        private const val KEY_BUILDINGS_3D = "buildings_3d"
+        private const val KEY_GLOBE_STORAGE = "globe_storage_mb"
         const val KEY_BACKEND = "backend_base_url"
         const val KEY_TAR1090 = "tar1090_url"
         const val KEY_AIS = "ais_url"

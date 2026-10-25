@@ -172,13 +172,15 @@ internal object Tiles {
         cy: Float,
         radius: Float,
         lat0: Double,
-        lon0: Double
+        lon0: Double,
+        /** How much finer than the screen the quality setting asks for. */
+        detail: Float = 1f
     ): List<Ref> {
         if (width <= 0 || height <= 0 || radius <= 0f) return emptyList()
         var z = zoom.coerceIn(MIN_TILE_ZOOM, MAX_TILE_ZOOM)
         while (true) {
             val keys = sample(z, width, height, cx, cy, radius, lat0, lon0)
-            if (keys.size <= capFor(z, width, height) || z <= MIN_TILE_ZOOM) {
+            if (keys.size <= capFor(z, (width * detail).toInt(), (height * detail).toInt()) || z <= MIN_TILE_ZOOM) {
                 val side = 1 shl z
                 val centreX = tileXOf(lon0, z)
                 val centreY = tileYOf(lat0, z)
@@ -353,11 +355,11 @@ internal object Tiles {
     private fun capFor(z: Int, width: Int, height: Int): Int {
         if (z <= BUNDLED_MAX_ZOOM) return MAX_BUNDLED_TILES
         val scale = width.toDouble() * height / (1080.0 * 2340.0)
-        return (MAX_TILES * scale).toInt().coerceIn(MAX_TILES, MAX_LIVE_TILES)
+        return (MAX_TILES * scale).toInt().coerceIn(MAX_TILES / 2, MAX_LIVE_TILES)
     }
 
     /** The most live tiles one view may ask for, whatever the screen. */
-    private const val MAX_LIVE_TILES = 300
+    private const val MAX_LIVE_TILES = 420
 
     /** Where the Mercator projection is cut off, as every slippy map does. */
     private const val MERCATOR_LIMIT = 85.0511

@@ -39,7 +39,8 @@ import java.util.concurrent.ConcurrentHashMap
  */
 internal class TileStore(context: Context) {
 
-    private val assets = context.applicationContext.assets
+    private val app = context.applicationContext
+    private val assets = app.assets
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /**
@@ -50,7 +51,7 @@ internal class TileStore(context: Context) {
      * and later lives outside the Java heap — a full high-resolution
      * screen at three levels plus room to pan back the way you came.
      */
-    private val memory = object : LruCache<Long, Bitmap>(capacity(context)) {
+    private val memory = object : LruCache<Long, Bitmap>(capacity(context, detail(context))) {
         override fun sizeOf(key: Long, value: Bitmap) = 1
     }
 
@@ -106,6 +107,10 @@ internal class TileStore(context: Context) {
                         }
                     }
                     if (bitmap != null) {
+                        // Drawn smaller than fetched whenever the quality is
+                        // above the screen's own resolution; mipmaps keep the
+                        // downscale smooth rather than shimmering as it pans.
+                        bitmap.setHasMipMap(true)
                         memory.put(k, bitmap)
                         _version.value = _version.value + 1
                     }
@@ -122,7 +127,16 @@ internal class TileStore(context: Context) {
         }
     }.getOrNull()
 
+    /**
+     * From the phone if it has been fetched before; otherwise fetched,
+     * and kept. See [GlobeDisk].
+     */
     private fun live(ref: Tiles.Ref, layer: Layer): Bitmap? {
+        val file = GlobeDisk.file(app, "imagery-${layer.dir}", ref.z, ref.x, ref.y, "jpg")
+        GlobeDisk.read(file)?.let { kept ->
+            BitmapFactory.decodeByteArray(kept, 0, kept.size, OPTIONS)?.let { return it }
+            // Kept but unreadable: fetched again below and overwritten.
+        }
         val url = layer.liveUrl(ref)
         val bitmap = runCatching {
             val request = Request.Builder()
@@ -132,7 +146,10 @@ internal class TileStore(context: Context) {
             Http.tileClient.newCall(request).execute().use { resp ->
                 if (!resp.isSuccessful) return@runCatching null
                 val bytes = resp.body?.bytes() ?: return@runCatching null
-                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, OPTIONS)
+                val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, OPTIONS)
+                    ?: return@runCatching null
+                GlobeDisk.write(app, file, bytes)
+                decoded
             }
         }.getOrNull()
         if (bitmap != null && ref.z > Tiles.BUNDLED_MAX_ZOOM && layer == Layer.DAY) usedLive = true
@@ -191,13 +208,26 @@ internal class TileStore(context: Context) {
          * beneath and the bundled base that is more than 400 — the memory
          * would evict tiles still on screen and fetch them again.
          */
-        private fun capacity(context: Context): Int {
+        private fun capacity(context: Context, detail: Float): Int {
             val metrics = context.resources.displayMetrics
-            val scale = metrics.widthPixels.toDouble() * metrics.heightPixels / (1080.0 * 2340.0)
+            val scale = metrics.widthPixels.toDouble() * metrics.heightPixels * detail * detail /
+                (1080.0 * 2340.0)
             return (MAX_TILES * scale).toInt().coerceIn(MAX_TILES, MAX_TILES_LARGE)
         }
 
-        private const val MAX_TILES_LARGE = 560
+        /**
+         * How much finer than the screen the imagery is chosen: the
+         * quality setting's short side over the screen's, never below
+         * the setting's own floor. 1.33 for QHD on a 1080p phone; under
+         * 1 for Data saver.
+         */
+        fun detail(context: Context): Float {
+            val metrics = context.resources.displayMetrics
+            val short = minOf(metrics.widthPixels, metrics.heightPixels).coerceAtLeast(1)
+            return com.osint.unified.data.AppSettings(context).globeTargetShortSide.toFloat() / short
+        }
+
+        private const val MAX_TILES_LARGE = 720
         // Http lets four requests at a time reach one host and queues
         // the rest; asking for more here only moved the queue.
         private const val MAX_IN_FLIGHT = 4

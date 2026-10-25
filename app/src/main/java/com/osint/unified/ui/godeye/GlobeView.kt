@@ -399,6 +399,9 @@ fun GlobeView(
     // Blue Marble, no data, no wait) and live satellite tiles take over
     // beyond, so every zoom is drawn at the detail its pixels can show.
     val tiles = remember(context) { TileStore(context) }
+    // Read when the globe is composed, which is every time its tab comes
+    // back — so a change in Settings applies on return.
+    val detail = remember(context) { TileStore.detail(context) }
     DisposableEffect(tiles) { onDispose { tiles.clear() } }
     val tileVersion by tiles.version.collectAsStateWithLifecycle()
 
@@ -408,7 +411,9 @@ fun GlobeView(
         360.0
     }
     val tileZoom = if (viewport.width > 0) {
-        Tiles.zoomFor(tileSpan, viewport.width, centreLat.toDouble())
+        // Chosen for the quality setting's resolution, not the screen's:
+        // QHD on a 1080p phone fetches a level finer and draws it down.
+        Tiles.zoomFor(tileSpan, (viewport.width * detail).toInt(), centreLat.toDouble())
     } else {
         0
     }
@@ -421,7 +426,8 @@ fun GlobeView(
             tileZoom, viewport.width, viewport.height,
             viewport.width / 2f, viewport.height / 2f,
             globeRadius(viewport.width, viewport.height, zoom),
-            centreLat.toDouble(), centreLon.toDouble()
+            centreLat.toDouble(), centreLon.toDouble(),
+            detail
         )
     }
     val drawnZoom = tileRefs.firstOrNull()?.z ?: 0
@@ -442,6 +448,18 @@ fun GlobeView(
     // so ground under a thumb for a sixtieth of a second is not paid for.
     LaunchedEffect(baseRefs) { tiles.request(baseRefs) }
     LaunchedEffect(tileRefs, drifting) { tiles.request(tileRefs, network = !drifting) }
+
+    // Buildings standing up, at street level. Footprints and heights from
+    // OpenStreetMap a zoom-14 tile at a time, downloaded once and kept.
+    val buildingStore = remember(context) { BuildingStore(context) }
+    DisposableEffect(buildingStore) { onDispose { buildingStore.clear() } }
+    val buildingVersion by buildingStore.version.collectAsStateWithLifecycle()
+    val buildingsOn = remember(context) { com.osint.unified.data.AppSettings(context).buildings3d }
+    val buildingRefs = remember(tileRefs, buildingsOn) {
+        if (!buildingsOn || drawnZoom < BUILDINGS_FROM_ZOOM) emptyList()
+        else Tiles.ancestors(tileRefs, BuildingStore.ZOOM)
+    }
+    LaunchedEffect(buildingRefs, drifting) { if (!drifting) buildingStore.request(buildingRefs) }
 
     Canvas(
         modifier = modifier
@@ -641,6 +659,7 @@ fun GlobeView(
         // canvas and the imagery would appear only on the next
         // gesture.
         @Suppress("UNUSED_EXPRESSION") tileVersion
+        @Suppress("UNUSED_EXPRESSION") buildingVersion
         val baseComplete = (if (baseRefs.isEmpty()) tileRefs else baseRefs)
             .let { refs -> refs.isNotEmpty() && refs.all { tiles.peek(it) != null } }
         // The photograph underneath only when something could show
@@ -718,6 +737,9 @@ fun GlobeView(
                 BORDER_OVER_IMAGERY, stride = if (drifting) 2 else 1
             )
         }
+        if (buildingRefs.isNotEmpty()) {
+            drawBuildings(buildingStore, buildingRefs, cx, cy, radius, lat0, lon0, drifting)
+        }
         // Names only when the camera has settled. Text is the most
         // expensive thing on this canvas and the least useful while
         // the planet is moving under a thumb.
@@ -771,6 +793,11 @@ fun GlobeView(
                     else TileStore.NASA_ATTRIBUTION,
                     10f, size.height - 10f, credit
                 )
+                if (buildingRefs.isNotEmpty()) {
+                    canvas.nativeCanvas.drawText(
+                        BuildingStore.ATTRIBUTION, 10f, size.height - 10f - credit.textSize * 1.3f, credit
+                    )
+                }
             }
         }
     }
@@ -956,6 +983,152 @@ private fun meshFor(z: Int): Int = when {
 
 private const val MAX_MESH = 16
 
+/**
+ * Buildings, stood up.
+ *
+ * The globe looks straight down, and straight down a building is its
+ * roof: height is invisible. So the extrusion is oblique — each roof is
+ * drawn lifted up the screen by its height, the walls between footprint
+ * and roof filled in, the way an architect's oblique drawing shows a
+ * block. Drawn back to front, so nearer buildings stand in front of
+ * farther ones, with each wall shaded by which way it faces.
+ *
+ * At street level the view is a few hundred metres across, so a local
+ * flat projection around the centre is exact to well under a pixel and
+ * a great deal cheaper than the sphere's trigonometry for every corner
+ * of every building.
+ */
+private fun DrawScope.drawBuildings(
+    store: BuildingStore,
+    refs: List<Tiles.Ref>,
+    cx: Float,
+    cy: Float,
+    radius: Float,
+    lat0: Double,
+    lon0: Double,
+    drifting: Boolean
+) {
+    val pxPerDeg = radius * (Math.PI / 180.0)
+    val cosLat0 = kotlin.math.cos(Math.toRadians(lat0))
+    val pxPerMetre = radius / EARTH_RADIUS_M
+    val w = size.width
+    val h = size.height
+    // Gathered first so they can be ordered, and capped nearest first.
+    val shown = ArrayList<Pair<VectorTile.Building, FloatArray>>()
+    for (ref in refs) {
+        val list = store.peek(ref) ?: continue
+        for (b in list) {
+            if (b.flat || b.points < 3) continue
+            val lift = (b.height * pxPerMetre * BUILDING_TILT).toFloat()
+            val pts = FloatArray(b.points * 2)
+            var minX = Float.MAX_VALUE; var maxX = -Float.MAX_VALUE
+            var minY = Float.MAX_VALUE; var maxY = -Float.MAX_VALUE
+            for (i in 0 until b.points) {
+                val x = (cx + (b.ring[i * 2 + 1] - lon0) * cosLat0 * pxPerDeg).toFloat()
+                val y = (cy - (b.ring[i * 2] - lat0) * pxPerDeg).toFloat()
+                pts[i * 2] = x; pts[i * 2 + 1] = y
+                if (x < minX) minX = x; if (x > maxX) maxX = x
+                if (y < minY) minY = y; if (y > maxY) maxY = y
+            }
+            if (maxX < 0 || minX > w || maxY < 0 || minY - lift > h) continue
+            shown.add(b to pts)
+        }
+    }
+    if (shown.isEmpty()) return
+    val cap = if (drifting) MAX_BUILDINGS_MOVING else MAX_BUILDINGS
+    val drawn = if (shown.size <= cap) shown else shown.sortedBy { (_, p) ->
+        val dx = p[0] - cx; val dy = p[1] - cy; dx * dx + dy * dy
+    }.take(cap)
+    // Back to front: the roofs lean up the screen, so what is higher on
+    // the screen is further away.
+    val ordered = drawn.sortedBy { (_, p) -> var m = -Float.MAX_VALUE; var i = 1; while (i < p.size) { if (p[i] > m) m = p[i]; i += 2 }; m }
+    val path = android.graphics.Path()
+    val paint = BUILDING_PAINT
+    drawIntoCanvas { canvas ->
+        val nc = canvas.nativeCanvas
+        for ((b, p) in ordered) {
+            val n = b.points
+            val top = (b.height * pxPerMetre).toFloat()
+            val bottom = (b.minHeight * pxPerMetre).toFloat()
+            val topDx = top * BUILDING_SKEW; val topDy = -top * BUILDING_TILT
+            val botDx = bottom * BUILDING_SKEW; val botDy = -bottom * BUILDING_TILT
+            val base = b.colour ?: BUILDING_DEFAULT
+            // Which way the ring winds decides which side of an edge is out.
+            var area = 0f
+            for (i in 0 until n) {
+                val j = (i + 1) % n
+                area += p[i * 2] * p[j * 2 + 1] - p[j * 2] * p[i * 2 + 1]
+            }
+            val sign = if (area >= 0f) 1f else -1f
+            if (!drifting && top - bottom > 0.5f) {
+                for (i in 0 until n) {
+                    val j = (i + 1) % n
+                    val ax = p[i * 2]; val ay = p[i * 2 + 1]
+                    val bx = p[j * 2]; val by = p[j * 2 + 1]
+                    val ex = bx - ax; val ey = by - ay
+                    // Outward normal, then: is this wall facing the viewer,
+                    // who looks from down-screen of the lean?
+                    val nx = sign * ey; val ny = -sign * ex
+                    if (nx * -BUILDING_SKEW + ny * BUILDING_TILT <= 0f) continue
+                    val len = kotlin.math.sqrt(nx * nx + ny * ny).coerceAtLeast(1e-3f)
+                    val light = 0.55f + 0.25f * (-nx / len) + 0.1f * (ny / len)
+                    paint.color = shade(base, light.coerceIn(0.35f, 0.95f))
+                    path.rewind()
+                    path.moveTo(ax + botDx, ay + botDy)
+                    path.lineTo(bx + botDx, by + botDy)
+                    path.lineTo(bx + topDx, by + topDy)
+                    path.lineTo(ax + topDx, ay + topDy)
+                    path.close()
+                    nc.drawPath(path, paint)
+                }
+            }
+            path.rewind()
+            path.moveTo(p[0] + topDx, p[1] + topDy)
+            for (i in 1 until n) path.lineTo(p[i * 2] + topDx, p[i * 2 + 1] + topDy)
+            path.close()
+            paint.color = shade(base, 1f)
+            nc.drawPath(path, paint)
+            if (!drifting) nc.drawPath(path, BUILDING_EDGE)
+        }
+    }
+}
+
+/** [argb] darkened to [factor], kept nearly opaque. */
+private fun shade(argb: Int, factor: Float): Int {
+    val r = ((argb shr 16 and 0xFF) * factor).toInt().coerceIn(0, 255)
+    val g = ((argb shr 8 and 0xFF) * factor).toInt().coerceIn(0, 255)
+    val b = ((argb and 0xFF) * factor).toInt().coerceIn(0, 255)
+    return (0xF0 shl 24) or (r shl 16) or (g shl 8) or b
+}
+
+private val BUILDING_PAINT = android.graphics.Paint().apply {
+    isAntiAlias = true
+    style = android.graphics.Paint.Style.FILL
+}
+private val BUILDING_EDGE = android.graphics.Paint().apply {
+    isAntiAlias = true
+    style = android.graphics.Paint.Style.STROKE
+    strokeWidth = 1f
+    color = 0x55000000
+}
+
+/** A light stone, for buildings OpenStreetMap gives no colour. */
+private const val BUILDING_DEFAULT = 0xFFD9D2C5.toInt()
+
+/** How far up the screen a metre of height leans, against a metre of ground. */
+private const val BUILDING_TILT = 0.6f
+
+/** And how far right, so walls on both sides show. */
+private const val BUILDING_SKEW = 0.18f
+
+private const val MAX_BUILDINGS = 3500
+private const val MAX_BUILDINGS_MOVING = 1500
+
+/** The tile zoom from which buildings stand up: a few streets across. */
+private const val BUILDINGS_FROM_ZOOM = 16
+
+private const val EARTH_RADIUS_M = 6_371_000.0
+
 private val TILE_PAINT = android.graphics.Paint().apply {
     isAntiAlias = true
     isFilterBitmap = true
@@ -973,7 +1146,7 @@ private const val BORDERS_BELOW_SPAN = 3.0
 /** And the grid of latitude and longitude while more than this is. */
 private const val GRATICULE_BELOW_SPAN = 30.0
 
-private fun globeRadius(width: Int, height: Int, zoom: Float): Float =
+internal fun globeRadius(width: Int, height: Int, zoom: Float): Float =
     min(width, height) / 2f * 0.92f * zoom
 
 /**

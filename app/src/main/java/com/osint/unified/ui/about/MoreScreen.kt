@@ -53,6 +53,7 @@ import com.osint.unified.ui.common.PrivateBrowserHost
 import com.osint.unified.ui.theme.Intel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
 
 /**
  * The things that are used occasionally, named rather than iconified.
@@ -138,6 +139,7 @@ fun MoreScreen(
                     "under what terms.",
                 onOpenSources
             )
+            GlobeControls(settings)
             PrivacyControls(settings, lockAvailable)
 
             // Stated rather than assumed. An app that claims a security
@@ -248,6 +250,135 @@ private fun Entry(title: String, body: String, onClick: () -> Unit) {
  * cover. A privacy control that overstates itself is worse than none:
  * somebody relies on it.
  */
+/**
+ * How the globe looks and what it keeps.
+ *
+ * Quality decides the resolution its imagery is fetched for — QHD by
+ * default, even on a smaller screen, because imagery fetched finer and
+ * drawn down is visibly sharper; the lower settings fetch less for
+ * people paying by the megabyte. Storage is everything the globe has
+ * downloaded, kept so no street is fetched twice.
+ */
+@Composable
+private fun GlobeControls(settings: AppSettings) {
+    val context = LocalContext.current
+    var quality by remember { mutableStateOf(settings.globeQuality) }
+    var buildings by remember { mutableStateOf(settings.buildings3d) }
+    var storageMb by remember { mutableStateOf(settings.globeStorageMb) }
+    var refresh by remember { mutableStateOf(0) }
+    val used by produceState(initialValue = -1L, refresh) {
+        value = withContext(Dispatchers.IO) {
+            com.osint.unified.ui.godeye.GlobeDisk.usedBytes(context)
+        }
+    }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 14.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(Intel.Surface)
+            .border(1.dp, Intel.Hairline, RoundedCornerShape(10.dp))
+            .padding(14.dp)
+    ) {
+        Text("GLOBE", style = M3.typography.labelSmall, color = Intel.Cyan)
+
+        Text("Image quality", style = M3.typography.titleSmall, color = Intel.TextHi, modifier = Modifier.padding(top = 8.dp))
+        Text(
+            when (quality) {
+                AppSettings.QUALITY_FHD -> "Full HD. About half the imagery data of QHD."
+                AppSettings.QUALITY_SAVER -> "Data saver. A fraction of the data; softer up close."
+                else -> "QHD (2560 × 1440) or better. The sharpest, and the most data."
+            },
+            style = M3.typography.bodySmall,
+            color = Intel.TextMid,
+            modifier = Modifier.padding(top = 2.dp)
+        )
+        Row(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 6.dp)) {
+            listOf(
+                AppSettings.QUALITY_QHD to "QHD",
+                AppSettings.QUALITY_FHD to "FULL HD",
+                AppSettings.QUALITY_SAVER to "DATA SAVER"
+            ).forEach { (key, label) ->
+                Choice(label, quality == key) { quality = key; settings.globeQuality = key }
+            }
+        }
+
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {
+            Column(Modifier.weight(1f)) {
+                Text("3D buildings", style = M3.typography.titleSmall, color = Intel.TextHi)
+                Text(
+                    "Buildings stand up at street level, with their heights from " +
+                        "OpenStreetMap. Each area is downloaded once.",
+                    style = M3.typography.bodySmall,
+                    color = Intel.TextMid,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+            }
+            Switch(
+                checked = buildings,
+                onCheckedChange = { buildings = it; settings.buildings3d = it },
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Intel.Base,
+                    checkedTrackColor = Intel.Cyan,
+                    uncheckedTrackColor = Intel.Elevated
+                )
+            )
+        }
+
+        Text("Kept on this phone", style = M3.typography.titleSmall, color = Intel.TextHi, modifier = Modifier.padding(top = 12.dp))
+        Text(
+            "Imagery and buildings the globe has downloaded stay here, so " +
+                "looking at a place again costs no data. " +
+                (if (used >= 0) "Using ${com.osint.unified.network.DataMeter.human(used)} of " +
+                    (if (storageMb >= 1024) "${storageMb / 1024} GB" else "$storageMb MB") + "."
+                else "Measuring…"),
+            style = M3.typography.bodySmall,
+            color = Intel.TextMid,
+            modifier = Modifier.padding(top = 2.dp)
+        )
+        Row(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 6.dp)) {
+            listOf(256 to "256 MB", 1024 to "1 GB", 4096 to "4 GB").forEach { (mb, label) ->
+                Choice(label, storageMb == mb) {
+                    storageMb = mb
+                    settings.globeStorageMb = mb
+                    scope.launch {
+                        withContext(Dispatchers.IO) { com.osint.unified.ui.godeye.GlobeDisk.trim(context) }
+                        refresh++
+                    }
+                }
+            }
+            Choice("CLEAR", false) {
+                scope.launch {
+                    withContext(Dispatchers.IO) { com.osint.unified.ui.godeye.GlobeDisk.clear(context) }
+                    refresh++
+                }
+            }
+        }
+        Text(
+            "Changes apply the next time the globe opens.",
+            style = M3.typography.labelSmall,
+            color = Intel.TextLow,
+            modifier = Modifier.padding(top = 8.dp)
+        )
+    }
+}
+
+@Composable
+private fun Choice(label: String, selected: Boolean, onClick: () -> Unit) {
+    Text(
+        label,
+        style = M3.typography.labelMedium,
+        color = if (selected) Intel.Base else Intel.TextMid,
+        modifier = Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(if (selected) Intel.Cyan else Intel.Elevated)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 6.dp)
+    )
+}
+
 @Composable
 private fun PrivacyControls(settings: AppSettings, lockAvailable: Boolean) {
     // Saveable, because an unapplied edit was lost on a rotation — and

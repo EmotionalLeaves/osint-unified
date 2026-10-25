@@ -28,6 +28,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.offset
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -1279,14 +1281,16 @@ fun GodEyeViewScreen(
 
             }
 
+            // Where the globe starts inside this box: under the panel, or at
+            // the top when the panel floats or the globe is full screen. The
+            // tap card is placed in this box's coordinates, so it needs it.
+            val globeTop = if (fullScreen) 0.dp
+                else if (overlay) 2.dp
+                else with(density) { panelPx.toDp() } + 2.dp
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(
-                        top = if (fullScreen) 0.dp
-                        else if (overlay) 2.dp
-                        else with(density) { panelPx.toDp() } + 2.dp
-                    )
+                    .padding(top = globeTop)
                     .clipToBounds()
                     // Measured on the container both views fill, not
                     // on the globe. Measuring it on the globe meant
@@ -1474,63 +1478,28 @@ fun GodEyeViewScreen(
                         tint = Intel.Cyan
                     )
                 }
-                // What a tap offers, instead of what it used to do.
+                // What a tap offers, instead of what it used to do — at the
+                // spot that was tapped, pinned to it, and saying what is
+                // there before anything else is asked.
                 tapped?.let { (tLat, tLon) ->
-                    Column(
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .padding(bottom = 12.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(Color(0xE60B0E11))
-                            .border(1.dp, Intel.Cyan, RoundedCornerShape(10.dp))
-                            .padding(horizontal = 12.dp, vertical = 8.dp)
-                    ) {
-                        Text(
-                            "%.5f, %.5f".format(Locale.US, tLat, tLon),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = Intel.TextHi,
-                            fontFamily = FontFamily.Monospace
-                        )
-                        com.osint.unified.domain.Mgrs.from(tLat, tLon)?.let {
-                            Text(
-                                it,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Intel.TextLow,
-                                fontFamily = FontFamily.Monospace
-                            )
-                        }
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(14.dp),
-                            modifier = Modifier.padding(top = 6.dp)
-                        ) {
-                            Text(
-                                "WHAT'S HERE",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = Intel.Cyan,
-                                modifier = Modifier.clickable {
-                                    areaWanted = Triple(
-                                        tLat, tLon, AreaReport.radiusForZoom(zoomNow)
-                                    )
-                                    tapped = null
-                                }
-                            )
-                            Text(
-                                "INVESTIGATE",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = Intel.Amber,
-                                modifier = Modifier.clickable {
-                                    viewModel.onMapClick(tLat, tLon)
-                                    tapped = null
-                                }
-                            )
-                            Text(
-                                "DISMISS",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = Intel.TextMid,
-                                modifier = Modifier.clickable { tapped = null }
-                            )
-                        }
-                    }
+                    TapCard(
+                        lat = tLat,
+                        lon = tLon,
+                        camera = globeCamera,
+                        globeW = globeSize.first,
+                        globeH = globeSize.second,
+                        globeTopPx = with(density) { globeTop.toPx() },
+                        tileZoom = zoomNow.roundToInt(),
+                        onWhatsHere = {
+                            areaWanted = Triple(tLat, tLon, AreaReport.radiusForZoom(zoomNow))
+                            tapped = null
+                        },
+                        onInvestigate = {
+                            viewModel.onMapClick(tLat, tLon)
+                            tapped = null
+                        },
+                        onDismiss = { tapped = null }
+                    )
                 }
 
                 // Its own control, and it says what it costs.
@@ -2657,5 +2626,180 @@ private class LayerSwitch(
     operator fun setValue(thisRef: Any?, property: kotlin.reflect.KProperty<*>, value: Boolean) {
         val now = shown.value
         if ((key in now) != value) shown.value = if (value) now + key else now - key
+    }
+}
+
+/**
+ * The card a tap brings up, standing over the spot that was tapped.
+ *
+ * It used to sit at the bottom of the screen whatever was tapped, so
+ * nothing said which spot it was about. Now there is a pin where the
+ * finger landed, a ring going out from it once a second, and the card
+ * above it — below it near the top of the screen — joined to it by a
+ * speech-bubble tail. It follows the spot when the globe moves. And it
+ * says what is there: the name and address OpenStreetMap has for it.
+ *
+ * Where the spot is off screen or round the back of the planet, the
+ * card falls back to the bottom edge, without a pin to point at nothing.
+ */
+@Composable
+private fun androidx.compose.foundation.layout.BoxScope.TapCard(
+    lat: Double,
+    lon: Double,
+    camera: GlobeCamera,
+    globeW: Int,
+    globeH: Int,
+    globeTopPx: Float,
+    tileZoom: Int,
+    onWhatsHere: () -> Unit,
+    onInvestigate: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val density = LocalDensity.current
+    val radius = globeRadius(globeW, globeH, camera.zoom)
+    val spot = if (globeW > 0 && globeH > 0) {
+        Orthographic.project(lat, lon, camera.lat, camera.lon, radius, globeW / 2f, globeH / 2f)
+    } else null
+    val onScreen = spot != null && spot.visible &&
+        spot.x in 0f..globeW.toFloat() && spot.y in 0f..globeH.toFloat()
+
+    // What is here, in words. Keyed on the spot, so the next tap asks again
+    // and a pan does not.
+    val place by androidx.compose.runtime.produceState<Result<PlaceLookup.Place>?>(null, lat, lon) {
+        value = runCatching { PlaceLookup.reverse(lat, lon, tileZoom) }
+    }
+
+    var cardSize by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
+    val margin = with(density) { 8.dp.toPx() }
+    val pinH = with(density) { 34.dp.toPx() }
+    val tail = with(density) { 22.dp.toPx() }
+    val tailHalf = with(density) { 11.dp.toPx() }
+    val stroke = with(density) { 2.dp.toPx() }
+
+    val pinX = spot?.x ?: 0f
+    val pinY = (spot?.y ?: 0f) + globeTopPx
+    val headTop = pinY - pinH
+    val above = headTop - tail - cardSize.height >= globeTopPx + margin
+    val cardX = (pinX - cardSize.width / 2f)
+        .coerceIn(margin, (globeW - cardSize.width - margin).coerceAtLeast(margin))
+    val cardY = if (above) headTop - tail - cardSize.height else pinY + tail
+
+    val card = Color(0xF20B0E11)
+    val ping = androidx.compose.animation.core.rememberInfiniteTransition(label = "ping")
+    val pulse by ping.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+            androidx.compose.animation.core.tween(1200)
+        ),
+        label = "pulse"
+    )
+
+    val content: @Composable () -> Unit = {
+        Column(
+            modifier = Modifier
+                .widthIn(max = 300.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(card)
+                .border(2.dp, Intel.Cyan, RoundedCornerShape(12.dp))
+                .padding(horizontal = 12.dp, vertical = 9.dp)
+        ) {
+            val p = place
+            when {
+                p == null -> Text("Looking up what is here…", style = MaterialTheme.typography.labelSmall, color = Intel.TextMid)
+                p.isFailure -> Text("Address lookup unavailable right now.", style = MaterialTheme.typography.labelSmall, color = Intel.TextLow)
+                else -> {
+                    val here = p.getOrNull()!!
+                    if (here.isEmpty) {
+                        Text("No address here — open water or unnamed ground.", style = MaterialTheme.typography.labelSmall, color = Intel.TextMid)
+                    } else {
+                        here.name?.let {
+                            Text(it, style = MaterialTheme.typography.titleSmall, color = Intel.TextHi, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        }
+                        here.address?.let {
+                            Text(it, style = MaterialTheme.typography.labelSmall, color = Intel.TextMid, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                        }
+                        here.kind?.let {
+                            Text(it.uppercase(), style = MaterialTheme.typography.labelSmall, color = Intel.Cyan, modifier = Modifier.padding(top = 2.dp))
+                        }
+                    }
+                }
+            }
+            Text(
+                "%.5f, %.5f".format(Locale.US, lat, lon) +
+                    (com.osint.unified.domain.Mgrs.from(lat, lon)?.let { "  ·  $it" } ?: ""),
+                style = MaterialTheme.typography.labelSmall,
+                color = Intel.TextLow,
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                modifier = Modifier.padding(top = 6.dp)
+            ) {
+                Text("WHAT'S HERE", style = MaterialTheme.typography.labelMedium, color = Intel.Cyan,
+                    modifier = Modifier.clickable(onClick = onWhatsHere))
+                Text("INVESTIGATE", style = MaterialTheme.typography.labelMedium, color = Intel.Amber,
+                    modifier = Modifier.clickable(onClick = onInvestigate))
+                Text("DISMISS", style = MaterialTheme.typography.labelMedium, color = Intel.TextMid,
+                    modifier = Modifier.clickable(onClick = onDismiss))
+            }
+        }
+    }
+
+    if (!onScreen) {
+        Box(Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp)) { content() }
+        return
+    }
+
+    Box(
+        modifier = Modifier
+            .offset { androidx.compose.ui.unit.IntOffset(cardX.roundToInt(), cardY.roundToInt()) }
+            .onSizeChanged { cardSize = it }
+    ) { content() }
+
+    // The pin, the ring and the tail, over the card so the tail's base can
+    // cover the card's border where they join, as a speech bubble's does.
+    androidx.compose.foundation.Canvas(Modifier.matchParentSize()) {
+        // The ping: a ring going out from the spot and fading.
+        drawCircle(
+            color = Color(0xFFEA4335).copy(alpha = 0.55f * (1f - pulse)),
+            radius = 6f + pulse * 26.dp.toPx(),
+            center = Offset(pinX, pinY),
+            style = androidx.compose.ui.graphics.drawscope.Stroke(width = stroke)
+        )
+        if (cardSize.width > 0) {
+            // The tail: from the card's edge, over the pin's position, to just
+            // short of the pin's head.
+            val baseY = if (above) cardY + cardSize.height - stroke else cardY + stroke
+            val tipY = if (above) headTop - 3f else pinY + 3f
+            val baseX = pinX.coerceIn(cardX + tailHalf * 1.6f, cardX + cardSize.width - tailHalf * 1.6f)
+            val t = androidx.compose.ui.graphics.Path().apply {
+                moveTo(baseX - tailHalf, baseY)
+                lineTo(pinX, tipY)
+                lineTo(baseX + tailHalf, baseY)
+                close()
+            }
+            drawPath(t, card)
+            val edges = androidx.compose.ui.graphics.Path().apply {
+                moveTo(baseX - tailHalf, baseY)
+                lineTo(pinX, tipY)
+                lineTo(baseX + tailHalf, baseY)
+            }
+            drawPath(edges, Intel.Cyan, style = androidx.compose.ui.graphics.drawscope.Stroke(width = stroke))
+        }
+        // The pin: a teardrop with its point on the spot.
+        val headR = pinH * 0.3f
+        val headC = Offset(pinX, pinY - pinH + headR)
+        val drop = androidx.compose.ui.graphics.Path().apply {
+            moveTo(pinX, pinY)
+            lineTo(pinX - headR * 0.82f, headC.y + headR * 0.55f)
+            lineTo(pinX + headR * 0.82f, headC.y + headR * 0.55f)
+            close()
+        }
+        drawPath(drop, Color(0xFFC5221F))
+        drawCircle(Color(0xFFEA4335), headR, headC)
+        drawCircle(Color(0xFFC5221F), headR, headC, style = androidx.compose.ui.graphics.drawscope.Stroke(width = stroke * 0.6f))
+        drawCircle(Color(0xFF8E1410), headR * 0.36f, headC)
     }
 }
